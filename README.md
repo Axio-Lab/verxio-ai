@@ -1,20 +1,26 @@
 # Verxio Web
 
-Browser product shell for [Verxio](https://github.com/Axio-Lab/verxio-web) — a branded UI over the [Hermes Agent](https://github.com/NousResearch/hermes-agent) runtime.
+Browser product UI for **Verxio** — ported from [Hermes Desktop](https://github.com/NousResearch/hermes-agent/tree/main/apps/desktop). Talks to the **Hermes Agent** runtime via `hermes dashboard` (REST + WebSocket).
 
-Ported from `hermes-agent/apps/desktop` (Vite + React + Tailwind). The Python agent engine stays in a separate Hermes clone; this repo is UI only.
+## Architecture
+
+```text
+Browser (verxio-web :5180 dev)
+    → hermes dashboard (:9119)
+    → tui_gateway → AIAgent → tools → LLM
+```
 
 ## Prerequisites
 
 - Node.js ≥ 20
-- A local [Hermes Agent](https://github.com/NousResearch/hermes-agent) clone with `venv` set up
-- `hermes dashboard` running (FastAPI + WebSocket on port 9119)
+- [Hermes Agent](https://github.com/NousResearch/hermes-agent) clone with Python venv
+- `hermes dashboard` running
 
 ## Local development
 
 ```bash
-# Terminal 1 — Hermes backend (from your hermes-agent clone)
-cd ../hermes-agent
+# Terminal 1 — Hermes backend
+cd ../hermes-agent   # or your hermes clone path
 source venv/bin/activate
 hermes dashboard --no-open
 
@@ -23,29 +29,34 @@ npm install
 npm run dev
 ```
 
-Open `http://127.0.0.1:5180`.
+Open **http://127.0.0.1:5180**
 
-The Vite dev server proxies `/api` to `http://127.0.0.1:9119` and injects the dashboard session token automatically.
+Vite proxies `/api` and WebSockets to `http://127.0.0.1:9119` and injects the dashboard session token.
 
-## Environment
+## Scripts
 
-Copy `.env.example` to `.env` if you need a non-default dashboard URL:
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Dev server with HMR |
+| `npm run build` | Production build → `dist/` |
+| `npm run type-check` | TypeScript |
+| `npm run lint` | ESLint |
+| `npm run test:ui` | Vitest |
 
-```bash
-HERMES_DASHBOARD_URL=http://127.0.0.1:9119
-```
+## Production
+
+See [DEPLOY.md](./DEPLOY.md).
 
 ## Implementation phases
 
-See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md) for the full desktop → Verxio port roadmap. Each phase gets its own commit.
+See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md). Phases 0–8 are complete.
 
-## Related repos
+## Related
 
 | Repo | Role |
 |------|------|
-| `hermes-agent` | AI engine (agent loop, tools, gateway) |
-| `verxio-web` (this) | Product UI |
-| `verxio-api` | Optional BFF / run API (separate from chat UI) |
+| [hermes-agent](https://github.com/NousResearch/hermes-agent) | AI engine |
+| [verxio-api](https://github.com/Axio-Lab/verxio-api) | Optional BFF |
 
 ## License
 
