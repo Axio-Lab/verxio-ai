@@ -12,75 +12,72 @@ const SYSTEM_MONO = '"Cascadia Code", "JetBrains Mono", "SF Mono", ui-monospace,
 
 export const DEFAULT_TYPOGRAPHY: DesktopThemeTypography = { fontSans: SYSTEM_SANS, fontMono: SYSTEM_MONO }
 
-const NOUS_BLUE = '#0053FD'
-const PSYCHE_BLUE = '#1540B1'
-const PSYCHE_WARM = '#FFE6CB'
+/** Verxio brand primary — drives buttons, links, progress, and accent tints. */
+export const VERXIO_PRIMARY = '#00ADEF'
 
-const nousTint = (pct: number) => `color-mix(in srgb, ${NOUS_BLUE} ${pct}%, #FFFFFF)`
-const nousTintTransparent = (pct: number) => `color-mix(in srgb, ${NOUS_BLUE} ${pct}%, transparent)`
+const verxioTint = (pct: number) => `color-mix(in srgb, ${VERXIO_PRIMARY} ${pct}%, #FFFFFF)`
+const verxioTintTransparent = (pct: number) => `color-mix(in srgb, ${VERXIO_PRIMARY} ${pct}%, transparent)`
 
 /**
- * Nous — canonical Hermes desktop identity. The palette keeps the current
- * glass geometry neutral, then lets the old bb/gui blue and psyche cream
- * return as accent seeds.
+ * Verxio — default product identity. Clean neutrals with cyan (#00ADEF) accents.
  */
-export const nousTheme: DesktopTheme = {
-  name: 'nous',
-  label: 'Nous',
-  description: 'Glass neutrals with Nous blue accents',
+export const verxioTheme: DesktopTheme = {
+  name: 'verxio',
+  label: 'Verxio',
+  description: 'Verxio brand — cyan accents on clean neutrals',
   colors: {
-    background: '#F8FAFF',
+    background: '#F5FCFF',
     foreground: '#17171A',
     card: '#FFFFFF',
     cardForeground: '#17171A',
-    muted: nousTint(5),
-    mutedForeground: '#666678',
+    muted: verxioTint(5),
+    mutedForeground: '#5C6B73',
     popover: '#FFFFFF',
     popoverForeground: '#17171A',
-    primary: NOUS_BLUE,
-    primaryForeground: '#FCFCFC',
-    secondary: nousTint(7),
-    secondaryForeground: '#242432',
-    accent: nousTint(10),
-    accentForeground: '#202030',
-    border: nousTintTransparent(22),
-    input: nousTintTransparent(30),
-    ring: NOUS_BLUE,
-    midground: NOUS_BLUE,
-    composerRing: NOUS_BLUE,
+    primary: VERXIO_PRIMARY,
+    primaryForeground: '#FFFFFF',
+    secondary: verxioTint(7),
+    secondaryForeground: '#1E2A30',
+    accent: verxioTint(10),
+    accentForeground: '#1A262C',
+    border: verxioTintTransparent(22),
+    input: verxioTintTransparent(30),
+    ring: VERXIO_PRIMARY,
+    midground: VERXIO_PRIMARY,
+    composerRing: VERXIO_PRIMARY,
     destructive: '#C72E4D',
     destructiveForeground: '#FFFFFF',
-    sidebarBackground: '#F3F7FF',
-    sidebarBorder: nousTintTransparent(18),
-    userBubble: nousTint(6),
-    userBubbleBorder: nousTintTransparent(24)
+    sidebarBackground: '#EFF9FD',
+    sidebarBorder: verxioTintTransparent(18),
+    userBubble: verxioTint(6),
+    userBubbleBorder: verxioTintTransparent(24)
   },
   darkColors: {
-    background: '#0D2F86',
-    foreground: PSYCHE_WARM,
-    card: '#12378F',
-    cardForeground: PSYCHE_WARM,
-    muted: '#183F9A',
-    mutedForeground: '#B5C7F3',
-    popover: '#123A96',
-    popoverForeground: PSYCHE_WARM,
-    primary: PSYCHE_WARM,
-    primaryForeground: '#0D2F86',
-    secondary: '#1B45A4',
-    secondaryForeground: '#E0E8FF',
-    accent: PSYCHE_BLUE,
-    accentForeground: '#F0F4FF',
-    border: '#3158AD',
-    input: '#0B2566',
-    ring: PSYCHE_WARM,
-    midground: NOUS_BLUE,
-    composerRing: PSYCHE_WARM,
+    background: '#0B1218',
+    foreground: '#E8F4F8',
+    card: '#121A22',
+    cardForeground: '#E8F4F8',
+    muted: '#18242C',
+    mutedForeground: '#8AA4B0',
+    popover: '#141E26',
+    popoverForeground: '#E8F4F8',
+    primary: VERXIO_PRIMARY,
+    primaryForeground: '#FFFFFF',
+    secondary: '#1A2830',
+    secondaryForeground: '#C8DDE6',
+    accent: '#163038',
+    accentForeground: '#D8ECF4',
+    border: '#243640',
+    input: '#1A2830',
+    ring: VERXIO_PRIMARY,
+    midground: VERXIO_PRIMARY,
+    composerRing: VERXIO_PRIMARY,
     destructive: '#C0473A',
     destructiveForeground: '#FEF2F2',
-    sidebarBackground: '#09286F',
-    sidebarBorder: '#234A9C',
-    userBubble: '#143B91',
-    userBubbleBorder: '#3A63BD'
+    sidebarBackground: '#080E14',
+    sidebarBorder: '#1E2E38',
+    userBubble: '#152028',
+    userBubbleBorder: '#2A4450'
   },
   typography: {
     fontSans: SYSTEM_SANS,
@@ -88,6 +85,9 @@ export const nousTheme: DesktopTheme = {
     fontUrl: 'https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap'
   }
 }
+
+/** @deprecated Alias — kept so legacy `nous` skin keys still resolve. */
+export const nousTheme = verxioTheme
 
 /** Deep blue-violet with cool accents. Matches the dashboard midnight theme. */
 export const midnightTheme: DesktopTheme = {
@@ -270,7 +270,7 @@ export const slateTheme: DesktopTheme = {
 }
 
 export const BUILTIN_THEMES: Record<string, DesktopTheme> = {
-  nous: nousTheme,
+  verxio: verxioTheme,
   midnight: midnightTheme,
   ember: emberTheme,
   mono: monoTheme,
@@ -281,4 +281,4 @@ export const BUILTIN_THEMES: Record<string, DesktopTheme> = {
 export const BUILTIN_THEME_LIST = Object.values(BUILTIN_THEMES)
 
 /** Skin used when nothing is persisted or the persisted name is retired. */
-export const DEFAULT_SKIN_NAME = 'nous'
+export const DEFAULT_SKIN_NAME = 'verxio'

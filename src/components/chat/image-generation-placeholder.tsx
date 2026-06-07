@@ -11,8 +11,8 @@ const FALLBACKS = {
   card: { r: 255, g: 255, b: 255 },
   muted: { r: 240, g: 240, b: 239 },
   foreground: { r: 36, g: 36, b: 36 },
-  primary: { r: 207, g: 128, b: 109 },
-  ring: { r: 185, g: 121, b: 105 }
+  primary: { r: 0, g: 173, b: 239 },
+  ring: { r: 0, g: 173, b: 239 }
 } satisfies Record<string, Rgb>
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
