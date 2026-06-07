@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "ES2022",
     "useDefineForClassFields": true,
-    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "lib": ["DOM", "DOM.Iterable", "ES2023"],
     "allowJs": false,
     "skipLibCheck": true,
     "esModuleInterop": true,
@@ -17,8 +17,8 @@
     "jsx": "react-jsx",
     "paths": {
       "@/*": ["./src/*"],
-      "@hermes/shared": ["../hermes-agent/apps/shared/src/index.ts"]
+      "@hermes/shared": ["./packages/shared/src/index.ts"]
     }
   },
-  "include": ["src", "../hermes-agent/apps/shared/src"]
+  "include": ["src", "packages/shared/src"]
 }
