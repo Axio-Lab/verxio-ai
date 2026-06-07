@@ -7,7 +7,16 @@ import {
   type SyntaxHighlighterProps
 } from '@assistant-ui/react-streamdown'
 import { code } from '@streamdown/code'
-import { type ComponentProps, memo, type ReactNode, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  type ComponentProps,
+  memo,
+  type ReactNode,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react'
 
 import { PreviewAttachment } from '@/components/chat/preview-attachment'
 import { SyntaxHighlighter } from '@/components/chat/shiki-highlighter'
@@ -268,7 +277,11 @@ function useSmoothReveal(text: string, isRunning: boolean): string {
       lastTickRef.current = now
 
       const remaining = targetRef.current.length - shownRef.current.length
-      const add = Math.min(remaining, REVEAL_MAX_CHARS_PER_FRAME, Math.max(1, Math.ceil((remaining * dt) / REVEAL_DRAIN_MS)))
+      const add = Math.min(
+        remaining,
+        REVEAL_MAX_CHARS_PER_FRAME,
+        Math.max(1, Math.ceil((remaining * dt) / REVEAL_DRAIN_MS))
+      )
       shownRef.current = targetRef.current.slice(0, shownRef.current.length + add)
       setDisplayed(shownRef.current)
 

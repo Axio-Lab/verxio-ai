@@ -14,7 +14,9 @@
     "type-check": "tsc --noEmit",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
-    "fmt": "prettier --write 'src/**/*.{ts,tsx}' 'vite.config.ts'",
+    "fmt": "prettier --write 'src/**/*.{ts,tsx}' 'packages/shared/**/*.{ts,tsx}' 'vite.config.ts'",
+    "format": "npm run fmt",
+    "format:check": "prettier --check 'src/**/*.{ts,tsx}' 'packages/shared/**/*.{ts,tsx}' 'vite.config.ts'",
     "fix": "npm run lint:fix && npm run fmt",
     "test:ui": "vitest run --environment jsdom"
   },

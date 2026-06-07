@@ -130,7 +130,10 @@ export function ProfileRail() {
   const defaultProfile = profiles.find(profile => profile.is_default)
   const onDefault = !isAll && activeKey === 'default'
 
-  const named = sortByProfileOrder(profiles.filter(profile => !profile.is_default), order)
+  const named = sortByProfileOrder(
+    profiles.filter(profile => !profile.is_default),
+    order
+  )
   const multiProfile = profiles.length > 1
 
   // distance constraint: a small drag reorders, a tap still selects the profile.
@@ -269,7 +272,12 @@ export function ProfileRail() {
       </div>
 
       {multiProfile && (
-        <ProfilePill active={false} glyph="ellipsis" label={p.manageProfiles} onSelect={() => navigate(PROFILES_ROUTE)} />
+        <ProfilePill
+          active={false}
+          glyph="ellipsis"
+          label={p.manageProfiles}
+          onSelect={() => navigate(PROFILES_ROUTE)}
+        />
       )}
 
       {/* Land in the new profile on a fresh chat (selectProfile triggers the
@@ -473,7 +481,11 @@ function ProfileSquare({ active, color, label, onDelete, onRecolor, onRename, on
             <Codicon name="edit" size="0.875rem" />
             <span>{p.rename}</span>
           </ContextMenuItem>
-          <ContextMenuItem className="text-destructive focus:text-destructive" onSelect={onDelete} variant="destructive">
+          <ContextMenuItem
+            className="text-destructive focus:text-destructive"
+            onSelect={onDelete}
+            variant="destructive"
+          >
             <Codicon name="trash" size="0.875rem" />
             <span>{t.common.delete}</span>
           </ContextMenuItem>

@@ -18,9 +18,9 @@ describe('isProviderSetupErrorMessage', () => {
         'Codex auth is missing access_token. Run `hermes auth` to re-authenticate. setup.status reports configured credentials, but runtime resolution still failed.'
       )
     ).toBe(true)
-    expect(isProviderSetupErrorMessage('Codex auth is missing refresh_token. Run `hermes auth` to re-authenticate.')).toBe(
-      true
-    )
+    expect(
+      isProviderSetupErrorMessage('Codex auth is missing refresh_token. Run `hermes auth` to re-authenticate.')
+    ).toBe(true)
   })
 
   it('does not match non-provider runtime failures', () => {

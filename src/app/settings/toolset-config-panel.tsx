@@ -292,9 +292,7 @@ export function ToolsetConfigPanel({ toolset, onConfiguredChange }: ToolsetConfi
               <div className="grid gap-2 bg-muted/20 p-3">
                 {provider.tag && <p className="text-[0.72rem] text-muted-foreground">{provider.tag}</p>}
                 {provider.requires_nous_auth && (
-                  <p className="text-[0.72rem] text-muted-foreground">
-                    {copy.nousIncluded}
-                  </p>
+                  <p className="text-[0.72rem] text-muted-foreground">{copy.nousIncluded}</p>
                 )}
                 {provider.env_vars.length === 0 ? (
                   <p className="text-[0.72rem] text-muted-foreground">{copy.noApiKeyRequired}</p>
@@ -310,9 +308,7 @@ export function ToolsetConfigPanel({ toolset, onConfiguredChange }: ToolsetConfi
                   ))
                 )}
                 {provider.post_setup && (
-                  <p className="text-[0.72rem] text-muted-foreground">
-                    {copy.postSetup(provider.post_setup)}
-                  </p>
+                  <p className="text-[0.72rem] text-muted-foreground">{copy.postSetup(provider.post_setup)}</p>
                 )}
               </div>
             )}

@@ -79,8 +79,7 @@ export class JsonRpcGatewayClient {
       closedErrorMessage: options.closedErrorMessage ?? 'WebSocket closed',
       connectErrorMessage: options.connectErrorMessage ?? 'WebSocket connection failed',
       connectTimeoutMs: options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS,
-      createRequestId:
-        options.createRequestId ?? ((nextId: number) => `${options.requestIdPrefix ?? 'r'}${nextId}`),
+      createRequestId: options.createRequestId ?? ((nextId: number) => `${options.requestIdPrefix ?? 'r'}${nextId}`),
       notConnectedErrorMessage: options.notConnectedErrorMessage ?? 'gateway not connected',
       requestIdPrefix: options.requestIdPrefix ?? 'r',
       requestTimeoutMs: options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
@@ -217,7 +216,11 @@ export class JsonRpcGatewayClient {
     return () => this.stateHandlers.delete(handler)
   }
 
-  request<T>(method: string, params: Record<string, unknown> = {}, timeoutMs = this.options.requestTimeoutMs): Promise<T> {
+  request<T>(
+    method: string,
+    params: Record<string, unknown> = {},
+    timeoutMs = this.options.requestTimeoutMs
+  ): Promise<T> {
     const socket = this.socket
 
     if (!socket || socket.readyState !== WebSocket.OPEN) {

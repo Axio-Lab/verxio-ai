@@ -337,7 +337,8 @@ export const ja = defineLocale({
         personality: '新しいセッションのデフォルトのアシスタントスタイルです。',
         showReasoning: 'バックエンドが推論内容を提供したときに表示します。'
       },
-      timezone: 'Hermes がローカル時刻のコンテキストを必要とするときに使用します。空欄ならシステムのタイムゾーンを使います。',
+      timezone:
+        'Hermes がローカル時刻のコンテキストを必要とするときに使用します。空欄ならシステムのタイムゾーンを使います。',
       agent: {
         imageInputMode: '画像添付をモデルへ送る方法を制御します。',
         maxTurns: 'Hermes が 1 回の実行を停止するまでのツール呼び出しターン上限です。'
@@ -463,15 +464,16 @@ export const ja = defineLocale({
       envOverrideDesc:
         '保存された設定を使用するには HERMES_DESKTOP_REMOTE_URL と HERMES_DESKTOP_REMOTE_TOKEN の設定を解除してください。',
       localTitle: 'ローカルゲートウェイ',
-      localDesc: 'ローカルホストでプライベートな Hermes バックエンドを起動します。これがデフォルトで、オフラインでも動作します。',
+      localDesc:
+        'ローカルホストでプライベートな Hermes バックエンドを起動します。これがデフォルトで、オフラインでも動作します。',
       remoteTitle: 'リモートゲートウェイ',
       remoteDesc:
         'このデスクトップシェルをリモートの Hermes バックエンドに接続します。ホスト型ゲートウェイは OAuth またはユーザー名とパスワードを使用します。自己ホスト型はセッショントークンを使用する場合があります。',
       remoteUrlTitle: 'リモート URL',
-      remoteUrlDesc: 'リモートダッシュボードバックエンドのベース URL。/hermes などのパスプレフィックスもサポートしています。',
+      remoteUrlDesc:
+        'リモートダッシュボードバックエンドのベース URL。/hermes などのパスプレフィックスもサポートしています。',
       probing: 'このゲートウェイの認証方法を確認中…',
-      probeError:
-        'このゲートウェイにまだ到達できません。URL を確認してください。応答後に認証方法が表示されます。',
+      probeError: 'このゲートウェイにまだ到達できません。URL を確認してください。応答後に認証方法が表示されます。',
       signedIn: 'サインイン済み',
       signIn: 'サインイン',
       signOut: 'サインアウト',
@@ -479,7 +481,8 @@ export const ja = defineLocale({
       authTitle: '認証',
       authSignedInPassword:
         'このゲートウェイはユーザー名とパスワードを使用します。サインイン済みです。セッションは自動的に更新されます。',
-      authSignedInOauth: 'このゲートウェイは OAuth を使用します。サインイン済みです。セッションは自動的に更新されます。',
+      authSignedInOauth:
+        'このゲートウェイは OAuth を使用します。サインイン済みです。セッションは自動的に更新されます。',
       authNeedsPassword:
         'このゲートウェイはユーザー名とパスワードを使用します。このデスクトップアプリを承認するにはサインインしてください。',
       authNeedsOauth: provider =>
@@ -494,8 +497,7 @@ export const ja = defineLocale({
       saveForRestart: '次回起動時のために保存',
       saveAndReconnect: '保存して再接続',
       diagnostics: '診断',
-      diagnosticsDesc:
-        'ファイルマネージャーで desktop.log を表示します。ゲートウェイの起動に失敗した際に役立ちます。',
+      diagnosticsDesc: 'ファイルマネージャーで desktop.log を表示します。ゲートウェイの起動に失敗した際に役立ちます。',
       openLogs: 'ログを開く',
       incompleteTitle: 'リモートゲートウェイの設定が不完全です',
       incompleteSignIn: 'リモートに切り替える前にリモート URL を入力してサインインしてください。',
@@ -553,7 +555,8 @@ export const ja = defineLocale({
     },
     model: {
       loading: 'モデル設定を読み込み中...',
-      appliesDesc: '新しいセッションに適用されます。コンポーザーのモデルピッカーを使ってアクティブなチャットをホットスワップできます。',
+      appliesDesc:
+        '新しいセッションに適用されます。コンポーザーのモデルピッカーを使ってアクティブなチャットをホットスワップできます。',
       provider: 'プロバイダー',
       model: 'モデル',
       applying: '適用中...',
@@ -948,7 +951,8 @@ export const ja = defineLocale({
     notSet: '未設定',
     soulDesc: 'このプロファイルに組み込まれたシステムプロンプトとペルソナの指示。',
     soulOptional: '省略可能',
-    soulPlaceholder: mode => `このプロファイルのシステムプロンプト / ペルソナ。\n空欄のままにすると ${mode} のデフォルトを使用します。`,
+    soulPlaceholder: mode =>
+      `このプロファイルのシステムプロンプト / ペルソナ。\n空欄のままにすると ${mode} のデフォルトを使用します。`,
     soulPlaceholderCloned: 'クローン済み',
     soulPlaceholderEmpty: '空',
     unsavedChanges: '未保存の変更',

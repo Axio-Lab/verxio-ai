@@ -188,37 +188,37 @@ export function ProfilesView({ onClose }: ProfilesViewProps) {
       )}
 
       <CreateProfileDialog
-          onClose={() => setCreateOpen(false)}
-          onCreate={async (name, cloneFromDefault) => handleCreate(name, cloneFromDefault)}
-          open={createOpen}
-        />
+        onClose={() => setCreateOpen(false)}
+        onCreate={async (name, cloneFromDefault) => handleCreate(name, cloneFromDefault)}
+        open={createOpen}
+      />
 
-        <Dialog onOpenChange={open => !open && !deleting && setPendingDelete(null)} open={pendingDelete !== null}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>{p.deleteTitle}</DialogTitle>
-              <DialogDescription>
-                {pendingDelete ? (
-                  <>
-                    {p.deleteDescPrefix}
-                    <span className="font-medium text-foreground">{pendingDelete.name}</span>
-                    {p.deleteDescMid}
-                    <span className="font-mono text-xs">{pendingDelete.path}</span>
-                    {p.deleteDescSuffix}
-                  </>
-                ) : null}
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button disabled={deleting} onClick={() => setPendingDelete(null)} variant="outline">
-                {t.common.cancel}
-              </Button>
-              <Button disabled={deleting} onClick={() => void handleConfirmDelete()} variant="destructive">
-                {deleting ? p.deleting : t.common.delete}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+      <Dialog onOpenChange={open => !open && !deleting && setPendingDelete(null)} open={pendingDelete !== null}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{p.deleteTitle}</DialogTitle>
+            <DialogDescription>
+              {pendingDelete ? (
+                <>
+                  {p.deleteDescPrefix}
+                  <span className="font-medium text-foreground">{pendingDelete.name}</span>
+                  {p.deleteDescMid}
+                  <span className="font-mono text-xs">{pendingDelete.path}</span>
+                  {p.deleteDescSuffix}
+                </>
+              ) : null}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button disabled={deleting} onClick={() => setPendingDelete(null)} variant="outline">
+              {t.common.cancel}
+            </Button>
+            <Button disabled={deleting} onClick={() => void handleConfirmDelete()} variant="destructive">
+              {deleting ? p.deleting : t.common.delete}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </OverlayView>
   )
 }

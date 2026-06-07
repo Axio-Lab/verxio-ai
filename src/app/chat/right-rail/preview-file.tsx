@@ -504,11 +504,7 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
 
     return (
       <PreviewEmptyState
-        body={
-          binary
-            ? t.preview.binaryBody(target.label)
-            : t.preview.largeBody(target.label, formatBytes(size))
-        }
+        body={binary ? t.preview.binaryBody(target.label) : t.preview.largeBody(target.label, formatBytes(size))}
         primaryAction={{ label: t.preview.previewAnyway, onClick: () => setForcePreview(true) }}
         title={binary ? t.preview.binaryTitle : t.preview.largeTitle}
         tone="warning"
@@ -550,10 +546,5 @@ export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; tar
     )
   }
 
-  return (
-    <PreviewEmptyState
-      body={t.preview.noInlineBody(target.mimeType || '')}
-      title={t.preview.noInlineTitle}
-    />
-  )
+  return <PreviewEmptyState body={t.preview.noInlineBody(target.mimeType || '')} title={t.preview.noInlineTitle} />
 }

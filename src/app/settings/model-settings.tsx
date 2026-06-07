@@ -342,9 +342,7 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
   return (
     <div className="grid gap-6">
       <section>
-        <p className="mb-3 text-xs text-muted-foreground">
-          {m.appliesDesc}
-        </p>
+        <p className="mb-3 text-xs text-muted-foreground">{m.appliesDesc}</p>
         <div className="flex flex-wrap items-center gap-2">
           <Select onValueChange={setSelectedProvider} value={selectedProvider}>
             <SelectTrigger className={cn('min-w-40', CONTROL_TEXT)}>
@@ -445,9 +443,7 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
             {m.resetAllToMain}
           </Button>
         </div>
-        <p className="mb-2 text-xs text-muted-foreground">
-          {m.auxiliaryDesc}
-        </p>
+        <p className="mb-2 text-xs text-muted-foreground">{m.auxiliaryDesc}</p>
         {switchStaleAux.length === 0 && persistentStaleAux.length > 0 && (
           <div className="mb-2.5">
             <StaleAuxWarning
@@ -537,9 +533,7 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
                 }
                 description={
                   <span className="font-mono text-[0.68rem]">
-                    {isAuto
-                      ? m.autoUseMain
-                      : `${current.provider} · ${current.model || m.providerDefault}`}
+                    {isAuto ? m.autoUseMain : `${current.provider} · ${current.model || m.providerDefault}`}
                   </span>
                 }
                 key={meta.key}

@@ -430,9 +430,7 @@ export function ChatSidebar({
 
       void Promise.resolve(onLoadMoreProfileSessions(profile))
         .catch(() => undefined)
-        .finally(() =>
-          setProfileLoadMorePending(({ [profile]: _done, ...rest }) => rest)
-        )
+        .finally(() => setProfileLoadMorePending(({ [profile]: _done, ...rest }) => rest))
     },
     [onLoadMoreProfileSessions]
   )
@@ -463,15 +461,17 @@ export function ChatSidebar({
       groups.set(key, group)
     }
 
-    return [...groups.values()]
-      .map(group => ({
-        ...group,
-        loadingMore: Boolean(profileLoadMorePending[group.id]),
-        onLoadMore: onLoadMoreProfileSessions ? () => loadMoreForProfileGroup(group.id) : undefined,
-        totalCount: Math.max(group.sessions.length, sessionProfileTotals[group.id] ?? 0)
-      }))
-      // default (root) first, then the rest alphabetically.
-      .sort((a, b) => (a.id === 'default' ? -1 : b.id === 'default' ? 1 : a.label.localeCompare(b.label)))
+    return (
+      [...groups.values()]
+        .map(group => ({
+          ...group,
+          loadingMore: Boolean(profileLoadMorePending[group.id]),
+          onLoadMore: onLoadMoreProfileSessions ? () => loadMoreForProfileGroup(group.id) : undefined,
+          totalCount: Math.max(group.sessions.length, sessionProfileTotals[group.id] ?? 0)
+        }))
+        // default (root) first, then the rest alphabetically.
+        .sort((a, b) => (a.id === 'default' ? -1 : b.id === 'default' ? 1 : a.label.localeCompare(b.label)))
+    )
   }, [
     showAllProfiles,
     agentSessions,
@@ -1065,7 +1065,11 @@ function SidebarWorkspaceGroup({
           type="button"
         >
           {group.color ? (
-            <span aria-hidden="true" className="size-2 shrink-0 rounded-full" style={{ backgroundColor: group.color }} />
+            <span
+              aria-hidden="true"
+              className="size-2 shrink-0 rounded-full"
+              style={{ backgroundColor: group.color }}
+            />
           ) : null}
           <span className="truncate">{group.label}</span>
           <SidebarCount>
@@ -1114,7 +1118,11 @@ function SidebarWorkspaceGroup({
           {renderRows(visibleSessions)}
           {hiddenCount > 0 &&
             (isProfileGroup ? (
-              <SidebarLoadMoreRow loading={Boolean(group.loadingMore)} onClick={handleProfileLoadMore} step={nextCount} />
+              <SidebarLoadMoreRow
+                loading={Boolean(group.loadingMore)}
+                onClick={handleProfileLoadMore}
+                step={nextCount}
+              />
             ) : (
               <Tip label={s.showMoreIn(nextCount, group.label)}>
                 <button

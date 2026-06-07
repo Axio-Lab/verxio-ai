@@ -56,40 +56,46 @@ export function SessionsSettings() {
     void load()
   }, [load])
 
-  const unarchive = useCallback(async (session: SessionInfo) => {
-    setBusyId(session.id)
+  const unarchive = useCallback(
+    async (session: SessionInfo) => {
+      setBusyId(session.id)
 
-    try {
-      await setSessionArchived(session.id, false, session.profile)
-      setLocalSessions(prev => prev.filter(s => s.id !== session.id))
-      // Surface it again in the sidebar without waiting for a full refresh.
-      setSessions(prev => [{ ...session, archived: false }, ...prev.filter(s => s.id !== session.id)])
-      triggerHaptic('selection')
-      notify({ durationMs: 2_000, kind: 'success', message: s.restored })
-    } catch (err) {
-      notifyError(err, s.unarchiveFailed)
-    } finally {
-      setBusyId(null)
-    }
-  }, [s])
+      try {
+        await setSessionArchived(session.id, false, session.profile)
+        setLocalSessions(prev => prev.filter(s => s.id !== session.id))
+        // Surface it again in the sidebar without waiting for a full refresh.
+        setSessions(prev => [{ ...session, archived: false }, ...prev.filter(s => s.id !== session.id)])
+        triggerHaptic('selection')
+        notify({ durationMs: 2_000, kind: 'success', message: s.restored })
+      } catch (err) {
+        notifyError(err, s.unarchiveFailed)
+      } finally {
+        setBusyId(null)
+      }
+    },
+    [s]
+  )
 
-  const remove = useCallback(async (session: SessionInfo) => {
-    if (!window.confirm(s.deleteConfirm(sessionTitle(session)))) {
-      return
-    }
+  const remove = useCallback(
+    async (session: SessionInfo) => {
+      if (!window.confirm(s.deleteConfirm(sessionTitle(session)))) {
+        return
+      }
 
-    setBusyId(session.id)
+      setBusyId(session.id)
 
-    try {
-      await deleteSession(session.id, session.profile)
-      setLocalSessions(prev => prev.filter(s => s.id !== session.id))
-      triggerHaptic('warning')
-    } catch (err) {
-      notifyError(err, s.deleteFailed)
-    } finally {
-      setBusyId(null)
-    }
-  }, [s])
+      try {
+        await deleteSession(session.id, session.profile)
+        setLocalSessions(prev => prev.filter(s => s.id !== session.id))
+        triggerHaptic('warning')
+      } catch (err) {
+        notifyError(err, s.deleteFailed)
+      } finally {
+        setBusyId(null)
+      }
+    },
+    [s]
+  )
 
   useDeepLinkHighlight({
     elementId: id => `archived-session-${id}`,

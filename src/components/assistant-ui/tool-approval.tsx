@@ -176,9 +176,7 @@ const ApprovalBar: FC<{ request: ApprovalRequest }> = ({ request }) => {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{copy.alwaysTitle}</DialogTitle>
-            <DialogDescription>
-              {copy.alwaysDescription(request.description)}
-            </DialogDescription>
+            <DialogDescription>{copy.alwaysDescription(request.description)}</DialogDescription>
           </DialogHeader>
 
           {request.command.trim() && (

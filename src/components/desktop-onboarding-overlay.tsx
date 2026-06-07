@@ -10,16 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Loader } from '@/components/ui/loader'
 import { getGlobalModelOptions } from '@/hermes'
 import { useI18n } from '@/i18n'
-import {
-  Check,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  ExternalLink,
-  KeyRound,
-  Loader2,
-  Terminal
-} from '@/lib/icons'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, KeyRound, Loader2, Terminal } from '@/lib/icons'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
 import { cn } from '@/lib/utils'
 import { $desktopBoot, type DesktopBootState } from '@/store/boot'
@@ -216,8 +207,7 @@ export function DesktopOnboardingOverlay({ enabled, onCompleted, requestGateway 
       return
     }
 
-    const reduce =
-      typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
     if (reduce) {
       confirmOnboardingModel(ctx)
@@ -517,13 +507,7 @@ function ChooseLaterLink() {
   const { t } = useI18n()
 
   return (
-    <Button
-      className="font-medium"
-      onClick={() => dismissFirstRunOnboarding()}
-      size="xs"
-      type="button"
-      variant="text"
-    >
+    <Button className="font-medium" onClick={() => dismissFirstRunOnboarding()} size="xs" type="button" variant="text">
       {t.onboarding.chooseLater}
     </Button>
   )
@@ -707,13 +691,7 @@ export function ApiKeyForm({
   return (
     <div className="grid gap-4">
       {canGoBack ? (
-        <Button
-          className="-mt-1 self-start font-medium"
-          onClick={onBack}
-          size="xs"
-          type="button"
-          variant="text"
-        >
+        <Button className="-mt-1 self-start font-medium" onClick={onBack} size="xs" type="button" variant="text">
           <ChevronLeft className="size-3" />
           {t.onboarding.backToSignIn}
         </Button>
@@ -802,9 +780,7 @@ function FlowPanel({
   }
 
   if (flow.status === 'success') {
-    return (
-      <DecodedLabel text={t.onboarding.connectedPicking(title)} />
-    )
+    return <DecodedLabel text={t.onboarding.connectedPicking(title)} />
   }
 
   if (flow.status === 'confirming_model') {

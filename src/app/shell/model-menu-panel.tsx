@@ -97,12 +97,7 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
 
   return (
     <>
-      <DropdownMenuSearch
-        aria-label={copy.search}
-        onValueChange={setSearch}
-        placeholder={copy.search}
-        value={search}
-      />
+      <DropdownMenuSearch aria-label={copy.search} onValueChange={setSearch} placeholder={copy.search} value={search} />
 
       <DropdownMenuSeparator className="mx-0" />
 

@@ -114,10 +114,7 @@ function statusGlyph(status: ToolStatus, copy: ToolStatusCopy): ReactNode {
 
   if (status === 'warning') {
     return (
-      <AlertCircle
-        aria-label={copy.statusRecovered}
-        className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400"
-      />
+      <AlertCircle aria-label={copy.statusRecovered} className="size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
     )
   }
 

@@ -13,13 +13,7 @@ export const KEYBIND_PANEL_ACTION = 'keybinds.openPanel'
 
 // `composer` is read-only; the rest are rebindable. `view` is the catch-all for
 // layout, appearance, and the panel-opener.
-export const KEYBIND_CATEGORIES: readonly KeybindCategory[] = [
-  'composer',
-  'profiles',
-  'session',
-  'navigation',
-  'view'
-]
+export const KEYBIND_CATEGORIES: readonly KeybindCategory[] = ['composer', 'profiles', 'session', 'navigation', 'view']
 
 export interface KeybindActionMeta {
   id: string

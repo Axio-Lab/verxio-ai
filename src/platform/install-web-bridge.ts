@@ -96,10 +96,7 @@ function authHeaders(): HeadersInit {
   return token ? { Authorization: `Bearer ${token}` } : {}
 }
 
-async function fetchJson<T>(
-  url: string,
-  init: RequestInit & { timeoutMs?: number } = {}
-): Promise<T> {
+async function fetchJson<T>(url: string, init: RequestInit & { timeoutMs?: number } = {}): Promise<T> {
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), init.timeoutMs ?? 30_000)
   try {
@@ -145,9 +142,7 @@ async function waitForDashboardReady(): Promise<void> {
     }
     await new Promise(resolve => window.setTimeout(resolve, 500))
   }
-  throw new Error(
-    'Hermes dashboard is not reachable. Start it with: hermes dashboard --no-open'
-  )
+  throw new Error('Hermes dashboard is not reachable. Start it with: hermes dashboard --no-open')
 }
 
 async function getConnection(): Promise<HermesConnection> {

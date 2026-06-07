@@ -105,24 +105,27 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
   const platformIds = useMemo(() => platforms?.map(p => p.id) ?? [], [platforms])
   const [selectedId, setSelectedId] = useRouteEnumParam('platform', platformIds, platformIds[0] ?? '')
 
-  const refreshPlatforms = useCallback(async (silent = false) => {
-    if (!silent) {
-      setRefreshing(true)
-    }
+  const refreshPlatforms = useCallback(
+    async (silent = false) => {
+      if (!silent) {
+        setRefreshing(true)
+      }
 
-    try {
-      const result = await getMessagingPlatforms()
-      setPlatforms(result.platforms)
-    } catch (err) {
-      if (!silent) {
-        notifyError(err, m.loadFailed)
+      try {
+        const result = await getMessagingPlatforms()
+        setPlatforms(result.platforms)
+      } catch (err) {
+        if (!silent) {
+          notifyError(err, m.loadFailed)
+        }
+      } finally {
+        if (!silent) {
+          setRefreshing(false)
+        }
       }
-    } finally {
-      if (!silent) {
-        setRefreshing(false)
-      }
-    }
-  }, [m])
+    },
+    [m]
+  )
 
   useRefreshHotkey(() => void refreshPlatforms())
 

@@ -39,12 +39,7 @@ export function CronJobActionsMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
-      <DropdownMenuContent
-        align={align}
-        aria-label={c.actionsFor(title)}
-        className="w-44"
-        sideOffset={sideOffset}
-      >
+      <DropdownMenuContent align={align} aria-label={c.actionsFor(title)} className="w-44" sideOffset={sideOffset}>
         <DropdownMenuItem
           disabled={busy}
           onSelect={() => {

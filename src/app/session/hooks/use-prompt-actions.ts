@@ -484,17 +484,9 @@ export function usePromptActions({
             })
 
             const body = result?.output || `/${name}: model switched`
-            appendSessionTextMessage(
-              sid,
-              'system',
-              recordInput ? slashStatusText(command, body) : body
-            )
+            appendSessionTextMessage(sid, 'system', recordInput ? slashStatusText(command, body) : body)
           } catch (err) {
-            appendSessionTextMessage(
-              sid,
-              'system',
-              `error: ${err instanceof Error ? err.message : String(err)}`
-            )
+            appendSessionTextMessage(sid, 'system', `error: ${err instanceof Error ? err.message : String(err)}`)
           }
 
           return
@@ -760,13 +752,8 @@ export function usePromptActions({
     // body text is dropped entirely so we never leave an empty bubble behind.
     const finalizeMessages = (messages: ChatMessage[], streamId?: string | null) =>
       messages
-        .filter(
-          message =>
-            !((message.pending || message.id === streamId) && !chatMessageText(message).trim())
-        )
-        .map(message =>
-          message.pending || message.id === streamId ? { ...message, pending: false } : message
-        )
+        .filter(message => !((message.pending || message.id === streamId) && !chatMessageText(message).trim()))
+        .map(message => (message.pending || message.id === streamId ? { ...message, pending: false } : message))
 
     if (!sessionId) {
       setMutableRef(busyRef, false)

@@ -372,7 +372,9 @@ function SubagentRow({ node, depth = 0, nowMs }: { node: SubagentNode; depth?: n
 
       {open && fileLines.length > 0 ? (
         <div className="grid min-w-0 gap-0.5 pl-6">
-          <p className="text-[0.58rem] font-medium tracking-wider text-muted-foreground/60 uppercase">{t.agents.files}</p>
+          <p className="text-[0.58rem] font-medium tracking-wider text-muted-foreground/60 uppercase">
+            {t.agents.files}
+          </p>
           {fileLines.slice(0, 8).map(line => (
             <p className="wrap-break-word font-mono text-[0.67rem] leading-relaxed text-muted-foreground/80" key={line}>
               {line}

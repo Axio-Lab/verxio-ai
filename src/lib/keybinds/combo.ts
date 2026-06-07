@@ -5,8 +5,7 @@
 // both. We derive the base key from `event.code` (not `event.key`) so Shift never
 // mutates it ("shift+/" stays "shift+/" instead of becoming "shift+?").
 
-export const IS_MAC =
-  typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent || '')
+export const IS_MAC = typeof navigator !== 'undefined' && /mac/i.test(navigator.platform || navigator.userAgent || '')
 
 // event.code → canonical base token. Letters/digits map to their lowercase
 // character; everything else uses an explicit name so combos read cleanly.
@@ -156,9 +155,9 @@ export function isEditableTarget(target: EventTarget | null): boolean {
 
   return Boolean(
     el?.isContentEditable ||
-      el instanceof HTMLInputElement ||
-      el instanceof HTMLTextAreaElement ||
-      el instanceof HTMLSelectElement
+    el instanceof HTMLInputElement ||
+    el instanceof HTMLTextAreaElement ||
+    el instanceof HTMLSelectElement
   )
 }
 

@@ -28,7 +28,12 @@ import {
   unpinSession
 } from '../store/layout'
 import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab } from '../store/preview'
-import { $activeGatewayProfile, $freshSessionRequest, normalizeProfileKey, refreshActiveProfile } from '../store/profile'
+import {
+  $activeGatewayProfile,
+  $freshSessionRequest,
+  normalizeProfileKey,
+  refreshActiveProfile
+} from '../store/profile'
 import {
   $activeSessionId,
   $currentCwd,
@@ -265,7 +270,10 @@ export function DesktopController() {
     const result = await listAllProfileSessions(loaded + SIDEBAR_SESSIONS_PAGE_SIZE, 1, 'exclude', 'recent', key)
     const keep = sessionsToKeep(key)
 
-    setSessions(prev => [...prev.filter(s => !inKey(s)), ...mergeSessionPage(prev.filter(inKey), result.sessions, keep)])
+    setSessions(prev => [
+      ...prev.filter(s => !inKey(s)),
+      ...mergeSessionPage(prev.filter(inKey), result.sessions, keep)
+    ])
 
     const total = result.profile_totals?.[key] ?? result.total ?? result.sessions.length
     setSessionProfileTotals(prev => ({ ...prev, [key]: Math.max(total, result.sessions.length) }))
@@ -526,19 +534,19 @@ export function DesktopController() {
     submitText,
     transcribeVoiceAudio
   } = usePromptActions({
-      activeSessionId,
-      activeSessionIdRef,
-      branchCurrentSession: branchInNewChat,
-      busyRef,
-      createBackendSessionForSend,
-      handleSkinCommand,
-      refreshSessions,
-      requestGateway,
-      selectedStoredSessionIdRef,
-      startFreshSessionDraft,
-      sttEnabled,
-      updateSessionState
-    })
+    activeSessionId,
+    activeSessionIdRef,
+    branchCurrentSession: branchInNewChat,
+    busyRef,
+    createBackendSessionForSend,
+    handleSkinCommand,
+    refreshSessions,
+    requestGateway,
+    selectedStoredSessionIdRef,
+    startFreshSessionDraft,
+    sttEnabled,
+    updateSessionState
+  })
 
   useGatewayBoot({
     handleGatewayEvent: handleDesktopGatewayEvent,
