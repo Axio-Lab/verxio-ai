@@ -11,6 +11,7 @@ import { Loader } from '@/components/ui/loader'
 import { getGlobalModelOptions } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { Check, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, KeyRound, Loader2, Terminal } from '@/lib/icons'
+import { useDecoded } from '@/lib/decoded-text'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
 import { cn } from '@/lib/utils'
 import { $desktopBoot, type DesktopBootState } from '@/store/boot'
@@ -961,19 +962,11 @@ function CancelBtn({ size = 'default' }: { size?: 'default' | 'sm' }) {
   )
 }
 
-// Borrowed from the gateway "connecting" overlay: a mono, letter-spaced label
-// that decodes left-to-right from scrambled glyphs into the real text, with a
-// blinking block cursor. Ties onboarding's success moment to that same motif.
 // Cuneiform glyphs (array, since each is a surrogate pair) for the scramble.
-// Hero "X CONNECTED" decode uses the SAME ascii map as the connecting overlay.
-const ASCII_GLYPHS = [...'/\\|-_=+<>~:*']
-const pickAscii = () => ASCII_GLYPHS[(Math.random() * ASCII_GLYPHS.length) | 0]
 // Cuneiform is reserved for the subtle "other text" (model name + BEGIN) easter egg.
 const SCRAMBLE_GLYPHS = [...'𒀀𒀁𒀂𒀅𒀊𒀖𒀜𒀭𒀲𒀸𒁀𒁉𒁒𒁕𒁹𒂊𒃻𒄆𒄴𒅀𒆍𒇽𒈨𒉡']
 const GLYPH_SET = new Set(SCRAMBLE_GLYPHS)
 const pickGlyph = () => SCRAMBLE_GLYPHS[(Math.random() * SCRAMBLE_GLYPHS.length) | 0]
-// How many trailing characters of each word scramble during decode-in.
-const DECODE_TAIL = 4
 
 // Renders text where cuneiform scramble-glyphs are dropped to a smaller em-size
 // (resolved Latin chars stay full size) — keeps the easter-egg glyphs subtle.
@@ -991,63 +984,6 @@ function GlyphText({ text }: { text: string }) {
       )}
     </>
   )
-}
-
-function useDecoded(text: string): string {
-  const [out, setOut] = useState(text)
-
-  useEffect(() => {
-    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-      setOut(text)
-
-      return
-    }
-
-    // Each WORD keeps its head static and only churns its tail (last few chars),
-    // resolving left-to-right across all tails — same anchor-the-prefix trick the
-    // connecting overlay uses ("CONN" static, "ECTING" churns), applied per word
-    // so both the provider and "CONNECTED" decode and time stays constant.
-    const chars = [...text]
-    const scrambleable = chars.map(() => false)
-
-    for (let i = 0; i < chars.length; ) {
-      if (!/[a-z0-9]/i.test(chars[i])) {
-        i += 1
-
-        continue
-      }
-
-      let j = i
-
-      while (j < chars.length && /[a-z0-9]/i.test(chars[j])) {
-        j += 1
-      }
-
-      for (let k = Math.max(i, j - DECODE_TAIL); k < j; k += 1) {
-        scrambleable[k] = true
-      }
-
-      i = j
-    }
-
-    const tailIndices = chars.map((_, idx) => idx).filter(idx => scrambleable[idx])
-    let resolved = 0
-
-    const id = window.setInterval(() => {
-      resolved += 0.5
-      const settled = new Set(tailIndices.slice(0, Math.floor(resolved)))
-
-      setOut(chars.map((ch, idx) => (scrambleable[idx] && !settled.has(idx) ? pickAscii() : ch)).join(''))
-
-      if (Math.floor(resolved) >= tailIndices.length) {
-        window.clearInterval(id)
-      }
-    }, 45)
-
-    return () => window.clearInterval(id)
-  }, [text])
-
-  return out
 }
 
 // Continuously scrambles alphanumeric chars while `active` (used on exit so the

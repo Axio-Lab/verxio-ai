@@ -396,13 +396,25 @@ export function installWebBridge(): void {
     revealLogs: async () => ({ ok: false, path: '', error: 'Logs are on the Verxio host machine.' }),
     getRecentLogs: async () => ({ path: '', lines: [] }),
     readDir: async (dirPath: string) => {
-      void dirPath
-      return {
-        entries: [],
-        error: 'Directory browsing requires the Verxio desktop app or a future web API.'
-      } satisfies HermesReadDirResult
+      try {
+        const params = new URLSearchParams({ path: dirPath })
+        return await fetchJson<HermesReadDirResult>(buildApiUrl(`/api/fs/readdir?${params.toString()}`))
+      } catch (error) {
+        return {
+          entries: [],
+          error: error instanceof Error ? error.message : 'read-error'
+        } satisfies HermesReadDirResult
+      }
     },
-    gitRoot: async () => null,
+    gitRoot: async (startPath: string) => {
+      try {
+        const params = new URLSearchParams({ path: startPath })
+        const result = await fetchJson<{ root: string | null }>(buildApiUrl(`/api/fs/git-root?${params.toString()}`))
+        return result.root
+      } catch {
+        return null
+      }
+    },
     terminal: {
       start: async (options = {}) => {
         const id = crypto.randomUUID()

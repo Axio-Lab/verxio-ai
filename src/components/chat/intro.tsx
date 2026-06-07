@@ -1,4 +1,4 @@
-import { type CSSProperties, useState } from 'react'
+import { type CSSProperties, useEffect, useMemo, useState } from 'react'
 
 import introCopyJsonl from './intro-copy.jsonl?raw'
 
@@ -17,6 +17,7 @@ export type IntroProps = {
 }
 
 const NEUTRAL_PERSONALITIES = new Set(['', 'default', 'none', 'neutral'])
+const INTRO_ROTATE_MS = 8_000
 
 const FALLBACK_COPY: IntroCopy[] = [
   {
@@ -138,25 +139,49 @@ function fallbackCopyForPersonality(personalityKey: string): IntroCopy[] {
   ]
 }
 
-function pickCopy(copies: IntroCopy[], seed = 0): IntroCopy {
-  return copies[Math.abs(seed) % copies.length] || FALLBACK_COPY[0]
+function copiesForPersonality(personality?: string): IntroCopy[] {
+  const personalityKey = normalizeKey(personality)
+
+  if (NEUTRAL_PERSONALITIES.has(personalityKey)) {
+    return INTRO_COPY_BY_PERSONALITY[personalityKey] || neutralCopy()
+  }
+
+  return INTRO_COPY_BY_PERSONALITY[personalityKey] || fallbackCopyForPersonality(personalityKey)
+}
+
+function startIndex(copies: IntroCopy[], seed: number): number {
+  if (!copies.length) {
+    return 0
+  }
+
+  return Math.abs(seed) % copies.length
 }
 
 const WORDMARK = 'VERXIO'
 
-function resolveCopy(personality?: string, seed?: number): IntroCopy {
-  const personalityKey = normalizeKey(personality)
-
-  const copies = NEUTRAL_PERSONALITIES.has(personalityKey)
-    ? INTRO_COPY_BY_PERSONALITY[personalityKey] || neutralCopy()
-    : INTRO_COPY_BY_PERSONALITY[personalityKey] || fallbackCopyForPersonality(personalityKey)
-
-  return pickCopy(copies, seed)
-}
-
 export function Intro({ personality, seed }: IntroProps) {
   const [mountSeed] = useState(() => Math.floor(Math.random() * 100000))
-  const copy = resolveCopy(personality, mountSeed + (seed ?? 0))
+  const copies = useMemo(() => copiesForPersonality(personality), [personality])
+  const combinedSeed = mountSeed + (seed ?? 0)
+  const [index, setIndex] = useState(() => startIndex(copies, combinedSeed))
+
+  useEffect(() => {
+    setIndex(startIndex(copies, combinedSeed))
+  }, [combinedSeed, copies])
+
+  useEffect(() => {
+    if (copies.length <= 1) {
+      return
+    }
+
+    const id = window.setInterval(() => {
+      setIndex(current => (current + 1) % copies.length)
+    }, INTRO_ROTATE_MS)
+
+    return () => window.clearInterval(id)
+  }, [copies.length])
+
+  const body = copies[index]?.body ?? FALLBACK_COPY[0].body
 
   return (
     <div
@@ -175,7 +200,9 @@ export function Intro({ personality, seed }: IntroProps) {
           <span aria-hidden="true">{WORDMARK}</span>
         </p>
 
-        <p className="m-0 text-center leading-normal tracking-tight">{copy.body}</p>
+        <p aria-live="polite" className="m-0 text-center leading-normal tracking-tight">
+          {body}
+        </p>
       </div>
     </div>
   )
