@@ -553,6 +553,7 @@ export function ChatSidebar({
                   (item.id === 'artifacts' && currentView === 'artifacts')
 
                 const isNewSession = item.id === 'new-session'
+                const navLabel = s.nav[item.id] ?? item.label
 
                 return (
                   <SidebarMenuItem key={item.id}>
@@ -576,17 +577,11 @@ export function ChatSidebar({
 
                         onNavigate(item)
                       }}
-                      tooltip={s.nav[item.id] ?? item.label}
+                      tooltip={navLabel}
                       type="button"
                     >
                       <item.icon className="size-4 shrink-0 text-[color-mix(in_srgb,currentColor_72%,transparent)]" />
-                      {sidebarOpen && (
-                        <>
-                          <span className="min-w-0 flex-1 truncate max-[46.25rem]:hidden">
-                            {s.nav[item.id] ?? item.label}
-                          </span>
-                        </>
-                      )}
+                      {sidebarOpen && <span className="min-w-0 flex-1 truncate">{navLabel}</span>}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 )
