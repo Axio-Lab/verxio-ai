@@ -12,6 +12,7 @@ import {
   submitOAuthCode,
   validateProviderCredential
 } from '@/hermes'
+import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
 import { evaluateRuntimeReadiness, type RuntimeReadinessResult } from '@/lib/runtime-readiness'
 import { notify, notifyError } from '@/store/notifications'
 import type { ModelOptionProvider, OAuthProvider, OAuthStartResponse } from '@/types/hermes'
@@ -489,7 +490,10 @@ export async function refreshOnboarding(ctx: OnboardingContext) {
   }
 
   const state = $desktopOnboarding.get()
-  const reason = runtime.reason || state.reason || DEFAULT_ONBOARDING_REASON
+  const rawReason = runtime.reason || state.reason || DEFAULT_ONBOARDING_REASON
+  // Stale or broken credentials (e.g. expired Codex tokens) are expected on
+  // first-run — the picker is the fix. Don't surface backend diagnostics here.
+  const reason = isProviderSetupErrorMessage(rawReason) ? DEFAULT_ONBOARDING_REASON : rawReason
 
   writeCachedConfigured(false)
   patch({ configured: false, reason })

@@ -136,7 +136,7 @@ async function waitForDashboardReady(): Promise<void> {
   const deadline = Date.now() + 30_000
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(buildApiUrl('/api/health'), { headers: authHeaders() })
+      const res = await fetch(buildApiUrl('/api/status'))
       if (res.ok) {
         return
       }
@@ -248,11 +248,11 @@ export function installWebBridge(): void {
         return { ok: false, baseUrl: '', version: null } satisfies DesktopConnectionTestResult
       }
       try {
-        const health = await fetchJson<{ version?: string }>(`${url.replace(/\/$/, '')}/api/health`)
+        const status = await fetchJson<{ version?: string }>(`${url.replace(/\/$/, '')}/api/status`)
         return {
           ok: true,
           baseUrl: url,
-          version: health?.version ?? null
+          version: status?.version ?? null
         }
       } catch {
         return { ok: false, baseUrl: url, version: null }
@@ -261,13 +261,16 @@ export function installWebBridge(): void {
     probeConnectionConfig: async (remoteUrl: string) => {
       const baseUrl = remoteUrl.replace(/\/$/, '')
       try {
-        await fetch(`${baseUrl}/api/health`)
+        const status = await fetchJson<{
+          auth_required?: boolean
+          version?: string
+        }>(`${baseUrl}/api/status`)
         return {
           baseUrl,
           reachable: true,
-          authMode: 'token',
+          authMode: status.auth_required ? 'oauth' : 'token',
           providers: [],
-          version: null,
+          version: status.version ?? null,
           error: null
         } satisfies DesktopConnectionProbeResult
       } catch (error) {
