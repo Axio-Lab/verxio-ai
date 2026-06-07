@@ -1140,6 +1140,16 @@ export interface Translations {
     }
   }
 
+  folderAccess: {
+    title: string
+    body: string
+    allow: string
+    cancel: string
+    unsupportedTitle: string
+    unsupportedBody: string
+    dismiss: string
+  }
+
   rightSidebar: {
     aria: string
     panelsAria: string

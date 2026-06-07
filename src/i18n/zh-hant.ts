@@ -1523,6 +1523,16 @@ export const zhHant = defineLocale({
     }
   },
 
+  folderAccess: {
+    title: '存取您電腦上的資料夾',
+    body: 'Verxio 將讀取並瀏覽您選擇的資料夾中的檔案。接著瀏覽器會請您選擇資料夾。檔案不會上傳，始終保留在您的裝置上。',
+    allow: '繼續',
+    cancel: '暫不',
+    unsupportedTitle: '不支援資料夾存取',
+    unsupportedBody: '目前瀏覽器無法授予本機資料夾存取權限。請使用 Chrome 或 Edge 在 Verxio Web 中瀏覽本機檔案。',
+    dismiss: '知道了'
+  },
+
   rightSidebar: {
     aria: '右側邊欄',
     panelsAria: '右側邊欄面板',
@@ -1537,7 +1547,7 @@ export const zhHant = defineLocale({
     previewUnavailable: '預覽不可用',
     couldNotPreview: path => `無法預覽 ${path}`,
     noProjectTitle: '沒有專案',
-    noProjectBody: '從狀態列設定工作目錄後即可瀏覽檔案。',
+    noProjectBody: '點擊「開啟資料夾」以選擇本機上的專案目錄。',
     unreadableTitle: '無法讀取',
     unreadableBody: error => `無法讀取此資料夾 (${error})。`,
     emptyTitle: '空資料夾',
@@ -1674,7 +1684,7 @@ export const zhHant = defineLocale({
       loadingQuestion: '正在載入問題…',
       other: '其他（輸入您的答案）',
       placeholder: '輸入您的答案…',
-      shortcut: '⌘/Ctrl + Enter 傳送',
+      shortcut: '傳送',
       back: '返回',
       skip: '略過',
       send: '傳送'

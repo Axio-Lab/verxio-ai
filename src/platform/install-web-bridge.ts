@@ -1,3 +1,11 @@
+import {
+  isWebLocalPath,
+  pickBrowserLocalFolder,
+  readWebLocalDir,
+  readWebLocalFileText,
+  restoreRootHandle
+} from '@/lib/web-local-fs'
+
 import type {
   BackendExit,
   DesktopActiveProfile,
@@ -205,6 +213,18 @@ async function fetchJson<T>(url: string, init: RequestInit & { timeoutMs?: numbe
   }
 
   return (await res.json()) as T
+}
+
+async function pickDirectoryPaths(): Promise<string[]> {
+  const browserPath = await pickBrowserLocalFolder()
+
+  if (!browserPath) {
+    return []
+  }
+
+  localStorage.setItem(DEFAULT_PROJECT_DIR_KEY, browserPath)
+
+  return [browserPath]
 }
 
 function emitBoot(patch: Partial<DesktopBootProgress>) {
@@ -431,6 +451,12 @@ export function installWebBridge(): void {
       throw new Error('File preview is not available in Verxio Web yet.')
     },
     readFileText: async (filePath: string) => {
+      const local = await readWebLocalFileText(filePath)
+
+      if (local) {
+        return local
+      }
+
       return {
         path: filePath,
         text: '',
@@ -438,7 +464,26 @@ export function installWebBridge(): void {
       } satisfies HermesReadFileTextResult
     },
     selectPaths: async (options?: HermesSelectPathsOptions) => {
-      void options
+      if (options?.directories) {
+        return pickDirectoryPaths()
+      }
+
+      if ('showOpenFilePicker' in window) {
+        try {
+          const handles = await (
+            window as Window & {
+              showOpenFilePicker: (opts?: { multiple?: boolean }) => Promise<FileSystemFileHandle[]>
+            }
+          ).showOpenFilePicker({ multiple: Boolean(options?.multiple) })
+
+          return handles.map(handle => handle.name)
+        } catch (error) {
+          if (error instanceof DOMException && error.name === 'AbortError') {
+            return []
+          }
+        }
+      }
+
       return []
     },
     writeClipboard: async (text: string) => {
@@ -473,7 +518,15 @@ export function installWebBridge(): void {
         defaultLabel: 'Project directory',
         dir: localStorage.getItem(DEFAULT_PROJECT_DIR_KEY)
       }),
-      pickDefaultProjectDir: async () => ({ canceled: true, dir: null }),
+      pickDefaultProjectDir: async () => {
+        const paths = await pickDirectoryPaths()
+
+        if (!paths[0]) {
+          return { canceled: true, dir: null }
+        }
+
+        return { canceled: false, dir: paths[0] }
+      },
       setDefaultProjectDir: async (dir: string | null) => {
         if (dir) {
           localStorage.setItem(DEFAULT_PROJECT_DIR_KEY, dir)
@@ -486,6 +539,10 @@ export function installWebBridge(): void {
     revealLogs: async () => ({ ok: false, path: '', error: 'Logs are on the Verxio host machine.' }),
     getRecentLogs: async () => ({ path: '', lines: [] }),
     readDir: async (dirPath: string) => {
+      if (isWebLocalPath(dirPath)) {
+        return readWebLocalDir(dirPath)
+      }
+
       const params = new URLSearchParams({ path: dirPath })
       const url = buildApiUrl(`/api/fs/readdir?${params.toString()}`)
 
@@ -676,6 +733,14 @@ export function installWebBridge(): void {
       onProgress: () => () => undefined
     }
   }
+
+  void (async () => {
+    const saved = localStorage.getItem(DEFAULT_PROJECT_DIR_KEY)
+
+    if (saved && isWebLocalPath(saved)) {
+      await restoreRootHandle()
+    }
+  })()
 
   void waitForDashboardReady()
     .then(() => {

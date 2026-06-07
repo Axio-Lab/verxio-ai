@@ -8,7 +8,7 @@ import { useI18n } from '@/i18n'
 import { Loader } from '@/components/ui/loader'
 import { Tip } from '@/components/ui/tooltip'
 import { normalizeOrLocalPreviewTarget } from '@/lib/local-preview'
-import { isVerxioWeb } from '@/lib/platform'
+import { ensureWebLocalFolderAccess, isWebLocalPath } from '@/lib/web-local-fs'
 import { cn } from '@/lib/utils'
 import { $panesFlipped } from '@/store/layout'
 import { notifyError } from '@/store/notifications'
@@ -69,15 +69,7 @@ export function RightSidebarPane({ onActivateFile, onActivateFolder, onChangeCwd
   } = useProjectTree(currentCwd)
 
   const canCollapse = Object.values(openState).some(Boolean)
-  const webMode = isVerxioWeb()
-
-  const effectiveTab: RightSidebarTabId = terminalTakeover
-    ? webMode
-      ? 'terminal'
-      : 'files'
-    : webMode
-      ? 'terminal'
-      : activeTab
+  const effectiveTab: RightSidebarTabId = terminalTakeover ? 'files' : activeTab
 
   const chooseFolder = async () => {
     const selected = await window.hermesDesktop?.selectPaths({
@@ -90,6 +82,18 @@ export function RightSidebarPane({ onActivateFile, onActivateFolder, onChangeCwd
     if (selected?.[0]) {
       await onChangeCwd(selected[0])
     }
+  }
+
+  const refreshFolder = async () => {
+    if (isWebLocalPath(currentCwd)) {
+      const allowed = await ensureWebLocalFolderAccess()
+
+      if (!allowed) {
+        return
+      }
+    }
+
+    await refreshRoot()
   }
 
   const previewFile = async (path: string) => {
@@ -106,11 +110,7 @@ export function RightSidebarPane({ onActivateFile, onActivateFolder, onChangeCwd
     }
   }
 
-  const tabs = webMode
-    ? RIGHT_SIDEBAR_TABS.filter(tab => tab.id === 'terminal')
-    : terminalTakeover
-      ? RIGHT_SIDEBAR_TABS.filter(tab => tab.id !== 'terminal')
-      : RIGHT_SIDEBAR_TABS
+  const tabs = terminalTakeover ? RIGHT_SIDEBAR_TABS.filter(tab => tab.id !== 'terminal') : RIGHT_SIDEBAR_TABS
 
   return (
     <aside
@@ -143,7 +143,7 @@ export function RightSidebarPane({ onActivateFile, onActivateFolder, onChangeCwd
           onLoadChildren={loadChildren}
           onNodeOpenChange={setNodeOpen}
           onPreviewFile={previewFile}
-          onRefresh={() => void refreshRoot()}
+          onRefresh={() => void refreshFolder()}
           openState={openState}
         />
       )}
@@ -290,6 +290,7 @@ function FilesystemTab({
         loading={loading}
         onActivateFile={onActivateFile}
         onActivateFolder={onActivateFolder}
+        onChangeFolder={onChangeFolder}
         onLoadChildren={onLoadChildren}
         onNodeOpenChange={onNodeOpenChange}
         onPreviewFile={onPreviewFile}
@@ -311,6 +312,7 @@ interface FileTreeBodyProps {
   loading: boolean
   onActivateFile: (path: string) => void
   onActivateFolder: (path: string) => void
+  onChangeFolder: () => Promise<void> | void
   onLoadChildren: (id: string) => void | Promise<void>
   onNodeOpenChange: (id: string, open: boolean) => void
   onPreviewFile?: (path: string) => void
@@ -325,6 +327,7 @@ function FileTreeBody({
   loading,
   onActivateFile,
   onActivateFolder,
+  onChangeFolder,
   onLoadChildren,
   onNodeOpenChange,
   onPreviewFile,
@@ -334,7 +337,14 @@ function FileTreeBody({
   const r = t.rightSidebar
 
   if (!cwd) {
-    return <EmptyState body={r.noProjectBody} title={r.noProjectTitle} />
+    return (
+      <EmptyState
+        actionLabel={r.openFolder}
+        body={r.noProjectBody}
+        onAction={() => void onChangeFolder()}
+        title={r.noProjectTitle}
+      />
+    )
   }
 
   if (error) {
@@ -398,11 +408,26 @@ function FileTreeLoadingState() {
   )
 }
 
-function EmptyState({ body, title }: { body: string; title: string }) {
+function EmptyState({
+  actionLabel,
+  body,
+  onAction,
+  title
+}: {
+  actionLabel?: string
+  body: string
+  onAction?: () => void
+  title: string
+}) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-4 text-center">
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-4 text-center">
       <div className="text-[0.7rem] font-semibold uppercase tracking-[0.07em] text-muted-foreground/75">{title}</div>
       <div className="text-[0.68rem] leading-relaxed text-muted-foreground/65">{body}</div>
+      {onAction && actionLabel ? (
+        <Button onClick={onAction} size="sm" variant="secondary">
+          {actionLabel}
+        </Button>
+      ) : null}
     </div>
   )
 }

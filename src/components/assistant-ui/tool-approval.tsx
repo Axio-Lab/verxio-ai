@@ -93,7 +93,7 @@ const ApprovalBar: FC<{ request: ApprovalRequest }> = ({ request }) => {
     [busy, gateway, request.sessionId]
   )
 
-  // ⌘/Ctrl+Enter → Run, Esc → Reject.
+  // Mod+Enter → Run, Esc → Reject.
   // While the confirm dialog is open it owns the keyboard (Esc closes it), so
   // the strip-level shortcuts stand down to avoid denying the whole approval.
   useEffect(() => {

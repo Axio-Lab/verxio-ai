@@ -1609,6 +1609,16 @@ export const zh: Translations = {
     }
   },
 
+  folderAccess: {
+    title: '访问您电脑上的文件夹',
+    body: 'Verxio 将读取并浏览您选择的文件夹中的文件。随后浏览器会请您选择具体文件夹。文件不会上传，始终保留在您的设备上。',
+    allow: '继续',
+    cancel: '暂不',
+    unsupportedTitle: '不支持文件夹访问',
+    unsupportedBody: '当前浏览器无法授予本地文件夹访问权限。请使用 Chrome 或 Edge 在 Verxio Web 中浏览本机文件。',
+    dismiss: '知道了'
+  },
+
   rightSidebar: {
     aria: '右侧边栏',
     panelsAria: '右侧边栏面板',
@@ -1623,7 +1633,7 @@ export const zh: Translations = {
     previewUnavailable: '预览不可用',
     couldNotPreview: path => `无法预览 ${path}`,
     noProjectTitle: '没有项目',
-    noProjectBody: '从状态栏设置工作目录后即可浏览文件。',
+    noProjectBody: '点击“打开文件夹”以选择本机上的项目目录。',
     unreadableTitle: '无法读取',
     unreadableBody: error => `无法读取此文件夹 (${error})。`,
     emptyTitle: '空文件夹',
@@ -1760,7 +1770,7 @@ export const zh: Translations = {
       loadingQuestion: '正在加载问题…',
       other: '其他 (输入你的答案)',
       placeholder: '输入你的答案…',
-      shortcut: '⌘/Ctrl + Enter 发送',
+      shortcut: '发送',
       back: '返回',
       skip: '跳过',
       send: '发送'

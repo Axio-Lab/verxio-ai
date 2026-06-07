@@ -1467,6 +1467,17 @@ export const en: Translations = {
     }
   },
 
+  folderAccess: {
+    title: 'Access a folder on your computer',
+    body: 'Verxio will read and browse files in the folder you choose. Your browser will then ask you to pick the folder. Nothing is uploaded — files stay on your device.',
+    allow: 'Continue',
+    cancel: 'Not now',
+    unsupportedTitle: 'Folder access not supported',
+    unsupportedBody:
+      'Your browser cannot grant local folder access. Use Chrome or Edge to browse files from your computer in Verxio Web.',
+    dismiss: 'OK'
+  },
+
   rightSidebar: {
     aria: 'Right sidebar',
     panelsAria: 'Right sidebar panels',
@@ -1481,7 +1492,7 @@ export const en: Translations = {
     previewUnavailable: 'Preview unavailable',
     couldNotPreview: path => `Could not preview ${path}`,
     noProjectTitle: 'No project',
-    noProjectBody: 'Set a working directory from the status bar to browse files.',
+    noProjectBody: 'Click Open folder to choose a project directory on this computer.',
     unreadableTitle: 'Unreadable',
     unreadableBody: error => `Could not read this folder (${error}).`,
     emptyTitle: 'Empty',
@@ -1619,7 +1630,7 @@ export const en: Translations = {
       loadingQuestion: 'Loading question…',
       other: 'Other (type your answer)',
       placeholder: 'Type your answer…',
-      shortcut: '⌘/Ctrl + Enter to send',
+      shortcut: 'to send',
       back: 'Back',
       skip: 'Skip',
       send: 'Send'

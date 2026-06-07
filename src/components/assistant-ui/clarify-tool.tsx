@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
+import { formatCombo } from '@/lib/keybinds/combo'
 import { Check, HelpCircle, Loader2 } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { $clarifyRequest, clearClarifyRequest } from '@/store/clarify'
@@ -229,7 +230,9 @@ function ClarifyToolPending({ args }: ToolCallMessagePartProps) {
             value={draft}
           />
           <div className="flex items-center justify-between gap-2">
-            <span className="text-[0.6875rem] text-muted-foreground/85">{copy.shortcut}</span>
+            <span className="text-[0.6875rem] text-muted-foreground/85">
+              {formatCombo('mod+enter')} {copy.shortcut}
+            </span>
             <div className="flex items-center gap-1.5">
               {hasChoices && (
                 <Button

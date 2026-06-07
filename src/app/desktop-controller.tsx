@@ -4,6 +4,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { BootFailureOverlay } from '@/components/boot-failure-overlay'
+import { FolderAccessDialog } from '@/components/folder-access-dialog'
 import { DesktopInstallOverlay } from '@/components/desktop-install-overlay'
 import { DesktopOnboardingOverlay } from '@/components/desktop-onboarding-overlay'
 import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overlay'
@@ -89,8 +90,6 @@ import { useSessionActions } from './session/hooks/use-session-actions'
 import { useSessionStateCache } from './session/hooks/use-session-state-cache'
 import { AppShell } from './shell/app-shell'
 import { useOverlayRouting } from './shell/hooks/use-overlay-routing'
-import { isVerxioWeb } from '@/lib/platform'
-
 import { useStatusbarItems } from './shell/hooks/use-statusbar-items'
 import { ModelMenuPanel } from './shell/model-menu-panel'
 import type { StatusbarItem } from './shell/statusbar-controls'
@@ -626,6 +625,7 @@ export function DesktopController() {
       <GatewayConnectingOverlay />
       <BootFailureOverlay />
       <CommandPalette />
+      <FolderAccessDialog />
 
       {settingsOpen && (
         <Suspense fallback={null}>
@@ -720,7 +720,6 @@ export function DesktopController() {
   // browser + preview rail → left. Same panes, swapped sides.
   const sidebarSide = panesFlipped ? 'right' : 'left'
   const railSide = panesFlipped ? 'left' : 'right'
-  const webMode = isVerxioWeb()
 
   const previewPane = (
     <Pane
@@ -822,8 +821,8 @@ export function DesktopController() {
         main | preview | file-browser. Flipped (rail on the left): mirror it to
         file-browser | preview | main so preview stays adjacent to the chat.
       */}
-      {panesFlipped ? (webMode ? null : fileBrowserPane) : previewPane}
-      {panesFlipped ? previewPane : webMode ? null : fileBrowserPane}
+      {panesFlipped ? fileBrowserPane : previewPane}
+      {panesFlipped ? previewPane : fileBrowserPane}
     </AppShell>
   )
 }

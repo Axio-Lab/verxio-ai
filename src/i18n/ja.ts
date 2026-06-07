@@ -1574,6 +1574,17 @@ export const ja = defineLocale({
     }
   },
 
+  folderAccess: {
+    title: 'この PC のフォルダへのアクセス',
+    body: 'Verxio は選択したフォルダ内のファイルを読み取り、ブラウズします。続いてブラウザでフォルダを選びます。ファイルはアップロードされず、お使いのデバイスに残ります。',
+    allow: '続行',
+    cancel: 'あとで',
+    unsupportedTitle: 'フォルダアクセスに非対応',
+    unsupportedBody:
+      'このブラウザではローカルフォルダへのアクセスを許可できません。Chrome または Edge で Verxio Web をご利用ください。',
+    dismiss: 'OK'
+  },
+
   rightSidebar: {
     aria: '右サイドバー',
     panelsAria: '右サイドバーパネル',
@@ -1588,7 +1599,7 @@ export const ja = defineLocale({
     previewUnavailable: 'プレビューは利用できません',
     couldNotPreview: path => `${path} をプレビューできませんでした`,
     noProjectTitle: 'プロジェクトなし',
-    noProjectBody: 'ステータスバーから作業ディレクトリを設定してファイルを閲覧してください。',
+    noProjectBody: '「フォルダを開く」をクリックして、この PC 上のプロジェクトフォルダを選択してください。',
     unreadableTitle: '読み取り不可',
     unreadableBody: error => `このフォルダーを読み取れませんでした (${error})。`,
     emptyTitle: '空',
@@ -1727,7 +1738,7 @@ export const ja = defineLocale({
       loadingQuestion: '質問を読み込み中…',
       other: 'その他（回答を入力）',
       placeholder: '回答を入力…',
-      shortcut: '⌘/Ctrl + Enter で送信',
+      shortcut: 'で送信',
       back: '戻る',
       skip: 'スキップ',
       send: '送信'

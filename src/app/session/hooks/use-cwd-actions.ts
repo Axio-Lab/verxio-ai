@@ -1,6 +1,8 @@
 import { type MutableRefObject, useCallback } from 'react'
 
 import { useI18n } from '@/i18n'
+import { isVerxioWeb } from '@/lib/platform'
+import { isWebLocalPath } from '@/lib/web-local-fs'
 import { notify, notifyError } from '@/store/notifications'
 import { $currentCwd, setCurrentBranch, setCurrentCwd } from '@/store/session'
 import type { SessionRuntimeInfo } from '@/types/hermes'
@@ -49,6 +51,14 @@ export function useCwdActions({
       const trimmed = cwd.trim()
 
       if (!trimmed) {
+        return
+      }
+
+      if (isVerxioWeb() && isWebLocalPath(trimmed)) {
+        setCurrentCwd(trimmed)
+        setCurrentBranch('')
+        onSessionRuntimeInfo?.({ branch: '', cwd: trimmed })
+
         return
       }
 
