@@ -89,7 +89,8 @@ function buildApiUrl(path: string): string {
       path.startsWith('/api/bootstrap') ||
       path.startsWith('/api/health') ||
       path.startsWith('/api/hermes') ||
-      path.startsWith('/api/profile') ||
+      path === '/api/profile' ||
+      path.startsWith('/api/profile?') ||
       path.startsWith('/api/runtime')
     ) {
       return verxioApiUrl(path)
@@ -307,6 +308,12 @@ async function waitForDashboardReady(): Promise<void> {
     }
 
     await new Promise(resolve => window.setTimeout(resolve, 500))
+  }
+
+  if (verxioApiEnabled()) {
+    throw new Error(
+      'Verxio agent runtime is not reachable. Sign in, then wait for verxio-api to start your isolated Hermes container (docker ps --filter name=verxio-).'
+    )
   }
 
   throw new Error('Verxio backend is not reachable. Start it with: hermes dashboard --no-open')
@@ -871,22 +878,26 @@ export function installWebBridge(): void {
     }
   })()
 
-  void waitForDashboardReady()
-    .then(() => {
-      emitBoot({
-        phase: 'backend.ready',
-        message: 'Verxio backend is ready',
-        progress: 100,
-        running: false,
-        error: null
+  // Hosted Verxio checks /api/runtime/dashboard/* only after login (cookie required).
+  // Probing here before auth always 401s and surfaces a false "backend down" error.
+  if (!verxioApiEnabled()) {
+    void waitForDashboardReady()
+      .then(() => {
+        emitBoot({
+          phase: 'backend.ready',
+          message: 'Verxio backend is ready',
+          progress: 100,
+          running: false,
+          error: null
+        })
       })
-    })
-    .catch(error => {
-      emitBoot({
-        phase: 'backend.error',
-        message: error instanceof Error ? error.message : String(error),
-        running: false,
-        error: error instanceof Error ? error.message : String(error)
+      .catch(error => {
+        emitBoot({
+          phase: 'backend.error',
+          message: error instanceof Error ? error.message : String(error),
+          running: false,
+          error: error instanceof Error ? error.message : String(error)
+        })
       })
-    })
+  }
 }
