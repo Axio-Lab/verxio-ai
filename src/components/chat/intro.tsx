@@ -21,24 +21,24 @@ const INTRO_ROTATE_MS = 8_000
 
 const FALLBACK_COPY: IntroCopy[] = [
   {
-    headline: 'What are we moving today?',
-    body: "Send a bug, branch, plan, or rough idea. I'll inspect the repo and turn it into the next concrete step."
+    headline: 'What should Verxio operate today?',
+    body: 'Ask me to turn business data into a CRM, dashboard, report, website, slide deck, or internal tool your team can use.'
   },
   {
-    headline: "What's on your mind?",
-    body: "Bring the code, question, or stuck part. I'll read the room before making changes."
+    headline: 'Give Verxio a business outcome.',
+    body: "Tell me the workflow, customer data, or bottleneck. I'll turn it into an executable system, not just advice."
   },
   {
-    headline: 'What should Verxio look at?',
-    body: "Send the task, failing path, or half-formed plan. I'll help turn it into action."
+    headline: 'What should your AI employee build?',
+    body: 'I can draft reports, create HTML dashboards, build internal tools, organize leads, and package updates for your team.'
   },
   {
-    headline: 'Where should we start?',
-    body: "Bring the problem, goal, or file. I'll inspect first and keep the next step concrete."
+    headline: 'Where is the business losing time?',
+    body: "Show me the repeated work. I'll map the workflow and create the file, tool, report, or site that removes it."
   },
   {
-    headline: 'What needs attention?',
-    body: "Send the context you have. I'll help sort it into a plan or a fix."
+    headline: 'What should be automated first?',
+    body: "Give me the task, spreadsheet, customer list, or process. I'll turn it into a working business action."
   }
 ]
 
@@ -191,11 +191,11 @@ export function Intro({ personality, seed }: IntroProps) {
       <div className="w-full min-w-0">
         <p
           aria-label={WORDMARK}
-          className="fit-text mx-auto mb-3 w-[88%] font-['Collapse'] font-bold uppercase leading-[0.9] tracking-[0.08em] text-midground mix-blend-plus-lighter dark:text-foreground/90"
+          className="fit-text verxio-wordmark mx-auto mb-3 w-[88%] font-['Collapse'] font-bold uppercase leading-[0.9] tracking-[0.08em] text-midground mix-blend-plus-lighter dark:text-foreground/90"
           style={{ '--fit-text-line-height': '0.9', '--fit-text-min': '2.75rem' } as CSSProperties}
         >
           <span>
-            <span>{WORDMARK}</span>
+            <span className="verxio-wordmark__text">{WORDMARK}</span>
           </span>
           <span aria-hidden="true">{WORDMARK}</span>
         </p>

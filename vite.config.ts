@@ -3,7 +3,9 @@ import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
-const BACKEND = process.env.HERMES_DASHBOARD_URL ?? 'http://127.0.0.1:9119'
+const DIRECT_HERMES_BACKEND = process.env.HERMES_DASHBOARD_URL ?? process.env.VITE_HERMES_DASHBOARD_URL
+const VERXIO_API_BACKEND = process.env.VITE_VERXIO_API_URL ?? 'http://127.0.0.1:8787'
+const BACKEND = DIRECT_HERMES_BACKEND ?? VERXIO_API_BACKEND
 
 function hermesDevToken(): Plugin {
   const TOKEN_RE = /window\.__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"/
@@ -12,6 +14,10 @@ function hermesDevToken(): Plugin {
     name: 'verxio:hermes-dev-session-token',
     apply: 'serve',
     async transformIndexHtml() {
+      if (!DIRECT_HERMES_BACKEND) {
+        return
+      }
+
       try {
         const res = await fetch(BACKEND, { headers: { accept: 'text/html' } })
         const html = await res.text()

@@ -1,54 +1,47 @@
-# Verxio Web — Production Deploy
+# Verxio Web Deploy
+
+Verxio Web is the browser product surface. It should talk to Verxio API, not directly to a user's laptop or raw Hermes dashboard.
 
 ## Build
 
 ```bash
 npm ci
-npm run build
+VITE_VERXIO_API_ENABLED=true VITE_VERXIO_API_URL= npm run build
 ```
 
 Output: `dist/`
 
-## Option A — Serve via Verxio backend (recommended)
+With an empty `VITE_VERXIO_API_URL`, the app uses same-origin `/api`. This is the production default when nginx/Caddy routes `/api` to `verxio-api`.
 
-Point Verxio at the Verxio build:
+## Docker
+
+The included `Dockerfile` builds the app and serves it through nginx. `nginx.conf` proxies `/api` and `/static` to the `verxio-api` service, including WebSocket upgrades for Hermes dashboard traffic.
 
 ```bash
-export HERMES_WEB_DIST=/absolute/path/to/verxio-web/dist
-hermes dashboard --no-open --skip-build --host 127.0.0.1 --port 9119
+docker compose -f ../docker-compose.verxio.yml build verxio-web
+docker compose -f ../docker-compose.verxio.yml up verxio-web
 ```
 
-Open `http://127.0.0.1:9119` — Verxio UI + Verxio API on one origin.
+Open:
 
-## Option B — Static host + API proxy
-
-Serve `dist/` from nginx/Caddy and proxy `/api` to `hermes dashboard`:
-
-```nginx
-location /api/ {
-  proxy_pass http://127.0.0.1:9119;
-  proxy_http_version 1.1;
-  proxy_set_header Upgrade $http_upgrade;
-  proxy_set_header Connection "upgrade";
-}
+```text
+http://127.0.0.1:8080
 ```
 
-Inject `window.__HERMES_SESSION_TOKEN__` in `index.html` at deploy time, or enable dashboard OAuth gate.
+## Local Vite
 
-## Requirements
+```bash
+VITE_VERXIO_API_ENABLED=true VITE_VERXIO_API_URL=http://127.0.0.1:8787 npm run dev
+```
 
-- Verxio `hermes dashboard` running (Python 3.11+)
-- Provider configured (`hermes setup` or onboarding in Verxio UI)
-- For terminal pane: POSIX PTY (macOS/Linux). Windows native dashboard PTY may require WSL.
+Open `http://127.0.0.1:5180`.
 
-## Environment
+## Direct Hermes Debug Mode
 
-| Variable | Purpose |
-|----------|---------|
-| `HERMES_DASHBOARD_URL` | Dev proxy target (default `http://127.0.0.1:9119`) |
-| `HERMES_WEB_DIST` | Production static bundle path for `hermes dashboard` |
-| `VITE_HERMES_DASHBOARD_URL` | Optional explicit API base for web bridge |
+Use this only when intentionally bypassing Verxio API:
 
-## verxio-api
+```bash
+HERMES_DASHBOARD_URL=http://127.0.0.1:9119 npm run dev
+```
 
-`verxio-api` remains optional for Verxio-specific BFF APIs. Chat uses `hermes dashboard` directly, not the gateway `:8642` polling API.
+That mode is useful for comparing against upstream Hermes, but it is not the hosted Verxio production shape.

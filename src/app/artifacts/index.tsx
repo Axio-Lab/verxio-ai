@@ -24,6 +24,7 @@ import { sessionTitle } from '@/lib/chat-runtime'
 import { ExternalLink, ExternalLinkIcon, hostPathLabel, urlSlugTitleLabel, useLinkTitle } from '@/lib/external-link'
 import { FileImage, FileText, FolderOpen, Link2 } from '@/lib/icons'
 import { cn } from '@/lib/utils'
+import { listVerxioArtifacts, verxioApiEnabled, verxioApiUrl, type VerxioArtifact } from '@/lib/verxio-api'
 import { notifyError } from '@/store/notifications'
 import type { SessionInfo, SessionMessage } from '@/types/hermes'
 
@@ -150,6 +151,30 @@ function artifactLabel(value: string): string {
     const parts = value.split(/[\\/]/).filter(Boolean)
 
     return parts.pop() || value
+  }
+}
+
+function verxioArtifactKind(record: VerxioArtifact): ArtifactKind {
+  if (record.content_type.startsWith('image/') || IMAGE_EXT_RE.test(record.file_name)) {
+    return 'image'
+  }
+
+  return 'file'
+}
+
+function mapVerxioArtifact(record: VerxioArtifact): ArtifactRecord {
+  const value = `/workspace/artifacts/${record.relative_path}`
+  const updated = Date.parse(record.updated_at || record.created_at)
+
+  return {
+    id: record.id,
+    kind: verxioArtifactKind(record),
+    value,
+    href: verxioApiUrl(`/api/artifacts/${encodeURIComponent(record.id)}/preview`),
+    label: record.file_name,
+    sessionId: '',
+    sessionTitle: 'Workspace artifacts',
+    timestamp: Number.isFinite(updated) ? updated : Date.now()
   }
 }
 
@@ -388,6 +413,13 @@ export function ArtifactsView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
     setRefreshing(true)
 
     try {
+      if (verxioApiEnabled()) {
+        const response = await listVerxioArtifacts()
+        setArtifacts(response.artifacts.map(mapVerxioArtifact).sort((left, right) => right.timestamp - left.timestamp))
+
+        return
+      }
+
       const sessions = (await listSessions(30, 1)).sessions
       const results = await Promise.allSettled(sessions.map(session => getSessionMessages(session.id)))
       const nextArtifacts: ArtifactRecord[] = []
@@ -727,10 +759,22 @@ function ArtifactImageCard({ artifact, failedImage, onImageError, onOpenChat }: 
         </div>
 
         <div className="flex flex-wrap gap-1.5">
-          <Button onClick={() => onOpenChat(artifact.sessionId)} size="xs" type="button" variant="textStrong">
-            <FolderOpen className="size-3" />
-            {a.chat}
-          </Button>
+          {artifact.sessionId ? (
+            <Button onClick={() => onOpenChat(artifact.sessionId)} size="xs" type="button" variant="textStrong">
+              <FolderOpen className="size-3" />
+              {a.chat}
+            </Button>
+          ) : (
+            <Button
+              onClick={() => void window.hermesDesktop?.openExternal?.(artifact.href)}
+              size="xs"
+              type="button"
+              variant="textStrong"
+            >
+              <FolderOpen className="size-3" />
+              Open
+            </Button>
+          )}
         </div>
       </div>
     </article>
@@ -830,6 +874,19 @@ function LocationCell({ artifact }: { artifact: ArtifactRecord; ctx: CellCtx }) 
 }
 
 function SessionCell({ artifact, ctx }: { artifact: ArtifactRecord; ctx: CellCtx }) {
+  if (!artifact.sessionId) {
+    return (
+      <div className="flex h-full w-full min-w-0 items-center gap-2 px-2.5 py-1.5 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-secondary)">
+        <span className="flex min-w-0 flex-col">
+          <span className="truncate">{artifact.sessionTitle}</span>
+          <span className="truncate text-[0.6875rem] font-normal text-(--ui-text-tertiary)">
+            {formatArtifactTime(artifact.timestamp)}
+          </span>
+        </span>
+      </div>
+    )
+  }
+
   return (
     <ArtifactCellAction onClick={() => ctx.onOpenChat(artifact.sessionId)} title={artifact.sessionTitle}>
       <span className="flex min-w-0 flex-col">

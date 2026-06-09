@@ -23,6 +23,7 @@ import type {
   HermesTerminalExit,
   HermesTerminalSession
 } from '@/global'
+import { verxioApiBaseUrl, verxioApiEnabled, verxioApiUrl } from '@/lib/verxio-api'
 import {
   getStoredWebLocalRoot,
   isWebLocalPath,
@@ -76,12 +77,33 @@ function getToken(): string {
   return window.__HERMES_SESSION_TOKEN__ ?? ''
 }
 
-function apiBaseUrl(): string {
+function hermesDashboardBaseUrl(): string {
   return import.meta.env.VITE_HERMES_DASHBOARD_URL?.replace(/\/$/, '') ?? ''
 }
 
 function buildApiUrl(path: string): string {
-  const base = apiBaseUrl()
+  if (verxioApiEnabled()) {
+    if (
+      path.startsWith('/api/auth') ||
+      path.startsWith('/api/artifacts') ||
+      path.startsWith('/api/bootstrap') ||
+      path.startsWith('/api/health') ||
+      path.startsWith('/api/hermes') ||
+      path === '/api/profile' ||
+      path.startsWith('/api/profile?') ||
+      path.startsWith('/api/runtime')
+    ) {
+      return verxioApiUrl(path)
+    }
+
+    if (path.startsWith('/api/') || path.startsWith('/dashboard-plugins')) {
+      return verxioApiUrl(`/api/runtime/dashboard${path}`)
+    }
+
+    return verxioApiUrl(path)
+  }
+
+  const base = hermesDashboardBaseUrl()
 
   if (base) {
     return `${base}${path}`
@@ -91,7 +113,18 @@ function buildApiUrl(path: string): string {
 }
 
 function buildWsUrl(path: string, params: Record<string, string>): string {
-  const base = apiBaseUrl()
+  if (verxioApiEnabled()) {
+    const base = verxioApiBaseUrl()
+    const origin = base || window.location.origin
+    const parsed = new URL(origin)
+    const proto = parsed.protocol === 'https:' ? 'wss:' : 'ws:'
+    const pathname = parsed.pathname.replace(/\/$/, '')
+    const qs = new URLSearchParams(params)
+
+    return `${proto}//${parsed.host}${pathname}/api/runtime/dashboard/ws${path}?${qs.toString()}`
+  }
+
+  const base = hermesDashboardBaseUrl()
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const host = base ? new URL(base).host : window.location.host
   const pathname = base ? new URL(base).pathname.replace(/\/$/, '') : ''
@@ -101,6 +134,10 @@ function buildWsUrl(path: string, params: Record<string, string>): string {
 }
 
 function authHeaders(): HeadersInit {
+  if (verxioApiEnabled()) {
+    return {}
+  }
+
   const token = getToken()
 
   if (!token) {
@@ -113,20 +150,32 @@ function authHeaders(): HeadersInit {
   }
 }
 
+function fetchCredentials(): RequestCredentials {
+  return verxioApiEnabled() ? 'include' : 'same-origin'
+}
+
 const SESSION_TOKEN_RE = /window\.__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"/
 const TOKEN_RELOAD_KEY = 'verxio.tokenReloadAttempted'
 
 function dashboardOrigin(): string {
-  const base = apiBaseUrl()
+  if (verxioApiEnabled()) {
+    const base = verxioApiBaseUrl()
 
-  if (base) {
-    return base.replace(/\/$/, '')
+    if (base) {
+      return base.replace(/\/$/, '')
+    }
+
+    return window.location.origin
   }
 
   return import.meta.env.VITE_HERMES_DASHBOARD_URL?.replace(/\/$/, '') ?? 'http://127.0.0.1:9119'
 }
 
 async function refreshSessionToken(): Promise<boolean> {
+  if (verxioApiEnabled()) {
+    return false
+  }
+
   try {
     const res = await fetch(`${dashboardOrigin()}/`, { headers: { accept: 'text/html' } })
     const html = await res.text()
@@ -155,6 +204,7 @@ async function requestJson<T>(
   try {
     return await fetch(url, {
       ...init,
+      credentials: fetchCredentials(),
       signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
@@ -245,7 +295,10 @@ async function waitForDashboardReady(): Promise<void> {
 
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(buildApiUrl('/api/status'))
+      const res = await fetch(buildApiUrl('/api/status'), {
+        credentials: fetchCredentials(),
+        headers: authHeaders()
+      })
 
       if (res.ok) {
         return
@@ -257,12 +310,18 @@ async function waitForDashboardReady(): Promise<void> {
     await new Promise(resolve => window.setTimeout(resolve, 500))
   }
 
+  if (verxioApiEnabled()) {
+    throw new Error(
+      'Verxio agent runtime is not reachable. Sign in, then wait for verxio-api to start your isolated Hermes container (docker ps --filter name=verxio-).'
+    )
+  }
+
   throw new Error('Verxio backend is not reachable. Start it with: hermes dashboard --no-open')
 }
 
 async function getConnection(): Promise<HermesConnection> {
   await waitForDashboardReady()
-  const token = getToken()
+  const token = verxioApiEnabled() ? 'verxio-proxy' : getToken()
 
   if (!token) {
     throw new Error('Missing Verxio session token. Restart hermes dashboard and reload.')
@@ -277,7 +336,9 @@ async function getConnection(): Promise<HermesConnection> {
   })
 
   const wsUrl = buildWsUrl('/api/ws', { token })
-  const baseUrl = apiBaseUrl() || window.location.origin
+  const baseUrl = verxioApiEnabled()
+    ? verxioApiUrl('/api/runtime/dashboard')
+    : hermesDashboardBaseUrl() || window.location.origin
 
   return {
     baseUrl,
@@ -586,7 +647,10 @@ export function installWebBridge(): void {
       const url = buildApiUrl(`/api/fs/readdir?${params.toString()}`)
 
       try {
-        const res = await fetch(url, { headers: authHeaders() })
+        const res = await fetch(url, {
+          credentials: fetchCredentials(),
+          headers: authHeaders()
+        })
 
         if (!res.ok) {
           const text = await res.text().catch(() => '')
@@ -779,7 +843,7 @@ export function installWebBridge(): void {
         electronVersion: 'n/a',
         nodeVersion: 'n/a',
         platform: 'web',
-        hermesRoot: apiBaseUrl() || 'local'
+        hermesRoot: verxioApiEnabled() ? verxioApiUrl('/api/runtime/dashboard') : hermesDashboardBaseUrl() || 'local'
       }) satisfies DesktopVersionInfo,
     updates: {
       check: async () =>
@@ -814,22 +878,26 @@ export function installWebBridge(): void {
     }
   })()
 
-  void waitForDashboardReady()
-    .then(() => {
-      emitBoot({
-        phase: 'backend.ready',
-        message: 'Verxio backend is ready',
-        progress: 100,
-        running: false,
-        error: null
+  // Hosted Verxio checks /api/runtime/dashboard/* only after login (cookie required).
+  // Probing here before auth always 401s and surfaces a false "backend down" error.
+  if (!verxioApiEnabled()) {
+    void waitForDashboardReady()
+      .then(() => {
+        emitBoot({
+          phase: 'backend.ready',
+          message: 'Verxio backend is ready',
+          progress: 100,
+          running: false,
+          error: null
+        })
       })
-    })
-    .catch(error => {
-      emitBoot({
-        phase: 'backend.error',
-        message: error instanceof Error ? error.message : String(error),
-        running: false,
-        error: error instanceof Error ? error.message : String(error)
+      .catch(error => {
+        emitBoot({
+          phase: 'backend.error',
+          message: error instanceof Error ? error.message : String(error),
+          running: false,
+          error: error instanceof Error ? error.message : String(error)
+        })
       })
-    })
+  }
 }

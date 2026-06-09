@@ -885,6 +885,93 @@ canvas {
   line-height: 1.45;
 }
 
+.verxio-wordmark {
+  position: relative;
+  filter: drop-shadow(0 0.375rem 1.5rem color-mix(in srgb, var(--ui-accent) 18%, transparent));
+  isolation: isolate;
+}
+
+.verxio-wordmark__text {
+  position: relative;
+  display: block;
+  color: var(--ui-accent);
+  text-shadow: 0 0 1.25rem color-mix(in srgb, var(--ui-accent) 22%, transparent);
+}
+
+@supports (((-webkit-background-clip: text) or (background-clip: text)) and (color: color-mix(in srgb, white, black))) {
+  .verxio-wordmark__text {
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    background: linear-gradient(
+      96deg,
+      color-mix(in srgb, var(--ui-accent) 78%, var(--foreground)) 0%,
+      var(--foreground) 22%,
+      color-mix(in srgb, var(--ui-blue) 76%, var(--ui-warm)) 48%,
+      var(--ui-accent) 70%,
+      color-mix(in srgb, var(--ui-accent) 72%, var(--foreground)) 100%
+    );
+    background-size: 240% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+}
+
+.verxio-wordmark__text::after {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  color: color-mix(in srgb, var(--ui-accent) 30%, transparent);
+  content: 'VERXIO';
+  filter: blur(0.055em);
+  opacity: 0.52;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .verxio-wordmark__text {
+    animation:
+      verxio-wordmark-sheen 5.8s ease-in-out infinite,
+      verxio-wordmark-breathe 4.2s ease-in-out infinite;
+  }
+}
+
+@keyframes verxio-wordmark-sheen {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+@keyframes verxio-wordmark-breathe {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+
+  48% {
+    transform: translateY(-0.018em) scale(1.01);
+  }
+}
+
+/* Fallback for older browsers that do not support color-mix. */
+@supports not (color: color-mix(in srgb, white, black)) {
+  .verxio-wordmark {
+    filter: drop-shadow(0 0.375rem 1.5rem rgb(0 173 239 / 18%));
+  }
+
+  .verxio-wordmark__text {
+    color: var(--ui-accent);
+    text-shadow: 0 0 1.25rem rgb(0 173 239 / 22%);
+  }
+
+  .verxio-wordmark__text::after {
+    color: rgb(0 173 239 / 30%);
+  }
+}
+
 .fit-text {
   display: flex;
   font-size: var(--fit-text-min, 1rem);

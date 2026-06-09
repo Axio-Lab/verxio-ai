@@ -1,45 +1,48 @@
 # Verxio Web
 
-Browser product UI for **Verxio** — built on the open agent runtime (upstream desktop app). Talks to the **Verxio** backend via `hermes dashboard` (REST + WebSocket).
+Browser product UI for Verxio, adapted from the Hermes desktop/web surface.
 
 ## Architecture
 
 ```text
-Browser (verxio-web :5180 dev)
-    → hermes dashboard (:9119)
-    → tui_gateway → AIAgent → tools → LLM
+Browser
+  -> Verxio API /api
+  -> authenticated runtime proxy
+  -> isolated Hermes runtime container
+  -> tools, memory, skills, MCP, cron, gateways, model providers
 ```
 
-## Prerequisites
+Direct Hermes dashboard mode still exists for upstream comparison, but hosted Verxio should use Verxio API.
 
-- Node.js ≥ 20
-- Agent runtime clone with Python venv (`hermes-agent` repo)
-- `hermes dashboard` running
+## Local Development
 
-## Local development
+Start the API:
 
 ```bash
-# Terminal 1 — Verxio backend
-cd ../hermes-agent   # or your agent runtime clone path
-source venv/bin/activate
-hermes dashboard --no-open
-
-# Terminal 2 — Verxio Web
-npm install
-npm run dev
+cd ../verxio-api
+VERXIO_DATABASE_MODE=sqlite uv run uvicorn app.main:app --reload --port 8787
 ```
 
-Open **http://127.0.0.1:5180**
+Start the web app:
 
-Vite proxies `/api` and WebSockets to `http://127.0.0.1:9119` and injects the dashboard session token.
+```bash
+npm install
+VITE_VERXIO_API_ENABLED=true VITE_VERXIO_API_URL=http://127.0.0.1:8787 npm run dev
+```
+
+Open:
+
+```text
+http://127.0.0.1:5180
+```
 
 ## Scripts
 
 | Command | Description |
 |---------|-------------|
 | `npm run dev` | Dev server with HMR |
-| `npm run build` | Production build → `dist/` |
-| `npm run type-check` | TypeScript |
+| `npm run build` | Production build |
+| `npm run type-check` | TypeScript verification |
 | `npm run lint` | ESLint |
 | `npm run test:ui` | Vitest |
 
@@ -47,17 +50,10 @@ Vite proxies `/api` and WebSockets to `http://127.0.0.1:9119` and injects the da
 
 See [DEPLOY.md](./DEPLOY.md).
 
-## Implementation phases
+## Direct Hermes Debug Mode
 
-See [IMPLEMENTATION_PLAN.md](./IMPLEMENTATION_PLAN.md). Phases 0–8 are complete.
+```bash
+HERMES_DASHBOARD_URL=http://127.0.0.1:9119 npm run dev
+```
 
-## Related
-
-| Repo | Role |
-|------|------|
-| [hermes-agent](https://github.com/NousResearch/hermes-agent) | Upstream AI engine (CLI: `hermes dashboard`) |
-| [verxio-api](https://github.com/Axio-Lab/verxio-api) | Optional BFF |
-
-## License
-
-MIT
+Use this only to compare against the upstream Hermes dashboard.
