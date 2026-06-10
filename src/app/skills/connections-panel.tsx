@@ -146,6 +146,10 @@ const FALLBACK_COMPOSIO_APPS: ComposioApp[] = [
 
 const TOOLS_DIALOG_LIMIT = 50
 
+function isAppConnectable(app: ComposioApp): boolean {
+  return app.connectable !== false
+}
+
 interface ConnectionsPanelProps {
   onPageChange: (page: number) => void
   page: number
@@ -294,6 +298,17 @@ export function ConnectionsPanel({ onPageChange, page, pageSize, query }: Connec
       return
     }
 
+    if (!isAppConnectable(app)) {
+      notify({
+        kind: 'warning',
+        message:
+          'This integration requires custom API credentials in Composio. One-click OAuth is not available for it yet.',
+        title: 'Custom setup required'
+      })
+
+      return
+    }
+
     setConnectingSlug(app.slug)
 
     try {
@@ -432,6 +447,7 @@ function ConnectionCard({
   onViewTools,
   setupRequired
 }: ConnectionCardProps) {
+  const connectable = isAppConnectable(app)
   const disabled = connecting || disconnecting
   const toolCount = app.toolsCount ?? app.sampleTools?.length ?? 0
 
@@ -458,6 +474,7 @@ function ConnectionCard({
             <div className="mt-1 flex flex-wrap gap-1">
               <ConnectionStatus account={account} connected={connected} setupRequired={setupRequired} />
               {app.noAuth ? <Badge variant="muted">No auth</Badge> : null}
+              {!connectable && !app.noAuth ? <Badge variant="muted">Custom setup</Badge> : null}
             </div>
           </div>
         </div>
@@ -505,9 +522,10 @@ function ConnectionCard({
         ) : (
           <Button
             className="w-full min-w-0 sm:w-auto"
-            disabled={disabled}
+            disabled={disabled || !connectable}
             onClick={onConnect}
             size="xs"
+            title={connectable ? undefined : 'Requires custom credentials in Composio'}
             type="button"
             variant="secondary"
           >

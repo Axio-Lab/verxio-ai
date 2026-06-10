@@ -66,6 +66,7 @@ export interface ComposioApp {
   logoUrl: string | null
   categories: string[]
   noAuth: boolean
+  connectable?: boolean
   toolsCount?: number | null
   triggersCount?: number | null
   sampleTools?: ComposioToolPreview[]
