@@ -4,7 +4,6 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { BootFailureOverlay } from '@/components/boot-failure-overlay'
-import { DesktopInstallOverlay } from '@/components/desktop-install-overlay'
 import { DesktopOnboardingOverlay } from '@/components/desktop-onboarding-overlay'
 import { FolderAccessDialog } from '@/components/folder-access-dialog'
 import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overlay'
@@ -606,7 +605,6 @@ export function DesktopController() {
 
   const overlays = (
     <>
-      <DesktopInstallOverlay />
       {/* One PTY-backed terminal mounted forever; <TerminalSlot /> placeholders
           decide where it shows. Toggling fullscreen never rebuilds the shell. */}
       <PersistentTerminal cwd={currentCwd} onAddSelectionToChat={composer.addTerminalSelectionAttachment} />

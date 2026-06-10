@@ -79,11 +79,15 @@ export interface ComposioConnectionsResponse {
 export interface ComposioAppsResponse {
   apps: ComposioApp[]
   configured: boolean
+  catalogReady?: boolean
+  catalogError?: string | null
 }
 
 export interface ComposioAppToolsResponse {
   tools: ComposioToolPreview[]
   configured: boolean
+  catalogReady?: boolean
+  catalogError?: string | null
 }
 
 export interface ComposioInitiateResponse {

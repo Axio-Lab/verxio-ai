@@ -166,13 +166,19 @@ export function ConnectionsPanel({ onPageChange, page, pageSize, query }: Connec
     try {
       const [appsResponse, accountsResponse] = await Promise.all([listComposioApps(), listComposioConnections()])
       const nextApps = appsResponse.apps.length > 0 ? appsResponse.apps : FALLBACK_COMPOSIO_APPS
-      const nextConfigured = Boolean(appsResponse.configured && accountsResponse.configured)
+      const apiConfigured = Boolean(appsResponse.configured && accountsResponse.configured)
+      const catalogReady = appsResponse.catalogReady ?? apiConfigured
 
       setApps(nextApps)
       setAccounts(accountsResponse.accounts)
-      setConfigured(nextConfigured)
+      setConfigured(apiConfigured)
       setMessage(
-        nextConfigured ? null : 'Add COMPOSIO_API_KEY in the root .env file to load the full Composio catalog.'
+        !apiConfigured
+          ? 'Add COMPOSIO_API_KEY in the root .env file, then restart verxio-api (docker compose up -d verxio-api).'
+          : !catalogReady
+            ? appsResponse.catalogError ||
+              'Composio rejected the API key. Generate a fresh key in the Composio dashboard and update root .env.'
+            : null
       )
     } catch (err) {
       setApps(FALLBACK_COMPOSIO_APPS)
