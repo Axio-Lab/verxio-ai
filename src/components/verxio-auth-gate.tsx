@@ -1,13 +1,15 @@
 import type { ReactNode } from 'react'
 import { useEffect, useMemo, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 
+import { LOGIN_ROUTE, NEW_CHAT_ROUTE, SIGNOUT_ROUTE } from '@/app/routes'
 import { BrandMark } from '@/components/brand-mark'
 import { PageLoader } from '@/components/page-loader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Eye, EyeOff, Lock, LogIn } from '@/lib/icons'
 import { cn } from '@/lib/utils'
-import { authLogin, authMe, authSignup, verxioApiEnabled, type VerxioAuthResponse } from '@/lib/verxio-api'
+import { authLogin, authLogout, authMe, authSignup, verxioApiEnabled, type VerxioAuthResponse } from '@/lib/verxio-api'
 
 type AuthMode = 'login' | 'signup'
 type AuthStatus = 'checking' | 'authenticated' | 'guest'
@@ -36,6 +38,8 @@ function readableAuthError(error: unknown): string {
 
 export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
   const enabled = verxioApiEnabled()
+  const location = useLocation()
+  const navigate = useNavigate()
   const [status, setStatus] = useState<AuthStatus>(enabled ? 'checking' : 'authenticated')
   const [mode, setMode] = useState<AuthMode>('login')
   const [auth, setAuth] = useState<VerxioAuthResponse | null>(null)
@@ -61,6 +65,10 @@ export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
 
         setAuth(result)
         setStatus('authenticated')
+
+        if (location.pathname === LOGIN_ROUTE) {
+          navigate(NEW_CHAT_ROUTE, { replace: true })
+        }
       })
       .catch(() => {
         if (cancelled) {
@@ -73,7 +81,39 @@ export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
     return () => {
       cancelled = true
     }
-  }, [enabled])
+  }, [enabled, location.pathname, navigate])
+
+  useEffect(() => {
+    if (!enabled || status !== 'guest' || location.pathname === LOGIN_ROUTE) {
+      return
+    }
+
+    navigate(LOGIN_ROUTE, { replace: true })
+  }, [enabled, location.pathname, navigate, status])
+
+  useEffect(() => {
+    if (!enabled || status !== 'authenticated' || location.pathname !== SIGNOUT_ROUTE) {
+      return
+    }
+
+    let cancelled = false
+
+    authLogout()
+      .catch(() => undefined)
+      .finally(() => {
+        if (cancelled) {
+          return
+        }
+
+        setAuth(null)
+        setStatus('guest')
+        navigate(LOGIN_ROUTE, { replace: true })
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [enabled, location.pathname, navigate, status])
 
   const title = mode === 'login' ? 'Sign in to Verxio' : 'Create your Verxio workspace'
   const actionLabel = mode === 'login' ? 'Sign in' : 'Create workspace'
@@ -103,6 +143,7 @@ export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
 
       setAuth(result)
       setStatus('authenticated')
+      navigate(NEW_CHAT_ROUTE, { replace: true })
     } catch (submitError) {
       setError(readableAuthError(submitError))
     } finally {
@@ -110,8 +151,16 @@ export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
     }
   }
 
-  if (!enabled || status === 'authenticated') {
+  if (!enabled || (status === 'authenticated' && location.pathname !== SIGNOUT_ROUTE)) {
     return <>{children}</>
+  }
+
+  if (status === 'authenticated' && location.pathname === SIGNOUT_ROUTE) {
+    return (
+      <div className="grid min-h-dvh bg-background text-foreground">
+        <PageLoader label="Signing out of Verxio" />
+      </div>
+    )
   }
 
   if (status === 'checking') {
