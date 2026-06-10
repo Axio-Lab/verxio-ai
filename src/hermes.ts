@@ -34,7 +34,13 @@ import type {
   ProfilesResponse,
   SessionMessagesResponse,
   SessionSearchResponse,
+  SkillCreateResponse,
+  SkillHubPreview,
+  SkillHubSearchResponse,
+  SkillHubSourcesResponse,
   SkillInfo,
+  SkillsConfigResponse,
+  SkillsReloadResponse,
   StatusResponse,
   ToolsetConfig,
   ToolsetInfo
@@ -402,6 +408,74 @@ export function toggleSkill(name: string, enabled: boolean): Promise<{ ok: boole
     path: '/api/skills/toggle',
     method: 'PUT',
     body: { name, enabled }
+  })
+}
+
+export function searchSkillsHub(q: string, source = 'all', limit = 20): Promise<SkillHubSearchResponse> {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    q,
+    source
+  })
+
+  return window.hermesDesktop.api({
+    ...profileScoped(),
+    path: `/api/skills/hub/search?${params.toString()}`
+  })
+}
+
+export function getSkillHubSources(): Promise<SkillHubSourcesResponse> {
+  return window.hermesDesktop.api({
+    ...profileScoped(),
+    path: '/api/skills/hub/sources'
+  })
+}
+
+export function previewSkillFromHub(identifier: string): Promise<SkillHubPreview> {
+  return window.hermesDesktop.api({
+    ...profileScoped(),
+    path: `/api/skills/hub/preview?identifier=${encodeURIComponent(identifier)}`
+  })
+}
+
+export function installSkillFromHub(identifier: string): Promise<ActionResponse> {
+  return window.hermesDesktop.api({
+    ...profileScoped(),
+    path: '/api/skills/hub/install',
+    method: 'POST',
+    body: { identifier }
+  })
+}
+
+export function updateSkillsFromHub(): Promise<ActionResponse> {
+  return window.hermesDesktop.api({
+    ...profileScoped(),
+    path: '/api/skills/hub/update',
+    method: 'POST'
+  })
+}
+
+export function createCustomSkill(name: string, content: string, category?: string): Promise<SkillCreateResponse> {
+  return window.hermesDesktop.api({
+    ...profileScoped(),
+    path: '/api/skills/custom/create',
+    method: 'POST',
+    body: { category: category || null, content, name }
+  })
+}
+
+export function reloadSkills(): Promise<SkillsReloadResponse> {
+  return window.hermesDesktop.api({
+    ...profileScoped(),
+    path: '/api/skills/reload',
+    method: 'POST'
+  })
+}
+
+export function getSkillsConfig(): Promise<SkillsConfigResponse> {
+  return window.hermesDesktop.api({
+    ...profileScoped(),
+    path: '/api/skills/config'
   })
 }
 

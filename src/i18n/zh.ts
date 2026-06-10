@@ -702,6 +702,7 @@ export const zh: Translations = {
 
   skills: {
     tabSkills: '技能',
+    tabAdd: '添加',
     tabToolsets: '工具集',
     all: '全部',
     searchSkills: '搜索技能…',

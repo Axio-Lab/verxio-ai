@@ -25,8 +25,9 @@ import { ToolsetConfigPanel } from '../settings/toolset-config-panel'
 import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 
 import { ConnectionsPanel } from './connections-panel'
+import { SkillsAddPanel } from './skills-add-panel'
 
-const SKILLS_MODES = ['skills', 'toolsets', 'connections'] as const
+const SKILLS_MODES = ['skills', 'add', 'toolsets', 'connections'] as const
 type SkillsMode = (typeof SKILLS_MODES)[number]
 const SKILLS_PAGE_SIZE = 10
 const CONNECTIONS_PAGE_SIZE = 15
@@ -168,7 +169,7 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
   const totalToolsets = toolsets?.length || 0
 
   useEffect(() => {
-    if (mode !== 'connections' && page > activePageCount) {
+    if (mode !== 'connections' && mode !== 'add' && page > activePageCount) {
       setPage(activePageCount)
     }
   }, [activePageCount, mode, page, setPage])
@@ -197,7 +198,11 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
   }
 
   const searchHidden =
-    mode === 'skills' ? (skills?.length ?? 0) === 0 : mode === 'toolsets' ? (toolsets?.length ?? 0) === 0 : false
+    mode === 'add' || mode === 'connections'
+      ? true
+      : mode === 'skills'
+        ? (skills?.length ?? 0) === 0
+        : (toolsets?.length ?? 0) === 0
 
   const searchPlaceholder =
     mode === 'skills' ? t.skills.searchSkills : mode === 'toolsets' ? t.skills.searchToolsets : 'Search connections...'
@@ -266,7 +271,7 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
       searchHidden={searchHidden}
       searchPlaceholder={searchPlaceholder}
       searchTrailingAction={
-        mode === 'connections' ? undefined : (
+        mode === 'connections' || mode === 'add' ? undefined : (
           <Button
             aria-label={refreshing ? t.skills.refreshing : t.skills.refresh}
             className="text-(--ui-text-tertiary) hover:bg-transparent hover:text-foreground"
@@ -287,6 +292,9 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
           <TextTab active={mode === 'skills'} onClick={() => handleModeChange('skills')}>
             {t.skills.tabSkills}
           </TextTab>
+          <TextTab active={mode === 'add'} onClick={() => handleModeChange('add')}>
+            {t.skills.tabAdd}
+          </TextTab>
           <TextTab active={mode === 'toolsets'} onClick={() => handleModeChange('toolsets')}>
             {t.skills.tabToolsets}
           </TextTab>
@@ -298,6 +306,8 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
     >
       {mode === 'connections' ? (
         <ConnectionsPanel onPageChange={setPage} page={page} pageSize={CONNECTIONS_PAGE_SIZE} query={query} />
+      ) : mode === 'add' ? (
+        <SkillsAddPanel onSkillsChanged={() => void refreshCapabilities()} />
       ) : !skills || !toolsets ? (
         <PageLoader label={t.skills.loading} />
       ) : mode === 'skills' ? (

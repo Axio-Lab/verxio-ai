@@ -456,6 +456,7 @@ export interface Translations {
 
   skills: {
     tabSkills: string
+    tabAdd: string
     tabToolsets: string
     all: string
     searchSkills: string
