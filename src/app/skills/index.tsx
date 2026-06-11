@@ -1,10 +1,12 @@
 import type * as React from 'react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 import { PageLoader } from '@/components/page-loader'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
+import { PaginationControl } from '@/components/ui/pagination'
 import { Switch } from '@/components/ui/switch'
 import { TextTab, TextTabMeta } from '@/components/ui/text-tab'
 import { getSkills, getToolsets, toggleSkill, toggleToolset } from '@/hermes'
@@ -15,14 +17,20 @@ import type { SkillInfo, ToolsetInfo } from '@/types/hermes'
 
 import { useRefreshHotkey } from '../hooks/use-refresh-hotkey'
 import { useRouteEnumParam } from '../hooks/use-route-enum-param'
+import { useRoutePageParam } from '../hooks/use-route-page-param'
 import { PAGE_INSET_X } from '../layout-constants'
 import { PageSearchShell } from '../page-search-shell'
 import { asText, includesQuery, prettyName, toolNames, toolsetDisplayLabel } from '../settings/helpers'
 import { ToolsetConfigPanel } from '../settings/toolset-config-panel'
 import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 
-const SKILLS_MODES = ['skills', 'toolsets'] as const
+import { ConnectionsPanel } from './connections-panel'
+import { SkillsAddPanel } from './skills-add-panel'
+
+const SKILLS_MODES = ['skills', 'add', 'toolsets', 'connections'] as const
 type SkillsMode = (typeof SKILLS_MODES)[number]
+const SKILLS_PAGE_SIZE = 10
+const CONNECTIONS_PAGE_SIZE = 15
 
 function categoryFor(skill: SkillInfo): string {
   return asText(skill.category) || 'general'
@@ -74,7 +82,10 @@ interface SkillsViewProps extends React.ComponentProps<'section'> {
 
 export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...props }: SkillsViewProps) {
   const { t } = useI18n()
-  const [mode, setMode] = useRouteEnumParam('tab', SKILLS_MODES, 'skills')
+  const [mode] = useRouteEnumParam('tab', SKILLS_MODES, 'skills')
+  const [page, setPage] = useRoutePageParam()
+  const { hash, pathname, search } = useLocation()
+  const navigate = useNavigate()
 
   const [query, setQuery] = useState('')
   const [skills, setSkills] = useState<SkillInfo[] | null>(null)
@@ -135,19 +146,66 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
 
   const visibleToolsets = useMemo(() => (toolsets ? filteredToolsets(toolsets, query) : []), [query, toolsets])
 
+  const activeTotal = mode === 'skills' ? visibleSkills.length : mode === 'toolsets' ? visibleToolsets.length : 0
+  const activePageCount = Math.max(1, Math.ceil(activeTotal / SKILLS_PAGE_SIZE))
+  const currentPage = Math.min(page, activePageCount)
+  const pageStart = (currentPage - 1) * SKILLS_PAGE_SIZE
+  const pagedSkills = visibleSkills.slice(pageStart, pageStart + SKILLS_PAGE_SIZE)
+  const pagedToolsets = visibleToolsets.slice(pageStart, pageStart + SKILLS_PAGE_SIZE)
+
   const skillGroups = useMemo(() => {
     const groups = new Map<string, SkillInfo[]>()
 
-    for (const skill of visibleSkills) {
+    for (const skill of pagedSkills) {
       const key = categoryFor(skill)
       groups.set(key, [...(groups.get(key) || []), skill])
     }
 
     return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b))
-  }, [visibleSkills])
+  }, [pagedSkills])
 
   const totalSkills = skills?.length || 0
   const enabledToolsets = toolsets?.filter(toolset => toolset.enabled).length || 0
+  const totalToolsets = toolsets?.length || 0
+
+  useEffect(() => {
+    if (mode !== 'connections' && mode !== 'add' && page > activePageCount) {
+      setPage(activePageCount)
+    }
+  }, [activePageCount, mode, page, setPage])
+
+  function handleModeChange(nextMode: SkillsMode) {
+    const params = new URLSearchParams(search)
+
+    if (nextMode === 'skills') {
+      params.delete('tab')
+    } else {
+      params.set('tab', nextMode)
+    }
+
+    params.delete('page')
+    navigate({ hash, pathname, search: params.toString() ? `?${params.toString()}` : '' }, { replace: true })
+  }
+
+  function handleCategoryChange(category: string | null) {
+    setActiveCategory(category)
+    setPage(1)
+  }
+
+  function handleSearchChange(nextQuery: string) {
+    setQuery(nextQuery)
+    setPage(1)
+  }
+
+  const searchHidden =
+    mode === 'add' || mode === 'connections'
+      ? true
+      : mode === 'skills'
+        ? (skills?.length ?? 0) === 0
+        : (toolsets?.length ?? 0) === 0
+
+  const searchPlaceholder =
+    mode === 'skills' ? t.skills.searchSkills : mode === 'toolsets' ? t.skills.searchToolsets : 'Search connections...'
 
   async function handleToggleSkill(skill: SkillInfo, enabled: boolean) {
     setSavingSkill(skill.name)
@@ -194,14 +252,14 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
       filters={
         mode === 'skills' && categories.length > 0 ? (
           <>
-            <TextTab active={activeCategory === null} onClick={() => setActiveCategory(null)}>
+            <TextTab active={activeCategory === null} onClick={() => handleCategoryChange(null)}>
               {t.skills.all} <TextTabMeta>{totalSkills}</TextTabMeta>
             </TextTab>
             {categories.map(category => (
               <TextTab
                 active={activeCategory === category.key}
                 key={category.key}
-                onClick={() => setActiveCategory(activeCategory === category.key ? null : category.key)}
+                onClick={() => handleCategoryChange(activeCategory === category.key ? null : category.key)}
               >
                 {prettyName(category.key)} <TextTabMeta>{category.count}</TextTabMeta>
               </TextTab>
@@ -209,36 +267,48 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
           </>
         ) : undefined
       }
-      onSearchChange={setQuery}
-      searchHidden={mode === 'skills' ? (skills?.length ?? 0) === 0 : (toolsets?.length ?? 0) === 0}
-      searchPlaceholder={mode === 'skills' ? t.skills.searchSkills : t.skills.searchToolsets}
+      onSearchChange={handleSearchChange}
+      searchHidden={searchHidden}
+      searchPlaceholder={searchPlaceholder}
       searchTrailingAction={
-        <Button
-          aria-label={refreshing ? t.skills.refreshing : t.skills.refresh}
-          className="text-(--ui-text-tertiary) hover:bg-transparent hover:text-foreground"
-          disabled={refreshing}
-          onClick={() => void refreshCapabilities()}
-          size="icon-xs"
-          title={refreshing ? t.skills.refreshing : t.skills.refresh}
-          type="button"
-          variant="ghost"
-        >
-          <Codicon name="refresh" size="0.875rem" spinning={refreshing} />
-        </Button>
+        mode === 'connections' || mode === 'add' ? undefined : (
+          <Button
+            aria-label={refreshing ? t.skills.refreshing : t.skills.refresh}
+            className="text-(--ui-text-tertiary) hover:bg-transparent hover:text-foreground"
+            disabled={refreshing}
+            onClick={() => void refreshCapabilities()}
+            size="icon-xs"
+            title={refreshing ? t.skills.refreshing : t.skills.refresh}
+            type="button"
+            variant="ghost"
+          >
+            <Codicon name="refresh" size="0.875rem" spinning={refreshing} />
+          </Button>
+        )
       }
       searchValue={query}
       tabs={
         <>
-          <TextTab active={mode === 'skills'} onClick={() => setMode('skills')}>
+          <TextTab active={mode === 'skills'} onClick={() => handleModeChange('skills')}>
             {t.skills.tabSkills}
           </TextTab>
-          <TextTab active={mode === 'toolsets'} onClick={() => setMode('toolsets')}>
+          <TextTab active={mode === 'add'} onClick={() => handleModeChange('add')}>
+            {t.skills.tabAdd}
+          </TextTab>
+          <TextTab active={mode === 'toolsets'} onClick={() => handleModeChange('toolsets')}>
             {t.skills.tabToolsets}
+          </TextTab>
+          <TextTab active={mode === 'connections'} onClick={() => handleModeChange('connections')}>
+            Connections
           </TextTab>
         </>
       }
     >
-      {!skills || !toolsets ? (
+      {mode === 'connections' ? (
+        <ConnectionsPanel onPageChange={setPage} page={page} pageSize={CONNECTIONS_PAGE_SIZE} query={query} />
+      ) : mode === 'add' ? (
+        <SkillsAddPanel onSkillsChanged={() => void refreshCapabilities()} />
+      ) : !skills || !toolsets ? (
         <PageLoader label={t.skills.loading} />
       ) : mode === 'skills' ? (
         <div className={cn('h-full overflow-y-auto py-3', PAGE_INSET_X)}>
@@ -275,6 +345,14 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
                   </div>
                 </div>
               ))}
+              <PaginationControl
+                className="pt-2"
+                itemLabel="skills"
+                onPageChange={setPage}
+                page={currentPage}
+                pageSize={SKILLS_PAGE_SIZE}
+                total={visibleSkills.length}
+              />
             </div>
           )}
         </div>
@@ -285,10 +363,10 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
           ) : (
             <div className="space-y-2">
               <div className="text-xs text-muted-foreground">
-                {t.skills.toolsetsEnabled(enabledToolsets, toolsets.length)}
+                {t.skills.toolsetsEnabled(enabledToolsets, totalToolsets)}
               </div>
               <div>
-                {visibleToolsets.map(toolset => {
+                {pagedToolsets.map(toolset => {
                   const tools = toolNames(toolset)
                   const label = toolsetDisplayLabel(toolset)
                   const expanded = expandedToolset === toolset.name
@@ -339,6 +417,14 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
                   )
                 })}
               </div>
+              <PaginationControl
+                className="pt-2"
+                itemLabel="toolsets"
+                onPageChange={setPage}
+                page={currentPage}
+                pageSize={SKILLS_PAGE_SIZE}
+                total={visibleToolsets.length}
+              />
             </div>
           )}
         </div>

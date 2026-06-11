@@ -7,7 +7,7 @@ import { installWebBridge } from '@/platform/install-web-bridge'
 installWebBridge()
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { HashRouter } from 'react-router-dom'
+import { BrowserRouter } from 'react-router-dom'
 
 import App from './app'
 import { ErrorBoundary } from './components/error-boundary'
@@ -19,6 +19,18 @@ import { queryClient } from './lib/query-client'
 import { ThemeProvider } from './themes/context'
 
 installClipboardShim()
+
+function normalizeLegacyHashRoute() {
+  const hashRoute = window.location.hash.match(/^#(\/.*)$/)?.[1]
+
+  if (!hashRoute) {
+    return
+  }
+
+  window.history.replaceState(null, '', hashRoute)
+}
+
+normalizeLegacyHashRoute()
 
 // Dev-only: install __PERF_DRIVE__ + __PERF_PROBE__ on window so the
 // scripts/ harnesses can drive a synthetic stream + record render cost.
@@ -36,11 +48,11 @@ createRoot(document.getElementById('root')!).render(
         <I18nProvider>
           <ThemeProvider>
             <HapticsProvider>
-              <HashRouter>
+              <BrowserRouter>
                 <VerxioAuthGate>
                   <App />
                 </VerxioAuthGate>
-              </HashRouter>
+              </BrowserRouter>
             </HapticsProvider>
           </ThemeProvider>
         </I18nProvider>

@@ -498,6 +498,72 @@ export interface SkillInfo {
   name: string
 }
 
+export interface SkillHubResult {
+  name: string
+  description: string
+  source: string
+  identifier: string
+  trust_level: string
+  repo: string | null
+  tags: string[]
+}
+
+export interface SkillHubInstalledEntry {
+  name: string | null
+  trust_level: string | null
+  scan_verdict: string | null
+}
+
+export interface SkillHubSearchResponse {
+  results: SkillHubResult[]
+  source_counts: Record<string, number>
+  timed_out: string[]
+  installed: Record<string, SkillHubInstalledEntry>
+}
+
+export interface SkillHubSource {
+  id: string
+  label: string
+  rate_limited?: boolean
+  available?: boolean
+}
+
+export interface SkillHubSourcesResponse {
+  sources: SkillHubSource[]
+  index_available: boolean
+  featured: SkillHubResult[]
+  installed: Record<string, SkillHubInstalledEntry>
+}
+
+export interface SkillHubPreview {
+  name: string
+  description: string
+  source: string
+  identifier: string
+  trust_level: string
+  repo: string | null
+  tags: string[]
+  skill_md: string
+  files: string[]
+}
+
+export interface SkillCreateResponse {
+  success: boolean
+  message?: string
+  path?: string
+  error?: string
+}
+
+export interface SkillsConfigResponse {
+  external_dirs: string[]
+}
+
+export interface SkillsReloadResponse {
+  added?: Array<{ name: string }>
+  removed?: Array<{ name: string }>
+  total?: number
+}
+
 export interface ToolsetInfo {
   configured: boolean
   description: string

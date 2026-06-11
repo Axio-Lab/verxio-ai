@@ -34,7 +34,13 @@ import type {
   ProfilesResponse,
   SessionMessagesResponse,
   SessionSearchResponse,
+  SkillCreateResponse,
+  SkillHubPreview,
+  SkillHubSearchResponse,
+  SkillHubSourcesResponse,
   SkillInfo,
+  SkillsConfigResponse,
+  SkillsReloadResponse,
   StatusResponse,
   ToolsetConfig,
   ToolsetInfo
@@ -403,6 +409,89 @@ export function toggleSkill(name: string, enabled: boolean): Promise<{ ok: boole
     method: 'PUT',
     body: { name, enabled }
   })
+}
+
+export function searchSkillsHub(q: string, source = 'all', limit = 20): Promise<SkillHubSearchResponse> {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    q,
+    source
+  })
+
+  return window.hermesDesktop.api({
+    ...profileScoped(),
+    path: `/api/skills/hub/search?${params.toString()}`
+  })
+}
+
+export function getSkillHubSources(): Promise<SkillHubSourcesResponse> {
+  return window.hermesDesktop.api({
+    ...profileScoped(),
+    path: '/api/skills/hub/sources'
+  })
+}
+
+export function previewSkillFromHub(identifier: string): Promise<SkillHubPreview> {
+  return window.hermesDesktop.api({
+    ...profileScoped(),
+    path: `/api/skills/hub/preview?identifier=${encodeURIComponent(identifier)}`
+  })
+}
+
+export function installSkillFromHub(identifier: string): Promise<ActionResponse> {
+  return window.hermesDesktop.api({
+    ...profileScoped(),
+    path: '/api/skills/hub/install',
+    method: 'POST',
+    body: { identifier }
+  })
+}
+
+export function updateSkillsFromHub(): Promise<ActionResponse> {
+  return window.hermesDesktop.api({
+    ...profileScoped(),
+    path: '/api/skills/hub/update',
+    method: 'POST'
+  })
+}
+
+export function createCustomSkill(name: string, content: string, category?: string): Promise<SkillCreateResponse> {
+  return window.hermesDesktop.api({
+    ...profileScoped(),
+    path: '/api/skills/custom/create',
+    method: 'POST',
+    body: { category: category || null, content, name }
+  })
+}
+
+export function reloadSkills(): Promise<SkillsReloadResponse> {
+  return window.hermesDesktop.api({
+    ...profileScoped(),
+    path: '/api/skills/reload',
+    method: 'POST'
+  })
+}
+
+export async function getSkillsConfig(): Promise<SkillsConfigResponse> {
+  try {
+    return await window.hermesDesktop.api<SkillsConfigResponse>({
+      ...profileScoped(),
+      path: '/api/skills/config'
+    })
+  } catch {
+    const config = await getHermesConfigRecord()
+    const skills = config.skills
+
+    if (skills && typeof skills === 'object' && !Array.isArray(skills)) {
+      const external = (skills as Record<string, unknown>).external_dirs
+
+      if (Array.isArray(external)) {
+        return { external_dirs: external.map(item => String(item)).filter(Boolean) }
+      }
+    }
+
+    return { external_dirs: [] }
+  }
 }
 
 export function getToolsets(): Promise<ToolsetInfo[]> {

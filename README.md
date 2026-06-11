@@ -1,6 +1,6 @@
 # Verxio Web
 
-Browser product UI for Verxio, adapted from the Hermes desktop/web surface.
+Browser product UI for Verxio, adapted from the Hermes desktop surface.
 
 ## Architecture
 
@@ -12,9 +12,9 @@ Browser
   -> tools, memory, skills, MCP, cron, gateways, model providers
 ```
 
-Direct Hermes dashboard mode still exists for upstream comparison, but hosted Verxio should use Verxio API.
+Hosted Verxio always uses Verxio API (`VITE_VERXIO_API_ENABLED=true`).
 
-## Local Development
+## Local development
 
 Start the API:
 
@@ -30,11 +30,25 @@ npm install
 VITE_VERXIO_API_ENABLED=true VITE_VERXIO_API_URL=http://127.0.0.1:8787 npm run dev
 ```
 
-Open:
+Open `http://127.0.0.1:5180`.
 
-```text
-http://127.0.0.1:5180
+## Production build
+
+```bash
+npm ci
+VITE_VERXIO_API_ENABLED=true VITE_VERXIO_API_URL= npm run build
 ```
+
+Output: `dist/`. With an empty `VITE_VERXIO_API_URL`, the app uses same-origin `/api` (nginx proxies `/api` to `verxio-api`).
+
+## Docker
+
+```bash
+docker compose -f ../docker-compose.verxio.yml build verxio-web
+docker compose -f ../docker-compose.verxio.yml up verxio-web
+```
+
+Open `http://127.0.0.1:8080`.
 
 ## Scripts
 
@@ -46,14 +60,10 @@ http://127.0.0.1:5180
 | `npm run lint` | ESLint |
 | `npm run test:ui` | Vitest |
 
-## Production
+## Direct Hermes debug mode
 
-See [DEPLOY.md](./DEPLOY.md).
-
-## Direct Hermes Debug Mode
+Bypass Verxio API only when comparing against upstream Hermes:
 
 ```bash
-HERMES_DASHBOARD_URL=http://127.0.0.1:9119 npm run dev
+VITE_VERXIO_API_ENABLED=false VITE_HERMES_DASHBOARD_URL=http://127.0.0.1:9119 npm run dev
 ```
-
-Use this only to compare against the upstream Hermes dashboard.

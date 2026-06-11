@@ -46,6 +46,84 @@ export interface VerxioArtifactListResponse {
   artifacts: VerxioArtifact[]
 }
 
+export interface ComposioConnectedAccount {
+  id: string
+  appSlug: string
+  status: string
+  createdAt?: string
+}
+
+export interface ComposioToolPreview {
+  slug: string
+  name: string
+  description: string
+}
+
+export type ComposioAuthMode = 'no_auth' | 'managed_oauth' | 'connect_link' | 'requires_oauth_app'
+
+export interface ComposioApp {
+  slug: string
+  name: string
+  description: string
+  logoUrl: string | null
+  categories: string[]
+  noAuth: boolean
+  authMode?: ComposioAuthMode
+  authSchemes?: string[]
+  connectable?: boolean
+  toolsCount?: number | null
+  triggersCount?: number | null
+  sampleTools?: ComposioToolPreview[]
+}
+
+export interface ComposioAuthInputField {
+  name: string
+  displayName: string
+  type: string
+  description: string
+  required: boolean
+  isSecret: boolean
+}
+
+export interface ComposioConnectionSetupResponse {
+  appSlug: string
+  name: string
+  authMode: ComposioAuthMode
+  authScheme: string | null
+  supportsInline: boolean
+  supportsLink: boolean
+  inputFields: ComposioAuthInputField[]
+}
+
+export interface ComposioConnectionsResponse {
+  accounts: ComposioConnectedAccount[]
+  configured: boolean
+}
+
+export interface ComposioAppsResponse {
+  apps: ComposioApp[]
+  configured: boolean
+  catalogReady?: boolean
+  catalogError?: string | null
+}
+
+export interface ComposioAppToolsResponse {
+  tools: ComposioToolPreview[]
+  configured: boolean
+  catalogReady?: boolean
+  catalogError?: string | null
+}
+
+export interface ComposioInitiateResponse {
+  redirectUrl: string | null
+  connectionId: string
+}
+
+export interface ComposioCompleteConnectionResponse {
+  connectionId: string
+  status: string
+}
+
 export function verxioApiBaseUrl(): string {
   return import.meta.env.VITE_VERXIO_API_URL?.replace(/\/$/, '') ?? ''
 }
@@ -84,6 +162,25 @@ export async function verxioFetch<T>(path: string, init: RequestInit = {}): Prom
 
   if (!response.ok) {
     const detail = await response.text().catch(() => '')
+
+    if (detail) {
+      try {
+        const parsed = JSON.parse(detail) as { detail?: unknown; message?: unknown }
+
+        if (typeof parsed.detail === 'string' && parsed.detail.trim()) {
+          throw new Error(parsed.detail.trim())
+        }
+
+        if (typeof parsed.message === 'string' && parsed.message.trim()) {
+          throw new Error(parsed.message.trim())
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message !== detail) {
+          throw error
+        }
+      }
+    }
+
     throw new Error(detail || `${response.status} ${response.statusText}`)
   }
 
@@ -118,4 +215,47 @@ export function authLogout(): Promise<{ ok: boolean }> {
 
 export function listVerxioArtifacts(): Promise<VerxioArtifactListResponse> {
   return verxioFetch<VerxioArtifactListResponse>('/api/artifacts')
+}
+
+export function listComposioConnections(): Promise<ComposioConnectionsResponse> {
+  return verxioFetch<ComposioConnectionsResponse>('/api/composio/connections')
+}
+
+export function listComposioApps(): Promise<ComposioAppsResponse> {
+  return verxioFetch<ComposioAppsResponse>('/api/composio/connections/apps')
+}
+
+export function listComposioAppTools(appSlug: string, limit = 4): Promise<ComposioAppToolsResponse> {
+  return verxioFetch<ComposioAppToolsResponse>(
+    `/api/composio/connections/apps/${encodeURIComponent(appSlug)}/tools?limit=${limit}`
+  )
+}
+
+export function getComposioConnectionSetup(appSlug: string): Promise<ComposioConnectionSetupResponse> {
+  return verxioFetch<ComposioConnectionSetupResponse>(
+    `/api/composio/connections/apps/${encodeURIComponent(appSlug)}/setup`
+  )
+}
+
+export function initiateComposioConnection(appSlug: string, callbackUrl?: string): Promise<ComposioInitiateResponse> {
+  return verxioFetch<ComposioInitiateResponse>('/api/composio/connections/initiate', {
+    body: JSON.stringify({ appSlug, callbackUrl }),
+    method: 'POST'
+  })
+}
+
+export function completeComposioConnection(
+  appSlug: string,
+  credentials: Record<string, string>
+): Promise<ComposioCompleteConnectionResponse> {
+  return verxioFetch<ComposioCompleteConnectionResponse>('/api/composio/connections/complete', {
+    body: JSON.stringify({ appSlug, credentials }),
+    method: 'POST'
+  })
+}
+
+export function disconnectComposioAccount(accountId: string): Promise<{ message?: string }> {
+  return verxioFetch<{ message?: string }>(`/api/composio/connections/${encodeURIComponent(accountId)}`, {
+    method: 'DELETE'
+  })
 }

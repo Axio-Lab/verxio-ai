@@ -548,6 +548,7 @@ export const en: Translations = {
 
   skills: {
     tabSkills: 'Skills',
+    tabAdd: 'Add',
     tabToolsets: 'Toolsets',
     all: 'All',
     searchSkills: 'Search skills...',

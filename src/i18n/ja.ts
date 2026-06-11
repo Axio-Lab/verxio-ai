@@ -648,6 +648,7 @@ export const ja = defineLocale({
 
   skills: {
     tabSkills: 'スキル',
+    tabAdd: '追加',
     tabToolsets: 'ツールセット',
     all: 'すべて',
     searchSkills: 'スキルを検索...',

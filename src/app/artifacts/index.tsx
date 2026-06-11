@@ -7,15 +7,7 @@ import { PageLoader } from '@/components/page-loader'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { CopyButton } from '@/components/ui/copy-button'
-import {
-  Pagination,
-  PaginationButton,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-  PaginationNext,
-  PaginationPrevious
-} from '@/components/ui/pagination'
+import { PaginationControl } from '@/components/ui/pagination'
 import { TextTab, TextTabMeta } from '@/components/ui/text-tab'
 import { Tip } from '@/components/ui/tooltip'
 import { getSessionMessages, listSessions } from '@/hermes'
@@ -338,43 +330,6 @@ function formatArtifactTime(timestamp: number): string {
   return ARTIFACT_TIME_FMT.format(new Date(timestamp))
 }
 
-function pageRangeLabel(total: number, page: number, pageSize: number, a: Translations['artifacts']): string {
-  if (total === 0) {
-    return a.zero
-  }
-
-  const start = (page - 1) * pageSize + 1
-  const end = Math.min(total, page * pageSize)
-
-  return a.rangeOf(start, end, total)
-}
-
-function paginationItems(page: number, pageCount: number): Array<number | 'ellipsis'> {
-  if (pageCount <= 7) {
-    return Array.from({ length: pageCount }, (_, index) => index + 1)
-  }
-
-  const pages: Array<number | 'ellipsis'> = [1]
-  const start = Math.max(2, page - 1)
-  const end = Math.min(pageCount - 1, page + 1)
-
-  if (start > 2) {
-    pages.push('ellipsis')
-  }
-
-  for (let nextPage = start; nextPage <= end; nextPage += 1) {
-    pages.push(nextPage)
-  }
-
-  if (end < pageCount - 1) {
-    pages.push('ellipsis')
-  }
-
-  pages.push(pageCount)
-
-  return pages
-}
-
 type CellCtx = {
   onOpen: (href: string) => void | Promise<void>
   onOpenChat: (sessionId: string) => void
@@ -665,46 +620,15 @@ interface ArtifactsPaginationProps {
 }
 
 function ArtifactsPagination({ className, itemLabel, onPageChange, page, pageSize, total }: ArtifactsPaginationProps) {
-  const { t } = useI18n()
-  const a = t.artifacts
-  const pageCount = Math.max(1, Math.ceil(total / pageSize))
-
   return (
-    <div className={cn('flex h-6 items-center justify-between gap-2 px-1', className)}>
-      <div className="shrink-0 text-[0.62rem] text-muted-foreground">
-        {pageRangeLabel(total, page, pageSize, a)} {itemLabel}
-      </div>
-      {pageCount > 1 && (
-        <Pagination className="mx-0 w-auto min-w-0 justify-end">
-          <PaginationContent className="gap-0.5">
-            <PaginationItem>
-              <PaginationPrevious disabled={page <= 1} onClick={() => onPageChange(Math.max(1, page - 1))} />
-            </PaginationItem>
-            {paginationItems(page, pageCount).map((item, index) => (
-              <PaginationItem key={`${item}-${index}`}>
-                {item === 'ellipsis' ? (
-                  <PaginationEllipsis />
-                ) : (
-                  <PaginationButton
-                    aria-label={a.goToPage(itemLabel, item)}
-                    isActive={page === item}
-                    onClick={() => onPageChange(item)}
-                  >
-                    {item}
-                  </PaginationButton>
-                )}
-              </PaginationItem>
-            ))}
-            <PaginationItem>
-              <PaginationNext
-                disabled={page >= pageCount}
-                onClick={() => onPageChange(Math.min(pageCount, page + 1))}
-              />
-            </PaginationItem>
-          </PaginationContent>
-        </Pagination>
-      )}
-    </div>
+    <PaginationControl
+      className={className}
+      itemLabel={itemLabel}
+      onPageChange={onPageChange}
+      page={page}
+      pageSize={pageSize}
+      total={total}
+    />
   )
 }
 

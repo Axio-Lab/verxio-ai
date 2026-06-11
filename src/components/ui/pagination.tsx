@@ -4,6 +4,34 @@ import { Codicon } from '@/components/ui/codicon'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 
+export type PaginationRangeItem = number | 'ellipsis'
+
+export function paginationRange(page: number, pageCount: number): PaginationRangeItem[] {
+  if (pageCount <= 7) {
+    return Array.from({ length: pageCount }, (_, index) => index + 1)
+  }
+
+  const pages: PaginationRangeItem[] = [1]
+  const start = Math.max(2, page - 1)
+  const end = Math.min(pageCount - 1, page + 1)
+
+  if (start > 2) {
+    pages.push('ellipsis')
+  }
+
+  for (let nextPage = start; nextPage <= end; nextPage += 1) {
+    pages.push(nextPage)
+  }
+
+  if (end < pageCount - 1) {
+    pages.push('ellipsis')
+  }
+
+  pages.push(pageCount)
+
+  return pages
+}
+
 function Pagination({ className, ...props }: React.ComponentProps<'nav'>) {
   const { t } = useI18n()
 
@@ -103,10 +131,65 @@ function PaginationEllipsis({ className, ...props }: React.ComponentProps<'span'
   )
 }
 
+interface PaginationControlProps {
+  className?: string
+  itemLabel: string
+  onPageChange: (page: number) => void
+  page: number
+  pageSize: number
+  total: number
+}
+
+function PaginationControl({ className, itemLabel, onPageChange, page, pageSize, total }: PaginationControlProps) {
+  const pageCount = Math.max(1, Math.ceil(total / pageSize))
+  const safePage = Math.min(Math.max(1, page), pageCount)
+  const start = total === 0 ? 0 : (safePage - 1) * pageSize + 1
+  const end = Math.min(total, safePage * pageSize)
+
+  return (
+    <div className={cn('flex h-6 items-center justify-between gap-2 px-1', className)}>
+      <div className="shrink-0 text-[0.62rem] text-muted-foreground">
+        {total === 0 ? `0 ${itemLabel}` : `${start}-${end} of ${total} ${itemLabel}`}
+      </div>
+      {pageCount > 1 && (
+        <Pagination className="mx-0 w-auto min-w-0 justify-end">
+          <PaginationContent className="gap-0.5">
+            <PaginationItem>
+              <PaginationPrevious disabled={safePage <= 1} onClick={() => onPageChange(Math.max(1, safePage - 1))} />
+            </PaginationItem>
+            {paginationRange(safePage, pageCount).map((item, index) => (
+              <PaginationItem key={`${item}-${index}`}>
+                {item === 'ellipsis' ? (
+                  <PaginationEllipsis />
+                ) : (
+                  <PaginationButton
+                    aria-label={`Go to ${itemLabel} page ${item}`}
+                    isActive={safePage === item}
+                    onClick={() => onPageChange(item)}
+                  >
+                    {item}
+                  </PaginationButton>
+                )}
+              </PaginationItem>
+            ))}
+            <PaginationItem>
+              <PaginationNext
+                disabled={safePage >= pageCount}
+                onClick={() => onPageChange(Math.min(pageCount, safePage + 1))}
+              />
+            </PaginationItem>
+          </PaginationContent>
+        </Pagination>
+      )}
+    </div>
+  )
+}
+
 export {
   Pagination,
   PaginationButton,
   PaginationContent,
+  PaginationControl,
   PaginationEllipsis,
   PaginationItem,
   PaginationNext,

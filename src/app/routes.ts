@@ -1,8 +1,12 @@
 export const SESSION_ROUTE_PREFIX = '/'
 export const NEW_CHAT_ROUTE = '/'
+export const LOGIN_ROUTE = '/login'
+export const SIGNOUT_ROUTE = '/signout'
 export const SETTINGS_ROUTE = '/settings'
 export const COMMAND_CENTER_ROUTE = '/command-center'
 export const SKILLS_ROUTE = '/skills'
+export const TOOLSET_ROUTE = '/toolset'
+export const TOOLSETS_ROUTE = '/toolsets'
 export const MESSAGING_ROUTE = '/messaging'
 export const ARTIFACTS_ROUTE = '/artifacts'
 export const CRON_ROUTE = '/cron'
@@ -50,7 +54,14 @@ export const APP_ROUTES = [
 ] as const satisfies readonly AppRoute[]
 
 const APP_VIEW_BY_PATH = new Map<string, AppView>(APP_ROUTES.map(route => [route.path, route.view]))
-const RESERVED_PATHS: ReadonlySet<string> = new Set(APP_ROUTES.map(route => route.path))
+
+const RESERVED_PATHS: ReadonlySet<string> = new Set([
+  ...APP_ROUTES.map(route => route.path),
+  LOGIN_ROUTE,
+  SIGNOUT_ROUTE,
+  TOOLSET_ROUTE,
+  TOOLSETS_ROUTE
+])
 
 // Views that render as a full-screen modal card (OverlayView) over the shell.
 // While one is open the app's titlebar control clusters must hide so they don't

@@ -624,6 +624,7 @@ export const zhHant = defineLocale({
 
   skills: {
     tabSkills: '技能',
+    tabAdd: '新增',
     tabToolsets: '工具集',
     all: '全部',
     searchSkills: '搜尋技能...',

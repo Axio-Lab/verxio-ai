@@ -336,6 +336,7 @@ async function getConnection(): Promise<HermesConnection> {
   })
 
   const wsUrl = buildWsUrl('/api/ws', { token })
+
   const baseUrl = verxioApiEnabled()
     ? verxioApiUrl('/api/runtime/dashboard')
     : hermesDashboardBaseUrl() || window.location.origin
