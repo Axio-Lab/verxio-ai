@@ -14,7 +14,6 @@ import {
   getSkillsConfig,
   installSkillFromHub,
   previewSkillFromHub,
-  reloadSkills,
   searchSkillsHub,
   updateSkillsFromHub
 } from '@/hermes'
@@ -247,17 +246,14 @@ export function SkillsAddPanel({ onSkillsChanged }: SkillsAddPanelProps) {
     setReloading(true)
 
     try {
-      const result = await reloadSkills()
-      const added = result.added?.length || 0
-      const removed = result.removed?.length || 0
+      onSkillsChanged?.()
       notify({
         kind: 'success',
-        title: 'Skills reloaded',
-        message: `${added} added, ${removed} removed (${result.total ?? 0} total)`
+        title: 'Skills refreshed',
+        message: 'Reloaded the skills list from your runtime.'
       })
-      onSkillsChanged?.()
     } catch (err) {
-      notifyError(err, 'Failed to reload skills')
+      notifyError(err, 'Failed to refresh skills')
     } finally {
       setReloading(false)
     }
@@ -487,7 +483,7 @@ export function SkillsAddPanel({ onSkillsChanged }: SkillsAddPanelProps) {
               variant="outline"
             >
               {reloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-              Reload skills from disk
+              Refresh skills list
             </Button>
           </InfoCard>
 

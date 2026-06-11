@@ -558,12 +558,6 @@ export interface SkillsConfigResponse {
   external_dirs: string[]
 }
 
-export interface SkillsReloadResponse {
-  added?: Array<{ name: string }>
-  removed?: Array<{ name: string }>
-  total?: number
-}
-
 export interface ToolsetInfo {
   configured: boolean
   description: string

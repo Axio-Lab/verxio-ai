@@ -645,17 +645,26 @@ export function installWebBridge(): void {
       }
 
       const params = new URLSearchParams({ path: dirPath })
-      const url = buildApiUrl(`/api/fs/readdir?${params.toString()}`)
 
-      try {
+      async function fetchDir(endpoint: 'list' | 'readdir') {
+        const url = buildApiUrl(`/api/fs/${endpoint}?${params.toString()}`)
+
         const res = await fetch(url, {
           credentials: fetchCredentials(),
           headers: authHeaders()
         })
 
-        if (!res.ok) {
-          const text = await res.text().catch(() => '')
+        return { res, text: res.ok ? '' : await res.text().catch(() => '') }
+      }
 
+      try {
+        let { res, text } = await fetchDir('list')
+
+        if (res.status === 404 && text.includes('No such API endpoint')) {
+          ;({ res, text } = await fetchDir('readdir'))
+        }
+
+        if (!res.ok) {
           if (res.status === 404 && text.includes('No such API endpoint')) {
             return {
               entries: [],

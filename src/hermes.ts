@@ -40,7 +40,6 @@ import type {
   SkillHubSourcesResponse,
   SkillInfo,
   SkillsConfigResponse,
-  SkillsReloadResponse,
   StatusResponse,
   ToolsetConfig,
   ToolsetInfo
@@ -458,40 +457,25 @@ export function updateSkillsFromHub(): Promise<ActionResponse> {
 export function createCustomSkill(name: string, content: string, category?: string): Promise<SkillCreateResponse> {
   return window.hermesDesktop.api({
     ...profileScoped(),
-    path: '/api/skills/custom/create',
+    path: '/api/skills',
     method: 'POST',
     body: { category: category || null, content, name }
   })
 }
 
-export function reloadSkills(): Promise<SkillsReloadResponse> {
-  return window.hermesDesktop.api({
-    ...profileScoped(),
-    path: '/api/skills/reload',
-    method: 'POST'
-  })
-}
-
 export async function getSkillsConfig(): Promise<SkillsConfigResponse> {
-  try {
-    return await window.hermesDesktop.api<SkillsConfigResponse>({
-      ...profileScoped(),
-      path: '/api/skills/config'
-    })
-  } catch {
-    const config = await getHermesConfigRecord()
-    const skills = config.skills
+  const config = await getHermesConfigRecord()
+  const skills = config.skills
 
-    if (skills && typeof skills === 'object' && !Array.isArray(skills)) {
-      const external = (skills as Record<string, unknown>).external_dirs
+  if (skills && typeof skills === 'object' && !Array.isArray(skills)) {
+    const external = (skills as Record<string, unknown>).external_dirs
 
-      if (Array.isArray(external)) {
-        return { external_dirs: external.map(item => String(item)).filter(Boolean) }
-      }
+    if (Array.isArray(external)) {
+      return { external_dirs: external.map(item => String(item)).filter(Boolean) }
     }
-
-    return { external_dirs: [] }
   }
+
+  return { external_dirs: [] }
 }
 
 export function getToolsets(): Promise<ToolsetInfo[]> {
