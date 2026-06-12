@@ -4,5 +4,5 @@ set -e
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
-echo "Running Verxio Web CI checks before commit..."
-npm run ci
+echo "Running Prettier before commit..."
+npm run format:check

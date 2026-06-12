@@ -1,6 +1,0 @@
-node_modules/
-packages/shared/node_modules/
-dist/
-coverage/
-.vite/
-*.tsbuildinfo

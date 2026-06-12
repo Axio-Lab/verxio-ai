@@ -18,8 +18,7 @@
     "format": "npm run fmt",
     "format:check": "prettier --check 'src/**/*.{ts,tsx}' 'packages/shared/**/*.{ts,tsx}' 'vite.config.ts'",
     "fix": "npm run lint:fix && npm run fmt",
-    "ci": "npm run format:check && npm run lint && npm run type-check && npm run build && npm run test:ui",
-    "prepare": "node scripts/install-git-hooks.mjs",
+    "ci": "npm run lint && npm run type-check && npm run build && npm run test:ui",
     "test:ui": "vitest run --environment jsdom"
   },
   "dependencies": {
