@@ -22,8 +22,8 @@ jobs:
       - name: Install root dependencies
         run: npm ci
 
-      - name: Check formatting
-        run: npm run format:check
+      - name: Format code
+        run: npm run fmt
 
       - name: Run CI checks
-        run: npm run ci
+        run: npm run format:check && npm run ci:web

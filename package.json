@@ -14,7 +14,7 @@
     "install:web": "npm ci --prefix verxio-web",
     "preci:web": "npm run install:web",
     "ci:web": "npm run ci --prefix verxio-web",
-    "ci": "npm run format:check && npm run ci:web",
+    "ci": "npm run fmt && npm run format:check && npm run ci:web",
     "prepare": "node scripts/install-git-hooks.mjs"
   },
   "devDependencies": {
