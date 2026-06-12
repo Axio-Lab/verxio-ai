@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Verxio</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Verxio</p>
+          <h1>Hermes runtime skin</h1>
+        </div>
+        <div id="runtime-status" class="runtime-pill" aria-live="polite"></div>
+      </header>
+
+      <main class="shell">
+        <section class="workspace" aria-label="Verxio assistant">
+          <div id="error-banner" class="error-banner hidden" role="alert"></div>
+          <div id="loading-state" class="loading-grid" aria-hidden="true">
+            <div class="skeleton tall"></div>
+            <div class="skeleton"></div>
+          </div>
+
+          <div id="content" class="hidden">
+            <section class="agent-hero">
+              <div>
+                <p class="eyebrow">Assistant</p>
+                <h2 id="agent-name">Verxio Agent</h2>
+                <p id="agent-description" class="muted"></p>
+              </div>
+              <span id="agent-status" class="status-pill"></span>
+            </section>
+
+            <div class="content-grid">
+              <section class="panel run-panel">
+                <div class="section-heading">
+                  <span>Ask Verxio</span>
+                  <span id="model-label" class="count-pill">Hermes model</span>
+                </div>
+                <form id="run-form" class="run-form">
+                  <label id="task-label" for="task-input">Message</label>
+                  <textarea id="task-input" name="task" rows="8" required minlength="1" maxlength="8000"></textarea>
+                  <div class="starter-row" id="starter-row"></div>
+                  <div class="run-actions">
+                    <button id="run-button" class="primary-button" type="submit">Send to Hermes</button>
+                    <button id="stop-button" class="secondary-button hidden" type="button">Stop run</button>
+                  </div>
+                </form>
+                <div id="run-result" class="result-box empty-state">
+                  <p class="strong">No message yet</p>
+                  <p>Send a message to run the local Hermes Agent runtime through Verxio.</p>
+                </div>
+              </section>
+
+              <aside class="panel runtime-panel" aria-label="Hermes runtime">
+                <div class="section-heading">
+                  <span>Hermes runtime</span>
+                  <button id="refresh-button" class="secondary-button" type="button">Refresh</button>
+                </div>
+                <dl id="runtime-list" class="identity-list"></dl>
+                <div id="runtime-errors" class="runtime-errors"></div>
+              </aside>
+            </div>
+
+            <div class="content-grid lower-grid">
+              <section class="panel">
+                <div class="section-heading">
+                  <span>Connections and jobs</span>
+                  <span id="connection-count" class="count-pill">0</span>
+                </div>
+                <div id="connection-list" class="stack-list"></div>
+              </section>
+
+              <section class="panel">
+                <div class="section-heading">
+                  <span>Recent runs</span>
+                  <span id="run-count" class="count-pill">0</span>
+                </div>
+                <div id="run-list" class="stack-list"></div>
+              </section>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script src="/static/app.js" type="module"></script>
+  </body>
+</html>

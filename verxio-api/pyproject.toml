@@ -1,0 +1,21 @@
+[project]
+name = "verxio-api"
+version = "0.1.0"
+description = "Verxio web/API skin for the Hermes Agent runtime."
+requires-python = ">=3.11,<3.14"
+dependencies = [
+  "fastapi>=0.104.0,<1",
+  "httpx>=0.28.0,<1",
+  "libsql>=0.1.0,<1",
+  "pydantic>=2.7.0,<3",
+  "uvicorn[standard]>=0.24.0,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0,<10",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
