@@ -9,13 +9,14 @@ import {
   getGlobalModelOptions,
   getRecommendedDefaultModel,
   setEnvVar,
-  setModelAssignment
+  setModelAssignment,
+  validateProviderCredential
 } from '@/hermes'
 import type { AuxiliaryModelsResponse, ModelOptionProvider, StaleAuxAssignment } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { AlertTriangle, Cpu, Loader2 } from '@/lib/icons'
 import { cn } from '@/lib/utils'
-import { startManualProviderOAuth } from '@/store/onboarding'
+import { startManualLocalEndpoint, startManualProviderOAuth } from '@/store/onboarding'
 
 import { CONTROL_TEXT } from './constants'
 import { ListRow, LoadingState, Pill, SectionHeading } from './primitives'
@@ -196,6 +197,20 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
     setError('')
 
     try {
+      const probe = await validateProviderCredential(keyEnv, apiKeyDraft.trim())
+
+      if (!probe.reachable) {
+        setError(probe.message || `Could not reach ${selectedProviderRow?.name ?? 'provider'}.`)
+
+        return
+      }
+
+      if (!probe.ok) {
+        setError(probe.message || 'Invalid API key.')
+
+        return
+      }
+
       await setEnvVar(keyEnv, apiKeyDraft.trim())
       setApiKeyDraft('')
 
@@ -224,10 +239,23 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
   }, [apiKeyDraft, selectedProviderRow])
 
   // OAuth / external providers can't be activated with a pasted key — hand off
-  // to the shared onboarding flow scoped to this provider's real sign-in.
+  // to the shared onboarding flow scoped to this provider's real sign-in. The
+  // custom / local endpoint is NOT an OAuth provider, so it gets the dedicated
+  // local-endpoint form (URL + optional API key) instead of being dead-ended
+  // on the OAuth picker.
   const startProviderSetup = useCallback(() => {
-    if (selectedProviderRow?.slug) {
-      startManualProviderOAuth(selectedProviderRow.slug)
+    const slug = selectedProviderRow?.slug
+
+    if (!slug) {
+      return
+    }
+
+    const lower = slug.toLowerCase()
+
+    if (lower === 'custom' || lower === 'local' || lower.startsWith('custom:')) {
+      startManualLocalEndpoint()
+    } else {
+      startManualProviderOAuth(slug)
     }
   }, [selectedProviderRow])
 
