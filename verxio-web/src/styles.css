@@ -276,8 +276,10 @@
     --radius: 0.75rem;
     --radius-scalar: 0.6;
 
-    /* Space under last message vs overlay composer — driven by the measured composer height (see composer/index.tsx). */
-    --thread-last-message-clearance: calc(var(--composer-measured-height) + 2rem);
+    /* Space under last message vs overlay composer — driven by the measured composer height (see composer/index.tsx)
+       plus the out-of-flow status stack's measured height (see status-stack/index.tsx) when one is showing. */
+    --status-stack-measured-height: 0px;
+    --thread-last-message-clearance: calc(var(--composer-measured-height) + var(--status-stack-measured-height) + 2rem);
 
     --composer-shell-pad-block-end: 0.625rem;
     --message-text-indent: 0.75rem;
@@ -815,6 +817,37 @@ canvas {
    content's --message-text-indent). No extra prose indent — a single gutter
    reads cleaner than a ragged tool-vs-reply column. */
 
+/* RTL/bidi chat text (#44150): each block resolves its own base direction from
+   its first strong char (UAX#9 plaintext). text-align:start makes that resolved
+   direction drive alignment too — load-bearing, since the user bubble pins
+   text-left. direction is never set, so chrome/layout/list-indent stay LTR (the
+   issue asks not to flip the whole UI). Covers assistant prose, user lines, and
+   both composers (main + edit share composer-rich-input). */
+[data-slot='aui_assistant-message-content'] .aui-md :where(p, h1, h2, h3, h4, h5, h6, li, blockquote),
+[data-slot='aui_user-inline-text'],
+[data-slot='composer-rich-input'] {
+  unicode-bidi: plaintext;
+  text-align: start;
+}
+
+/* Inline code/KaTeX don't vote on direction and keep their own order: isolate
+   makes bidi treat each as one neutral, so a block that *starts* with `./run.sh`
+   then Arabic still resolves RTL, and the command's neutrals (dots/slashes)
+   aren't reordered by the surrounding RTL run. */
+[data-slot='aui_assistant-message-content'] .aui-md :where(:not(pre) > code),
+[data-slot='aui_user-inline-code'],
+[data-slot='aui_assistant-message-content'] .aui-md .katex {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/* Fenced code stays LTR even inside an RTL list item/blockquote — never mirrors. */
+[data-slot='aui_assistant-message-content'] .aui-md [data-slot='code-card'],
+[data-slot='aui_user-fence'] {
+  direction: ltr;
+  text-align: left;
+}
+
 [data-slot='aui_user-message-root'] {
   top: var(--sticky-human-top);
 }
@@ -1052,6 +1085,31 @@ canvas {
 
 [data-slot='composer-rich-input']:empty::before {
   color: var(--ui-text-tertiary) !important;
+}
+
+/* ── Composer fill — ONE var painted by the surface AND anything docked to it
+   (status stack, slash·@ popover, `?` help). State ladder sets the var;
+   consumers just paint `background: var(--composer-fill)`, so every state
+   matches by construction. */
+:root {
+  /* Fallback for drawers outside the main composer (e.g. edit-message). */
+  --composer-fill: color-mix(in srgb, var(--dt-card) 90%, var(--dt-background));
+}
+
+[data-slot='composer-root'] {
+  --composer-fill: color-mix(in srgb, var(--dt-card) 72%, transparent);
+}
+
+[data-slot='composer-root'][data-thread-scrolled-up] {
+  --composer-fill: color-mix(in srgb, var(--dt-card) 48%, transparent);
+}
+
+[data-slot='composer-root']:has([data-slot='composer-surface']:focus-within) {
+  --composer-fill: var(--ui-chat-bubble-background);
+}
+
+[data-slot='composer-root']:has([data-slot='composer-completion-drawer']) {
+  --composer-fill: color-mix(in srgb, var(--dt-card) 90%, var(--dt-background));
 }
 
 [data-slot='composer-root']:focus-within [data-slot='composer-surface'] > [aria-hidden='true'] {

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import { PageLoader } from '@/components/page-loader'
+import { SkillEditorDialog } from '@/components/skill-editor-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
@@ -11,6 +12,7 @@ import { Switch } from '@/components/ui/switch'
 import { TextTab, TextTabMeta } from '@/components/ui/text-tab'
 import { getSkills, getToolsets, toggleSkill, toggleToolset } from '@/hermes'
 import { useI18n } from '@/i18n'
+import { Pencil } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
 import type { SkillInfo, ToolsetInfo } from '@/types/hermes'
@@ -95,6 +97,8 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
   const [savingSkill, setSavingSkill] = useState<string | null>(null)
   const [savingToolset, setSavingToolset] = useState<string | null>(null)
   const [expandedToolset, setExpandedToolset] = useState<string | null>(null)
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [editorSkill, setEditorSkill] = useState<string | null>(null)
 
   const refreshCapabilities = useCallback(async () => {
     setRefreshing(true)
@@ -225,6 +229,16 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
     }
   }
 
+  function openCreateEditor() {
+    setEditorSkill(null)
+    setEditorOpen(true)
+  }
+
+  function openEditEditor(name: string) {
+    setEditorSkill(name)
+    setEditorOpen(true)
+  }
+
   async function handleToggleToolset(toolset: ToolsetInfo, enabled: boolean) {
     setSavingToolset(toolset.name)
 
@@ -271,7 +285,25 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
       searchHidden={searchHidden}
       searchPlaceholder={searchPlaceholder}
       searchTrailingAction={
-        mode === 'connections' || mode === 'add' ? undefined : (
+        mode === 'connections' || mode === 'add' ? undefined : mode === 'skills' ? (
+          <div className="flex items-center gap-1">
+            <Button onClick={openCreateEditor} size="sm" type="button" variant="ghost">
+              {t.skills.newSkill}
+            </Button>
+            <Button
+              aria-label={refreshing ? t.skills.refreshing : t.skills.refresh}
+              className="text-(--ui-text-tertiary) hover:bg-transparent hover:text-foreground"
+              disabled={refreshing}
+              onClick={() => void refreshCapabilities()}
+              size="icon-xs"
+              title={refreshing ? t.skills.refreshing : t.skills.refresh}
+              type="button"
+              variant="ghost"
+            >
+              <Codicon name="refresh" size="0.875rem" spinning={refreshing} />
+            </Button>
+          </div>
+        ) : (
           <Button
             aria-label={refreshing ? t.skills.refreshing : t.skills.refresh}
             className="text-(--ui-text-tertiary) hover:bg-transparent hover:text-foreground"
@@ -326,7 +358,7 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
                   <div>
                     {list.map(skill => (
                       <div
-                        className="grid gap-3 px-0 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                        className="group/skill grid gap-3 px-0 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
                         key={skill.name}
                       >
                         <div className="min-w-0">
@@ -335,11 +367,23 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
                             {asText(skill.description) || t.skills.noDescription}
                           </p>
                         </div>
-                        <Switch
-                          checked={skill.enabled}
-                          disabled={savingSkill === skill.name}
-                          onCheckedChange={checked => void handleToggleSkill(skill, checked)}
-                        />
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <Button
+                            aria-label={t.skills.editSkill(skill.name)}
+                            className="text-muted-foreground opacity-0 transition-opacity group-hover/skill:opacity-100 focus-visible:opacity-100"
+                            onClick={() => openEditEditor(skill.name)}
+                            size="icon-xs"
+                            type="button"
+                            variant="ghost"
+                          >
+                            <Pencil className="size-3.5" />
+                          </Button>
+                          <Switch
+                            checked={skill.enabled}
+                            disabled={savingSkill === skill.name}
+                            onCheckedChange={checked => void handleToggleSkill(skill, checked)}
+                          />
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -429,6 +473,12 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
           )}
         </div>
       )}
+      <SkillEditorDialog
+        editName={editorSkill}
+        onClose={() => setEditorOpen(false)}
+        onSaved={() => void refreshCapabilities()}
+        open={editorOpen}
+      />
     </PageSearchShell>
   )
 }

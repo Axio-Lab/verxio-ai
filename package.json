@@ -1,0 +1,23 @@
+{
+  "name": "verxio-ai",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Verxio AI monorepo — Hermes runtime with Verxio API and web UI.",
+  "type": "module",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "scripts": {
+    "fmt": "prettier --write 'verxio-web/src/**/*.{ts,tsx}' 'verxio-web/packages/shared/**/*.{ts,tsx}' 'verxio-web/vite.config.ts'",
+    "format": "npm run fmt",
+    "format:check": "prettier --check 'verxio-web/src/**/*.{ts,tsx}' 'verxio-web/packages/shared/**/*.{ts,tsx}' 'verxio-web/vite.config.ts'",
+    "install:web": "npm ci --prefix verxio-web",
+    "preci:web": "npm run install:web",
+    "ci:web": "npm run ci --prefix verxio-web",
+    "ci": "npm run fmt && npm run format:check && npm run ci:web",
+    "prepare": "node scripts/install-git-hooks.mjs"
+  },
+  "devDependencies": {
+    "prettier": "^3.8.3"
+  }
+}

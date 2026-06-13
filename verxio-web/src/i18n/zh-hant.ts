@@ -141,7 +141,8 @@ export const zhHant = defineLocale({
     showRightSidebar: '顯示右側邊欄',
     muteHaptics: '靜音觸感回饋',
     unmuteHaptics: '開啟觸感回饋',
-    openSettings: '開啟設定'
+    openSettings: '開啟設定',
+    signOut: '登出'
   },
 
   language: {
@@ -649,7 +650,23 @@ export const zhHant = defineLocale({
     toolsetEnabled: '工具集已啟用',
     toolsetDisabled: '工具集已停用',
     appliesToNewSessions: name => `${name} 將套用至新工作階段。`,
-    failedToUpdate: name => `更新 ${name} 失敗`
+    failedToUpdate: name => `更新 ${name} 失敗`,
+    newSkill: '新增技能',
+    editSkill: name => `編輯 ${name}`,
+    editor: {
+      createTitle: '新增技能',
+      editTitle: name => `編輯技能：${name}`,
+      createDesc: '撰寫自訂技能 — YAML 前置資料加上 Markdown 說明。儲存後可供代理使用並附加到 cron 工作。',
+      editDesc: '重寫此技能的 SKILL.md。儲存時會驗證前置資料（name、description）。',
+      nameLabel: '名稱',
+      categoryLabel: '分類（選填）',
+      contentLabel: 'SKILL.md',
+      nameRequired: '技能名稱為必填。',
+      contentRequired: 'SKILL.md 內容為必填。',
+      saving: '儲存中…',
+      saveChanges: '儲存變更',
+      createSkill: '建立技能'
+    }
   },
 
   agents: {
@@ -1227,6 +1244,10 @@ export const zhHant = defineLocale({
     editQueued: '編輯排隊回合',
     sendQueuedNow: '立即傳送排隊回合',
     deleteQueued: '刪除排隊回合',
+    queueEdit: '編輯',
+    queueSendNext: '下一個',
+    queueSend: '傳送',
+    queueDelete: '刪除',
     previewUnavailable: '預覽不可用',
     previewLabel: label => `預覽 ${label}`,
     couldNotPreview: label => `無法預覽 ${label}`,
@@ -1269,6 +1290,17 @@ export const zhHant = defineLocale({
         text: '請解釋這是如何運作的，並告訴我關鍵檔案在哪裡。'
       }
     }
+  },
+
+  statusStack: {
+    agents: '代理',
+    background: count => `${count} 個背景任務`,
+    subagents: count => `${count} 個子代理`,
+    todos: (done, total) => `任務 ${done}/${total}`,
+    running: '執行中',
+    stop: '停止',
+    dismiss: '關閉',
+    exit: code => `結束碼 ${code}`
   },
 
   updates: {
@@ -1374,6 +1406,7 @@ export const zhHant = defineLocale({
     getKey: '取得金鑰',
     replaceCurrent: '取代目前值',
     pasteApiKey: '貼上 API 金鑰',
+    localApiKeyPlaceholder: 'API 金鑰（選填 — 僅在端點需要時填寫）',
     couldNotSave: '無法儲存憑證。',
     connecting: '連線中',
     update: '更新',
@@ -1659,11 +1692,16 @@ export const zhHant = defineLocale({
       editMessage: '編輯訊息',
       stop: '停止',
       editableCheckpoint: '可編輯的檢查點',
+      restoreFromHere: '還原檢查點 — 從此提示重新執行',
+      restoreTitle: '還原至此檢查點？',
+      restoreBody: '此提示之後的所有訊息將從對話中移除，並從此處重新執行該提示。',
+      restoreConfirm: '還原並重新執行',
       restorePrevious: '還原至上一個檢查點',
       restoreCheckpoint: '還原檢查點',
       restoreNext: '還原至下一個檢查點',
       goForward: '前進',
-      sendEdited: '傳送編輯後的訊息'
+      sendEdited: '傳送編輯後的訊息',
+      processNotificationOutput: '輸出'
     },
     approval: {
       gatewayDisconnected: 'Verxio 閘道未連線',
@@ -1704,6 +1742,7 @@ export const zhHant = defineLocale({
       copyPath: '複製路徑',
       outputAlt: '工具輸出',
       rawResponse: '原始回應',
+      searchResults: '搜尋結果',
       copyActivity: '複製活動',
       recoveredOne: '在 1 個失敗步驟後已復原',
       recoveredMany: count => `在 ${count} 個失敗步驟後已復原`,

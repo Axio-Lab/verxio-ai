@@ -215,7 +215,7 @@ export function ConfigSettings({
       .catch(err => notifyError(err, c.failedLoad))
 
     return () => void (cancelled = true)
-  }, [])
+  }, [c.failedLoad])
 
   useEffect(() => {
     let cancelled = false
@@ -263,7 +263,7 @@ export function ConfigSettings({
     }, 550)
 
     return () => window.clearTimeout(t)
-  }, [config, onConfigSaved, saveVersion])
+  }, [config, c.autosaveFailed, onConfigSaved, saveVersion])
 
   const updateConfig = (next: HermesConfigRecord) => {
     saveVersionRef.current += 1

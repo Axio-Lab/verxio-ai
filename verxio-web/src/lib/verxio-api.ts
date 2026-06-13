@@ -29,6 +29,15 @@ export interface VerxioAuthResponse {
   profile: VerxioAgent
 }
 
+export type VerxioAuthCodePurpose = 'email_verify' | 'login' | 'password_reset'
+
+export interface VerxioAuthCodeChallengeResponse {
+  ok: boolean
+  email: string
+  purpose: VerxioAuthCodePurpose
+  expiresInSeconds: number
+}
+
 export interface VerxioArtifact {
   id: string
   workspace_id: string
@@ -202,9 +211,55 @@ export function authLogin(email: string, password: string): Promise<VerxioAuthRe
   })
 }
 
-export function authSignup(email: string, password: string, displayName?: string): Promise<VerxioAuthResponse> {
-  return verxioFetch<VerxioAuthResponse>('/api/auth/signup', {
+export function authSignup(
+  email: string,
+  password: string,
+  displayName?: string
+): Promise<VerxioAuthCodeChallengeResponse> {
+  return verxioFetch<VerxioAuthCodeChallengeResponse>('/api/auth/signup', {
     body: JSON.stringify({ email, name: displayName || email.split('@')[0] || 'Verxio User', password }),
+    method: 'POST'
+  })
+}
+
+export function authVerifyEmail(email: string, code: string): Promise<VerxioAuthResponse> {
+  return verxioFetch<VerxioAuthResponse>('/api/auth/verify-email', {
+    body: JSON.stringify({ email, code }),
+    method: 'POST'
+  })
+}
+
+export function authResendVerification(email: string): Promise<VerxioAuthCodeChallengeResponse> {
+  return verxioFetch<VerxioAuthCodeChallengeResponse>('/api/auth/verification/resend', {
+    body: JSON.stringify({ email }),
+    method: 'POST'
+  })
+}
+
+export function authRequestLoginCode(email: string): Promise<VerxioAuthCodeChallengeResponse> {
+  return verxioFetch<VerxioAuthCodeChallengeResponse>('/api/auth/login/code/request', {
+    body: JSON.stringify({ email }),
+    method: 'POST'
+  })
+}
+
+export function authVerifyLoginCode(email: string, code: string): Promise<VerxioAuthResponse> {
+  return verxioFetch<VerxioAuthResponse>('/api/auth/login/code/verify', {
+    body: JSON.stringify({ email, code }),
+    method: 'POST'
+  })
+}
+
+export function authForgotPassword(email: string): Promise<VerxioAuthCodeChallengeResponse> {
+  return verxioFetch<VerxioAuthCodeChallengeResponse>('/api/auth/password/forgot', {
+    body: JSON.stringify({ email }),
+    method: 'POST'
+  })
+}
+
+export function authResetPassword(email: string, code: string, password: string): Promise<VerxioAuthResponse> {
+  return verxioFetch<VerxioAuthResponse>('/api/auth/password/reset', {
+    body: JSON.stringify({ email, code, password }),
     method: 'POST'
   })
 }

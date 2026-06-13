@@ -397,6 +397,7 @@ export function DesktopController() {
     queryClient,
     refreshHermesConfig,
     refreshSessions,
+    sessionStateByRuntimeIdRef,
     updateSessionState
   })
 
@@ -526,6 +527,7 @@ export function DesktopController() {
     editMessage,
     handleThreadMessagesChange,
     reloadFromMessage,
+    restoreToMessage,
     steerPrompt,
     submitText,
     transcribeVoiceAudio
@@ -700,6 +702,7 @@ export function DesktopController() {
       onPickImages={() => void composer.pickImages()}
       onReload={reloadFromMessage}
       onRemoveAttachment={id => void composer.removeAttachment(id)}
+      onRestoreToMessage={restoreToMessage}
       onSteer={steerPrompt}
       onSubmit={submitText}
       onThreadMessagesChange={handleThreadMessagesChange}

@@ -6,7 +6,7 @@ from subprocess import CompletedProcess
 import pytest
 from fastapi.testclient import TestClient
 
-from app import composio_catalog, control_plane, db, main
+from app import composio_catalog, control_plane, db, emailer, main
 from app.auth import SESSION_COOKIE
 from app.main import app
 
@@ -16,11 +16,22 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setenv("VERXIO_DATABASE_MODE", "sqlite")
     monkeypatch.setenv("VERXIO_DATABASE_PATH", str(tmp_path / "verxio-control.sqlite3"))
     monkeypatch.setenv("VERXIO_RUNTIME_MODE", "demo")
+    monkeypatch.setenv("VERXIO_AUTH_CODE_SECRET", "test-auth-code-secret")
+    monkeypatch.delenv("VERXIO_SMTP_HOST", raising=False)
+    monkeypatch.delenv("VERXIO_SMTP_FROM", raising=False)
     monkeypatch.setattr(control_plane, "RUNTIME_ROOT", tmp_path / "runtimes")
+    emailer.SENT_AUTH_EMAILS.clear()
     db.run_migrations()
 
     with TestClient(app) as test_client:
         yield test_client
+
+
+def latest_auth_code(email: str, purpose: str) -> str:
+    for message in reversed(emailer.SENT_AUTH_EMAILS):
+        if message["to"] == email and message["purpose"] == purpose:
+            return message["code"]
+    raise AssertionError(f"No {purpose} code sent to {email}.")
 
 
 def signup(client: TestClient, email: str = "ada@example.com") -> tuple[dict, str]:
@@ -33,9 +44,17 @@ def signup(client: TestClient, email: str = "ada@example.com") -> tuple[dict, st
         },
     )
     assert response.status_code == 200
-    token = response.cookies.get(SESSION_COOKIE)
+    assert response.cookies.get(SESSION_COOKIE) is None
+    assert response.json()["purpose"] == "email_verify"
+
+    verify = client.post(
+        "/api/auth/verify-email",
+        json={"email": email, "code": latest_auth_code(email, "email_verify")},
+    )
+    assert verify.status_code == 200
+    token = verify.cookies.get(SESSION_COOKIE)
     assert token
-    return response.json(), token
+    return verify.json(), token
 
 
 def test_bootstrap_contains_verxio_profile(client):
@@ -99,13 +118,45 @@ def test_signup_creates_user_workspace_agent_and_runtime(client):
     workspace_rows = db.fetch_all("SELECT * FROM workspaces WHERE created_by = ?", (payload["user"]["id"],))
     agent_rows = db.fetch_all("SELECT * FROM agents WHERE workspace_id = ?", (payload["workspace"]["id"],))
     runtime_rows = db.fetch_all("SELECT * FROM runtime_instances WHERE workspace_id = ?", (payload["workspace"]["id"],))
+    user_row = db.fetch_one("SELECT * FROM users WHERE id = ?", (payload["user"]["id"],))
 
+    assert user_row
+    assert user_row["email_verified"] == 1
     assert len(workspace_rows) == 1
     assert len(agent_rows) == 1
     assert len(runtime_rows) == 1
     assert runtime_rows[0]["status"] == "stopped"
     assert runtime_rows[0]["hermes_home_path"].endswith("/hermes-home")
     assert runtime_rows[0]["artifact_path"].endswith("/workspace/artifacts")
+
+
+def test_signup_requires_email_code_before_session_or_workspace(client):
+    response = client.post(
+        "/api/auth/signup",
+        json={
+            "email": "verify@example.com",
+            "name": "Verify",
+            "password": "password-123",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.cookies.get(SESSION_COOKIE) is None
+    assert response.json()["purpose"] == "email_verify"
+
+    user_row = db.fetch_one("SELECT * FROM users WHERE email = ?", ("verify@example.com",))
+    assert user_row
+    assert user_row["email_verified"] == 0
+    assert db.fetch_all("SELECT * FROM workspaces WHERE created_by = ?", (user_row["id"],)) == []
+
+    code = latest_auth_code("verify@example.com", "email_verify")
+    code_row = db.fetch_one("SELECT * FROM auth_codes WHERE email = ?", ("verify@example.com",))
+    assert code_row
+    assert code_row["code_hash"] != code
+
+    verify = client.post("/api/auth/verify-email", json={"email": "verify@example.com", "code": code})
+    assert verify.status_code == 200
+    assert verify.cookies.get(SESSION_COOKIE)
 
 
 def test_login_creates_turso_backed_session(client):
@@ -122,6 +173,79 @@ def test_login_creates_turso_backed_session(client):
     assert response.cookies.get(SESSION_COOKIE)
     session_rows = db.fetch_all("SELECT * FROM sessions WHERE user_id = ?", (payload["user"]["id"],))
     assert len(session_rows) == 1
+
+
+def test_password_login_for_unverified_user_resends_verification_code(client):
+    response = client.post(
+        "/api/auth/signup",
+        json={
+            "email": "unverified@example.com",
+            "name": "Unverified",
+            "password": "password-123",
+        },
+    )
+    assert response.status_code == 200
+
+    login_response = client.post(
+        "/api/auth/login",
+        json={"email": "unverified@example.com", "password": "password-123"},
+    )
+
+    assert login_response.status_code == 403
+    assert "Verify your email" in login_response.json()["detail"]
+    assert latest_auth_code("unverified@example.com", "email_verify")
+
+
+def test_login_with_one_time_code(client):
+    payload, _signup_token = signup(client, "code-login@example.com")
+    logout = client.post("/api/auth/logout")
+    assert logout.status_code == 200
+
+    challenge = client.post("/api/auth/login/code/request", json={"email": "code-login@example.com"})
+    assert challenge.status_code == 200
+    assert challenge.json()["purpose"] == "login"
+
+    verify = client.post(
+        "/api/auth/login/code/verify",
+        json={"email": "code-login@example.com", "code": latest_auth_code("code-login@example.com", "login")},
+    )
+
+    assert verify.status_code == 200
+    assert verify.cookies.get(SESSION_COOKIE)
+    assert verify.json()["user"]["id"] == payload["user"]["id"]
+
+
+def test_forgot_password_code_resets_password_and_logs_in(client):
+    payload, _signup_token = signup(client, "reset@example.com")
+    old_hash = db.fetch_one("SELECT password_hash FROM users WHERE id = ?", (payload["user"]["id"],))["password_hash"]
+    logout = client.post("/api/auth/logout")
+    assert logout.status_code == 200
+
+    challenge = client.post("/api/auth/password/forgot", json={"email": "reset@example.com"})
+    assert challenge.status_code == 200
+    assert challenge.json()["purpose"] == "password_reset"
+
+    reset = client.post(
+        "/api/auth/password/reset",
+        json={
+            "email": "reset@example.com",
+            "code": latest_auth_code("reset@example.com", "password_reset"),
+            "password": "new-password-123",
+        },
+    )
+
+    assert reset.status_code == 200
+    assert reset.cookies.get(SESSION_COOKIE)
+    assert reset.json()["user"]["id"] == payload["user"]["id"]
+    new_hash = db.fetch_one("SELECT password_hash FROM users WHERE id = ?", (payload["user"]["id"],))["password_hash"]
+    assert new_hash != old_hash
+
+    client.post("/api/auth/logout")
+    old_login = client.post("/api/auth/login", json={"email": "reset@example.com", "password": "password-123"})
+    new_login = client.post("/api/auth/login", json={"email": "reset@example.com", "password": "new-password-123"})
+
+    assert old_login.status_code == 401
+    assert new_login.status_code == 200
 
 
 def test_artifacts_are_indexed_from_runtime_workspace_and_isolated(client):

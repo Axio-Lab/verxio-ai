@@ -145,7 +145,8 @@ export const en: Translations = {
     muteHaptics: 'Mute haptics',
     unmuteHaptics: 'Unmute haptics',
     openSettings: 'Open settings',
-    openKeybinds: 'Keyboard shortcuts'
+    openKeybinds: 'Keyboard shortcuts',
+    signOut: 'Sign out'
   },
 
   keybinds: {
@@ -573,7 +574,24 @@ export const en: Translations = {
     toolsetEnabled: 'Toolset enabled',
     toolsetDisabled: 'Toolset disabled',
     appliesToNewSessions: name => `${name} applies to new sessions.`,
-    failedToUpdate: name => `Failed to update ${name}`
+    failedToUpdate: name => `Failed to update ${name}`,
+    newSkill: 'New skill',
+    editSkill: name => `Edit ${name}`,
+    editor: {
+      createTitle: 'New skill',
+      editTitle: name => `Edit skill: ${name}`,
+      createDesc:
+        'Author a custom skill — YAML frontmatter plus markdown instructions. It becomes available to the agent and attachable to cron jobs.',
+      editDesc: "Rewrite this skill's SKILL.md. Frontmatter (name, description) is validated on save.",
+      nameLabel: 'Name',
+      categoryLabel: 'Category (optional)',
+      contentLabel: 'SKILL.md',
+      nameRequired: 'Skill name is required.',
+      contentRequired: 'SKILL.md content is required.',
+      saving: 'Saving…',
+      saveChanges: 'Save changes',
+      createSkill: 'Create skill'
+    }
   },
 
   agents: {
@@ -1165,6 +1183,10 @@ export const en: Translations = {
     sendQueuedNext: 'Send queued turn next',
     sendQueuedNow: 'Send queued turn now',
     deleteQueued: 'Delete queued turn',
+    queueEdit: 'Edit',
+    queueSendNext: 'Next',
+    queueSend: 'Send',
+    queueDelete: 'Delete',
     previewUnavailable: 'Preview unavailable',
     previewLabel: label => `Preview ${label}`,
     couldNotPreview: label => `Could not preview ${label}`,
@@ -1207,6 +1229,17 @@ export const en: Translations = {
         text: 'Please explain how this works and point me to the key files.'
       }
     }
+  },
+
+  statusStack: {
+    agents: 'Agents',
+    background: count => `${count} Background`,
+    subagents: count => `${count} Subagent${count === 1 ? '' : 's'}`,
+    todos: (done, total) => `Tasks ${done}/${total}`,
+    running: 'Running',
+    stop: 'Stop',
+    dismiss: 'Dismiss',
+    exit: code => `exit ${code}`
   },
 
   updates: {
@@ -1316,6 +1349,7 @@ export const en: Translations = {
     getKey: 'Get a key',
     replaceCurrent: 'Replace current value',
     pasteApiKey: 'Paste API key',
+    localApiKeyPlaceholder: 'API key (optional — only if your endpoint requires one)',
     couldNotSave: 'Could not save credential.',
     connecting: 'Connecting',
     update: 'Update',
@@ -1605,11 +1639,17 @@ export const en: Translations = {
       editMessage: 'Edit message',
       stop: 'Stop',
       editableCheckpoint: 'Editable checkpoint',
+      restoreFromHere: 'Restore checkpoint — rerun from this prompt',
+      restoreTitle: 'Restore to this checkpoint?',
+      restoreBody:
+        'Everything after this prompt is removed from the conversation, and the prompt runs again from here.',
+      restoreConfirm: 'Restore & rerun',
       restorePrevious: 'Restore previous checkpoint',
       restoreCheckpoint: 'Restore checkpoint',
       restoreNext: 'Restore next checkpoint',
       goForward: 'Go forward',
-      sendEdited: 'Send edited message'
+      sendEdited: 'Send edited message',
+      processNotificationOutput: 'output'
     },
     approval: {
       gatewayDisconnected: 'Verxio gateway is not connected',
@@ -1650,6 +1690,7 @@ export const en: Translations = {
       copyPath: 'Copy path',
       outputAlt: 'Tool output',
       rawResponse: 'Raw response',
+      searchResults: 'Search results',
       copyActivity: 'Copy activity',
       recoveredOne: 'Recovered after 1 failed step',
       recoveredMany: count => `Recovered after ${count} failed steps`,

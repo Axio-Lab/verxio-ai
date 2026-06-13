@@ -158,6 +158,7 @@ export interface Translations {
     unmuteHaptics: string
     openSettings: string
     openKeybinds: string
+    signOut: string
   }
 
   keybinds: {
@@ -482,6 +483,22 @@ export interface Translations {
     toolsetDisabled: string
     appliesToNewSessions: (name: string) => string
     failedToUpdate: (name: string) => string
+    newSkill: string
+    editSkill: (name: string) => string
+    editor: {
+      createTitle: string
+      editTitle: (name: string) => string
+      createDesc: string
+      editDesc: string
+      nameLabel: string
+      categoryLabel: string
+      contentLabel: string
+      nameRequired: string
+      contentRequired: string
+      saving: string
+      saveChanges: string
+      createSkill: string
+    }
   }
 
   agents: {
@@ -891,6 +908,10 @@ export interface Translations {
     sendQueuedNext: string
     sendQueuedNow: string
     deleteQueued: string
+    queueEdit: string
+    queueSendNext: string
+    queueSend: string
+    queueDelete: string
     previewUnavailable: string
     previewLabel: (label: string) => string
     couldNotPreview: (label: string) => string
@@ -917,6 +938,17 @@ export interface Translations {
     snippets: Record<string, { label: string; description: string; text: string }>
     dropFiles: string
     dropSession: string
+  }
+
+  statusStack: {
+    agents: string
+    background: (count: number) => string
+    subagents: (count: number) => string
+    todos: (done: number, total: number) => string
+    running: string
+    stop: string
+    dismiss: string
+    exit: (code: number) => string
   }
 
   updates: {
@@ -996,6 +1028,7 @@ export interface Translations {
     getKey: string
     replaceCurrent: string
     pasteApiKey: string
+    localApiKeyPlaceholder: string
     couldNotSave: string
     connecting: string
     update: string
@@ -1275,11 +1308,16 @@ export interface Translations {
       editMessage: string
       stop: string
       editableCheckpoint: string
+      restoreFromHere: string
+      restoreTitle: string
+      restoreBody: string
+      restoreConfirm: string
       restorePrevious: string
       restoreCheckpoint: string
       restoreNext: string
       goForward: string
       sendEdited: string
+      processNotificationOutput: string
     }
     approval: {
       gatewayDisconnected: string
@@ -1319,6 +1357,7 @@ export interface Translations {
       copyPath: string
       outputAlt: string
       rawResponse: string
+      searchResults: string
       copyActivity: string
       recoveredOne: string
       recoveredMany: (count: number) => string

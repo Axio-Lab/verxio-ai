@@ -47,6 +47,7 @@ import {
   setSessions,
   setYoloActive
 } from '@/store/session'
+import { clearSessionSubagents } from '@/store/subagents'
 
 import type {
   ClientSessionState,
@@ -83,6 +84,24 @@ function inlineErrorMessage(error: unknown, fallback: string): string {
 
   return (raw.match(/Error invoking remote method '[^']+': Error: (.+)$/)?.[1] ?? raw).replace(/^Error:\s*/, '').trim()
 }
+
+function isSessionNotFoundError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+
+  return /session not found/i.test(message)
+}
+
+// The gateway refuses prompt.submit while a turn is running (4009 "session
+// busy"). Edit/restore (revert) can fire mid-turn, so they interrupt first then
+// retry the submit until the cooperative interrupt has wound the turn down.
+const REWIND_INTERRUPT_TIMEOUT_MS = 6_000
+const REWIND_RETRY_INTERVAL_MS = 150
+
+function isSessionBusyError(error: unknown): boolean {
+  return /session busy/i.test(error instanceof Error ? error.message : String(error))
+}
+
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
 interface PromptActionsOptions {
   activeSessionId: string | null
@@ -760,19 +779,20 @@ export function usePromptActions({
   const cancelRun = useCallback(async () => {
     const sessionId = activeSessionId || activeSessionIdRef.current
 
+    const releaseBusy = () => {
+      setMutableRef(busyRef, false)
+      setBusy(false)
+    }
+
     setAwaitingResponse(false)
 
-    // Interrupting keeps whatever was already generated and just
-    // stops — no "[interrupted]" marker. A pending/streaming message with no
-    // body text is dropped entirely so we never leave an empty bubble behind.
     const finalizeMessages = (messages: ChatMessage[], streamId?: string | null) =>
       messages
         .filter(message => !((message.pending || message.id === streamId) && !chatMessageText(message).trim()))
         .map(message => (message.pending || message.id === streamId ? { ...message, pending: false } : message))
 
     if (!sessionId) {
-      setMutableRef(busyRef, false)
-      setBusy(false)
+      releaseBusy()
       setMessages(finalizeMessages($messages.get()))
 
       return
@@ -780,13 +800,12 @@ export function usePromptActions({
 
     updateSessionState(sessionId, state => {
       const streamId = state.streamId
-
       const messages = finalizeMessages(state.messages, streamId)
 
       return {
         ...state,
         messages,
-        busy: true,
+        busy: false,
         awaitingResponse: false,
         streamId: null,
         pendingBranchGroup: null,
@@ -794,14 +813,46 @@ export function usePromptActions({
       }
     })
 
+    clearSessionSubagents(sessionId)
+
     try {
       await requestGateway('session.interrupt', { session_id: sessionId })
+      releaseBusy()
     } catch (err) {
-      setMutableRef(busyRef, false)
-      setBusy(false)
-      notifyError(err, copy.stopFailed)
+      let stopError = err
+
+      if (isSessionNotFoundError(err) && selectedStoredSessionIdRef.current) {
+        try {
+          const resumed = await requestGateway<{ session_id: string }>('session.resume', {
+            session_id: selectedStoredSessionIdRef.current
+          })
+
+          const recoveredId = resumed?.session_id
+
+          if (recoveredId) {
+            activeSessionIdRef.current = recoveredId
+            await requestGateway('session.interrupt', { session_id: recoveredId })
+            releaseBusy()
+
+            return
+          }
+        } catch (resumeErr) {
+          stopError = resumeErr
+        }
+      }
+
+      releaseBusy()
+      notifyError(stopError, copy.stopFailed)
     }
-  }, [activeSessionId, activeSessionIdRef, busyRef, copy.stopFailed, requestGateway, updateSessionState])
+  }, [
+    activeSessionId,
+    activeSessionIdRef,
+    busyRef,
+    copy.stopFailed,
+    requestGateway,
+    selectedStoredSessionIdRef,
+    updateSessionState
+  ])
 
   // Steer = nudge the live turn without interrupting: the gateway appends the
   // text to the next tool result so the model reads it on its next iteration
@@ -913,13 +964,100 @@ export function usePromptActions({
     [activeSessionId, copy.regenerateFailed, requestGateway, updateSessionState]
   )
 
+  const submitRewindPrompt = useCallback(
+    async (sessionId: string, text: string, truncateOrdinal: number | undefined, wasRunning: boolean) => {
+      if (wasRunning) {
+        try {
+          await requestGateway('session.interrupt', { session_id: sessionId })
+        } catch {
+          // Best-effort — the busy-retry below still gates the submit.
+        }
+      }
+
+      const deadline = Date.now() + REWIND_INTERRUPT_TIMEOUT_MS
+
+      for (;;) {
+        try {
+          await requestGateway('prompt.submit', {
+            session_id: sessionId,
+            text,
+            ...(truncateOrdinal !== undefined && { truncate_before_user_ordinal: truncateOrdinal })
+          })
+
+          return
+        } catch (err) {
+          if (isSessionBusyError(err) && Date.now() < deadline) {
+            await sleep(REWIND_RETRY_INTERVAL_MS)
+
+            continue
+          }
+
+          throw err
+        }
+      }
+    },
+    [requestGateway]
+  )
+
+  const restoreToMessage = useCallback(
+    async (messageId: string) => {
+      const sessionId = activeSessionId || activeSessionIdRef.current
+
+      if (!sessionId) {
+        return
+      }
+
+      const messages = $messages.get()
+      const sourceIndex = messages.findIndex(m => m.id === messageId)
+      const source = messages[sourceIndex]
+
+      if (!source || source.role !== 'user') {
+        return
+      }
+
+      const text = chatMessageText(source).trim()
+
+      if (!text) {
+        return
+      }
+
+      const wasRunning = $busy.get()
+      const truncateBeforeUserOrdinal = visibleUserOrdinal(messages, sourceIndex)
+
+      clearNotifications()
+      setMutableRef(busyRef, true)
+      setBusy(true)
+      setAwaitingResponse(true)
+      updateSessionState(sessionId, state => ({
+        ...state,
+        busy: true,
+        awaitingResponse: true,
+        pendingBranchGroup: null,
+        sawAssistantPayload: false,
+        interrupted: false,
+        messages: state.messages.slice(0, sourceIndex + 1)
+      }))
+
+      try {
+        await submitRewindPrompt(sessionId, text, truncateBeforeUserOrdinal, wasRunning)
+      } catch (err) {
+        setMutableRef(busyRef, false)
+        setBusy(false)
+        setAwaitingResponse(false)
+        updateSessionState(sessionId, state => ({ ...state, busy: false, awaitingResponse: false }))
+        throw err
+      }
+    },
+    [activeSessionId, activeSessionIdRef, busyRef, submitRewindPrompt, updateSessionState]
+  )
+
   const editMessage = useCallback(
     async (edited: AppendMessage) => {
       const sessionId = activeSessionId || activeSessionIdRef.current
       const sourceId = edited.sourceId || edited.parentId
       const text = appendText(edited)
 
-      if (!sessionId || !sourceId || !text || edited.role !== 'user' || $busy.get()) {
+      if (!sessionId || !sourceId || !text || edited.role !== 'user') {
         return
       }
 
@@ -930,6 +1068,11 @@ export function usePromptActions({
       if (!source || source.role !== 'user' || chatMessageText(source).trim() === text) {
         return
       }
+
+      // Sending an edit is a revert: rewind to this prompt and re-run with the
+      // new text. It can fire mid-turn, so capture the live state — the submit
+      // helper interrupts first when a turn is running.
+      const wasRunning = $busy.get()
 
       // Failed turn: optimistic user msg never reached the gateway, so truncating
       // by ordinal would 422. Submit as a plain resend instead.
@@ -951,24 +1094,23 @@ export function usePromptActions({
         messages: [...state.messages.slice(0, sourceIndex), editedMessage]
       }))
 
-      const submit = (truncateOrdinal?: number) =>
-        requestGateway('prompt.submit', {
-          session_id: sessionId,
-          text,
-          ...(truncateOrdinal !== undefined && { truncate_before_user_ordinal: truncateOrdinal })
-        })
-
       const isStaleTargetError = (err: unknown) =>
         /no longer in session history|not in session history/i.test(err instanceof Error ? err.message : String(err))
 
       try {
-        await submit(isFailedTurn ? undefined : visibleUserOrdinal(messages, sourceIndex))
+        await submitRewindPrompt(
+          sessionId,
+          text,
+          isFailedTurn ? undefined : visibleUserOrdinal(messages, sourceIndex),
+          wasRunning
+        )
       } catch (err) {
         let surfaced = err
 
         if (!isFailedTurn && isStaleTargetError(err)) {
           try {
-            await submit()
+            // Already interrupted on the first attempt — submit as a plain resend.
+            await submitRewindPrompt(sessionId, text, undefined, false)
 
             return
           } catch (retryErr) {
@@ -983,7 +1125,7 @@ export function usePromptActions({
         notifyError(surfaced, copy.editFailed)
       }
     },
-    [activeSessionId, activeSessionIdRef, busyRef, copy.editFailed, requestGateway, updateSessionState]
+    [activeSessionId, activeSessionIdRef, busyRef, copy.editFailed, submitRewindPrompt, updateSessionState]
   )
 
   const handleThreadMessagesChange = useCallback(
@@ -1025,6 +1167,7 @@ export function usePromptActions({
     editMessage,
     handleThreadMessagesChange,
     reloadFromMessage,
+    restoreToMessage,
     steerPrompt,
     submitText,
     transcribeVoiceAudio

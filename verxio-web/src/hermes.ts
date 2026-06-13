@@ -34,12 +34,14 @@ import type {
   ProfilesResponse,
   SessionMessagesResponse,
   SessionSearchResponse,
+  SkillContent,
   SkillCreateResponse,
   SkillHubPreview,
   SkillHubSearchResponse,
   SkillHubSourcesResponse,
   SkillInfo,
   SkillsConfigResponse,
+  SkillWriteResult,
   StatusResponse,
   ToolsetConfig,
   ToolsetInfo
@@ -201,6 +203,7 @@ export function getSessionMessages(id: string, profile?: string | null): Promise
   const suffix = profile ? `?profile=${encodeURIComponent(profile)}` : ''
 
   return window.hermesDesktop.api<SessionMessagesResponse>({
+    ...(profile ? { profile } : {}),
     path: `/api/sessions/${encodeURIComponent(id)}/messages${suffix}`
   })
 }
@@ -326,13 +329,14 @@ export function setEnvVar(key: string, value: string): Promise<{ ok: boolean }> 
 
 export function validateProviderCredential(
   key: string,
-  value: string
+  value: string,
+  apiKey?: string
 ): Promise<{ ok: boolean; reachable: boolean; message: string; models?: string[] }> {
   return window.hermesDesktop.api<{ ok: boolean; reachable: boolean; message: string; models?: string[] }>({
     ...profileScoped(),
     path: '/api/providers/validate',
     method: 'POST',
-    body: { key, value }
+    body: { key, value, api_key: apiKey ?? '' }
   })
 }
 
@@ -460,6 +464,24 @@ export function createCustomSkill(name: string, content: string, category?: stri
     path: '/api/skills',
     method: 'POST',
     body: { category: category || null, content, name }
+  })
+}
+
+export function getSkillContent(name: string, profile?: string | null): Promise<SkillContent> {
+  const suffix = profile ? `&profile=${encodeURIComponent(profile)}` : ''
+
+  return window.hermesDesktop.api<SkillContent>({
+    ...(profile ? { profile } : {}),
+    path: `/api/skills/content?name=${encodeURIComponent(name)}${suffix}`
+  })
+}
+
+export function updateSkillContent(name: string, content: string, profile?: string | null): Promise<SkillWriteResult> {
+  return window.hermesDesktop.api<SkillWriteResult>({
+    ...(profile ? { profile } : {}),
+    path: '/api/skills/content',
+    method: 'PUT',
+    body: { content, name, profile: profile || undefined }
   })
 }
 

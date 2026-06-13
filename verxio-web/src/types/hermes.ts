@@ -498,6 +498,19 @@ export interface SkillInfo {
   name: string
 }
 
+export interface SkillContent {
+  name: string
+  content: string
+  path: string
+}
+
+export interface SkillWriteResult {
+  success: boolean
+  message?: string
+  path?: string
+  error?: string
+}
+
 export interface SkillHubResult {
   name: string
   description: string
@@ -672,6 +685,9 @@ export interface ModelAssignmentRequest {
   /** OpenAI-compatible endpoint URL. Only honored for custom/local providers
    *  on the main slot — wires a self-hosted endpoint into runtime resolution. */
   base_url?: string
+  /** Optional API key for a custom/local endpoint. Persisted to model.api_key
+   *  so the runtime can authenticate against gated /v1/models probes. */
+  api_key?: string
   model: string
   provider: string
   scope: 'main' | 'auxiliary'

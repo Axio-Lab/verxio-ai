@@ -81,9 +81,9 @@ export function AppShell({
     ? 0
     : titlebarControls.left + TITLEBAR_HEIGHT + Math.round(TITLEBAR_HEIGHT / 2)
 
-  // The static system cluster (haptics, profiles, settings, right-sidebar) is
-  // hardcoded in TitlebarControls. Pane-supplied tools (preview's group) render
-  // in a separate cluster anchored further left.
+  // The static system cluster (haptics, keybinds, settings, plus logout on web
+  // or right-sidebar on desktop) is hardcoded in TitlebarControls. Pane-supplied
+  // tools (preview's group) render in a separate cluster anchored further left.
   //
   // Width math has to include the `gap-x-1` (0.25rem) between buttons:
   // N buttons + (N - 1) inner gaps, plus one extra 0.25rem of breathing room

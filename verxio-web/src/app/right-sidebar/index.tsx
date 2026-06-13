@@ -61,6 +61,7 @@ export function RightSidebarPane({ onActivateFile, onActivateFolder, onChangeCwd
     collapseAll,
     collapseNonce,
     data,
+    effectiveCwd,
     loadChildren,
     openState,
     refreshRoot,
@@ -119,7 +120,7 @@ export function RightSidebarPane({ onActivateFile, onActivateFolder, onChangeCwd
         <FilesystemTab
           canCollapse={canCollapse}
           collapseNonce={collapseNonce}
-          cwd={currentCwd}
+          cwd={effectiveCwd}
           cwdName={cwdName}
           data={data}
           error={rootError}
@@ -283,6 +284,7 @@ function FilesystemTab({
         onLoadChildren={onLoadChildren}
         onNodeOpenChange={onNodeOpenChange}
         onPreviewFile={onPreviewFile}
+        onRetry={onRefresh}
         openState={openState}
       />
     </div>
@@ -305,6 +307,9 @@ interface FileTreeBodyProps {
   onLoadChildren: (id: string) => void | Promise<void>
   onNodeOpenChange: (id: string, open: boolean) => void
   onPreviewFile?: (path: string) => void
+  /** Force-reload the root. The hook also auto-retries while errored, so this
+   *  is the impatient-user path. */
+  onRetry?: () => void
   openState: ReturnType<typeof useProjectTree>['openState']
 }
 
@@ -320,6 +325,7 @@ function FileTreeBody({
   onLoadChildren,
   onNodeOpenChange,
   onPreviewFile,
+  onRetry,
   openState
 }: FileTreeBodyProps) {
   const { t } = useI18n()
@@ -337,7 +343,20 @@ function FileTreeBody({
   }
 
   if (error) {
-    return <EmptyState body={r.unreadableBody(error)} title={r.unreadableTitle} />
+    return (
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-4 text-center">
+        <EmptyState body={r.unreadableBody(error)} title={r.unreadableTitle} />
+        {onRetry && (
+          <button
+            className="text-[0.68rem] font-medium text-muted-foreground transition hover:text-foreground"
+            onClick={onRetry}
+            type="button"
+          >
+            {r.tryAgain}
+          </button>
+        )}
+      </div>
+    )
   }
 
   if (loading && data.length === 0) {

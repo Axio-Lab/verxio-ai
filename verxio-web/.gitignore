@@ -1,5 +1,7 @@
 node_modules/
+node_modules.bak/
 packages/shared/node_modules/
+packages/shared/node_modules.bak/
 dist/
 *.tsbuildinfo
 .DS_Store

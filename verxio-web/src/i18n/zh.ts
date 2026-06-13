@@ -142,7 +142,8 @@ export const zh: Translations = {
     muteHaptics: '关闭触感反馈',
     unmuteHaptics: '开启触感反馈',
     openSettings: '打开设置',
-    openKeybinds: '键盘快捷键'
+    openKeybinds: '键盘快捷键',
+    signOut: '退出登录'
   },
 
   keybinds: {
@@ -727,7 +728,23 @@ export const zh: Translations = {
     toolsetEnabled: '工具集已启用',
     toolsetDisabled: '工具集已禁用',
     appliesToNewSessions: name => `${name} 将应用于新会话。`,
-    failedToUpdate: name => `更新 ${name} 失败`
+    failedToUpdate: name => `更新 ${name} 失败`,
+    newSkill: '新建技能',
+    editSkill: name => `编辑 ${name}`,
+    editor: {
+      createTitle: '新建技能',
+      editTitle: name => `编辑技能：${name}`,
+      createDesc: '编写自定义技能 — YAML 前置元数据加 Markdown 说明。保存后可供代理使用并附加到 cron 任务。',
+      editDesc: '重写此技能的 SKILL.md。保存时会验证前置元数据（name、description）。',
+      nameLabel: '名称',
+      categoryLabel: '分类（可选）',
+      contentLabel: 'SKILL.md',
+      nameRequired: '技能名称必填。',
+      contentRequired: 'SKILL.md 内容必填。',
+      saving: '保存中…',
+      saveChanges: '保存更改',
+      createSkill: '创建技能'
+    }
   },
 
   agents: {
@@ -1313,6 +1330,10 @@ export const zh: Translations = {
     sendQueuedNext: '下一个发送排队回合',
     sendQueuedNow: '立即发送排队回合',
     deleteQueued: '删除排队回合',
+    queueEdit: '编辑',
+    queueSendNext: '下一个',
+    queueSend: '发送',
+    queueDelete: '删除',
     previewUnavailable: '预览不可用',
     previewLabel: label => `预览 ${label}`,
     couldNotPreview: label => `无法预览 ${label}`,
@@ -1355,6 +1376,17 @@ export const zh: Translations = {
         text: '请解释这是如何工作的，并指给我关键文件。'
       }
     }
+  },
+
+  statusStack: {
+    agents: '代理',
+    background: count => `${count} 个后台任务`,
+    subagents: count => `${count} 个子代理`,
+    todos: (done, total) => `任务 ${done}/${total}`,
+    running: '运行中',
+    stop: '停止',
+    dismiss: '关闭',
+    exit: code => `退出码 ${code}`
   },
 
   updates: {
@@ -1460,6 +1492,7 @@ export const zh: Translations = {
     getKey: '获取密钥',
     replaceCurrent: '替换当前值',
     pasteApiKey: '粘贴 API 密钥',
+    localApiKeyPlaceholder: 'API 密钥（可选 — 仅当端点需要时填写）',
     couldNotSave: '无法保存凭据。',
     connecting: '连接中',
     update: '更新',
@@ -1745,11 +1778,16 @@ export const zh: Translations = {
       editMessage: '编辑消息',
       stop: '停止',
       editableCheckpoint: '可编辑检查点',
+      restoreFromHere: '恢复检查点 — 从此提示重新运行',
+      restoreTitle: '恢复到此检查点？',
+      restoreBody: '此提示之后的所有消息将从对话中移除，并从此处重新运行该提示。',
+      restoreConfirm: '恢复并重新运行',
       restorePrevious: '恢复上一个检查点',
       restoreCheckpoint: '恢复检查点',
       restoreNext: '恢复下一个检查点',
       goForward: '前进',
-      sendEdited: '发送编辑后的消息'
+      sendEdited: '发送编辑后的消息',
+      processNotificationOutput: '输出'
     },
     approval: {
       gatewayDisconnected: 'Verxio 网关未连接',
@@ -1790,6 +1828,7 @@ export const zh: Translations = {
       copyPath: '复制路径',
       outputAlt: '工具输出',
       rawResponse: '原始响应',
+      searchResults: '搜索结果',
       copyActivity: '复制活动',
       recoveredOne: '在 1 个失败步骤后已恢复',
       recoveredMany: count => `在 ${count} 个失败步骤后已恢复`,

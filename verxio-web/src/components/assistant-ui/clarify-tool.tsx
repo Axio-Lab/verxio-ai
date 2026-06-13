@@ -133,7 +133,7 @@ function ClarifyToolPending({ args }: ToolCallMessagePartProps) {
         setSubmitting(false)
       }
     },
-    [gateway, matchingRequest, ready]
+    [copy.gatewayDisconnected, copy.notReady, copy.sendFailed, gateway, matchingRequest, ready]
   )
 
   const handleTextareaKey = useCallback(

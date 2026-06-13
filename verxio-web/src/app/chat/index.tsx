@@ -80,6 +80,7 @@ interface ChatViewProps extends Omit<React.ComponentProps<'div'>, 'onSubmit'> {
   onThreadMessagesChange: (messages: readonly ThreadMessage[]) => void
   onEdit: (message: AppendMessage) => Promise<void>
   onReload: (parentId: string | null) => Promise<void>
+  onRestoreToMessage?: (messageId: string) => Promise<void>
   onTranscribeAudio?: (audio: Blob) => Promise<string>
 }
 
@@ -170,6 +171,7 @@ export function ChatView({
   onThreadMessagesChange,
   onEdit,
   onReload,
+  onRestoreToMessage,
   onTranscribeAudio
 }: ChatViewProps) {
   const location = useLocation()
@@ -350,6 +352,7 @@ export function ChatView({
             loading={threadLoading}
             onBranchInNewChat={onBranchInNewChat}
             onCancel={onCancel}
+            onRestoreToMessage={onRestoreToMessage}
             sessionId={activeSessionId}
             sessionKey={threadKey}
           />

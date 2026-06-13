@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { PageLoader } from '@/components/page-loader'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -563,61 +564,62 @@ export function ConnectionsPanel({ onPageChange, page, pageSize, query }: Connec
   }
 
   return (
-    <div className={cn('h-full min-w-0 overflow-y-auto overflow-x-hidden py-3', PAGE_INSET_X)}>
-      <div className="min-w-0 space-y-3">
-        {message && (
-          <div className="flex items-start gap-2 rounded-[6px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-3 py-2 text-xs break-words text-muted-foreground">
-            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-            <span>{message}</span>
-          </div>
-        )}
+    <>
+      {loading ? (
+        <PageLoader label="Loading connections" />
+      ) : (
+        <div className={cn('h-full min-w-0 overflow-y-auto overflow-x-hidden py-3', PAGE_INSET_X)}>
+          <div className="min-w-0 space-y-3">
+            {message && (
+              <div className="flex items-start gap-2 rounded-[6px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-3 py-2 text-xs break-words text-muted-foreground">
+                <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                <span>{message}</span>
+              </div>
+            )}
 
-        {loading ? (
-          <div className="flex min-h-52 items-center justify-center text-xs text-muted-foreground">
-            <Loader2 className="mr-2 size-3.5 animate-spin" />
-            Loading connections...
-          </div>
-        ) : filteredApps.length === 0 ? (
-          <div className="grid min-h-52 place-items-center text-center">
-            <div>
-              <div className="text-sm font-medium">No connections found</div>
-              <div className="mt-1 text-xs text-muted-foreground">Try another business app or data source.</div>
-            </div>
-          </div>
-        ) : (
-          <>
-            <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {visibleApps.map(app => {
-                const account = accountByApp.get(normalizeSlug(app.slug))
-                const connected = account ? isConnectedStatus(account.status) : false
+            {filteredApps.length === 0 ? (
+              <div className="grid h-full min-h-52 place-items-center text-center">
+                <div>
+                  <div className="text-sm font-medium">No connections found</div>
+                  <div className="mt-1 text-xs text-muted-foreground">Try another business app or data source.</div>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {visibleApps.map(app => {
+                    const account = accountByApp.get(normalizeSlug(app.slug))
+                    const connected = account ? isConnectedStatus(account.status) : false
 
-                return (
-                  <ConnectionCard
-                    account={account}
-                    app={app}
-                    connected={connected}
-                    connecting={connectingSlug === app.slug}
-                    disconnecting={account ? disconnectingId === account.id : false}
-                    key={app.slug}
-                    onConnect={() => void handleConnect(app)}
-                    onDisconnect={account ? () => void handleDisconnect(app, account) : undefined}
-                    onViewTools={() => setToolsDialogApp(app)}
-                    setupRequired={!configured}
-                  />
-                )
-              })}
-            </div>
-            <PaginationControl
-              className="pt-2"
-              itemLabel="connections"
-              onPageChange={onPageChange}
-              page={currentPage}
-              pageSize={pageSize}
-              total={filteredApps.length}
-            />
-          </>
-        )}
-      </div>
+                    return (
+                      <ConnectionCard
+                        account={account}
+                        app={app}
+                        connected={connected}
+                        connecting={connectingSlug === app.slug}
+                        disconnecting={account ? disconnectingId === account.id : false}
+                        key={app.slug}
+                        onConnect={() => void handleConnect(app)}
+                        onDisconnect={account ? () => void handleDisconnect(app, account) : undefined}
+                        onViewTools={() => setToolsDialogApp(app)}
+                        setupRequired={!configured}
+                      />
+                    )
+                  })}
+                </div>
+                <PaginationControl
+                  className="pt-2"
+                  itemLabel="connections"
+                  onPageChange={onPageChange}
+                  page={currentPage}
+                  pageSize={pageSize}
+                  total={filteredApps.length}
+                />
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       <ConnectionToolsDialog
         app={toolsDialogApp}
@@ -657,7 +659,7 @@ export function ConnectionsPanel({ onPageChange, page, pageSize, query }: Connec
         submitting={connectSubmitting}
         values={connectValues}
       />
-    </div>
+    </>
   )
 }
 
@@ -813,10 +815,7 @@ function ConnectionToolsDialog({
         </DialogHeader>
 
         {loading ? (
-          <div className="flex min-h-32 items-center justify-center text-xs text-muted-foreground">
-            <Loader2 className="mr-2 size-3.5 animate-spin" />
-            Loading tools...
-          </div>
+          <PageLoader className="min-h-32" label="Loading tools" />
         ) : error ? (
           <div className="rounded-[6px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-3 py-2 text-xs break-words text-muted-foreground">
             {error}
@@ -893,10 +892,7 @@ function ConnectionConnectDialog({
         </DialogHeader>
 
         {loading ? (
-          <div className="flex min-h-28 items-center justify-center text-xs text-muted-foreground">
-            <Loader2 className="mr-2 size-3.5 animate-spin" />
-            Loading connection fields...
-          </div>
+          <PageLoader className="min-h-28" label="Loading connection fields" />
         ) : error ? (
           <div className="space-y-3">
             <div className="rounded-[6px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-3 py-2 text-xs break-words text-muted-foreground">

@@ -12,7 +12,20 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import db
-from app.auth import get_current_user, login, logout, me, require_user, signup
+from app.auth import (
+    get_current_user,
+    login,
+    logout,
+    me,
+    request_login_code,
+    request_password_reset,
+    require_user,
+    resend_verification,
+    reset_password,
+    signup,
+    verify_email,
+    verify_login_code,
+)
 from app.composio_catalog import (
     complete_composio_connection,
     delete_composio_account,
@@ -28,6 +41,8 @@ from app.composio_catalog import (
 from app.control_plane import get_context_for_user, get_runtime_for_user
 from app.models import (
     ArtifactListResponse,
+    AuthCodeChallengeResponse,
+    AuthCodeVerifyRequest,
     AuthResponse,
     AuditEvent,
     BootstrapResponse,
@@ -39,7 +54,9 @@ from app.models import (
     ComposioConnectionsResponse,
     ComposioInitiateRequest,
     ComposioInitiateResponse,
+    EmailRequest,
     LoginRequest,
+    PasswordResetRequest,
     RunRecord,
     RunRequest,
     RuntimeControlResponse,
@@ -113,14 +130,48 @@ async def bootstrap(request: Request) -> BootstrapResponse:
     )
 
 
-@app.post("/api/auth/signup", response_model=AuthResponse)
-async def signup_route(payload: SignupRequest, request: Request, response: Response) -> AuthResponse:
-    return signup(payload, request, response)
+@app.post("/api/auth/signup", response_model=AuthCodeChallengeResponse)
+async def signup_route(payload: SignupRequest) -> AuthCodeChallengeResponse:
+    return signup(payload)
+
+
+@app.post("/api/auth/verify-email", response_model=AuthResponse)
+async def verify_email_route(payload: AuthCodeVerifyRequest, request: Request, response: Response) -> AuthResponse:
+    return verify_email(payload, request, response)
+
+
+@app.post("/api/auth/verification/resend", response_model=AuthCodeChallengeResponse)
+async def resend_verification_route(payload: EmailRequest) -> AuthCodeChallengeResponse:
+    return resend_verification(payload)
 
 
 @app.post("/api/auth/login", response_model=AuthResponse)
 async def login_route(payload: LoginRequest, request: Request, response: Response) -> AuthResponse:
     return login(payload, request, response)
+
+
+@app.post("/api/auth/login/code/request", response_model=AuthCodeChallengeResponse)
+async def request_login_code_route(payload: EmailRequest) -> AuthCodeChallengeResponse:
+    return request_login_code(payload)
+
+
+@app.post("/api/auth/login/code/verify", response_model=AuthResponse)
+async def verify_login_code_route(
+    payload: AuthCodeVerifyRequest,
+    request: Request,
+    response: Response,
+) -> AuthResponse:
+    return verify_login_code(payload, request, response)
+
+
+@app.post("/api/auth/password/forgot", response_model=AuthCodeChallengeResponse)
+async def forgot_password_route(payload: EmailRequest) -> AuthCodeChallengeResponse:
+    return request_password_reset(payload)
+
+
+@app.post("/api/auth/password/reset", response_model=AuthResponse)
+async def reset_password_route(payload: PasswordResetRequest, request: Request, response: Response) -> AuthResponse:
+    return reset_password(payload, request, response)
 
 
 @app.post("/api/auth/logout")

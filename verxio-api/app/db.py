@@ -47,7 +47,7 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         email TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL,
         password_hash TEXT NOT NULL,
-        email_verified INTEGER NOT NULL DEFAULT 1,
+        email_verified INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     )
@@ -153,6 +153,20 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS auth_codes (
+        id TEXT PRIMARY KEY,
+        email TEXT NOT NULL,
+        user_id TEXT,
+        purpose TEXT NOT NULL,
+        code_hash TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        expires_at TEXT NOT NULL,
+        consumed_at TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS audit_events (
         id TEXT PRIMARY KEY,
         tenant_id TEXT NOT NULL,
@@ -171,6 +185,7 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_agents_workspace ON agents(workspace_id)",
     "CREATE INDEX IF NOT EXISTS idx_runtime_agent ON runtime_instances(workspace_id, agent_id)",
     "CREATE INDEX IF NOT EXISTS idx_artifacts_agent ON artifacts(workspace_id, agent_id)",
+    "CREATE INDEX IF NOT EXISTS idx_auth_codes_lookup ON auth_codes(email, purpose, consumed_at)",
 )
 
 

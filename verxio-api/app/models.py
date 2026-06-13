@@ -73,6 +73,26 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=8, max_length=256)
 
 
+class EmailRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+
+
+class AuthCodeChallengeResponse(BaseModel):
+    ok: bool = True
+    email: str
+    purpose: Literal["email_verify", "login", "password_reset"]
+    expiresInSeconds: int
+
+
+class AuthCodeVerifyRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class PasswordResetRequest(AuthCodeVerifyRequest):
+    password: str = Field(min_length=8, max_length=256)
+
+
 class AuthResponse(BaseModel):
     user: UserPublic
     workspace: Workspace

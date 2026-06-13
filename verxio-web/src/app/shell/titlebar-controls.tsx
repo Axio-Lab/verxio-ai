@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
+import { isVerxioWeb } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import { $hapticsMuted, toggleHapticsMuted } from '@/store/haptics'
 import { toggleKeybindPanel } from '@/store/keybinds'
@@ -18,7 +19,7 @@ import {
   toggleSidebarOpen
 } from '@/store/layout'
 
-import { appViewForPath, isOverlayView } from '../routes'
+import { appViewForPath, isOverlayView, SIGNOUT_ROUTE } from '../routes'
 
 import { titlebarButtonClass } from './titlebar'
 
@@ -53,6 +54,7 @@ export function TitlebarControls({ leftTools = [], tools = [], onOpenSettings }:
   const fileBrowserOpen = useStore($fileBrowserOpen)
   const sidebarOpen = useStore($sidebarOpen)
   const panesFlipped = useStore($panesFlipped)
+  const verxioWeb = isVerxioWeb()
 
   const toggleHaptics = () => {
     if (!hapticsMuted) {
@@ -107,6 +109,14 @@ export function TitlebarControls({ leftTools = [], tools = [], onOpenSettings }:
       triggerHaptic('tap')
       rightEdge.toggle()
     }
+  }
+
+  const logoutTool: TitlebarTool = {
+    icon: <Codicon name="sign-out" />,
+    id: 'logout',
+    label: t.titlebar.signOut,
+    onSelect: () => triggerHaptic('tap'),
+    to: SIGNOUT_ROUTE
   }
 
   // Static system tools — always pinned to the screen's right edge.
@@ -192,7 +202,12 @@ export function TitlebarControls({ leftTools = [], tools = [], onOpenSettings }:
           <TitlebarToolButton key={tool.id} navigate={navigate} tool={tool} />
         ))}
         {settingsTool && <TitlebarToolButton navigate={navigate} tool={settingsTool} />}
-        <TitlebarToolButton navigate={navigate} tool={rightSidebarTool} />
+        {verxioWeb ? <TitlebarToolButton navigate={navigate} tool={logoutTool} /> : null}
+        {/*
+          Verxio web does not expose the desktop file-browser/right-sidebar yet.
+          Keep this control wired for the future Verxio desktop surface.
+        */}
+        {!verxioWeb ? <TitlebarToolButton navigate={navigate} tool={rightSidebarTool} /> : null}
       </div>
     </>
   )

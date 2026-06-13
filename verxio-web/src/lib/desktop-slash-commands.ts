@@ -228,6 +228,17 @@ export function desktopSlashDescription(command: string, fallback = ''): string 
   return DESKTOP_COMMAND_DESCRIPTIONS.get(canonical) || fallback
 }
 
+const ARG_TAKING_COMMANDS = new Set(['/handoff', '/personality', '/resume', '/sessions', '/skin', '/switch', '/tools'])
+
+/**
+ * True when picking the bare command should expand to its inline argument
+ * options (theme / personality / session / platform / toolset) rather than
+ * committing immediately. Lets the popover act as a two-step picker.
+ */
+export function desktopSlashCommandTakesArgs(command: string): boolean {
+  return ARG_TAKING_COMMANDS.has(canonicalDesktopSlashCommand(command))
+}
+
 export function desktopSkinSlashCompletions(
   themes: DesktopThemeCommandOption[],
   activeThemeName: string,

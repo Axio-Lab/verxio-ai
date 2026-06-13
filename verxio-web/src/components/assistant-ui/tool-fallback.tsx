@@ -12,10 +12,10 @@ import { DiffLines } from '@/components/chat/diff-lines'
 import { DisclosureRow } from '@/components/chat/disclosure-row'
 import { PreviewAttachment } from '@/components/chat/preview-attachment'
 import { ZoomableImage } from '@/components/chat/zoomable-image'
-import { BrailleSpinner } from '@/components/ui/braille-spinner'
-import { Codicon } from '@/components/ui/codicon'
 import { CopyButton } from '@/components/ui/copy-button'
 import { FadeText } from '@/components/ui/fade-text'
+import { GlyphSpinner } from '@/components/ui/glyph-spinner'
+import { ToolIcon } from '@/components/ui/tool-icon'
 import { useI18n } from '@/i18n'
 import { PrettyLink, LinkifiedText as SharedLinkifiedText, urlSlugTitleLabel } from '@/lib/external-link'
 import { AlertCircle, CheckCircle2 } from '@/lib/icons'
@@ -100,7 +100,7 @@ function rawTechnicalTrace(args: unknown, result: unknown): string {
 function statusGlyph(status: ToolStatus, copy: ToolStatusCopy): ReactNode {
   if (status === 'running') {
     return (
-      <BrailleSpinner
+      <GlyphSpinner
         ariaLabel={copy.statusRunning}
         className="size-3.5 shrink-0 text-[0.95rem] text-(--ui-text-tertiary)"
         spinner="breathe"
@@ -133,7 +133,7 @@ function ToolGlyph({ copy, icon, status }: { copy: ToolStatusCopy; icon?: string
   const node = status ? (
     statusGlyph(status, copy)
   ) : icon ? (
-    <Codicon className="text-(--ui-text-tertiary)" name={icon} size="0.875rem" />
+    <ToolIcon className="text-(--ui-text-tertiary)" name={icon} size="0.875rem" />
   ) : null
 
   return node ? <span className={TOOL_HEADER_GLYPH_WRAP_CLASS}>{node}</span> : null
@@ -257,7 +257,7 @@ function ToolEntry({ part }: ToolEntryProps) {
     (part.toolName === 'terminal' || part.toolName === 'execute_code' || part.toolName === 'read_file')
 
   const hasSearchHits = Boolean(view.searchHits?.length)
-  const searchResultsLabel = part.toolName === 'web_search' ? 'Search results' : view.detailLabel
+  const searchResultsLabel = part.toolName === 'web_search' ? copy.searchResults : view.detailLabel
 
   const showRawSearchDrilldown =
     part.toolName === 'web_search' &&
@@ -276,12 +276,13 @@ function ToolEntry({ part }: ToolEntryProps) {
 
   const copyAction = useMemo(() => toolCopyPayload(part, view), [part, view])
 
+  // The header trailing slot only carries the live duration timer while the
+  // tool is running. The copy control used to live here too, but an
+  // `opacity-0` (yet still clickable) button straddling the caret/duration made
+  // the disclosure caret hard to hit. Copy now lives in the expanded body's
+  // top-right, where it can't fight the caret for the right edge.
   const trailing =
-    isPending && !embedded ? (
-      <ActivityTimerText className={TOOL_HEADER_DURATION_CLASS} seconds={elapsed} />
-    ) : !isPending && copyAction.text ? (
-      <CopyButton appearance="tool-row" label={copyAction.label} stopPropagation text={copyAction.text} />
-    ) : undefined
+    isPending && !embedded ? <ActivityTimerText className={TOOL_HEADER_DURATION_CLASS} seconds={elapsed} /> : undefined
 
   return (
     <div
@@ -319,7 +320,18 @@ function ToolEntry({ part }: ToolEntryProps) {
       </div>
       {isPending && <PendingToolApproval part={part} />}
       {open && (
-        <div className="grid w-full min-w-0 max-w-full gap-1.5 overflow-hidden p-1.5">
+        <div className="relative grid w-full min-w-0 max-w-full gap-1.5 overflow-hidden p-1.5">
+          {copyAction.text && (
+            <CopyButton
+              appearance="inline"
+              className="absolute right-1.5 top-1.5 z-10 h-5 gap-0 rounded-md border border-(--ui-stroke-tertiary) bg-background/80 px-1 opacity-60 backdrop-blur-sm transition-opacity hover:opacity-100 focus-visible:opacity-100"
+              iconClassName="size-3"
+              label={copyAction.label}
+              showLabel={false}
+              stopPropagation
+              text={copyAction.text}
+            />
+          )}
           {!embedded && view.previewTarget && isPreviewableTarget(view.previewTarget) && (
             <PreviewAttachment source="tool-result" target={view.previewTarget} />
           )}

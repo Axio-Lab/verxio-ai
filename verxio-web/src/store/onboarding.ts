@@ -73,6 +73,9 @@ export interface DesktopOnboardingState {
    *  picker's "Add provider" button). Forces the overlay to show the picker
    *  even when configured === true, and adds a close affordance. */
   manual: boolean
+  /** True when the overlay was opened specifically for the local / custom
+   *  endpoint form (URL + optional API key), bypassing the OAuth picker. */
+  localEndpoint: boolean
 }
 
 export interface OnboardingContext {
@@ -151,7 +154,8 @@ const INITIAL: DesktopOnboardingState = {
   reason: null,
   requested: false,
   firstRunSkipped: readCachedSkipped(),
-  manual: false
+  manual: false,
+  localEndpoint: false
 }
 
 export const $desktopOnboarding = atom<DesktopOnboardingState>(INITIAL)
@@ -392,12 +396,29 @@ export function startManualOnboarding(reason: null | string = DEFAULT_MANUAL_ONB
   patch({
     manual: true,
     requested: true,
+    localEndpoint: false,
     // `null` opts out of the prompt banner entirely (e.g. when the user already
     // picked a specific provider and we auto-start its sign-in).
     reason: reason ? reason.trim() || DEFAULT_ONBOARDING_REASON : null,
     flow: { status: 'idle' }
   })
   void refreshProviders()
+}
+
+// Open the onboarding overlay directly on the local / custom endpoint form
+// (URL + optional API key), bypassing the OAuth picker. Used by Settings →
+// Model's "Set up custom endpoint" so it lands on a form that can actually
+// configure the endpoint instead of dead-ending on the OAuth provider list.
+export function startManualLocalEndpoint(reason: null | string = null) {
+  pendingProviderOAuthId = null
+  patch({
+    manual: true,
+    requested: true,
+    localEndpoint: true,
+    mode: 'apikey',
+    reason: reason ? reason.trim() || DEFAULT_ONBOARDING_REASON : null,
+    flow: { status: 'idle' }
+  })
 }
 
 // One-shot hand-off used when the dedicated Providers settings page launches a
@@ -431,7 +452,7 @@ export function clearPendingProviderOAuth() {
 export function closeManualOnboarding() {
   pendingProviderOAuthId = null
 
-  patch({ manual: false, requested: false, flow: { status: 'idle' } })
+  patch({ manual: false, requested: false, localEndpoint: false, flow: { status: 'idle' } })
 }
 
 export function completeDesktopOnboarding() {
@@ -448,7 +469,8 @@ export function completeDesktopOnboarding() {
     reason: null,
     requested: false,
     firstRunSkipped: false,
-    manual: false
+    manual: false,
+    localEndpoint: false
   })
 }
 
@@ -461,7 +483,7 @@ export function completeDesktopOnboarding() {
 export function dismissFirstRunOnboarding() {
   clearPoll()
   writeCachedSkipped(true)
-  patch({ firstRunSkipped: true, requested: false, manual: false, flow: { status: 'idle' } })
+  patch({ firstRunSkipped: true, requested: false, manual: false, localEndpoint: false, flow: { status: 'idle' } })
 }
 
 export function setOnboardingMode(mode: OnboardingMode) {
@@ -704,18 +726,25 @@ export async function recheckExternalSignin(ctx: OnboardingContext) {
   )
 }
 
-export async function saveOnboardingApiKey(envKey: string, value: string, label: string, ctx: OnboardingContext) {
+export async function saveOnboardingApiKey(
+  envKey: string,
+  value: string,
+  label: string,
+  ctx: OnboardingContext,
+  endpointApiKey?: string
+) {
   const trimmed = value.trim()
 
   if (!trimmed) {
     return { ok: false, message: 'Enter a value first.' }
   }
 
-  // The "Local / custom endpoint" option carries a base URL, not an API key.
-  // It must be wired into config (provider=custom + base_url + model), not
-  // dropped into .env — runtime resolution ignores OPENAI_BASE_URL.
+  // The "Local / custom endpoint" option carries a base URL (in `value`) plus
+  // an optional API key. It must be wired into config (provider=custom +
+  // base_url + model + api_key), not dropped into .env — runtime resolution
+  // ignores OPENAI_BASE_URL.
   if (envKey === 'OPENAI_BASE_URL') {
-    return saveOnboardingLocalEndpoint(trimmed, ctx)
+    return saveOnboardingLocalEndpoint(trimmed, endpointApiKey?.trim() ?? '', ctx)
   }
 
   // No key validation here on purpose: we previously live-probed the key and
@@ -757,8 +786,9 @@ export async function saveOnboardingApiKey(envKey: string, value: string, label:
 // re-assigns the model from /api/model/options WITHOUT a base_url, which would
 // wipe the base_url we just wrote. We have a concrete model already, so we
 // verify the runtime directly and finish.
-export async function saveOnboardingLocalEndpoint(baseUrl: string, ctx: OnboardingContext) {
+export async function saveOnboardingLocalEndpoint(baseUrl: string, apiKey: string, ctx: OnboardingContext) {
   const url = baseUrl.trim()
+  const key = apiKey.trim()
 
   if (!url) {
     return { ok: false, message: 'Enter the endpoint URL first.' }
@@ -770,7 +800,7 @@ export async function saveOnboardingLocalEndpoint(baseUrl: string, ctx: Onboardi
   let model = ''
 
   try {
-    const probe = await validateProviderCredential('OPENAI_BASE_URL', url)
+    const probe = await validateProviderCredential('OPENAI_BASE_URL', url, key)
 
     if (!probe.ok && probe.reachable) {
       return { ok: false, message: probe.message || 'Could not reach that endpoint.' }
@@ -793,7 +823,7 @@ export async function saveOnboardingLocalEndpoint(baseUrl: string, ctx: Onboardi
   }
 
   try {
-    await setModelAssignment({ scope: 'main', provider: 'custom', model, base_url: url })
+    await setModelAssignment({ scope: 'main', provider: 'custom', model, base_url: url, api_key: key })
     await ctx.requestGateway('reload.env').catch(() => undefined)
 
     const runtime = await checkRuntime(ctx)

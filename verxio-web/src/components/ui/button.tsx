@@ -39,6 +39,9 @@ const buttonVariants = cva(
         // variants when the button must sit inline in a heading or sentence
         // (replaces ad-hoc `h-auto px-0 py-0` overrides).
         inline: 'h-auto gap-1 p-0 has-[>svg]:px-0',
+        // Status-stack headers, table footers — 12px text actions beside a label.
+        micro:
+          "h-auto gap-0.5 px-1 py-0 text-xs leading-4 font-normal has-[>svg]:px-0.5 [&_svg:not([class*='size-'])]:size-3",
         icon: 'size-9 rounded-[4px]',
         'icon-xs': "size-6 rounded-[4px] [&_svg:not([class*='size-'])]:size-3",
         'icon-sm': 'size-8 rounded-[4px]',

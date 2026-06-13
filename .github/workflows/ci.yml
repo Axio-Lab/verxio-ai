@@ -2,27 +2,28 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, verxio/web]
   pull_request:
-    branches: [main, master]
-
-defaults:
-  run:
-    working-directory: .
+    branches: [main, master, verxio/web]
 
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: false
 
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
 
-      - name: Install dependencies
+      - name: Install root dependencies
         run: npm ci
 
+      - name: Format code
+        run: npm run fmt
+
       - name: Run CI checks
-        run: npm run ci
+        run: npm run format:check && npm run ci:web

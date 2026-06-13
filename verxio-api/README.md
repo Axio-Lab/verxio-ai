@@ -4,7 +4,7 @@ FastAPI control plane for Verxio's Hermes runtime product.
 
 ## Responsibilities
 
-- Email/password signup, login, logout, and `/api/auth/me`
+- Native email/password auth, email-code login, email verification, password reset, logout, and `/api/auth/me`
 - Turso/libSQL migrations and typed query helpers
 - Personal workspace and default Verxio agent provisioning
 - Runtime registry for isolated Hermes containers
@@ -44,6 +44,23 @@ Each agent runtime is isolated by workspace and agent:
 
 Verxio stores metadata in Turso. It does not store Hermes memory bytes, session files, skills, cron files, or generated artifacts in Turso.
 
+## Auth And Email Codes
+
+Passwords are stored as salted one-way PBKDF2-SHA256 hashes. Verification, login, and password reset codes are stored as HMAC-SHA256 hashes with expiry and attempt limits.
+
+Configure production email delivery with SMTP:
+
+```bash
+export VERXIO_AUTH_CODE_SECRET=change-this-long-random-secret
+export VERXIO_SMTP_HOST=smtp.example.com
+export VERXIO_SMTP_PORT=587
+export VERXIO_SMTP_USERNAME=your-smtp-username
+export VERXIO_SMTP_PASSWORD=your-smtp-password
+export VERXIO_SMTP_FROM="Verxio <no-reply@example.com>"
+```
+
+When SMTP is not configured, local development logs auth codes to the API process for testing.
+
 ## Local Development
 
 ```bash
@@ -60,7 +77,13 @@ http://127.0.0.1:8787/docs
 ## Key Routes
 
 - `POST /api/auth/signup`
+- `POST /api/auth/verify-email`
+- `POST /api/auth/verification/resend`
 - `POST /api/auth/login`
+- `POST /api/auth/login/code/request`
+- `POST /api/auth/login/code/verify`
+- `POST /api/auth/password/forgot`
+- `POST /api/auth/password/reset`
 - `POST /api/auth/logout`
 - `GET /api/auth/me`
 - `GET /api/runtime`

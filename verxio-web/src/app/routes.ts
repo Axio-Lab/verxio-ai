@@ -1,6 +1,7 @@
 export const SESSION_ROUTE_PREFIX = '/'
 export const NEW_CHAT_ROUTE = '/'
 export const LOGIN_ROUTE = '/login'
+export const SIGNUP_ROUTE = '/signup'
 export const SIGNOUT_ROUTE = '/signout'
 export const SETTINGS_ROUTE = '/settings'
 export const COMMAND_CENTER_ROUTE = '/command-center'
@@ -58,6 +59,7 @@ const APP_VIEW_BY_PATH = new Map<string, AppView>(APP_ROUTES.map(route => [route
 const RESERVED_PATHS: ReadonlySet<string> = new Set([
   ...APP_ROUTES.map(route => route.path),
   LOGIN_ROUTE,
+  SIGNUP_ROUTE,
   SIGNOUT_ROUTE,
   TOOLSET_ROUTE,
   TOOLSETS_ROUTE

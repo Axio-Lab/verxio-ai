@@ -14,15 +14,14 @@ try {
 }
 
 if (!existsSync(source)) {
-  console.warn('[verxio-web] Missing .githooks/pre-commit — skipping hook install')
+  console.warn('[verxio-ai] Missing .githooks/pre-commit — skipping hook install')
   process.exit(0)
 }
 
-const gitDir = execSync('git rev-parse --git-dir', { cwd: root, encoding: 'utf8' }).trim()
-const hooksDir = join(root, gitDir, 'hooks')
+const hooksDir = execSync('git rev-parse --git-path hooks', { cwd: root, encoding: 'utf8' }).trim()
 
 mkdirSync(hooksDir, { recursive: true })
 copyFileSync(source, join(hooksDir, 'pre-commit'))
 chmodSync(join(hooksDir, 'pre-commit'), 0o755)
 
-console.log('[verxio-web] Installed git pre-commit hook (npm run ci)')
+console.log('[verxio-ai] Installed git pre-commit hook (npm run format:check)')

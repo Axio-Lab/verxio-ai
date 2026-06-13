@@ -50,7 +50,7 @@ export function SessionsSettings() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [s.failedLoad])
 
   useEffect(() => {
     void load()

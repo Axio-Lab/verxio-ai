@@ -146,7 +146,8 @@ export const ja = defineLocale({
     showRightSidebar: '右サイドバーを表示',
     muteHaptics: '触覚フィードバックをオフ',
     unmuteHaptics: '触覚フィードバックをオン',
-    openSettings: '設定を開く'
+    openSettings: '設定を開く',
+    signOut: 'サインアウト'
   },
 
   language: {
@@ -673,7 +674,24 @@ export const ja = defineLocale({
     toolsetEnabled: 'ツールセットを有効にしました',
     toolsetDisabled: 'ツールセットを無効にしました',
     appliesToNewSessions: name => `${name} は新しいセッションに適用されます。`,
-    failedToUpdate: name => `${name} の更新に失敗しました`
+    failedToUpdate: name => `${name} の更新に失敗しました`,
+    newSkill: '新しいスキル',
+    editSkill: name => `${name} を編集`,
+    editor: {
+      createTitle: '新しいスキル',
+      editTitle: name => `スキルを編集: ${name}`,
+      createDesc:
+        'カスタムスキルを作成します — YAML フロントマターと Markdown の手順。エージェントで利用でき、cron ジョブにも添付できます。',
+      editDesc: 'このスキルの SKILL.md を書き換えます。保存時にフロントマター（name、description）が検証されます。',
+      nameLabel: '名前',
+      categoryLabel: 'カテゴリ（任意）',
+      contentLabel: 'SKILL.md',
+      nameRequired: 'スキル名は必須です。',
+      contentRequired: 'SKILL.md の内容は必須です。',
+      saving: '保存中…',
+      saveChanges: '変更を保存',
+      createSkill: 'スキルを作成'
+    }
   },
 
   agents: {
@@ -1270,6 +1288,10 @@ export const ja = defineLocale({
     editQueued: 'キュー済みターンを編集',
     sendQueuedNow: 'キュー済みターンを今すぐ送信',
     deleteQueued: 'キュー済みターンを削除',
+    queueEdit: '編集',
+    queueSendNext: '次へ',
+    queueSend: '送信',
+    queueDelete: '削除',
     previewUnavailable: 'プレビューは利用できません',
     previewLabel: label => `${label} のプレビュー`,
     couldNotPreview: label => `${label} をプレビューできませんでした`,
@@ -1312,6 +1334,17 @@ export const ja = defineLocale({
         text: 'これがどのように機能するか説明し、主要なファイルを教えてください。'
       }
     }
+  },
+
+  statusStack: {
+    agents: 'エージェント',
+    background: count => `バックグラウンド ${count} 件`,
+    subagents: count => `サブエージェント ${count} 件`,
+    todos: (done, total) => `タスク ${done}/${total}`,
+    running: '実行中',
+    stop: '停止',
+    dismiss: '閉じる',
+    exit: code => `終了コード ${code}`
   },
 
   updates: {
@@ -1423,6 +1456,7 @@ export const ja = defineLocale({
     getKey: 'キーを取得',
     replaceCurrent: '現在の値を置き換え',
     pasteApiKey: 'API キーを貼り付け',
+    localApiKeyPlaceholder: 'API キー（任意 — エンドポイントで必要な場合のみ）',
     couldNotSave: '認証情報を保存できませんでした。',
     connecting: '接続中',
     update: '更新',
@@ -1713,11 +1747,16 @@ export const ja = defineLocale({
       editMessage: 'メッセージを編集',
       stop: '停止',
       editableCheckpoint: '編集可能なチェックポイント',
+      restoreFromHere: 'チェックポイントを復元 — このプロンプトから再実行',
+      restoreTitle: 'このチェックポイントに復元しますか？',
+      restoreBody: 'このプロンプト以降のメッセージは会話から削除され、ここからプロンプトが再実行されます。',
+      restoreConfirm: '復元して再実行',
       restorePrevious: '前のチェックポイントに戻す',
       restoreCheckpoint: 'チェックポイントを復元',
       restoreNext: '次のチェックポイントに戻す',
       goForward: '進む',
-      sendEdited: '編集済みメッセージを送信'
+      sendEdited: '編集済みメッセージを送信',
+      processNotificationOutput: '出力'
     },
     approval: {
       gatewayDisconnected: 'Verxio ゲートウェイが接続されていません',
@@ -1758,6 +1797,7 @@ export const ja = defineLocale({
       copyPath: 'パスをコピー',
       outputAlt: 'ツール出力',
       rawResponse: '生の応答',
+      searchResults: '検索結果',
       copyActivity: 'アクティビティをコピー',
       recoveredOne: '1 つの失敗したステップの後に回復しました',
       recoveredMany: count => `${count} つの失敗したステップの後に回復しました`,
