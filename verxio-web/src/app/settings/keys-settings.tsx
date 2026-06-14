@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 
+import { PaginationControl } from '@/components/ui/pagination'
 import { useI18n } from '@/i18n'
 import type { EnvVarInfo } from '@/types/hermes'
+
+import { DEFAULT_LIST_PAGE_SIZE, usePaginatedList } from '../hooks/use-paginated-list'
 
 import { CredentialKeyCard, credentialPlaceholder, credentialRowLabel } from './credential-key-ui'
 import { useEnvCredentials } from './env-credentials'
@@ -52,17 +55,32 @@ export function KeysSettings({ view }: KeysSettingsProps) {
     })
   }, [vars])
 
+  const visibleEntries = useMemo(() => {
+    const group = groups.find(g => g.category === view)
+
+    return group?.entries ?? []
+  }, [groups, view])
+
+  const {
+    currentPage,
+    setPage,
+    total,
+    visibleItems: pagedEntries
+  } = usePaginatedList(visibleEntries, DEFAULT_LIST_PAGE_SIZE, view)
+
+  useEffect(() => {
+    setOpenKey(null)
+  }, [view])
+
   if (!vars) {
     return <LoadingState label={t.settings.keys.loading} />
   }
 
-  const visible = groups.filter(g => g.category === view)
-
   return (
     <SettingsContent>
-      {visible.map(group => (
-        <div className="grid gap-2" key={group.category}>
-          {group.entries.map(([key, info]: [string, EnvVarInfo]) => {
+      {pagedEntries.length > 0 ? (
+        <div className="grid gap-2">
+          {pagedEntries.map(([key, info]: [string, EnvVarInfo]) => {
             const label = credentialRowLabel(key, info)
 
             return (
@@ -79,10 +97,16 @@ export function KeysSettings({ view }: KeysSettingsProps) {
               />
             )
           })}
+          <PaginationControl
+            className="pt-2"
+            itemLabel="keys"
+            onPageChange={setPage}
+            page={currentPage}
+            pageSize={DEFAULT_LIST_PAGE_SIZE}
+            total={total}
+          />
         </div>
-      ))}
-
-      {visible.length === 0 && (
+      ) : (
         <div className="rounded-lg border border-dashed border-(--ui-stroke-tertiary) px-4 py-8 text-center text-[length:var(--conversation-caption-font-size)] text-muted-foreground">
           {t.settings.keys.empty}
         </div>
