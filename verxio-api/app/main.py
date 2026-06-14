@@ -38,7 +38,8 @@ from app.composio_catalog import (
     list_composio_accounts,
     list_composio_apps,
 )
-from app.control_plane import get_context_for_user, get_runtime_for_user
+from app.control_plane import ensure_runtime_directories, get_context_for_user, get_runtime_for_user
+from app.leash_agent import clear_leash_agent, read_leash_agent, write_leash_agent
 from app.models import (
     ArtifactListResponse,
     AuthCodeChallengeResponse,
@@ -343,6 +344,42 @@ async def delete_composio_connection_route(account_id: str, request: Request) ->
     if not is_composio_configured():
         raise HTTPException(status_code=500, detail="Composio is not configured.")
     return delete_composio_account(account_id)
+
+
+@app.get("/api/leash/agent-config")
+async def get_leash_agent_config(request: Request) -> dict:
+    """Read Leash agent.json from the runtime volume. Pass-through cache only — never stored in Turso."""
+    user = require_user(request)
+    runtime = get_runtime_for_user(user)
+    ensure_runtime_directories(runtime)
+    payload = read_leash_agent(runtime)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Leash agent config not found.")
+    return {"ok": True, "config": payload}
+
+
+@app.put("/api/leash/agent-config")
+async def put_leash_agent_config(request: Request) -> dict[str, bool]:
+    """Write Leash agent.json to the runtime volume from the browser. Body is not logged or persisted in Turso."""
+    user = require_user(request)
+    runtime = get_runtime_for_user(user)
+    ensure_runtime_directories(runtime)
+    try:
+        body = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON body.") from exc
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Leash agent config must be a JSON object.")
+    write_leash_agent(runtime, body)
+    return {"ok": True}
+
+
+@app.delete("/api/leash/agent-config")
+async def delete_leash_agent_config(request: Request) -> dict[str, bool]:
+    user = require_user(request)
+    runtime = get_runtime_for_user(user)
+    clear_leash_agent(runtime)
+    return {"ok": True}
 
 
 def _runtime_dashboard_token(runtime_id: str) -> str:
