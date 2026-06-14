@@ -39,9 +39,6 @@ export function LeashIdentityBanner() {
           >
             {copy.setup}
           </Button>
-          <Button onClick={() => setDismissed(true)} size="sm" type="button" variant="outline">
-            {copy.dismiss}
-          </Button>
           <Button onClick={() => suppressLeashBannerForever()} size="sm" type="button" variant="text">
             {copy.never}
           </Button>
