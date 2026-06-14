@@ -71,6 +71,7 @@ import { CommandPalette } from './command-palette'
 import { useGatewayBoot } from './gateway/hooks/use-gateway-boot'
 import { useGatewayRequest } from './gateway/hooks/use-gateway-request'
 import { useKeybinds } from './hooks/use-keybinds'
+import { useLeashHydration } from './hooks/use-leash-hydration'
 import { ModelPickerOverlay } from './model-picker-overlay'
 import { ModelVisibilityOverlay } from './model-visibility-overlay'
 import { RightSidebarPane } from './right-sidebar'
@@ -557,6 +558,8 @@ export function DesktopController() {
     refreshHermesConfig,
     refreshSessions
   })
+
+  useLeashHydration()
 
   useEffect(() => {
     if (gatewayState === 'open') {

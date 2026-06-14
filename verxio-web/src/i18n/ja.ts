@@ -1893,6 +1893,61 @@ export const ja = defineLocale({
     openLogs: 'ログを開く'
   },
 
+  leash: {
+    banner: {
+      title: 'Give your agent a Leash identity',
+      body: 'Register an on-chain agent identity so your assistant can pay, earn, and be discovered. Keys stay on this device only.',
+      setup: 'Set up',
+      dismiss: 'Dismiss',
+      never: "Don't show again"
+    },
+    panel: {
+      title: 'Leash identity (MCP)',
+      subtitle: 'Identity layer for AI agents — mint, pay, and verify on Solana via @leashmarket/mcp.',
+      custodyNotice:
+        'Your executive keypair and private keys are stored only on this device (browser local storage). Export a backup and keep it somewhere safe. Verxio does not store your keys and cannot recover them if you lose this device or clear site data.',
+      statusNone: 'Not configured',
+      statusPendingFunding: 'Funding required',
+      statusRegistered: 'Registered',
+      mintLabel: 'Agent mint',
+      treasuryLabel: 'Treasury',
+      executiveLabel: 'Executive public key',
+      networkLabel: 'Network',
+      networkDevnet: 'Solana devnet',
+      networkMainnet: 'Solana mainnet',
+      rpcLabel: 'RPC URL (optional, recommended)',
+      rpcPlaceholder: 'https://devnet.helius-rpc.com/?api-key=…',
+      generateKeypair: 'Generate new keypair on this device',
+      importLabel: 'Or import executive private key (base58)',
+      importPlaceholder: 'Paste 64-byte Solana secret key (base58)',
+      importKeypair: 'Import keypair',
+      pendingFundingHint:
+        'Fund the executive public key with ~0.01 SOL, then ask your agent in chat to continue Leash registration (leash_register_agent).',
+      registeredHint:
+        'Your agent identity is registered. Use Leash MCP tools in chat for payments, discovery, and treasury actions.',
+      exportJson: 'Export backup',
+      importJson: 'Import backup',
+      pullFromRuntime: 'Sync from runtime',
+      removeIdentity: 'Remove identity from this device',
+      removeConfirm:
+        'Remove Leash identity from this device and disable the Leash MCP server? Export a backup first — this cannot be undone.',
+      chatHint: 'After saving, reload MCP below if tools do not appear on the next turn.',
+      savedTitle: 'Leash identity saved',
+      savedMessage: 'Identity synced to your runtime. Reload MCP if tools are missing.',
+      saveFailed: 'Could not save Leash identity',
+      generateFailed: 'Could not generate keypair',
+      importFailed: 'Could not import keypair',
+      pullEmptyTitle: 'Nothing to sync',
+      pullEmptyMessage: 'No Leash agent file found in the runtime yet.',
+      pullSavedTitle: 'Synced from runtime',
+      pullSavedMessage: 'Updated the copy stored on this device.',
+      pullFailed: 'Could not sync from runtime',
+      removedTitle: 'Leash identity removed',
+      removedMessage: 'Local keys cleared and Leash MCP disabled.',
+      removeFailed: 'Could not remove Leash identity'
+    }
+  },
+
   ui: {
     search: {
       clear: '検索をクリア'

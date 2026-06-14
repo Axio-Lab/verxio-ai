@@ -1450,6 +1450,57 @@ export interface Translations {
     openLogs: string
   }
 
+  leash: {
+    banner: {
+      title: string
+      body: string
+      setup: string
+      dismiss: string
+      never: string
+    }
+    panel: {
+      title: string
+      subtitle: string
+      custodyNotice: string
+      statusNone: string
+      statusPendingFunding: string
+      statusRegistered: string
+      mintLabel: string
+      treasuryLabel: string
+      executiveLabel: string
+      networkLabel: string
+      networkDevnet: string
+      networkMainnet: string
+      rpcLabel: string
+      rpcPlaceholder: string
+      generateKeypair: string
+      importLabel: string
+      importPlaceholder: string
+      importKeypair: string
+      pendingFundingHint: string
+      registeredHint: string
+      exportJson: string
+      importJson: string
+      pullFromRuntime: string
+      removeIdentity: string
+      removeConfirm: string
+      chatHint: string
+      savedTitle: string
+      savedMessage: string
+      saveFailed: string
+      generateFailed: string
+      importFailed: string
+      pullEmptyTitle: string
+      pullEmptyMessage: string
+      pullSavedTitle: string
+      pullSavedMessage: string
+      pullFailed: string
+      removedTitle: string
+      removedMessage: string
+      removeFailed: string
+    }
+  }
+
   ui: {
     search: {
       clear: string
