@@ -308,7 +308,7 @@ async def summarize_note(workspace: Workspace, profile: AgentProfile, note_id: s
     prompt = "\n".join(
         [
             "Turn this meeting transcript and the user's written notes into concise internal meeting notes.",
-            "Return only the final notes. Use short sections for Summary, Decisions, Action items, and Quotes when available.",
+            "Return only valid Markdown. Use concise sections with ## Summary, ## Decisions, ## Action items, and ## Quotes when available.",
             "Preserve exact quotes only when they appear in the transcript.",
             "",
             source[:24_000],

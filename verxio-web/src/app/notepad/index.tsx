@@ -1,6 +1,7 @@
 import type * as React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { CompactMarkdown } from '@/components/chat/compact-markdown'
 import { PageLoader } from '@/components/page-loader'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
@@ -714,8 +715,8 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
 
   return (
     <>
-      <div className="flex h-full min-h-0 bg-background text-foreground">
-        <aside className="flex w-[15rem] shrink-0 flex-col border-r border-(--ui-stroke-secondary) bg-(--ui-sidebar-surface-background)">
+      <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground lg:flex-row">
+        <aside className="flex max-h-40 w-full shrink-0 flex-col border-b border-(--ui-stroke-secondary) bg-(--ui-sidebar-surface-background) lg:h-full lg:max-h-none lg:w-[15rem] lg:border-b-0 lg:border-r">
           <div className="flex h-12 items-center justify-between border-b border-(--ui-stroke-secondary) px-3">
             <h1 className="text-sm font-semibold tracking-normal">Notepad</h1>
             <div className="flex items-center gap-1">
@@ -791,7 +792,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
           </div>
         </aside>
 
-        <section className="flex w-[22rem] shrink-0 flex-col border-r border-(--ui-stroke-secondary)">
+        <section className="flex h-80 w-full shrink-0 flex-col border-b border-(--ui-stroke-secondary) sm:h-[22rem] lg:h-full lg:w-[22rem] lg:border-b-0 lg:border-r">
           <div className="flex h-12 items-center gap-2 border-b border-(--ui-stroke-secondary) px-3">
             <div className="relative min-w-0 flex-1">
               <Codicon
@@ -882,19 +883,19 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
           </div>
         </section>
 
-        <main className="min-w-0 flex-1 overflow-auto">
+        <main className="min-h-0 min-w-0 flex-1 overflow-auto">
           {selectedNote && draft ? (
-            <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col">
-              <div className="sticky top-0 z-10 flex min-h-12 items-center gap-2 border-b border-(--ui-stroke-secondary) bg-background/95 px-4 backdrop-blur">
+            <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col">
+              <div className="sticky top-0 z-10 flex min-h-12 flex-wrap items-center gap-2 border-b border-(--ui-stroke-secondary) bg-background/95 px-3 py-2 backdrop-blur sm:px-4">
                 <input
-                  className="min-w-0 flex-1 bg-transparent text-lg font-semibold tracking-normal outline-none"
+                  className="h-9 min-w-0 flex-1 basis-full bg-transparent text-lg font-semibold tracking-normal outline-none sm:basis-72"
                   onChange={event =>
                     setDraft(current => (current ? { ...current, title: event.target.value } : current))
                   }
                   value={draft.title}
                 />
                 <select
-                  className="h-8 rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 text-xs outline-none"
+                  className="h-8 min-w-0 flex-1 rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 text-xs outline-none sm:flex-none"
                   onChange={event =>
                     setDraft(current => (current ? { ...current, folder_id: event.target.value || null } : current))
                   }
@@ -1014,33 +1015,35 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                 </Tip>
               </div>
 
-              <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(20rem,0.8fr)] gap-0">
-                <section className="border-r border-(--ui-stroke-secondary) p-4">
+              <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)]">
+                <section className="border-b border-(--ui-stroke-secondary) p-3 sm:p-4 xl:border-b-0 xl:border-r">
                   <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-notes">
                     Notes
                   </label>
                   <textarea
-                    className="mt-2 min-h-[36rem] w-full resize-y rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3 text-sm leading-6 outline-none focus:border-ring"
+                    className="mt-2 min-h-[24rem] w-full resize-y rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3 text-sm leading-6 outline-none focus:border-ring sm:min-h-[30rem] xl:min-h-[36rem]"
                     id="notepad-notes"
                     onChange={event =>
                       setDraft(current => (current ? { ...current, content: event.target.value } : current))
                     }
                     value={draft.content}
                   />
+                  <MarkdownPreview text={draft.content} />
                 </section>
 
-                <section className="p-4">
+                <section className="p-3 sm:p-4">
                   <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-summary">
                     Summary
                   </label>
                   <textarea
-                    className="mt-2 min-h-[36rem] w-full resize-y rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3 text-sm leading-6 outline-none focus:border-ring"
+                    className="mt-2 min-h-[18rem] w-full resize-y rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3 text-sm leading-6 outline-none focus:border-ring sm:min-h-[24rem] xl:min-h-[36rem]"
                     id="notepad-summary"
                     onChange={event =>
                       setDraft(current => (current ? { ...current, summary: event.target.value } : current))
                     }
                     value={draft.summary}
                   />
+                  <MarkdownPreview text={draft.summary} />
                 </section>
               </div>
             </div>
@@ -1176,6 +1179,23 @@ function FolderButton({
   )
 }
 
+function MarkdownPreview({ text }: { text: string }) {
+  const value = text.trim()
+
+  if (!value) {
+    return null
+  }
+
+  return (
+    <div
+      aria-label="Rendered markdown"
+      className="mt-3 max-h-72 overflow-auto rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3"
+    >
+      <CompactMarkdown className="text-sm text-foreground/90" text={value} />
+    </div>
+  )
+}
+
 export function PublicNotepadShareView() {
   const [payload, setPayload] = useState<VerxioPublicNotepadShareResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -1221,6 +1241,7 @@ export function PublicNotepadShareView() {
   }
 
   const note = payload.note
+  const body = noteBody(note)
 
   return (
     <main className="min-h-dvh bg-background text-foreground">
@@ -1238,14 +1259,14 @@ export function PublicNotepadShareView() {
         {note.summary && (
           <section className="border-b border-(--ui-stroke-secondary) py-5">
             <h2 className="text-sm font-semibold tracking-normal">Summary</h2>
-            <p className="mt-3 whitespace-pre-wrap text-sm leading-6">{note.summary}</p>
+            <CompactMarkdown className="mt-3 text-sm text-foreground/90" text={note.summary} />
           </section>
         )}
 
-        {noteBody(note) && (
+        {body && (
           <section className="border-b border-(--ui-stroke-secondary) py-5">
             <h2 className="text-sm font-semibold tracking-normal">Notes</h2>
-            <p className="mt-3 whitespace-pre-wrap text-sm leading-6">{noteBody(note)}</p>
+            <CompactMarkdown className="mt-3 text-sm text-foreground/90" text={body} />
           </section>
         )}
       </article>
