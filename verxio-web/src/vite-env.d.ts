@@ -3,6 +3,8 @@
 interface ImportMetaEnv {
   readonly VITE_VERXIO_API_ENABLED?: string
   readonly VITE_VERXIO_API_URL?: string
+  readonly VITE_VERXIO_PUBLIC_WEB_URL?: string
+  readonly VITE_BASE?: string
   readonly VITE_HERMES_DASHBOARD_URL?: string
 }
 

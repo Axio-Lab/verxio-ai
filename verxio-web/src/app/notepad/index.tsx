@@ -116,14 +116,28 @@ function replaceNote(notes: VerxioNotepadNote[], note: VerxioNotepadNote): Verxi
   return next.sort((left, right) => Date.parse(right.updated_at) - Date.parse(left.updated_at))
 }
 
+function publicShareBaseUrl(): string {
+  const configured = import.meta.env.VITE_VERXIO_PUBLIC_WEB_URL?.replace(/\/$/, '')
+
+  if (configured) {
+    return configured
+  }
+
+  const apiBase = verxioApiBaseUrl()
+
+  if (apiBase.includes(':8787')) {
+    return apiBase.replace(':8787', ':8080')
+  }
+
+  return window.location.origin
+}
+
 function shareUrlFromToken(token: string | null): string {
   if (!token) {
     return ''
   }
 
-  const base = verxioApiBaseUrl() || window.location.origin
-
-  return `${base}/share/notepad/${token}`
+  return `${publicShareBaseUrl()}/share/notepad/${token}`
 }
 
 export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
@@ -134,6 +148,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   const [notePage, setNotePage] = useState(1)
   const [query, setQuery] = useState('')
   const [draft, setDraft] = useState<NoteDraft | null>(null)
+  const [summaryEditing, setSummaryEditing] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [busyAction, setBusyAction] = useState<string | null>(null)
@@ -293,6 +308,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     }
 
     setDraft(draftFromNote(selectedNote))
+    setSummaryEditing(false)
   }, [selectedNote])
 
   useEffect(() => {
@@ -638,6 +654,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       const note = await summarizeNotepadNote(selectedNote.id)
       setNotes(current => replaceNote(current, note))
       setDraft(draftFromNote(note))
+      setSummaryEditing(false)
       notify({ kind: 'success', message: 'Summary generated' })
     } catch (error) {
       notifyError(error, 'Could not generate summary')
@@ -664,7 +681,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     try {
       const share = await shareNotepadNote(selectedNote.id)
       setNotes(current => replaceNote(current, share.note))
-      await navigator.clipboard?.writeText(share.url)
+      await navigator.clipboard?.writeText(shareUrlFromToken(share.token))
       notify({ kind: 'success', message: 'Share URL copied' })
     } catch (error) {
       notifyError(error, 'Could not share note')
@@ -1031,17 +1048,42 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                 </section>
 
                 <section className="p-3 sm:p-4">
-                  <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-summary">
-                    Summary
-                  </label>
-                  <textarea
-                    className="mt-2 min-h-[18rem] w-full resize-y rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3 text-sm leading-6 outline-none focus:border-ring sm:min-h-[24rem] xl:min-h-[36rem]"
-                    id="notepad-summary"
-                    onChange={event =>
-                      setDraft(current => (current ? { ...current, summary: event.target.value } : current))
-                    }
-                    value={draft.summary}
-                  />
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-summary">
+                      Summary
+                    </label>
+                    <Button
+                      onClick={() => setSummaryEditing(current => !current)}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Codicon name={summaryEditing ? 'eye' : 'edit'} />
+                      {summaryEditing ? 'Preview' : 'Edit'}
+                    </Button>
+                  </div>
+
+                  {summaryEditing ? (
+                    <textarea
+                      className="mt-2 min-h-[18rem] w-full resize-y rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3 text-sm leading-6 outline-none focus:border-ring sm:min-h-[24rem] xl:min-h-[36rem]"
+                      id="notepad-summary"
+                      onChange={event =>
+                        setDraft(current => (current ? { ...current, summary: event.target.value } : current))
+                      }
+                      value={draft.summary}
+                    />
+                  ) : draft.summary.trim() ? (
+                    <div
+                      aria-label="Formatted summary"
+                      className="mt-2 min-h-[18rem] overflow-auto rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-4 sm:min-h-[24rem] xl:max-h-[36rem] xl:min-h-[36rem]"
+                    >
+                      <NotepadMarkdown text={draft.summary} />
+                    </div>
+                  ) : (
+                    <div className="mt-2 grid min-h-[18rem] place-items-center rounded-[4px] border border-dashed border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-4 text-center text-sm text-muted-foreground sm:min-h-[24rem] xl:min-h-[36rem]">
+                      Generate a summary to view it here.
+                    </div>
+                  )}
                 </section>
               </div>
             </div>
@@ -1177,6 +1219,33 @@ function FolderButton({
   )
 }
 
+function NotepadMarkdown({ text }: { text: string }) {
+  return (
+    <CompactMarkdown
+      className="text-sm text-foreground/90 [&_h1]:mb-3 [&_h1]:mt-5 [&_h1]:text-xl [&_h1]:font-semibold [&_h1]:first:mt-0 [&_h2]:mb-2 [&_h2]:mt-5 [&_h2]:text-base [&_h2]:font-semibold [&_h2]:first:mt-0 [&_li]:my-1 [&_p]:mb-3 [&_ul]:mb-4"
+      text={text}
+    />
+  )
+}
+
+const VERXIO_WEBSITE_URL = 'https://www.verxio.xyz'
+
+function PoweredByVerxioFooter() {
+  return (
+    <footer className="fixed inset-x-0 bottom-0 z-10 border-t border-(--ui-stroke-secondary) bg-background py-3 text-center text-xs text-muted-foreground">
+      Powered by{' '}
+      <a
+        className="font-medium text-primary hover:underline"
+        href={VERXIO_WEBSITE_URL}
+        rel="noopener noreferrer"
+        target="_blank"
+      >
+        Verxio
+      </a>
+    </footer>
+  )
+}
+
 export function PublicNotepadShareView() {
   const [payload, setPayload] = useState<VerxioPublicNotepadShareResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -1204,53 +1273,59 @@ export function PublicNotepadShareView() {
 
   if (error) {
     return (
-      <main className="grid min-h-dvh place-items-center bg-background px-4 text-foreground">
-        <section className="w-full max-w-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-5">
-          <h1 className="text-base font-semibold tracking-normal">Shared note unavailable</h1>
-          <p className="mt-2 text-sm text-muted-foreground">{error}</p>
-        </section>
-      </main>
+      <>
+        <main className="grid min-h-dvh place-items-center bg-background px-4 pb-14 text-foreground">
+          <section className="w-full max-w-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-5">
+            <h1 className="text-base font-semibold tracking-normal">Shared note unavailable</h1>
+            <p className="mt-2 text-sm text-muted-foreground">{error}</p>
+          </section>
+        </main>
+        <PoweredByVerxioFooter />
+      </>
     )
   }
 
   if (!payload) {
     return (
-      <div className="grid min-h-dvh place-items-center bg-background text-foreground">
-        <PageLoader label="Loading shared note" />
-      </div>
+      <>
+        <div className="grid min-h-dvh place-items-center bg-background pb-14 text-foreground">
+          <PageLoader label="Loading shared note" />
+        </div>
+        <PoweredByVerxioFooter />
+      </>
     )
   }
 
   const note = payload.note
-  const body = noteBody(note)
+  const summary = note.summary.trim()
 
   return (
-    <main className="min-h-dvh bg-background text-foreground">
-      <article className="mx-auto max-w-4xl px-5 py-8">
-        <div className="border-b border-(--ui-stroke-secondary) pb-5">
-          <p className="text-xs font-medium text-muted-foreground">{payload.workspace_name}</p>
-          <h1 className="mt-2 text-2xl font-semibold tracking-normal">{note.title}</h1>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span>{payload.folder?.name || 'Shared note'}</span>
-            <span aria-hidden="true">·</span>
-            <span>{noteTime(note.updated_at)}</span>
+    <>
+      <main className="h-dvh overflow-y-auto bg-background pb-14 text-foreground">
+        <article className="mx-auto max-w-4xl px-5 py-8">
+          <div className="border-b border-(--ui-stroke-secondary) pb-5">
+            <p className="text-xs font-medium text-muted-foreground">{payload.workspace_name}</p>
+            <h1 className="mt-2 text-2xl font-semibold tracking-normal">{note.title}</h1>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span>{payload.folder?.name || 'Shared summary'}</span>
+              <span aria-hidden="true">·</span>
+              <span>{noteTime(note.updated_at)}</span>
+            </div>
           </div>
-        </div>
 
-        {note.summary && (
-          <section className="border-b border-(--ui-stroke-secondary) py-5">
-            <h2 className="text-sm font-semibold tracking-normal">Summary</h2>
-            <CompactMarkdown className="mt-3 text-sm text-foreground/90" text={note.summary} />
-          </section>
-        )}
-
-        {body && (
-          <section className="border-b border-(--ui-stroke-secondary) py-5">
-            <h2 className="text-sm font-semibold tracking-normal">Notes</h2>
-            <CompactMarkdown className="mt-3 text-sm text-foreground/90" text={body} />
-          </section>
-        )}
-      </article>
-    </main>
+          {summary ? (
+            <section className="py-6">
+              <h2 className="sr-only">Summary</h2>
+              <NotepadMarkdown text={summary} />
+            </section>
+          ) : (
+            <section className="grid min-h-64 place-items-center py-8 text-center text-sm text-muted-foreground">
+              This shared note does not have a summary yet.
+            </section>
+          )}
+        </article>
+      </main>
+      <PoweredByVerxioFooter />
+    </>
   )
 }

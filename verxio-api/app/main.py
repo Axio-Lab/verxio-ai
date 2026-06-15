@@ -294,8 +294,11 @@ async def download_artifact(artifact_id: str, request: Request) -> FileResponse:
     return FileResponse(path, media_type=record.content_type, filename=record.file_name)
 
 
-def _share_url(request: Request, token: str) -> str:
-    return f"{str(request.base_url).rstrip('/')}/share/notepad/{token}"
+def _share_url(_request: Request, token: str) -> str:
+    public_base = os.getenv("VERXIO_PUBLIC_WEB_URL", "").strip().rstrip("/")
+    if not public_base:
+        public_base = "http://127.0.0.1:8080"
+    return f"{public_base}/share/notepad/{token}"
 
 
 @app.get("/api/notepad", response_model=NotepadListResponse)
