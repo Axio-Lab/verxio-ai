@@ -21,7 +21,8 @@ from app.models import (
     Workspace,
     new_id,
 )
-from app.runtime import HermesRuntimeAdapter
+from app.runtime import HermesRuntimeAdapter, get_runtime_settings
+from app.runtime_dashboard import run_agent_via_dashboard
 
 
 def _folder_from_row(row: dict[str, Any]) -> NotepadFolderRecord:
@@ -313,15 +314,13 @@ async def summarize_note(workspace: Workspace, profile: AgentProfile, note_id: s
             source[:24_000],
         ]
     )
-    result = await HermesRuntimeAdapter().run_agent(workspace, profile, prompt)
-
-    if result.status == "failed":
-        raise HTTPException(status_code=502, detail=result.error or "Could not generate notepad summary.")
-
-    summary = (result.output or "").strip()
-
-    if not summary:
-        raise HTTPException(status_code=502, detail="Hermes returned an empty summary.")
+    if get_runtime_settings().mode == "demo":
+        result = await HermesRuntimeAdapter().run_agent(workspace, profile, prompt)
+        if result.status == "failed":
+            raise HTTPException(status_code=502, detail=result.error or "Could not generate notepad summary.")
+        summary = (result.output or "").strip()
+    else:
+        summary = await run_agent_via_dashboard(workspace, profile, prompt)
 
     return update_note(
         workspace,

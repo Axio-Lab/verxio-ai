@@ -336,6 +336,35 @@ def test_notepad_notes_folders_and_public_shares(client):
     assert client.get(f"/api/public/notepad/{share_payload['token']}").status_code == 404
 
 
+def test_notepad_summarize_uses_runtime_dashboard(client, monkeypatch):
+    monkeypatch.setenv("VERXIO_RUNTIME_MODE", "auto")
+
+    async def fake_run_agent_via_dashboard(workspace, profile, user_input, *, instructions=None):
+        assert "Acme discovery call" in user_input
+        return "Summary\n\nDecisions\n- Follow up on SOC2."
+
+    monkeypatch.setattr("app.notepad.run_agent_via_dashboard", fake_run_agent_via_dashboard)
+
+    _payload, token = signup(client, "dashboard-notes@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    note = client.post(
+        "/api/notepad/notes",
+        json={
+            "title": "Acme discovery call",
+            "content": "Follow up with pricing.",
+            "transcript": "Buyer: We need SOC2.",
+        },
+        headers=headers,
+    )
+    note_id = note.json()["id"]
+
+    summary = client.post(f"/api/notepad/notes/{note_id}/summarize", headers=headers)
+    assert summary.status_code == 200
+    assert "SOC2" in summary.json()["summary"]
+    assert summary.json()["source"] == "hermes-summary"
+
+
 def test_notepad_notes_are_workspace_isolated(client):
     _user_one, token_one = signup(client, "notes-one@example.com")
     _user_two, token_two = signup(client, "notes-two@example.com")
