@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Tip } from '@/components/ui/tooltip'
+import { VerxioWordmark } from '@/components/verxio-wordmark'
 import { transcribeAudioBlob } from '@/lib/audio'
 import { cn } from '@/lib/utils'
 import {
@@ -1235,12 +1236,16 @@ function PoweredByVerxioFooter() {
     <footer className="fixed inset-x-0 bottom-0 z-10 border-t border-(--ui-stroke-secondary) bg-background py-3 text-center text-xs text-muted-foreground">
       Powered by{' '}
       <a
-        className="font-medium text-primary hover:underline"
+        aria-label="Verxio"
+        className="inline-flex w-16 align-middle"
         href={VERXIO_WEBSITE_URL}
         rel="noopener noreferrer"
         target="_blank"
       >
-        Verxio
+        <VerxioWordmark
+          className="w-full"
+          style={{ '--fit-text-line-height': '0.9', '--fit-text-min': '0.78rem' } as React.CSSProperties}
+        />
       </a>
     </footer>
   )
