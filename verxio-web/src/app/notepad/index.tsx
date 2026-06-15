@@ -73,6 +73,7 @@ const NOTEPAD_MIC_COPY = {
 }
 
 type RecordingMode = 'idle' | 'mic' | 'system' | 'transcribing'
+type PendingDelete = { folder: VerxioNotepadFolder; kind: 'folder' } | { kind: 'note'; note: VerxioNotepadNote }
 
 function noteTime(value: string) {
   const parsed = Date.parse(value)
@@ -138,6 +139,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   const [folderDialogOpen, setFolderDialogOpen] = useState(false)
   const [folderName, setFolderName] = useState('')
   const [folderNameError, setFolderNameError] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
   const [recordingMode, setRecordingMode] = useState<RecordingMode>('idle')
   const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [systemAudioSupported, setSystemAudioSupported] = useState(Boolean(window.hermesDesktop))
@@ -177,7 +179,19 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   }, [folderById, notes, selectedFolder, trimmedQuery])
 
   const dirty = Boolean(selectedNote && draft && draftChanged(selectedNote, draft))
+
   const recordingLevel = recordingMode === 'mic' ? micLevel : recordingMode === 'system' ? 0.65 : 0
+
+  const pendingDeleteBusy = pendingDelete
+    ? pendingDelete.kind === 'note'
+      ? busyAction === 'delete-note'
+      : busyAction === pendingDelete.folder.id
+    : false
+
+  const pendingDeleteFolderName = pendingDelete?.kind === 'folder' ? pendingDelete.folder.name : ''
+
+  const pendingDeleteNoteTitle =
+    pendingDelete?.kind === 'note' ? pendingDelete.note.title.trim() || 'this note' : 'this note'
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -320,20 +334,57 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     }
   }
 
-  async function handleDeleteFolder(folder: VerxioNotepadFolder) {
-    if (!window.confirm(`Delete "${folder.name}"? Notes stay in ${DEFAULT_FOLDER_LABEL}.`)) {
+  function handleDeleteFolder(folder: VerxioNotepadFolder) {
+    setPendingDelete({ folder, kind: 'folder' })
+  }
+
+  function handleDeleteDialogOpenChange(open: boolean) {
+    if (pendingDeleteBusy) {
       return
     }
 
-    setBusyAction(folder.id)
+    if (!open) {
+      setPendingDelete(null)
+    }
+  }
+
+  async function handleConfirmDelete() {
+    if (!pendingDelete) {
+      return
+    }
+
+    if (pendingDelete.kind === 'folder') {
+      const { folder } = pendingDelete
+
+      setBusyAction(folder.id)
+
+      try {
+        await deleteNotepadFolder(folder.id)
+        setFolders(current => current.filter(item => item.id !== folder.id))
+        setNotes(current => current.map(note => (note.folder_id === folder.id ? { ...note, folder_id: null } : note)))
+        setSelectedFolder(ALL_FOLDER)
+        setPendingDelete(null)
+      } catch (error) {
+        notifyError(error, 'Could not delete folder')
+      } finally {
+        setBusyAction(null)
+      }
+
+      return
+    }
+
+    const { note: noteToDelete } = pendingDelete
+
+    setBusyAction('delete-note')
 
     try {
-      await deleteNotepadFolder(folder.id)
-      setFolders(current => current.filter(item => item.id !== folder.id))
-      setNotes(current => current.map(note => (note.folder_id === folder.id ? { ...note, folder_id: null } : note)))
-      setSelectedFolder(ALL_FOLDER)
+      await deleteNotepadNote(noteToDelete.id)
+      const remaining = notes.filter(note => note.id !== noteToDelete.id)
+      setNotes(remaining)
+      setSelectedNoteId(remaining[0]?.id ?? null)
+      setPendingDelete(null)
     } catch (error) {
-      notifyError(error, 'Could not delete folder')
+      notifyError(error, 'Could not delete note')
     } finally {
       setBusyAction(null)
     }
@@ -566,23 +617,12 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     }
   }
 
-  async function handleDeleteNote() {
-    if (!selectedNote || !window.confirm(`Delete "${selectedNote.title}"?`)) {
+  function handleDeleteNote() {
+    if (!selectedNote) {
       return
     }
 
-    setBusyAction('delete-note')
-
-    try {
-      await deleteNotepadNote(selectedNote.id)
-      const remaining = notes.filter(note => note.id !== selectedNote.id)
-      setNotes(remaining)
-      setSelectedNoteId(remaining[0]?.id ?? null)
-    } catch (error) {
-      notifyError(error, 'Could not delete note')
-    } finally {
-      setBusyAction(null)
-    }
+    setPendingDelete({ kind: 'note', note: selectedNote })
   }
 
   async function handleShare() {
@@ -1023,6 +1063,41 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog onOpenChange={handleDeleteDialogOpenChange} open={Boolean(pendingDelete)}>
+        <DialogContent className="max-w-sm" showCloseButton={!pendingDeleteBusy}>
+          <DialogHeader>
+            <DialogTitle>{pendingDelete?.kind === 'folder' ? 'Delete folder' : 'Delete note'}</DialogTitle>
+            <DialogDescription>
+              {pendingDelete?.kind === 'folder' ? (
+                <>
+                  Notes in <span className="font-medium text-foreground">{pendingDeleteFolderName}</span> move to{' '}
+                  {DEFAULT_FOLDER_LABEL}.
+                </>
+              ) : (
+                <>
+                  This deletes <span className="font-medium text-foreground">{pendingDeleteNoteTitle}</span>.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter>
+            <Button
+              disabled={pendingDeleteBusy}
+              onClick={() => handleDeleteDialogOpenChange(false)}
+              type="button"
+              variant="ghost"
+            >
+              Cancel
+            </Button>
+            <Button disabled={pendingDeleteBusy} onClick={handleConfirmDelete} type="button" variant="destructive">
+              {pendingDeleteBusy ? <Codicon name="loading" spinning /> : <Codicon name="trash" />}
+              Delete
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
