@@ -406,6 +406,19 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
   getRecentLogs: () => ipcRenderer.invoke('verxio:logs:recent'),
   readDir: dirPath => ipcRenderer.invoke('verxio:fs:readDir', dirPath),
   gitRoot: startPath => ipcRenderer.invoke('verxio:fs:gitRoot', startPath),
+  permissions: {
+    grantFolder: () => ipcRenderer.invoke('verxio:fs:permissions:grantFolder'),
+    isAllowed: targetPath => ipcRenderer.invoke('verxio:fs:permissions:isAllowed', targetPath),
+    list: () => ipcRenderer.invoke('verxio:fs:permissions:list'),
+    revokeFolder: folder => ipcRenderer.invoke('verxio:fs:permissions:revokeFolder', folder)
+  },
+  leash: {
+    getAgent: () => ipcRenderer.invoke('verxio:leash:getAgent'),
+    setAgent: config => ipcRenderer.invoke('verxio:leash:setAgent', config),
+    clearAgent: () => ipcRenderer.invoke('verxio:leash:clearAgent'),
+    getBannerNeverShow: () => ipcRenderer.invoke('verxio:leash:getBannerNeverShow'),
+    setBannerNeverShow: value => ipcRenderer.invoke('verxio:leash:setBannerNeverShow', Boolean(value))
+  },
   terminal: {
     dispose: id => ipcRenderer.invoke('verxio:terminal:dispose', id),
     resize: (id, size) => ipcRenderer.invoke('verxio:terminal:resize', id, size),

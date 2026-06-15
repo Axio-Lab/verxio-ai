@@ -1,6 +1,6 @@
 import { LEASH_AGENT_STORAGE_KEY, LEASH_BANNER_NEVER_KEY, type LeashAgentConfig } from './types'
 
-/** Device-local storage for Leash identity. Web uses localStorage; desktop can swap to secure FS later. */
+/** Device-local storage for Leash identity. Web uses localStorage; desktop mirrors to native app storage. */
 export interface LeashIdentityStorage {
   clearAgent(): void
   getAgent(): LeashAgentConfig | null
@@ -11,6 +11,10 @@ export interface LeashIdentityStorage {
 
 function readJson<T>(key: string): T | null {
   try {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return null
+    }
+
     const raw = window.localStorage.getItem(key)
 
     if (!raw) {
@@ -25,6 +29,10 @@ function readJson<T>(key: string): T | null {
 
 function writeJson(key: string, value: unknown | null) {
   try {
+    if (typeof window === 'undefined' || !window.localStorage) {
+      return
+    }
+
     if (value === null) {
       window.localStorage.removeItem(key)
     } else {
@@ -49,6 +57,10 @@ export const browserLeashStorage: LeashIdentityStorage = {
   },
   isBannerNeverShow() {
     try {
+      if (typeof window === 'undefined' || !window.localStorage) {
+        return false
+      }
+
       return window.localStorage.getItem(LEASH_BANNER_NEVER_KEY) === '1'
     } catch {
       return false
@@ -56,6 +68,10 @@ export const browserLeashStorage: LeashIdentityStorage = {
   },
   setBannerNeverShow(value) {
     try {
+      if (typeof window === 'undefined' || !window.localStorage) {
+        return
+      }
+
       if (value) {
         window.localStorage.setItem(LEASH_BANNER_NEVER_KEY, '1')
       } else {
@@ -67,8 +83,90 @@ export const browserLeashStorage: LeashIdentityStorage = {
   }
 }
 
-/** Active storage backend — replace for Verxio desktop (e.g. OS keychain + local file). */
-let activeStorage: LeashIdentityStorage = browserLeashStorage
+function desktopLeashBridge() {
+  if (typeof window === 'undefined') {
+    return undefined
+  }
+
+  return window.hermesDesktop?.leash
+}
+
+let desktopAgentCache = browserLeashStorage.getAgent()
+let desktopBannerNeverCache = browserLeashStorage.isBannerNeverShow()
+let desktopHydration: Promise<LeashAgentConfig | null> | null = null
+
+export async function hydrateLeashStorageFromDesktop(): Promise<LeashAgentConfig | null> {
+  const bridge = desktopLeashBridge()
+
+  if (!bridge) {
+    return browserLeashStorage.getAgent()
+  }
+
+  if (desktopHydration) {
+    return desktopHydration
+  }
+
+  const fallbackAgent = desktopAgentCache
+  const fallbackBannerNever = desktopBannerNeverCache
+
+  desktopHydration = Promise.all([bridge.getAgent(), bridge.getBannerNeverShow()])
+    .then(([agent, neverShow]) => {
+      const nextAgent = agent ?? fallbackAgent
+      const nextBannerNever = Boolean(neverShow || fallbackBannerNever)
+
+      desktopAgentCache = nextAgent
+      desktopBannerNeverCache = nextBannerNever
+
+      browserLeashStorage.setAgent(nextAgent)
+      browserLeashStorage.setBannerNeverShow(desktopBannerNeverCache)
+
+      if (!agent && fallbackAgent) {
+        void bridge.setAgent(fallbackAgent)
+      }
+
+      if (!neverShow && fallbackBannerNever) {
+        void bridge.setBannerNeverShow(true)
+      }
+
+      return nextAgent
+    })
+    .finally(() => {
+      desktopHydration = null
+    })
+
+  return desktopHydration
+}
+
+const desktopLeashStorage: LeashIdentityStorage = {
+  getAgent() {
+    return desktopAgentCache
+  },
+  setAgent(config) {
+    desktopAgentCache = config
+    browserLeashStorage.setAgent(config)
+    void desktopLeashBridge()?.setAgent(config)
+  },
+  clearAgent() {
+    desktopAgentCache = null
+    browserLeashStorage.clearAgent()
+    void desktopLeashBridge()?.clearAgent()
+  },
+  isBannerNeverShow() {
+    return desktopBannerNeverCache
+  },
+  setBannerNeverShow(value) {
+    desktopBannerNeverCache = value
+    browserLeashStorage.setBannerNeverShow(value)
+    void desktopLeashBridge()?.setBannerNeverShow(value)
+  }
+}
+
+/** Active storage backend. Browser uses localStorage; desktop uses a native-backed mirror. */
+let activeStorage: LeashIdentityStorage = desktopLeashBridge() ? desktopLeashStorage : browserLeashStorage
+
+if (desktopLeashBridge()) {
+  void hydrateLeashStorageFromDesktop()
+}
 
 export function getLeashStorage(): LeashIdentityStorage {
   return activeStorage

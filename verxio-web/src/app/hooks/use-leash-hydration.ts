@@ -2,6 +2,7 @@ import { useStore } from '@nanostores/react'
 import { useEffect } from 'react'
 
 import { getLeashAgent } from '@/lib/leash/identity'
+import { hydrateLeashStorageFromDesktop } from '@/lib/leash/storage'
 import { hydrateLeashIdentity } from '@/lib/leash/sync'
 import { verxioApiEnabled } from '@/lib/verxio-api'
 import { refreshLeashIdentityState } from '@/store/leash-identity'
@@ -12,20 +13,36 @@ export function useLeashHydration() {
   const connection = useStore($connection)
 
   useEffect(() => {
-    refreshLeashIdentityState()
+    let cancelled = false
 
-    if (!connection || !verxioApiEnabled()) {
-      return
+    async function run() {
+      await hydrateLeashStorageFromDesktop().catch(() => null)
+
+      if (cancelled) {
+        return
+      }
+
+      refreshLeashIdentityState()
+
+      if (!connection || !verxioApiEnabled()) {
+        return
+      }
+
+      const agent = getLeashAgent()
+
+      if (!agent) {
+        return
+      }
+
+      void hydrateLeashIdentity(agent).catch(() => {
+        // Hydration is best-effort on connect; the MCP settings panel retries explicitly.
+      })
     }
 
-    const agent = getLeashAgent()
+    void run()
 
-    if (!agent) {
-      return
+    return () => {
+      cancelled = true
     }
-
-    void hydrateLeashIdentity(agent).catch(() => {
-      // Hydration is best-effort on connect; the MCP settings panel retries explicitly.
-    })
   }, [connection])
 }

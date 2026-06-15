@@ -1,3 +1,5 @@
+import type { LeashAgentConfig } from './lib/leash/types'
+
 export {}
 
 declare global {
@@ -53,6 +55,19 @@ declare global {
       getRecentLogs: () => Promise<{ path: string; lines: string[] }>
       readDir: (path: string) => Promise<HermesReadDirResult>
       gitRoot?: (path: string) => Promise<string | null>
+      permissions?: {
+        grantFolder: () => Promise<HermesPermissionGrantResult>
+        isAllowed: (path: string) => Promise<HermesPermissionCheckResult>
+        list: () => Promise<HermesPermissionListResult>
+        revokeFolder: (path: string) => Promise<HermesPermissionListResult>
+      }
+      leash?: {
+        clearAgent: () => Promise<boolean>
+        getAgent: () => Promise<LeashAgentConfig | null>
+        getBannerNeverShow: () => Promise<boolean>
+        setAgent: (config: LeashAgentConfig | null) => Promise<boolean>
+        setBannerNeverShow: (value: boolean) => Promise<boolean>
+      }
       terminal: {
         dispose: (id: string) => Promise<boolean>
         onData: (id: string, callback: (payload: string) => void) => () => void
@@ -372,6 +387,20 @@ export interface HermesReadDirEntry {
 export interface HermesReadDirResult {
   entries: HermesReadDirEntry[]
   error?: string
+}
+
+export interface HermesPermissionListResult {
+  folders: string[]
+}
+
+export interface HermesPermissionGrantResult {
+  canceled: boolean
+  folders: string[]
+}
+
+export interface HermesPermissionCheckResult {
+  allowed: boolean
+  path: string
 }
 
 export interface HermesPreviewFileChanged {

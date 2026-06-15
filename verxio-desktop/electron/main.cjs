@@ -9,6 +9,7 @@ const {
   nativeImage,
   nativeTheme,
   powerMonitor,
+  safeStorage,
   shell,
   systemPreferences
 } = require('electron')
@@ -39,6 +40,8 @@ let mainWindow = null
 const terminalSessions = new Map()
 const fileWatches = new Map()
 
+const LEASH_AGENT_FILE = 'leash-agent.json'
+
 function settingsPath() {
   return path.join(app.getPath('userData'), 'settings.json')
 }
@@ -54,10 +57,178 @@ function readSettings() {
 function writeSettings(settings) {
   fs.mkdirSync(path.dirname(settingsPath()), { recursive: true })
   fs.writeFileSync(settingsPath(), JSON.stringify(settings, null, 2))
+  safeChmod(settingsPath())
 }
 
 function defaultProjectDir() {
   return readSettings().defaultProjectDir || app.getPath('documents') || os.homedir()
+}
+
+function safeChmod(filePath) {
+  try {
+    fs.chmodSync(filePath, 0o600)
+  } catch {
+    // Best-effort on Windows and restricted filesystems.
+  }
+}
+
+function resolvePath(value) {
+  return path.resolve(String(value || ''))
+}
+
+function samePath(left, right) {
+  return resolvePath(left).toLowerCase() === resolvePath(right).toLowerCase()
+}
+
+function uniquePaths(paths) {
+  const result = []
+
+  for (const value of paths) {
+    if (!value) {
+      continue
+    }
+
+    const resolved = resolvePath(value)
+
+    if (!result.some(existing => samePath(existing, resolved))) {
+      result.push(resolved)
+    }
+  }
+
+  return result
+}
+
+function isSubPath(candidate, folder) {
+  const resolvedCandidate = resolvePath(candidate)
+  const resolvedFolder = resolvePath(folder)
+  const relative = path.relative(resolvedFolder, resolvedCandidate)
+
+  return relative === '' || (Boolean(relative) && !relative.startsWith('..') && !path.isAbsolute(relative))
+}
+
+function grantedFolders() {
+  const settings = readSettings()
+  const hasConfiguredFolders = Array.isArray(settings.grantedFolders)
+  const configured = hasConfiguredFolders ? settings.grantedFolders : []
+  const implicit = settings.defaultProjectDir
+    ? [settings.defaultProjectDir]
+    : hasConfiguredFolders
+      ? []
+      : [defaultProjectDir()]
+
+  return uniquePaths([...configured, ...implicit])
+}
+
+function saveGrantedFolders(folders) {
+  const settings = readSettings()
+  settings.grantedFolders = uniquePaths(folders)
+  writeSettings(settings)
+
+  return settings.grantedFolders
+}
+
+function grantPath(targetPath) {
+  const resolved = resolvePath(targetPath)
+  let folder = resolved
+
+  try {
+    if (fs.existsSync(resolved) && !fs.statSync(resolved).isDirectory()) {
+      folder = path.dirname(resolved)
+    }
+  } catch {
+    folder = path.dirname(resolved)
+  }
+
+  saveGrantedFolders([...grantedFolders(), folder])
+
+  return folder
+}
+
+function revokeGrantedFolder(folder) {
+  const resolved = resolvePath(folder)
+
+  return saveGrantedFolders(grantedFolders().filter(existing => !samePath(existing, resolved)))
+}
+
+function isPathAllowed(filePath) {
+  const resolved = resolvePath(filePath)
+
+  return grantedFolders().some(folder => isSubPath(resolved, folder))
+}
+
+function assertPathAllowed(filePath) {
+  const resolved = resolvePath(filePath)
+
+  if (!isPathAllowed(resolved)) {
+    const error = new Error(
+      `Verxio Desktop has not been granted access to ${resolved}. Choose it with the file picker first.`
+    )
+    error.code = 'VERXIO_DESKTOP_PERMISSION_DENIED'
+    throw error
+  }
+
+  return resolved
+}
+
+function leashAgentPath() {
+  return path.join(app.getPath('userData'), LEASH_AGENT_FILE)
+}
+
+function readLeashAgent() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(leashAgentPath(), 'utf8'))
+
+    if (parsed?.encoding === 'electron-safe-storage' && typeof parsed.ciphertext === 'string') {
+      const decrypted = safeStorage.decryptString(Buffer.from(parsed.ciphertext, 'base64'))
+
+      return JSON.parse(decrypted)
+    }
+
+    if (parsed?.encoding === 'plain' && parsed.config && typeof parsed.config === 'object') {
+      return parsed.config
+    }
+
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed
+    }
+  } catch {
+    // Missing or unreadable identity file.
+  }
+
+  return null
+}
+
+function writeLeashAgent(config) {
+  const filePath = leashAgentPath()
+
+  if (!config) {
+    try {
+      fs.rmSync(filePath, { force: true })
+    } catch {
+      // ignore
+    }
+
+    return true
+  }
+
+  const json = JSON.stringify(config)
+  const payload = safeStorage.isEncryptionAvailable()
+    ? {
+        version: 1,
+        encoding: 'electron-safe-storage',
+        ciphertext: safeStorage.encryptString(json).toString('base64')
+      }
+    : {
+        version: 1,
+        encoding: 'plain',
+        config
+      }
+
+  fs.mkdirSync(path.dirname(filePath), { recursive: true })
+  fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`)
+  safeChmod(filePath)
+
+  return true
 }
 
 function nativeOverlayWidth() {
@@ -268,7 +439,7 @@ function normalizePreviewTarget(rawTarget, baseDir) {
 }
 
 function readDirForIpc(dirPath) {
-  const resolved = path.resolve(String(dirPath || ''))
+  const resolved = assertPathAllowed(dirPath || defaultProjectDir())
 
   try {
     const entries = fs
@@ -411,14 +582,14 @@ ipcMain.handle('verxio:requestMicrophoneAccess', async () => {
 })
 
 ipcMain.handle('verxio:readFileDataUrl', async (_event, filePath) => {
-  const resolved = path.resolve(String(filePath || ''))
+  const resolved = assertPathAllowed(filePath)
   const buffer = await fs.promises.readFile(resolved)
 
   return dataUrlForBuffer(buffer, resolved)
 })
 
 ipcMain.handle('verxio:readFileText', async (_event, filePath) => {
-  const resolved = path.resolve(String(filePath || ''))
+  const resolved = assertPathAllowed(filePath)
   const buffer = await fs.promises.readFile(resolved)
 
   return {
@@ -442,7 +613,15 @@ ipcMain.handle('verxio:selectPaths', async (_event, options = {}) => {
     filters: Array.isArray(options.filters) ? options.filters : undefined
   })
 
-  return result.canceled ? [] : result.filePaths
+  if (result.canceled) {
+    return []
+  }
+
+  for (const selectedPath of result.filePaths) {
+    grantPath(selectedPath)
+  }
+
+  return result.filePaths
 })
 
 ipcMain.handle('verxio:writeClipboard', (_event, text) => {
@@ -506,6 +685,8 @@ ipcMain.handle('verxio:watchPreviewFile', (_event, url) => {
     return { id, path: String(url || '') }
   }
 
+  assertPathAllowed(target.path)
+
   const id = crypto.randomUUID()
   const watch = fs.watch(target.path, { persistent: false }, () => {
     mainWindow?.webContents.send('verxio:preview-file-changed', { id, path: target.path, url: target.url })
@@ -567,6 +748,7 @@ ipcMain.handle('verxio:setting:defaultProjectDir:pick', async () => {
 
   const settings = readSettings()
   settings.defaultProjectDir = result.filePaths[0]
+  grantPath(result.filePaths[0])
   writeSettings(settings)
 
   return { canceled: false, dir: result.filePaths[0] }
@@ -577,6 +759,7 @@ ipcMain.handle('verxio:setting:defaultProjectDir:set', (_event, dir) => {
 
   if (dir) {
     settings.defaultProjectDir = String(dir)
+    grantPath(dir)
   } else {
     delete settings.defaultProjectDir
   }
@@ -595,16 +778,64 @@ ipcMain.handle('verxio:logs:reveal', async () => {
 
 ipcMain.handle('verxio:logs:recent', () => ({ path: app.getPath('logs'), lines: [] }))
 
-ipcMain.handle('verxio:fs:readDir', (_event, dirPath) => readDirForIpc(dirPath))
+ipcMain.handle('verxio:fs:readDir', (_event, dirPath) => {
+  try {
+    return readDirForIpc(dirPath)
+  } catch (error) {
+    return { entries: [], error: error instanceof Error ? error.message : String(error) }
+  }
+})
 
 ipcMain.handle('verxio:fs:gitRoot', (_event, startPath) => {
-  const cwd = path.resolve(String(startPath || defaultProjectDir()))
+  const cwd = assertPathAllowed(startPath || defaultProjectDir())
 
   return new Promise(resolve => {
     execFile('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { windowsHide: true }, (error, stdout) => {
       resolve(error ? null : stdout.trim() || null)
     })
   })
+})
+
+ipcMain.handle('verxio:fs:permissions:list', () => ({ folders: grantedFolders() }))
+ipcMain.handle('verxio:fs:permissions:grantFolder', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    defaultPath: defaultProjectDir(),
+    properties: ['openDirectory', 'createDirectory'],
+    title: 'Grant Verxio access to a folder'
+  })
+
+  if (result.canceled || !result.filePaths[0]) {
+    return { canceled: true, folders: grantedFolders() }
+  }
+
+  grantPath(result.filePaths[0])
+
+  return { canceled: false, folders: grantedFolders() }
+})
+ipcMain.handle('verxio:fs:permissions:revokeFolder', (_event, folder) => ({
+  folders: revokeGrantedFolder(folder)
+}))
+ipcMain.handle('verxio:fs:permissions:isAllowed', (_event, targetPath) => ({
+  allowed: isPathAllowed(targetPath),
+  path: resolvePath(targetPath)
+}))
+
+ipcMain.handle('verxio:leash:getAgent', () => readLeashAgent())
+ipcMain.handle('verxio:leash:setAgent', (_event, config) => writeLeashAgent(config || null))
+ipcMain.handle('verxio:leash:clearAgent', () => writeLeashAgent(null))
+ipcMain.handle('verxio:leash:getBannerNeverShow', () => readSettings().leashBannerNeverShow === true)
+ipcMain.handle('verxio:leash:setBannerNeverShow', (_event, value) => {
+  const settings = readSettings()
+
+  if (value) {
+    settings.leashBannerNeverShow = true
+  } else {
+    delete settings.leashBannerNeverShow
+  }
+
+  writeSettings(settings)
+
+  return true
 })
 
 ipcMain.handle('verxio:terminal:start', (event, options = {}) => {

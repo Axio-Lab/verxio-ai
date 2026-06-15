@@ -26,6 +26,20 @@ npm run desktop:dev
 The dev command starts the Vite renderer on `http://127.0.0.1:5180` and launches
 Electron against it.
 
+## Local Data And Files
+
+Desktop keeps the same UI as Verxio Web, but native data lives on the user's
+machine:
+
+- Leash identity is stored in Electron `userData` as `leash-agent.json`, using
+  Electron `safeStorage` encryption when the platform supports it and a
+  permission-restricted plaintext fallback otherwise.
+- File browser and preview access is backed by remembered folder grants. Picking
+  a file or folder from the desktop picker grants that folder to Verxio, and the
+  default project directory is granted automatically.
+- The right sidebar and terminal are enabled on macOS, Windows, and Linux because
+  the desktop bridge is available before the renderer starts.
+
 ## Existing Renderer
 
 The desktop package does not fork the UI. It reuses `../verxio-web` so web and

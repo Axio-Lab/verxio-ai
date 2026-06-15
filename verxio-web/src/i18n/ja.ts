@@ -1905,7 +1905,7 @@ export const ja = defineLocale({
       title: 'Leash identity (MCP)',
       subtitle: 'Identity layer for AI agents — mint, pay, and verify on Solana via @leashmarket/mcp.',
       custodyNotice:
-        'Your executive keypair and private keys are stored only on this device (browser local storage). Export a backup and keep it somewhere safe. Verxio does not store your keys and cannot recover them if you lose this device or clear site data.',
+        'Your executive keypair and private keys are stored only on this device (secure desktop storage when available; browser local storage on web). Export a backup and keep it somewhere safe. Verxio does not store your keys and cannot recover them if you lose this device or clear site data.',
       statusNone: 'Not configured',
       statusPendingFunding: 'Funding required',
       statusRegistered: 'Registered',
