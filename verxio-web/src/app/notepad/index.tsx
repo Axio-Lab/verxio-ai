@@ -46,9 +46,7 @@ interface NoteDraft {
   title: string
   folder_id: string | null
   content: string
-  transcript: string
   summary: string
-  meeting_type: string
 }
 
 const NOTE_TIME = new Intl.DateTimeFormat(undefined, {
@@ -61,6 +59,7 @@ const NOTE_TIME = new Intl.DateTimeFormat(undefined, {
 const ALL_FOLDER = '__all__'
 const DEFAULT_FOLDER = '__default__'
 const DEFAULT_FOLDER_LABEL = 'Default'
+const NOTES_PER_PAGE = 10
 
 const NOTEPAD_MIC_COPY = {
   microphoneAccessDenied: 'Microphone access was denied.',
@@ -81,14 +80,16 @@ function noteTime(value: string) {
   return Number.isFinite(parsed) ? NOTE_TIME.format(parsed) : ''
 }
 
+function noteBody(note: VerxioNotepadNote): string {
+  return [note.content.trim(), note.transcript.trim()].filter(Boolean).join('\n\n')
+}
+
 function draftFromNote(note: VerxioNotepadNote): NoteDraft {
   return {
     title: note.title,
     folder_id: note.folder_id,
-    content: note.content,
-    transcript: note.transcript,
-    summary: note.summary,
-    meeting_type: note.meeting_type || 'general'
+    content: noteBody(note),
+    summary: note.summary
   }
 }
 
@@ -96,10 +97,8 @@ function draftChanged(note: VerxioNotepadNote, draft: NoteDraft): boolean {
   return (
     note.title !== draft.title ||
     note.folder_id !== draft.folder_id ||
-    note.content !== draft.content ||
-    note.transcript !== draft.transcript ||
-    note.summary !== draft.summary ||
-    note.meeting_type !== draft.meeting_type
+    noteBody(note) !== draft.content ||
+    note.summary !== draft.summary
   )
 }
 
@@ -131,6 +130,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   const [notes, setNotes] = useState<VerxioNotepadNote[]>([])
   const [selectedFolder, setSelectedFolder] = useState(ALL_FOLDER)
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
+  const [notePage, setNotePage] = useState(1)
   const [query, setQuery] = useState('')
   const [draft, setDraft] = useState<NoteDraft | null>(null)
   const [loading, setLoading] = useState(true)
@@ -150,11 +150,6 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   const recordingStartedAtRef = useRef(0)
   const micRecorderRef = useRef(micRecorder)
 
-  const selectedNote = useMemo(
-    () => notes.find(note => note.id === selectedNoteId) ?? notes[0] ?? null,
-    [notes, selectedNoteId]
-  )
-
   const folderById = useMemo(() => new Map(folders.map(folder => [folder.id, folder])), [folders])
   const trimmedQuery = query.trim().toLowerCase()
 
@@ -172,11 +167,21 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
         return true
       }
 
-      return [note.title, note.summary, note.content, note.transcript, folderById.get(note.folder_id || '')?.name]
+      return [note.title, note.summary, noteBody(note), folderById.get(note.folder_id || '')?.name]
         .filter(Boolean)
         .some(value => String(value).toLowerCase().includes(trimmedQuery))
     })
   }, [folderById, notes, selectedFolder, trimmedQuery])
+
+  const pageCount = Math.max(1, Math.ceil(filteredNotes.length / NOTES_PER_PAGE))
+  const currentPage = Math.min(notePage, pageCount)
+  const pageStart = (currentPage - 1) * NOTES_PER_PAGE
+  const paginatedNotes = filteredNotes.slice(pageStart, pageStart + NOTES_PER_PAGE)
+
+  const selectedNote = useMemo(
+    () => paginatedNotes.find(note => note.id === selectedNoteId) ?? paginatedNotes[0] ?? null,
+    [paginatedNotes, selectedNoteId]
+  )
 
   const dirty = Boolean(selectedNote && draft && draftChanged(selectedNote, draft))
 
@@ -211,6 +216,28 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    setNotePage(1)
+  }, [selectedFolder, trimmedQuery])
+
+  useEffect(() => {
+    if (notePage > pageCount) {
+      setNotePage(pageCount)
+    }
+  }, [notePage, pageCount])
+
+  useEffect(() => {
+    if (paginatedNotes.length === 0) {
+      setSelectedNoteId(null)
+
+      return
+    }
+
+    if (!selectedNoteId || !paginatedNotes.some(note => note.id === selectedNoteId)) {
+      setSelectedNoteId(paginatedNotes[0].id)
+    }
+  }, [paginatedNotes, selectedNoteId])
 
   useEffect(() => {
     let cancelled = false
@@ -395,9 +422,9 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       title: nextDraft.title.trim() || 'Untitled note',
       folder_id: nextDraft.folder_id,
       content: nextDraft.content,
-      transcript: nextDraft.transcript,
+      transcript: '',
       summary: nextDraft.summary,
-      meeting_type: nextDraft.meeting_type || 'general'
+      meeting_type: selectedNote?.meeting_type || 'general'
     }
   }
 
@@ -512,11 +539,12 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     }
 
     const stamp = NOTE_TIME.format(new Date())
-    const block = `[${stamp}] ${transcript}`
+    const heading = source === 'desktop-audio' ? 'Device recording' : 'Mic recording'
+    const block = `### ${heading} - ${stamp}\n\n${transcript}`
 
     const nextDraft = {
       ...draft,
-      transcript: [draft.transcript.trim(), block].filter(Boolean).join('\n\n')
+      content: [draft.content.trim(), block].filter(Boolean).join('\n\n')
     }
 
     setDraft(nextDraft)
@@ -773,7 +801,9 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
               <input
                 className="h-8 w-full rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) pl-7 pr-2 text-sm outline-none focus:border-ring"
                 onChange={event => setQuery(event.target.value)}
+                onKeyDown={event => event.stopPropagation()}
                 placeholder="Search notes"
+                type="search"
                 value={query}
               />
             </div>
@@ -783,7 +813,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
             {filteredNotes.length === 0 ? (
               <div className="px-4 py-8 text-sm text-muted-foreground">No notes found.</div>
             ) : (
-              filteredNotes.map(note => (
+              paginatedNotes.map(note => (
                 <button
                   className={cn(
                     'block w-full border-b border-(--ui-stroke-secondary) px-3 py-3 text-left hover:bg-(--ui-control-hover-background)',
@@ -805,11 +835,50 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                     <span>{noteTime(note.updated_at)}</span>
                   </div>
                   <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                    {note.summary || note.content || note.transcript || 'Empty note'}
+                    {note.summary || noteBody(note) || 'Empty note'}
                   </p>
                 </button>
               ))
             )}
+          </div>
+
+          <div className="flex h-11 shrink-0 items-center justify-between border-t border-(--ui-stroke-secondary) px-3 text-xs text-muted-foreground">
+            <span>
+              {filteredNotes.length
+                ? `${pageStart + 1}-${Math.min(pageStart + NOTES_PER_PAGE, filteredNotes.length)} of ${
+                    filteredNotes.length
+                  }`
+                : '0 notes'}
+            </span>
+            <div className="flex items-center gap-1">
+              <Tip label="Previous page">
+                <Button
+                  aria-label="Previous page"
+                  disabled={currentPage <= 1}
+                  onClick={() => setNotePage(page => Math.max(1, page - 1))}
+                  size="icon-xs"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Codicon name="chevron-left" />
+                </Button>
+              </Tip>
+              <span className="min-w-10 text-center">
+                {currentPage}/{pageCount}
+              </span>
+              <Tip label="Next page">
+                <Button
+                  aria-label="Next page"
+                  disabled={currentPage >= pageCount}
+                  onClick={() => setNotePage(page => Math.min(pageCount, page + 1))}
+                  size="icon-xs"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Codicon name="chevron-right" />
+                </Button>
+              </Tip>
+            </div>
           </div>
         </section>
 
@@ -879,7 +948,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                   </Button>
                 )}
                 <Button
-                  disabled={busyAction === 'summarize-note' || (!draft.transcript.trim() && !draft.content.trim())}
+                  disabled={busyAction === 'summarize-note' || !draft.content.trim()}
                   onClick={handleGenerateSummary}
                   size="sm"
                   type="button"
@@ -947,23 +1016,11 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
 
               <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(20rem,0.8fr)] gap-0">
                 <section className="border-r border-(--ui-stroke-secondary) p-4">
-                  <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-summary">
-                    Summary
-                  </label>
-                  <textarea
-                    className="mt-2 min-h-28 w-full resize-y rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3 text-sm leading-6 outline-none focus:border-ring"
-                    id="notepad-summary"
-                    onChange={event =>
-                      setDraft(current => (current ? { ...current, summary: event.target.value } : current))
-                    }
-                    value={draft.summary}
-                  />
-
-                  <label className="mt-5 block text-xs font-medium text-muted-foreground" htmlFor="notepad-notes">
+                  <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-notes">
                     Notes
                   </label>
                   <textarea
-                    className="mt-2 min-h-[26rem] w-full resize-y rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3 text-sm leading-6 outline-none focus:border-ring"
+                    className="mt-2 min-h-[36rem] w-full resize-y rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3 text-sm leading-6 outline-none focus:border-ring"
                     id="notepad-notes"
                     onChange={event =>
                       setDraft(current => (current ? { ...current, content: event.target.value } : current))
@@ -973,30 +1030,16 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                 </section>
 
                 <section className="p-4">
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-meeting-type">
-                      Type
-                    </label>
-                    <input
-                      className="h-8 min-w-0 flex-1 rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 text-sm outline-none focus:border-ring"
-                      id="notepad-meeting-type"
-                      onChange={event =>
-                        setDraft(current => (current ? { ...current, meeting_type: event.target.value } : current))
-                      }
-                      value={draft.meeting_type}
-                    />
-                  </div>
-
-                  <label className="mt-5 block text-xs font-medium text-muted-foreground" htmlFor="notepad-transcript">
-                    Transcript
+                  <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-summary">
+                    Summary
                   </label>
                   <textarea
-                    className="mt-2 min-h-[34rem] w-full resize-y rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3 font-mono text-xs leading-5 outline-none focus:border-ring"
-                    id="notepad-transcript"
+                    className="mt-2 min-h-[36rem] w-full resize-y rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3 text-sm leading-6 outline-none focus:border-ring"
+                    id="notepad-summary"
                     onChange={event =>
-                      setDraft(current => (current ? { ...current, transcript: event.target.value } : current))
+                      setDraft(current => (current ? { ...current, summary: event.target.value } : current))
                     }
-                    value={draft.transcript}
+                    value={draft.summary}
                   />
                 </section>
               </div>
@@ -1188,8 +1231,6 @@ export function PublicNotepadShareView() {
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <span>{payload.folder?.name || 'Shared note'}</span>
             <span aria-hidden="true">·</span>
-            <span>{note.meeting_type}</span>
-            <span aria-hidden="true">·</span>
             <span>{noteTime(note.updated_at)}</span>
           </div>
         </div>
@@ -1201,19 +1242,10 @@ export function PublicNotepadShareView() {
           </section>
         )}
 
-        {note.content && (
+        {noteBody(note) && (
           <section className="border-b border-(--ui-stroke-secondary) py-5">
             <h2 className="text-sm font-semibold tracking-normal">Notes</h2>
-            <p className="mt-3 whitespace-pre-wrap text-sm leading-6">{note.content}</p>
-          </section>
-        )}
-
-        {note.transcript && (
-          <section className="py-5">
-            <h2 className="text-sm font-semibold tracking-normal">Transcript</h2>
-            <pre className="mt-3 whitespace-pre-wrap font-mono text-xs leading-5 text-muted-foreground">
-              {note.transcript}
-            </pre>
+            <p className="mt-3 whitespace-pre-wrap text-sm leading-6">{noteBody(note)}</p>
           </section>
         )}
       </article>
