@@ -21,6 +21,7 @@ from app.models import (
     Workspace,
     new_id,
 )
+from app.runtime import HermesRuntimeAdapter
 
 
 def _folder_from_row(row: dict[str, Any]) -> NotepadFolderRecord:
@@ -285,6 +286,49 @@ def delete_note(workspace: Workspace, profile: AgentProfile, note_id: str) -> di
         (note_id, workspace.id, profile.id),
     )
     return {"ok": True}
+
+
+async def summarize_note(workspace: Workspace, profile: AgentProfile, note_id: str) -> NotepadNoteRecord:
+    note = _note_from_row(_ensure_note(workspace, profile, note_id))
+    source = "\n\n".join(
+        part
+        for part in [
+            f"Meeting type: {note.meeting_type}",
+            f"Title: {note.title}",
+            f"Written notes:\n{note.content}".strip(),
+            f"Transcript:\n{note.transcript}".strip(),
+        ]
+        if part.strip()
+    )
+
+    if not source.strip():
+        raise HTTPException(status_code=400, detail="Add notes or a transcript before generating a summary.")
+
+    prompt = "\n".join(
+        [
+            "Turn this meeting transcript and the user's written notes into concise internal meeting notes.",
+            "Return only the final notes. Use short sections for Summary, Decisions, Action items, and Quotes when available.",
+            "Preserve exact quotes only when they appear in the transcript.",
+            "",
+            source[:24_000],
+        ]
+    )
+    result = await HermesRuntimeAdapter().run_agent(workspace, profile, prompt)
+
+    if result.status == "failed":
+        raise HTTPException(status_code=502, detail=result.error or "Could not generate notepad summary.")
+
+    summary = (result.output or "").strip()
+
+    if not summary:
+        raise HTTPException(status_code=502, detail="Hermes returned an empty summary.")
+
+    return update_note(
+        workspace,
+        profile,
+        note_id,
+        NotepadNoteUpdateRequest(summary=summary, source="hermes-summary"),
+    )
 
 
 def create_share(

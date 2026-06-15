@@ -30,6 +30,9 @@ declare global {
       }
       api: <T>(request: HermesApiRequest) => Promise<T>
       notify: (payload: HermesNotification) => Promise<boolean>
+      audio?: {
+        captureSupport: () => Promise<DesktopAudioCaptureSupport>
+      }
       requestMicrophoneAccess: () => Promise<boolean>
       readFileDataUrl: (filePath: string) => Promise<string>
       readFileText: (filePath: string) => Promise<HermesReadFileTextResult>
@@ -346,6 +349,13 @@ export interface HermesNotification {
   title?: string
   body?: string
   silent?: boolean
+}
+
+export interface DesktopAudioCaptureSupport {
+  platform: string
+  systemAudio: boolean
+  loopbackAudio: boolean
+  systemPicker: boolean
 }
 
 export interface HermesPreviewTarget {

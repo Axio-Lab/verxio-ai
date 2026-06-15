@@ -1,8 +1,9 @@
 import type { AppendMessage, ThreadMessage } from '@assistant-ui/react'
 import { type MutableRefObject, useCallback } from 'react'
 
-import { getProfiles, transcribeAudio } from '@/hermes'
-import { translateNow, type Translations, useI18n } from '@/i18n'
+import { getProfiles } from '@/hermes'
+import { type Translations, useI18n } from '@/i18n'
+import { transcribeAudioBlob } from '@/lib/audio'
 import { branchGroupForUser, type ChatMessage, chatMessageText, textPart } from '@/lib/chat-messages'
 import {
   attachmentDisplayText,
@@ -56,22 +57,6 @@ import type {
   SessionTitleResponse,
   SlashExecResponse
 } from '../../types'
-
-function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-
-    reader.addEventListener('load', () => {
-      if (typeof reader.result === 'string') {
-        resolve(reader.result)
-      } else {
-        reject(new Error(translateNow('desktop.audioReadFailed')))
-      }
-    })
-    reader.addEventListener('error', () => reject(reader.error || new Error(translateNow('desktop.audioReadFailed'))))
-    reader.readAsDataURL(blob)
-  })
-}
 
 function isProviderSetupError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
@@ -768,10 +753,7 @@ export function usePromptActions({
         throw new Error(copy.sttDisabled)
       }
 
-      const dataUrl = await blobToDataUrl(audio)
-      const result = await transcribeAudio(dataUrl, audio.type)
-
-      return result.transcript
+      return await transcribeAudioBlob(audio)
     },
     [copy.sttDisabled, sttEnabled]
   )

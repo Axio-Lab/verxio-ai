@@ -37,6 +37,9 @@ machine:
 - File browser and preview access is backed by remembered folder grants. Picking
   a file or folder from the desktop picker grants that folder to Verxio, and the
   default project directory is granted automatically.
+- Notepad recording uses Chromium/Electron media capture. On desktop, Verxio
+  requests device/system audio with `getDisplayMedia` and falls back to
+  microphone recording when the platform does not expose a system audio track.
 - The right sidebar and terminal are enabled on macOS, Windows, and Linux because
   the desktop bridge is available before the renderer starts.
 

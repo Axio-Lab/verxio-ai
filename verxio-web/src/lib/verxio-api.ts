@@ -364,6 +364,12 @@ export function deleteNotepadNote(noteId: string): Promise<{ ok: boolean }> {
   })
 }
 
+export function summarizeNotepadNote(noteId: string): Promise<VerxioNotepadNote> {
+  return verxioFetch<VerxioNotepadNote>(`/api/notepad/notes/${encodeURIComponent(noteId)}/summarize`, {
+    method: 'POST'
+  })
+}
+
 export function shareNotepadNote(noteId: string): Promise<VerxioNotepadShareResponse> {
   return verxioFetch<VerxioNotepadShareResponse>(`/api/notepad/notes/${encodeURIComponent(noteId)}/share`, {
     method: 'POST'

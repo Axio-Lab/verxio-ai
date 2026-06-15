@@ -4,12 +4,14 @@ const {
   Notification,
   app,
   clipboard,
+  desktopCapturer,
   dialog,
   ipcMain,
   nativeImage,
   nativeTheme,
   powerMonitor,
   safeStorage,
+  session,
   shell,
   systemPreferences
 } = require('electron')
@@ -304,6 +306,35 @@ function createWindow() {
   mainWindow.loadURL(rendererUrl())
 }
 
+function configureDisplayMediaCapture() {
+  session.defaultSession.setDisplayMediaRequestHandler(
+    async (request, callback) => {
+      try {
+        const sources = await desktopCapturer.getSources({
+          fetchWindowIcons: false,
+          thumbnailSize: { height: 1, width: 1 },
+          types: ['screen', 'window']
+        })
+        const screen = sources.find(source => /screen|entire/i.test(source.name)) || sources[0]
+
+        if (!screen) {
+          callback({})
+
+          return
+        }
+
+        callback({
+          video: request.videoRequested ? screen : undefined,
+          audio: request.audioRequested && IS_WINDOWS ? 'loopback' : undefined
+        })
+      } catch {
+        callback({})
+      }
+    },
+    { useSystemPicker: true }
+  )
+}
+
 function dataUrlForBuffer(buffer, filePath) {
   const ext = path.extname(filePath).toLowerCase()
   const mime =
@@ -521,6 +552,7 @@ function disposeTerminalSession(id) {
 
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null)
+  configureDisplayMediaCapture()
   createWindow()
 
   app.on('activate', () => {
@@ -580,6 +612,13 @@ ipcMain.handle('verxio:requestMicrophoneAccess', async () => {
     return false
   }
 })
+
+ipcMain.handle('verxio:audio:captureSupport', () => ({
+  platform: process.platform,
+  systemAudio: true,
+  loopbackAudio: IS_WINDOWS,
+  systemPicker: IS_MAC
+}))
 
 ipcMain.handle('verxio:readFileDataUrl', async (_event, filePath) => {
   const resolved = assertPathAllowed(filePath)

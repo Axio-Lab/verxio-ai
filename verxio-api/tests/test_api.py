@@ -315,6 +315,12 @@ def test_notepad_notes_folders_and_public_shares(client):
     assert listing.json()["folders"][0]["name"] == "User interviews"
     assert listing.json()["notes"][0]["title"] == "Acme discovery call"
 
+    summary = client.post(f"/api/notepad/notes/{note_id}/summarize", headers=headers)
+    assert summary.status_code == 200
+    generated_summary = summary.json()["summary"]
+    assert generated_summary
+    assert summary.json()["source"] == "hermes-summary"
+
     share = client.post(f"/api/notepad/notes/{note_id}/share", headers=headers)
     assert share.status_code == 200
     share_payload = share.json()
@@ -322,7 +328,7 @@ def test_notepad_notes_folders_and_public_shares(client):
 
     public = client.get(f"/api/public/notepad/{share_payload['token']}")
     assert public.status_code == 200
-    assert public.json()["note"]["summary"] == "Acme needs security proof before rollout."
+    assert public.json()["note"]["summary"] == generated_summary
     assert public.json()["workspace_name"]
 
     revoke = client.delete(f"/api/notepad/notes/{note_id}/share", headers=headers)

@@ -81,6 +81,7 @@ from app.notepad import (
     list_notepad,
     public_share,
     revoke_share,
+    summarize_note,
     update_folder,
     update_note,
 )
@@ -358,6 +359,13 @@ async def delete_notepad_note_route(note_id: str, request: Request) -> dict[str,
     user = require_user(request)
     workspace, profile, _runtime_instance = get_context_for_user(user)
     return delete_note(workspace, profile, note_id)
+
+
+@app.post("/api/notepad/notes/{note_id}/summarize", response_model=NotepadNoteRecord)
+async def summarize_notepad_note_route(note_id: str, request: Request) -> NotepadNoteRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return await summarize_note(workspace, profile, note_id)
 
 
 @app.post("/api/notepad/notes/{note_id}/share", response_model=NotepadShareResponse)

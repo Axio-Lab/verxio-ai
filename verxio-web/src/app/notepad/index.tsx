@@ -1,10 +1,11 @@
 import type * as React from 'react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { PageLoader } from '@/components/page-loader'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { Tip } from '@/components/ui/tooltip'
+import { transcribeAudioBlob } from '@/lib/audio'
 import { cn } from '@/lib/utils'
 import {
   createNotepadFolder,
@@ -15,6 +16,7 @@ import {
   listNotepad,
   revokeNotepadShare,
   shareNotepadNote,
+  summarizeNotepadNote,
   updateNotepadNote,
   verxioApiBaseUrl,
   type VerxioNotepadFolder,
@@ -24,6 +26,7 @@ import {
 } from '@/lib/verxio-api'
 import { notify, notifyError } from '@/store/notifications'
 
+import { useMicRecorder } from '../chat/composer/hooks/use-mic-recorder'
 import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 
 interface NotepadViewProps {
@@ -48,6 +51,18 @@ const NOTE_TIME = new Intl.DateTimeFormat(undefined, {
 
 const ALL_FOLDER = '__all__'
 const UNFILED_FOLDER = '__unfiled__'
+
+const NOTEPAD_MIC_COPY = {
+  microphoneAccessDenied: 'Microphone access was denied.',
+  microphoneConstraintsUnsupported: 'This microphone does not support the requested recording settings.',
+  microphoneInUse: 'The microphone is already in use.',
+  microphonePermissionDenied: 'Microphone permission was denied.',
+  microphoneStartFailed: 'Could not start recording.',
+  microphoneUnsupported: 'Audio recording is not supported in this browser.',
+  noMicrophone: 'No microphone was found.'
+}
+
+type RecordingMode = 'idle' | 'mic' | 'system' | 'transcribing'
 
 function noteTime(value: string) {
   const parsed = Date.parse(value)
@@ -110,6 +125,15 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [busyAction, setBusyAction] = useState<string | null>(null)
+  const [recordingMode, setRecordingMode] = useState<RecordingMode>('idle')
+  const [recordingSeconds, setRecordingSeconds] = useState(0)
+  const [systemAudioSupported, setSystemAudioSupported] = useState(Boolean(window.hermesDesktop))
+  const { handle: micRecorder, level: micLevel } = useMicRecorder(NOTEPAD_MIC_COPY)
+  const systemRecorderRef = useRef<MediaRecorder | null>(null)
+  const systemStreamRef = useRef<MediaStream | null>(null)
+  const systemChunksRef = useRef<Blob[]>([])
+  const recordingStartedAtRef = useRef(0)
+  const micRecorderRef = useRef(micRecorder)
 
   const selectedNote = useMemo(
     () => notes.find(note => note.id === selectedNoteId) ?? notes[0] ?? null,
@@ -140,6 +164,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   }, [folderById, notes, selectedFolder, trimmedQuery])
 
   const dirty = Boolean(selectedNote && draft && draftChanged(selectedNote, draft))
+  const recordingLevel = recordingMode === 'mic' ? micLevel : recordingMode === 'system' ? 0.65 : 0
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -159,6 +184,51 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    let cancelled = false
+
+    window.hermesDesktop?.audio
+      ?.captureSupport()
+      .then(support => {
+        if (!cancelled) {
+          setSystemAudioSupported(Boolean(support.systemAudio))
+        }
+      })
+      .catch(() => undefined)
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (recordingMode !== 'mic' && recordingMode !== 'system') {
+      return
+    }
+
+    recordingStartedAtRef.current = Date.now()
+    setRecordingSeconds(0)
+
+    const timer = window.setInterval(() => {
+      setRecordingSeconds(Math.floor((Date.now() - recordingStartedAtRef.current) / 1000))
+    }, 250)
+
+    return () => window.clearInterval(timer)
+  }, [recordingMode])
+
+  useEffect(() => {
+    micRecorderRef.current = micRecorder
+  }, [micRecorder])
+
+  useEffect(
+    () => () => {
+      micRecorderRef.current.cancel()
+      systemRecorderRef.current?.stop()
+      systemStreamRef.current?.getTracks().forEach(track => track.stop())
+    },
+    []
+  )
 
   useEffect(() => {
     if (!selectedNote) {
@@ -235,6 +305,38 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     }
   }
 
+  function payloadFromDraft(nextDraft: NoteDraft): VerxioNotepadNoteInput {
+    return {
+      title: nextDraft.title.trim() || 'Untitled note',
+      folder_id: nextDraft.folder_id,
+      content: nextDraft.content,
+      transcript: nextDraft.transcript,
+      summary: nextDraft.summary,
+      meeting_type: nextDraft.meeting_type || 'general'
+    }
+  }
+
+  async function persistDraft(nextDraft: NoteDraft, successMessage?: string) {
+    if (!selectedNote) {
+      return null
+    }
+
+    try {
+      const note = await updateNotepadNote(selectedNote.id, payloadFromDraft(nextDraft))
+      setNotes(current => replaceNote(current, note))
+
+      if (successMessage) {
+        notify({ kind: 'success', message: successMessage })
+      }
+
+      return note
+    } catch (error) {
+      notifyError(error, 'Could not save note')
+
+      return null
+    }
+  }
+
   async function handleSave() {
     if (!selectedNote || !draft || !dirty) {
       return
@@ -242,23 +344,191 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
 
     setSaving(true)
 
-    const payload: VerxioNotepadNoteInput = {
-      title: draft.title.trim() || 'Untitled note',
-      folder_id: draft.folder_id,
-      content: draft.content,
-      transcript: draft.transcript,
-      summary: draft.summary,
-      meeting_type: draft.meeting_type || 'general'
+    try {
+      await persistDraft(draft, 'Note saved')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function cleanupSystemRecording() {
+    systemStreamRef.current?.getTracks().forEach(track => track.stop())
+    systemStreamRef.current = null
+    systemRecorderRef.current = null
+    systemChunksRef.current = []
+  }
+
+  async function startSystemRecording() {
+    if (!navigator.mediaDevices?.getDisplayMedia || typeof MediaRecorder === 'undefined') {
+      throw new Error('Device audio capture is not available in this environment.')
+    }
+
+    const capture = await navigator.mediaDevices.getDisplayMedia({
+      audio: true,
+      video: true
+    })
+
+    const audioTracks = capture.getAudioTracks()
+
+    if (!audioTracks.length) {
+      capture.getTracks().forEach(track => track.stop())
+      throw new Error('No device audio track was provided. Use microphone recording for this meeting.')
+    }
+
+    capture.getVideoTracks().forEach(track => track.stop())
+    const stream = new MediaStream(audioTracks)
+
+    const mimeType =
+      ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/ogg'].find(type =>
+        MediaRecorder.isTypeSupported(type)
+      ) ?? ''
+
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+
+    systemChunksRef.current = []
+    systemStreamRef.current = stream
+    systemRecorderRef.current = recorder
+
+    recorder.ondataavailable = event => {
+      if (event.data.size > 0) {
+        systemChunksRef.current.push(event.data)
+      }
+    }
+
+    recorder.start()
+    setRecordingMode('system')
+  }
+
+  function stopSystemRecording(): Promise<Blob | null> {
+    return new Promise(resolve => {
+      const recorder = systemRecorderRef.current
+
+      if (!recorder || recorder.state === 'inactive') {
+        cleanupSystemRecording()
+        resolve(null)
+
+        return
+      }
+
+      recorder.onstop = () => {
+        const chunks = systemChunksRef.current
+        const type = recorder.mimeType || 'audio/webm'
+        cleanupSystemRecording()
+        resolve(chunks.length ? new Blob(chunks, { type }) : null)
+      }
+
+      recorder.stop()
+    })
+  }
+
+  async function persistTranscript(transcript: string, source: 'desktop-audio' | 'microphone') {
+    if (!selectedNote || !draft) {
+      return
+    }
+
+    const stamp = NOTE_TIME.format(new Date())
+    const block = `[${stamp}] ${transcript}`
+
+    const nextDraft = {
+      ...draft,
+      transcript: [draft.transcript.trim(), block].filter(Boolean).join('\n\n')
+    }
+
+    setDraft(nextDraft)
+
+    const note = await updateNotepadNote(selectedNote.id, {
+      ...payloadFromDraft(nextDraft),
+      source
+    })
+
+    setNotes(current => replaceNote(current, note))
+    notify({ kind: 'success', message: 'Transcript added' })
+  }
+
+  async function transcribeRecording(audio: Blob | null, source: 'desktop-audio' | 'microphone') {
+    if (!audio) {
+      setRecordingMode('idle')
+
+      return
+    }
+
+    setRecordingMode('transcribing')
+
+    try {
+      const transcript = (await transcribeAudioBlob(audio)).trim()
+
+      if (!transcript) {
+        notify({ kind: 'warning', message: 'No speech detected' })
+      } else {
+        await persistTranscript(transcript, source)
+      }
+    } catch (error) {
+      notifyError(error, 'Could not transcribe recording')
+    } finally {
+      setRecordingMode('idle')
+    }
+  }
+
+  async function handleStartSystemRecording() {
+    if (!selectedNote || !draft) {
+      return
     }
 
     try {
-      const note = await updateNotepadNote(selectedNote.id, payload)
-      setNotes(current => replaceNote(current, note))
-      notify({ kind: 'success', message: 'Note saved' })
+      await startSystemRecording()
     } catch (error) {
-      notifyError(error, 'Could not save note')
+      notifyError(error, 'Could not start device audio recording')
+      setRecordingMode('idle')
+    }
+  }
+
+  async function handleStartMicRecording() {
+    if (!selectedNote || !draft) {
+      return
+    }
+
+    try {
+      await micRecorder.start()
+      setRecordingMode('mic')
+    } catch (error) {
+      notifyError(error, 'Could not start microphone recording')
+      setRecordingMode('idle')
+    }
+  }
+
+  async function handleStopRecording() {
+    if (recordingMode === 'system') {
+      await transcribeRecording(await stopSystemRecording(), 'desktop-audio')
+
+      return
+    }
+
+    if (recordingMode === 'mic') {
+      const result = await micRecorder.stop()
+      await transcribeRecording(result?.audio ?? null, 'microphone')
+    }
+  }
+
+  async function handleGenerateSummary() {
+    if (!selectedNote) {
+      return
+    }
+
+    setBusyAction('summarize-note')
+
+    try {
+      if (dirty && draft) {
+        await persistDraft(draft)
+      }
+
+      const note = await summarizeNotepadNote(selectedNote.id)
+      setNotes(current => replaceNote(current, note))
+      setDraft(draftFromNote(note))
+      notify({ kind: 'success', message: 'Summary generated' })
+    } catch (error) {
+      notifyError(error, 'Could not generate summary')
     } finally {
-      setSaving(false)
+      setBusyAction(null)
     }
   }
 
@@ -492,6 +762,55 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
               <Button disabled={!dirty || saving} onClick={handleSave} size="sm" type="button" variant="secondary">
                 <Codicon name={saving ? 'loading' : 'save'} spinning={saving} />
                 Save
+              </Button>
+              {recordingMode === 'idle' ? (
+                <>
+                  {systemAudioSupported && (
+                    <Button onClick={handleStartSystemRecording} size="sm" type="button" variant="secondary">
+                      <Codicon name="record" />
+                      Device
+                    </Button>
+                  )}
+                  <Tip label="Record microphone">
+                    <Button
+                      aria-label="Record microphone"
+                      onClick={handleStartMicRecording}
+                      size="icon-sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Codicon name="mic" />
+                    </Button>
+                  </Tip>
+                </>
+              ) : recordingMode === 'transcribing' ? (
+                <Button disabled size="sm" type="button" variant="secondary">
+                  <Codicon name="loading" spinning />
+                  Transcribing
+                </Button>
+              ) : (
+                <Button onClick={handleStopRecording} size="sm" type="button" variant="destructive">
+                  <Codicon name="debug-stop" />
+                  <span
+                    aria-hidden="true"
+                    className="h-2 w-2 rounded-full bg-current opacity-80"
+                    style={{ transform: `scale(${0.75 + recordingLevel * 0.7})` }}
+                  />
+                  {recordingMode === 'system' ? 'Device' : 'Mic'} {recordingSeconds}s
+                </Button>
+              )}
+              <Button
+                disabled={busyAction === 'summarize-note' || (!draft.transcript.trim() && !draft.content.trim())}
+                onClick={handleGenerateSummary}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                <Codicon
+                  name={busyAction === 'summarize-note' ? 'loading' : 'sparkle'}
+                  spinning={busyAction === 'summarize-note'}
+                />
+                Summary
               </Button>
               {selectedNote.share_token ? (
                 <>
