@@ -55,6 +55,61 @@ export interface VerxioArtifactListResponse {
   artifacts: VerxioArtifact[]
 }
 
+export interface VerxioNotepadFolder {
+  id: string
+  tenant_id: string
+  workspace_id: string
+  agent_id: string
+  name: string
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface VerxioNotepadNote {
+  id: string
+  tenant_id: string
+  workspace_id: string
+  agent_id: string
+  folder_id: string | null
+  title: string
+  content: string
+  transcript: string
+  summary: string
+  meeting_type: string
+  source: string
+  share_token: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface VerxioNotepadListResponse {
+  folders: VerxioNotepadFolder[]
+  notes: VerxioNotepadNote[]
+}
+
+export interface VerxioNotepadShareResponse {
+  token: string
+  url: string
+  note: VerxioNotepadNote
+}
+
+export interface VerxioPublicNotepadShareResponse {
+  note: VerxioNotepadNote
+  folder: VerxioNotepadFolder | null
+  workspace_name: string
+}
+
+export interface VerxioNotepadNoteInput {
+  title?: string
+  folder_id?: string | null
+  content?: string
+  transcript?: string
+  summary?: string
+  meeting_type?: string
+  source?: string
+}
+
 export interface ComposioConnectedAccount {
   id: string
   appSlug: string
@@ -270,6 +325,67 @@ export function authLogout(): Promise<{ ok: boolean }> {
 
 export function listVerxioArtifacts(): Promise<VerxioArtifactListResponse> {
   return verxioFetch<VerxioArtifactListResponse>('/api/artifacts')
+}
+
+export function listNotepad(): Promise<VerxioNotepadListResponse> {
+  return verxioFetch<VerxioNotepadListResponse>('/api/notepad')
+}
+
+export function createNotepadFolder(name: string): Promise<VerxioNotepadFolder> {
+  return verxioFetch<VerxioNotepadFolder>('/api/notepad/folders', {
+    body: JSON.stringify({ name }),
+    method: 'POST'
+  })
+}
+
+export function deleteNotepadFolder(folderId: string): Promise<{ ok: boolean }> {
+  return verxioFetch<{ ok: boolean }>(`/api/notepad/folders/${encodeURIComponent(folderId)}`, {
+    method: 'DELETE'
+  })
+}
+
+export function createNotepadNote(input: VerxioNotepadNoteInput): Promise<VerxioNotepadNote> {
+  return verxioFetch<VerxioNotepadNote>('/api/notepad/notes', {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
+}
+
+export function updateNotepadNote(noteId: string, input: VerxioNotepadNoteInput): Promise<VerxioNotepadNote> {
+  return verxioFetch<VerxioNotepadNote>(`/api/notepad/notes/${encodeURIComponent(noteId)}`, {
+    body: JSON.stringify(input),
+    method: 'PATCH'
+  })
+}
+
+export function deleteNotepadNote(noteId: string): Promise<{ ok: boolean }> {
+  return verxioFetch<{ ok: boolean }>(`/api/notepad/notes/${encodeURIComponent(noteId)}`, {
+    method: 'DELETE'
+  })
+}
+
+export function shareNotepadNote(noteId: string): Promise<VerxioNotepadShareResponse> {
+  return verxioFetch<VerxioNotepadShareResponse>(`/api/notepad/notes/${encodeURIComponent(noteId)}/share`, {
+    method: 'POST'
+  })
+}
+
+export function revokeNotepadShare(noteId: string): Promise<{ ok: boolean }> {
+  return verxioFetch<{ ok: boolean }>(`/api/notepad/notes/${encodeURIComponent(noteId)}/share`, {
+    method: 'DELETE'
+  })
+}
+
+export async function getPublicNotepadShare(token: string): Promise<VerxioPublicNotepadShareResponse> {
+  const response = await fetch(verxioApiUrl(`/api/public/notepad/${encodeURIComponent(token)}`), {
+    credentials: 'omit'
+  })
+
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}`)
+  }
+
+  return (await response.json()) as VerxioPublicNotepadShareResponse
 }
 
 export function listComposioConnections(): Promise<ComposioConnectionsResponse> {

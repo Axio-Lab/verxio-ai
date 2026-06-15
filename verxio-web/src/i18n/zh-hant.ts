@@ -1116,7 +1116,8 @@ export const zhHant = defineLocale({
       'new-session': '新工作階段',
       skills: '技能與工具',
       messaging: '訊息平台',
-      artifacts: '成品'
+      artifacts: '成品',
+      notepad: 'Notepad'
     },
     searchAria: '搜尋工作階段',
     searchPlaceholder: '搜尋工作階段…',

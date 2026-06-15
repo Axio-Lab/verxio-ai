@@ -57,11 +57,32 @@ from app.models import (
     ComposioInitiateResponse,
     EmailRequest,
     LoginRequest,
+    NotepadFolderCreateRequest,
+    NotepadFolderRecord,
+    NotepadFolderUpdateRequest,
+    NotepadListResponse,
+    NotepadNoteCreateRequest,
+    NotepadNoteRecord,
+    NotepadNoteUpdateRequest,
+    NotepadShareResponse,
     PasswordResetRequest,
+    PublicNotepadShareResponse,
     RunRecord,
     RunRequest,
     RuntimeControlResponse,
     SignupRequest,
+)
+from app.notepad import (
+    create_folder,
+    create_note,
+    create_share,
+    delete_folder,
+    delete_note,
+    list_notepad,
+    public_share,
+    revoke_share,
+    update_folder,
+    update_note,
 )
 from app.runtime import HermesRuntimeAdapter
 from app.runtime_manager import artifact_file, index_artifacts, restart_runtime, runtime_health, start_runtime, stop_runtime
@@ -270,6 +291,92 @@ async def download_artifact(artifact_id: str, request: Request) -> FileResponse:
     except (FileNotFoundError, KeyError) as exc:
         raise HTTPException(status_code=404, detail="Artifact not found.") from exc
     return FileResponse(path, media_type=record.content_type, filename=record.file_name)
+
+
+def _share_url(request: Request, token: str) -> str:
+    return f"{str(request.base_url).rstrip('/')}/share/notepad/{token}"
+
+
+@app.get("/api/notepad", response_model=NotepadListResponse)
+async def list_notepad_route(request: Request) -> NotepadListResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return list_notepad(workspace, profile)
+
+
+@app.post("/api/notepad/folders", response_model=NotepadFolderRecord)
+async def create_notepad_folder_route(
+    payload: NotepadFolderCreateRequest,
+    request: Request,
+) -> NotepadFolderRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return create_folder(workspace, profile, payload)
+
+
+@app.patch("/api/notepad/folders/{folder_id}", response_model=NotepadFolderRecord)
+async def update_notepad_folder_route(
+    folder_id: str,
+    payload: NotepadFolderUpdateRequest,
+    request: Request,
+) -> NotepadFolderRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return update_folder(workspace, profile, folder_id, payload)
+
+
+@app.delete("/api/notepad/folders/{folder_id}")
+async def delete_notepad_folder_route(folder_id: str, request: Request) -> dict[str, bool]:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return delete_folder(workspace, profile, folder_id)
+
+
+@app.post("/api/notepad/notes", response_model=NotepadNoteRecord)
+async def create_notepad_note_route(
+    payload: NotepadNoteCreateRequest,
+    request: Request,
+) -> NotepadNoteRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return create_note(workspace, profile, payload)
+
+
+@app.patch("/api/notepad/notes/{note_id}", response_model=NotepadNoteRecord)
+async def update_notepad_note_route(
+    note_id: str,
+    payload: NotepadNoteUpdateRequest,
+    request: Request,
+) -> NotepadNoteRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return update_note(workspace, profile, note_id, payload)
+
+
+@app.delete("/api/notepad/notes/{note_id}")
+async def delete_notepad_note_route(note_id: str, request: Request) -> dict[str, bool]:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return delete_note(workspace, profile, note_id)
+
+
+@app.post("/api/notepad/notes/{note_id}/share", response_model=NotepadShareResponse)
+async def create_notepad_share_route(note_id: str, request: Request) -> NotepadShareResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return create_share(workspace, profile, note_id, lambda token: _share_url(request, token))
+
+
+@app.delete("/api/notepad/notes/{note_id}/share")
+async def revoke_notepad_share_route(note_id: str, request: Request) -> dict[str, bool]:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return revoke_share(workspace, profile, note_id)
+
+
+@app.get("/api/public/notepad/{token}", response_model=PublicNotepadShareResponse)
+async def public_notepad_share_route(token: str) -> PublicNotepadShareResponse:
+    return public_share(token)
 
 
 @app.get("/api/composio/connections", response_model=ComposioConnectionsResponse)
@@ -605,3 +712,11 @@ async def stop_run(run_id: str) -> RunRecord:
         ),
     )
     return run
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def spa_fallback(full_path: str) -> FileResponse:
+    if full_path.startswith("api/") or full_path.startswith("static/"):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    return FileResponse(STATIC_ROOT / "index.html")

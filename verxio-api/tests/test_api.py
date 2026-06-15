@@ -278,6 +278,82 @@ def test_artifacts_are_indexed_from_runtime_workspace_and_isolated(client):
     assert blocked.status_code == 404
 
 
+def test_notepad_notes_folders_and_public_shares(client):
+    _payload, token = signup(client, "notes@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    folder = client.post("/api/notepad/folders", json={"name": "User interviews"}, headers=headers)
+    assert folder.status_code == 200
+    folder_id = folder.json()["id"]
+
+    note = client.post(
+        "/api/notepad/notes",
+        json={
+            "folder_id": folder_id,
+            "title": "Acme discovery call",
+            "content": "Follow up with pricing.",
+            "transcript": "Buyer: We need SOC2.",
+            "summary": "Acme needs security proof before rollout.",
+            "meeting_type": "sales",
+        },
+        headers=headers,
+    )
+    assert note.status_code == 200
+    note_id = note.json()["id"]
+
+    moved = client.patch(
+        f"/api/notepad/notes/{note_id}",
+        json={"folder_id": None, "content": "Follow up with pricing and SOC2."},
+        headers=headers,
+    )
+    assert moved.status_code == 200
+    assert moved.json()["folder_id"] is None
+    assert "SOC2" in moved.json()["content"]
+
+    listing = client.get("/api/notepad", headers=headers)
+    assert listing.status_code == 200
+    assert listing.json()["folders"][0]["name"] == "User interviews"
+    assert listing.json()["notes"][0]["title"] == "Acme discovery call"
+
+    share = client.post(f"/api/notepad/notes/{note_id}/share", headers=headers)
+    assert share.status_code == 200
+    share_payload = share.json()
+    assert share_payload["url"].endswith(f"/share/notepad/{share_payload['token']}")
+
+    public = client.get(f"/api/public/notepad/{share_payload['token']}")
+    assert public.status_code == 200
+    assert public.json()["note"]["summary"] == "Acme needs security proof before rollout."
+    assert public.json()["workspace_name"]
+
+    revoke = client.delete(f"/api/notepad/notes/{note_id}/share", headers=headers)
+    assert revoke.status_code == 200
+    assert client.get(f"/api/public/notepad/{share_payload['token']}").status_code == 404
+
+
+def test_notepad_notes_are_workspace_isolated(client):
+    _user_one, token_one = signup(client, "notes-one@example.com")
+    _user_two, token_two = signup(client, "notes-two@example.com")
+
+    note = client.post(
+        "/api/notepad/notes",
+        json={"title": "Private note"},
+        headers={"Cookie": f"{SESSION_COOKIE}={token_one}"},
+    )
+    assert note.status_code == 200
+    note_id = note.json()["id"]
+
+    user_two_list = client.get("/api/notepad", headers={"Cookie": f"{SESSION_COOKIE}={token_two}"})
+    assert user_two_list.status_code == 200
+    assert user_two_list.json()["notes"] == []
+
+    blocked = client.patch(
+        f"/api/notepad/notes/{note_id}",
+        json={"title": "Stolen"},
+        headers={"Cookie": f"{SESSION_COOKIE}={token_two}"},
+    )
+    assert blocked.status_code == 404
+
+
 def test_composio_catalog_uses_authenticated_workspace_contract(client, monkeypatch):
     monkeypatch.delenv("COMPOSIO_API_KEY", raising=False)
     _payload, token = signup(client, "composio@example.com")
