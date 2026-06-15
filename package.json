@@ -10,6 +10,7 @@
   "scripts": {
     "desktop:build": "npm run build --prefix verxio-desktop",
     "desktop:dev": "npm run dev --prefix verxio-desktop",
+    "desktop:pack": "npm run pack --prefix verxio-desktop",
     "desktop:start": "npm run start --prefix verxio-desktop",
     "fmt": "prettier --write 'verxio-web/src/**/*.{ts,tsx}' 'verxio-web/packages/shared/**/*.{ts,tsx}' 'verxio-web/vite.config.ts' 'verxio-desktop/electron/**/*.{js,cjs}' 'verxio-desktop/scripts/**/*.{js,cjs}' 'verxio-desktop/package.json' 'verxio-desktop/README.md'",
     "format": "npm run fmt",

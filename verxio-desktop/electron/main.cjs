@@ -87,7 +87,7 @@ function rendererUrl() {
 
   const dist = process.env.VERXIO_DESKTOP_WEB_DIST
     ? path.resolve(APP_ROOT, process.env.VERXIO_DESKTOP_WEB_DIST)
-    : path.resolve(APP_ROOT, '../verxio-web/dist')
+    : path.join(APP_ROOT, 'build/renderer')
 
   return pathToFileURL(path.join(dist, 'index.html')).toString()
 }

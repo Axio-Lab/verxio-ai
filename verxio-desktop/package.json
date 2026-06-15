@@ -15,17 +15,81 @@
     "dev:renderer": "cross-env VITE_VERXIO_API_ENABLED=true VITE_VERXIO_API_URL=http://127.0.0.1:8787 npm run dev --prefix ../verxio-web",
     "dev:electron": "wait-on http://127.0.0.1:5180 && cross-env VERXIO_DESKTOP_DEV_SERVER=http://127.0.0.1:5180 VITE_VERXIO_API_ENABLED=true VITE_VERXIO_API_URL=http://127.0.0.1:8787 VERXIO_API_URL=http://127.0.0.1:8787 node scripts/run-electron.cjs .",
     "start": "cross-env VERXIO_DESKTOP_WEB_DIST=../verxio-web/dist VITE_VERXIO_API_ENABLED=true VITE_VERXIO_API_URL=http://127.0.0.1:8787 VERXIO_API_URL=http://127.0.0.1:8787 node scripts/run-electron.cjs .",
-    "build": "npm run build --prefix ../verxio-web && node scripts/assert-web-dist.cjs",
+    "build": "npm run build --prefix ../verxio-web && node scripts/sync-renderer.cjs && node scripts/assert-web-dist.cjs",
+    "builder": "electron-builder",
     "ci": "npm run format:check && npm run build",
+    "dist": "npm run build && npm run builder",
+    "dist:linux": "npm run build && npm run builder -- --linux AppImage deb rpm",
+    "dist:mac": "npm run build && npm run builder -- --mac dmg zip",
+    "dist:win": "npm run build && npm run builder -- --win nsis msi",
     "fmt": "prettier --write 'electron/**/*.{js,cjs}' 'scripts/**/*.{js,cjs}' 'package.json' 'README.md'",
     "format": "npm run fmt",
-    "format:check": "prettier --check 'electron/**/*.{js,cjs}' 'scripts/**/*.{js,cjs}' 'package.json' 'README.md'"
+    "format:check": "prettier --check 'electron/**/*.{js,cjs}' 'scripts/**/*.{js,cjs}' 'package.json' 'README.md'",
+    "pack": "npm run build && npm run builder -- --dir"
   },
   "devDependencies": {
     "concurrently": "^10.0.3",
     "cross-env": "^10.1.0",
     "electron": "40.9.3",
+    "electron-builder": "^26.15.3",
     "prettier": "^3.8.3",
     "wait-on": "^9.0.5"
+  },
+  "build": {
+    "appId": "ai.verxio.desktop",
+    "productName": "Verxio",
+    "artifactName": "Verxio-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "build/renderer/**",
+      "electron/**",
+      "package.json"
+    ],
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.productivity",
+      "extendInfo": {
+        "CFBundleDisplayName": "Verxio",
+        "CFBundleName": "Verxio",
+        "NSAudioCaptureUsageDescription": "Verxio uses system audio capture for bot-free meeting notes.",
+        "NSDesktopFolderUsageDescription": "Verxio reads folders you choose for local agent context.",
+        "NSDocumentsFolderUsageDescription": "Verxio reads documents you choose for local agent context.",
+        "NSDownloadsFolderUsageDescription": "Verxio saves exported artifacts and images to Downloads when requested.",
+        "NSMicrophoneUsageDescription": "Verxio uses the microphone for voice input and meeting transcription."
+      },
+      "gatekeeperAssess": false,
+      "hardenedRuntime": false,
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "dmg": {
+      "title": "Install Verxio"
+    },
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        "nsis",
+        "msi"
+      ]
+    },
+    "nsis": {
+      "allowToChangeInstallationDirectory": true,
+      "oneClick": false,
+      "perMachine": false,
+      "shortcutName": "Verxio",
+      "uninstallDisplayName": "Verxio"
+    },
+    "linux": {
+      "category": "Utility",
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm"
+      ]
+    }
   }
 }

@@ -39,4 +39,26 @@ npm run desktop:build
 ```
 
 This currently verifies that `verxio-web` builds and that the generated
-`dist/index.html` exists. Installer packaging will come in a later phase.
+renderer is copied into `verxio-desktop/build/renderer`.
+
+## Local Packaging
+
+From the repo root:
+
+```bash
+npm run desktop:build
+npm run pack --prefix verxio-desktop
+```
+
+Platform installer commands are available from `verxio-desktop`:
+
+```bash
+npm run dist:mac
+npm run dist:win
+npm run dist:linux
+```
+
+macOS signing/notarization and Windows Authenticode signing require external
+certificates and CI secrets. The local packaging config is ready for unsigned
+developer builds; production signing should be enabled when those credentials
+are available.
