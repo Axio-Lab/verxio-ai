@@ -22,6 +22,42 @@ const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { execFile, spawn } = require('node:child_process')
 
+let nodePty = null
+let nodePtyDir = null
+let spawnHelperChecked = false
+
+try {
+  nodePty = require('node-pty')
+  nodePtyDir = path.dirname(require.resolve('node-pty/package.json'))
+} catch {
+  console.warn('[verxio-desktop] node-pty unavailable; embedded terminal will be limited')
+}
+
+function ensureSpawnHelperExecutable() {
+  if (spawnHelperChecked || IS_WINDOWS || !nodePtyDir) {
+    return
+  }
+
+  spawnHelperChecked = true
+
+  const candidates = [
+    path.join(nodePtyDir, 'build', 'Release', 'spawn-helper'),
+    path.join(nodePtyDir, 'prebuilds', `${process.platform}-${process.arch}`, 'spawn-helper')
+  ]
+
+  for (const helper of candidates) {
+    try {
+      const mode = fs.statSync(helper).mode
+
+      if ((mode & 0o111) === 0) {
+        fs.chmodSync(helper, mode | 0o755)
+      }
+    } catch {
+      // Not present in this layout; skip.
+    }
+  }
+}
+
 const DEV_SERVER = process.env.VERXIO_DESKTOP_DEV_SERVER
 const IS_MAC = process.platform === 'darwin'
 const IS_WINDOWS = process.platform === 'win32'
@@ -43,6 +79,8 @@ const terminalSessions = new Map()
 const fileWatches = new Map()
 
 const LEASH_AGENT_FILE = 'leash-agent.json'
+const RUNTIME_WORKSPACE_ROOT = '/workspace'
+const DESKTOP_WORKSPACE_NAME = 'Verxio'
 
 function settingsPath() {
   return path.join(app.getPath('userData'), 'settings.json')
@@ -62,8 +100,54 @@ function writeSettings(settings) {
   safeChmod(settingsPath())
 }
 
+function desktopWorkspaceCandidate() {
+  return path.join(app.getPath('documents'), DESKTOP_WORKSPACE_NAME)
+}
+
+function ensureDesktopWorkspace() {
+  const workspaceDir = desktopWorkspaceCandidate()
+
+  fs.mkdirSync(workspaceDir, { recursive: true })
+
+  const settings = readSettings()
+  let created = false
+
+  if (!settings.defaultProjectDir) {
+    settings.defaultProjectDir = workspaceDir
+    writeSettings(settings)
+    created = true
+  }
+
+  grantPath(settings.defaultProjectDir || workspaceDir)
+
+  return {
+    created,
+    dir: settings.defaultProjectDir || workspaceDir
+  }
+}
+
 function defaultProjectDir() {
-  return readSettings().defaultProjectDir || app.getPath('documents') || os.homedir()
+  return readSettings().defaultProjectDir || desktopWorkspaceCandidate()
+}
+
+function resolveLocalFsPath(inputPath) {
+  const trimmed = String(inputPath || '').trim()
+
+  if (!trimmed) {
+    return defaultProjectDir()
+  }
+
+  if (trimmed === RUNTIME_WORKSPACE_ROOT || trimmed.startsWith(`${RUNTIME_WORKSPACE_ROOT}/`)) {
+    const workspace = defaultProjectDir()
+
+    if (trimmed === RUNTIME_WORKSPACE_ROOT) {
+      return workspace
+    }
+
+    return path.join(workspace, trimmed.slice(RUNTIME_WORKSPACE_ROOT.length + 1))
+  }
+
+  return resolvePath(trimmed)
 }
 
 function safeChmod(filePath) {
@@ -153,13 +237,13 @@ function revokeGrantedFolder(folder) {
 }
 
 function isPathAllowed(filePath) {
-  const resolved = resolvePath(filePath)
+  const resolved = resolveLocalFsPath(filePath)
 
   return grantedFolders().some(folder => isSubPath(resolved, folder))
 }
 
 function assertPathAllowed(filePath) {
-  const resolved = resolvePath(filePath)
+  const resolved = resolveLocalFsPath(filePath)
 
   if (!isPathAllowed(resolved)) {
     const error = new Error(
@@ -448,7 +532,9 @@ function normalizePreviewTarget(rawTarget, baseDir) {
       filePath = raw.replace(/^file:\/\//i, '')
     }
   } else if (!path.isAbsolute(raw) && baseDir) {
-    filePath = path.resolve(baseDir, raw)
+    filePath = path.resolve(resolveLocalFsPath(baseDir), raw)
+  } else {
+    filePath = resolveLocalFsPath(filePath)
   }
 
   const ext = path.extname(filePath).toLowerCase()
@@ -498,18 +584,43 @@ function shellForPlatform() {
   if (IS_WINDOWS) {
     return {
       command: process.env.ComSpec || 'cmd.exe',
-      args: ['/Q'],
+      args: [],
       name: 'cmd'
     }
   }
 
   const command = process.env.SHELL || (process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash')
+  const shellName = path.basename(command)
+  const args = shellName.includes('zsh') || shellName.includes('bash') ? ['-il'] : ['-i']
 
   return {
     command,
-    args: ['-i'],
-    name: path.basename(command)
+    args,
+    name: shellName
   }
+}
+
+function terminalShellEnv() {
+  const env = { ...process.env }
+
+  // Launched via `npm run desktop:dev` — do not leak npm prefix into the user's shell.
+  for (const key of Object.keys(env)) {
+    if (key === 'npm_config_prefix' || key.startsWith('npm_config_') || key.startsWith('npm_package_')) {
+      delete env[key]
+    }
+  }
+
+  delete env.NO_COLOR
+  delete env.FORCE_COLOR
+  delete env.COLORFGBG
+
+  env.COLORTERM = 'truecolor'
+  env.LC_CTYPE = env.LC_CTYPE || 'UTF-8'
+  env.TERM = 'xterm-256color'
+  env.TERM_PROGRAM = 'Verxio'
+  env.TERM_PROGRAM_VERSION = app.getVersion()
+
+  return env
 }
 
 function sendTerminalData(id, data) {
@@ -542,7 +653,11 @@ function disposeTerminalSession(id) {
   terminalSessions.delete(id)
 
   try {
-    session.child.kill()
+    if (session.pty) {
+      session.pty.kill()
+    } else if (session.child) {
+      session.child.kill()
+    }
   } catch {
     // process may already be gone
   }
@@ -551,6 +666,7 @@ function disposeTerminalSession(id) {
 }
 
 app.whenReady().then(() => {
+  ensureDesktopWorkspace()
   Menu.setApplicationMenu(null)
   configureDisplayMediaCapture()
   createWindow()
@@ -769,9 +885,11 @@ ipcMain.handle('verxio:openExternal', async (_event, url) => {
   await shell.openExternal(String(url || ''))
 })
 
+ipcMain.handle('verxio:workspace:ensure', () => ensureDesktopWorkspace())
+
 ipcMain.handle('verxio:setting:defaultProjectDir:get', () => ({
   defaultLabel: 'Project directory',
-  dir: readSettings().defaultProjectDir || null
+  dir: ensureDesktopWorkspace().dir
 }))
 
 ipcMain.handle('verxio:setting:defaultProjectDir:pick', async () => {
@@ -826,13 +944,17 @@ ipcMain.handle('verxio:fs:readDir', (_event, dirPath) => {
 })
 
 ipcMain.handle('verxio:fs:gitRoot', (_event, startPath) => {
-  const cwd = assertPathAllowed(startPath || defaultProjectDir())
+  try {
+    const cwd = assertPathAllowed(startPath || defaultProjectDir())
 
-  return new Promise(resolve => {
-    execFile('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { windowsHide: true }, (error, stdout) => {
-      resolve(error ? null : stdout.trim() || null)
+    return new Promise(resolve => {
+      execFile('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { windowsHide: true }, (error, stdout) => {
+        resolve(error ? null : stdout.trim() || null)
+      })
     })
-  })
+  } catch {
+    return null
+  }
 })
 
 ipcMain.handle('verxio:fs:permissions:list', () => ({ folders: grantedFolders() }))
@@ -880,15 +1002,46 @@ ipcMain.handle('verxio:leash:setBannerNeverShow', (_event, value) => {
 ipcMain.handle('verxio:terminal:start', (event, options = {}) => {
   const id = crypto.randomUUID()
   const shellConfig = shellForPlatform()
-  const cwd = options.cwd && fs.existsSync(options.cwd) ? path.resolve(options.cwd) : defaultProjectDir()
+  const resolvedCwd = options.cwd ? resolveLocalFsPath(options.cwd) : defaultProjectDir()
+  const cwd = fs.existsSync(resolvedCwd) ? resolvedCwd : defaultProjectDir()
+  const cols = Math.max(2, Number.parseInt(String(options.cols || 80), 10) || 80)
+  const rows = Math.max(2, Number.parseInt(String(options.rows || 24), 10) || 24)
+  const sender = event.sender
+
+  if (nodePty) {
+    ensureSpawnHelperExecutable()
+
+    const ptyProcess = nodePty.spawn(shellConfig.command, shellConfig.args, {
+      cols,
+      cwd,
+      env: terminalShellEnv(),
+      name: 'xterm-256color',
+      rows
+    })
+
+    terminalSessions.set(id, { pty: ptyProcess, window: BrowserWindow.fromWebContents(sender) })
+
+    ptyProcess.onData(data => sendTerminalData(id, data))
+    ptyProcess.onExit(({ exitCode, signal }) => {
+      sendTerminalExit(id, { code: exitCode, signal: signal || null })
+      terminalSessions.delete(id)
+    })
+
+    return {
+      cwd,
+      id,
+      shell: shellConfig.name
+    }
+  }
+
   const child = spawn(shellConfig.command, shellConfig.args, {
     cwd,
-    env: process.env,
+    env: terminalShellEnv(),
     stdio: 'pipe',
     windowsHide: true
   })
 
-  terminalSessions.set(id, { child, window: BrowserWindow.fromWebContents(event.sender) })
+  terminalSessions.set(id, { child, window: BrowserWindow.fromWebContents(sender) })
 
   child.stdout.on('data', chunk => sendTerminalData(id, chunk.toString()))
   child.stderr.on('data', chunk => sendTerminalData(id, chunk.toString()))
@@ -912,6 +1065,12 @@ ipcMain.handle('verxio:terminal:start', (event, options = {}) => {
 ipcMain.handle('verxio:terminal:write', (_event, id, data) => {
   const session = terminalSessions.get(String(id || ''))
 
+  if (session?.pty) {
+    session.pty.write(String(data || ''))
+
+    return true
+  }
+
   if (!session?.child.stdin?.writable) {
     return false
   }
@@ -921,7 +1080,20 @@ ipcMain.handle('verxio:terminal:write', (_event, id, data) => {
   return true
 })
 
-ipcMain.handle('verxio:terminal:resize', () => true)
+ipcMain.handle('verxio:terminal:resize', (_event, id, size = {}) => {
+  const session = terminalSessions.get(String(id || ''))
+
+  if (!session?.pty) {
+    return true
+  }
+
+  const cols = Math.max(2, Number.parseInt(String(size.cols || 80), 10) || 80)
+  const rows = Math.max(2, Number.parseInt(String(size.rows || 24), 10) || 24)
+
+  session.pty.resize(cols, rows)
+
+  return true
+})
 ipcMain.handle('verxio:terminal:dispose', (_event, id) => disposeTerminalSession(String(id || '')))
 
 ipcMain.handle('verxio:version', () => ({

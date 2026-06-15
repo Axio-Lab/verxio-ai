@@ -1,6 +1,7 @@
 import { useStore } from '@nanostores/react'
 import type { ReactNode } from 'react'
 
+import { getResolvedDesktopWorkspaceCwd } from '@/app/hooks/use-desktop-workspace'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
@@ -47,7 +48,7 @@ export function RightSidebarPane({ onActivateFile, onActivateFolder, onChangeCwd
   const panesFlipped = useStore($panesFlipped)
   const currentBranch = useStore($currentBranch).trim()
   const storedCwd = useStore($currentCwd).trim()
-  const currentCwd = resolveWebLocalWorkspaceCwd(storedCwd) ?? storedCwd
+  const currentCwd = resolveWebLocalWorkspaceCwd(storedCwd) ?? getResolvedDesktopWorkspaceCwd(storedCwd) ?? storedCwd
   const hasCwd = currentCwd.length > 0
 
   const cwdName = hasCwd

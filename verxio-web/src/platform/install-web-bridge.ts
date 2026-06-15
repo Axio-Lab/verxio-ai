@@ -637,6 +637,9 @@ export function installWebBridge(): void {
         return { dir }
       }
     },
+    workspace: {
+      ensure: async () => ({ created: false, dir: '' })
+    },
     revealLogs: async () => ({ ok: false, path: '', error: 'Logs are on the Verxio host machine.' }),
     getRecentLogs: async () => ({ path: '', lines: [] }),
     readDir: async (dirPath: string) => {

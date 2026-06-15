@@ -54,6 +54,9 @@ declare global {
         pickDefaultProjectDir: () => Promise<{ canceled: boolean; dir: null | string }>
         setDefaultProjectDir: (dir: null | string) => Promise<{ dir: null | string }>
       }
+      workspace: {
+        ensure: () => Promise<{ created: boolean; dir: string }>
+      }
       revealLogs: () => Promise<{ ok: boolean; path: string; error?: string }>
       getRecentLogs: () => Promise<{ path: string; lines: string[] }>
       readDir: (path: string) => Promise<HermesReadDirResult>

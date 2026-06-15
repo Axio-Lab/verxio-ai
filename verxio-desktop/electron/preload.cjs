@@ -405,6 +405,9 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
     pickDefaultProjectDir: () => ipcRenderer.invoke('verxio:setting:defaultProjectDir:pick'),
     setDefaultProjectDir: dir => ipcRenderer.invoke('verxio:setting:defaultProjectDir:set', dir)
   },
+  workspace: {
+    ensure: () => ipcRenderer.invoke('verxio:workspace:ensure')
+  },
   revealLogs: () => ipcRenderer.invoke('verxio:logs:reveal'),
   getRecentLogs: () => ipcRenderer.invoke('verxio:logs:recent'),
   readDir: dirPath => ipcRenderer.invoke('verxio:fs:readDir', dirPath),

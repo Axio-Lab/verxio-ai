@@ -31,6 +31,9 @@ Electron against it.
 Desktop keeps the same UI as Verxio Web, but native data lives on the user's
 machine:
 
+- On first launch, Verxio creates `Documents/Verxio` and uses it as the default
+  project workspace. Docker runtime paths like `/workspace` are mapped to this
+  local folder in the desktop shell and UI.
 - Leash identity is stored in Electron `userData` as `leash-agent.json`, using
   Electron `safeStorage` encryption when the platform supports it and a
   permission-restricted plaintext fallback otherwise.

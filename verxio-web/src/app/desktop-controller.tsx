@@ -70,6 +70,7 @@ import { ChatSidebar } from './chat/sidebar'
 import { CommandPalette } from './command-palette'
 import { useGatewayBoot } from './gateway/hooks/use-gateway-boot'
 import { useGatewayRequest } from './gateway/hooks/use-gateway-request'
+import { useDesktopWorkspace } from './hooks/use-desktop-workspace'
 import { useKeybinds } from './hooks/use-keybinds'
 import { useLeashHydration } from './hooks/use-leash-hydration'
 import { ModelPickerOverlay } from './model-picker-overlay'
@@ -561,6 +562,7 @@ export function DesktopController() {
   })
 
   useLeashHydration()
+  useDesktopWorkspace()
 
   useEffect(() => {
     if (gatewayState === 'open') {
