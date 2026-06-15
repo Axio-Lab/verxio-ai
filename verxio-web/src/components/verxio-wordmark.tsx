@@ -6,14 +6,23 @@ export const VERXIO_WORDMARK = 'VERXIO'
 
 type VerxioWordmarkProps = ComponentProps<'span'> & {
   textClassName?: string
+  variant?: 'animated' | 'solid'
 }
 
-export function VerxioWordmark({ className, style, textClassName, ...props }: VerxioWordmarkProps) {
+export function VerxioWordmark({
+  className,
+  style,
+  textClassName,
+  variant = 'animated',
+  ...props
+}: VerxioWordmarkProps) {
   return (
     <span
       aria-label={VERXIO_WORDMARK}
       className={cn(
-        'fit-text verxio-wordmark font-bold uppercase leading-[0.9] tracking-[0.08em] text-midground mix-blend-plus-lighter dark:text-foreground/90',
+        'fit-text verxio-wordmark font-bold uppercase leading-[0.9] tracking-[0.08em] text-midground',
+        variant === 'animated' && 'mix-blend-plus-lighter dark:text-foreground/90',
+        variant === 'solid' && 'verxio-wordmark--solid',
         className
       )}
       style={

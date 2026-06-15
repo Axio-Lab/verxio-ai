@@ -1237,7 +1237,7 @@ function PoweredByVerxioFooter() {
       Powered by{' '}
       <a
         aria-label="Verxio"
-        className="inline-flex w-16 align-middle"
+        className="inline-flex w-16 align-middle focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none"
         href={VERXIO_WEBSITE_URL}
         rel="noopener noreferrer"
         target="_blank"
@@ -1245,6 +1245,7 @@ function PoweredByVerxioFooter() {
         <VerxioWordmark
           className="w-full"
           style={{ '--fit-text-line-height': '0.9', '--fit-text-min': '0.78rem' } as React.CSSProperties}
+          variant="solid"
         />
       </a>
     </footer>

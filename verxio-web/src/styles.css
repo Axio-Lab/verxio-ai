@@ -1010,6 +1010,24 @@ canvas {
   }
 }
 
+.verxio-wordmark--solid {
+  color: var(--ui-accent);
+  filter: none;
+  mix-blend-mode: normal;
+}
+
+.verxio-wordmark--solid .verxio-wordmark__text {
+  color: var(--ui-accent);
+  -webkit-text-fill-color: currentColor;
+  animation: none;
+  background: none;
+  text-shadow: none;
+}
+
+.verxio-wordmark--solid .verxio-wordmark__text::after {
+  content: none;
+}
+
 .fit-text {
   display: flex;
   font-size: var(--fit-text-min, 1rem);
