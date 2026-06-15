@@ -75,7 +75,7 @@ The desktop shell uses the same Verxio Web renderer, but provides a native
 `window.hermesDesktop` bridge so desktop-only UI, including the right sidebar
 file browser and terminal, is available on macOS, Windows, and Linux.
 
-Start `verxio-api` first, then run:
+Start `verxio-api` first, then run the desktop app locally:
 
 ```bash
 npm run desktop:dev
@@ -87,6 +87,37 @@ against it. The local build smoke check is:
 ```bash
 npm run desktop:build
 ```
+
+To create an unpacked installable app directory for the current platform, run:
+
+```bash
+npm run desktop:pack
+```
+
+Platform-specific unsigned installers are available from `verxio-desktop`:
+
+```bash
+npm run dist:mac --prefix verxio-desktop
+npm run dist:win --prefix verxio-desktop
+npm run dist:linux --prefix verxio-desktop
+```
+
+Desktop keeps local bridge state on the user's machine, including the local
+Leash identity, remembered folder grants, terminal access, and file preview
+permissions.
+
+## Verxio Notepad
+
+`/notepad` is the internal Granola-style meeting workspace. Users can create
+notes, edit transcripts and summaries, organize notes into folders, delete
+records, and create public share URLs that can be viewed without signing in.
+
+On web, Notepad provides the same notes, folders, editing, AI summary, and
+public sharing flows. In the desktop app it additionally supports bot-free
+recording: Verxio requests device audio where Electron exposes it and falls back
+to microphone recording when system audio is unavailable. Transcription uses the
+existing Hermes audio transcription route, and AI summaries use the Hermes
+runtime already backing Verxio.
 
 ## Runtime Flow
 
@@ -101,6 +132,6 @@ npm run desktop:build
 ## Verification
 
 ```bash
-cd verxio-api && uv run pytest
-cd ../verxio-web && npm run type-check -- --pretty false
+npm run ci
+npm run desktop:pack
 ```
