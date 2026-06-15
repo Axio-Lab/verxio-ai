@@ -41,7 +41,9 @@ function hermesDevToken(): Plugin {
 }
 
 export default defineConfig({
-  base: './',
+  // Electron production builds use `./` (file://). Web/docker/dev use `/` so deep
+  // routes like `/share/notepad/:token` resolve assets from `/assets/...`.
+  base: process.env.VITE_BASE || './',
   plugins: [react(), tailwindcss(), hermesDevToken()],
   resolve: {
     alias: {

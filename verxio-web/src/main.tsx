@@ -10,6 +10,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 
 import App from './app'
+import { PublicNotepadShareView } from './app/notepad'
 import { ErrorBoundary } from './components/error-boundary'
 import { HapticsProvider } from './components/haptics-provider'
 import { VerxioAuthGate } from './components/verxio-auth-gate'
@@ -32,6 +33,10 @@ function normalizeLegacyHashRoute() {
 
 normalizeLegacyHashRoute()
 
+function isPublicNotepadShareRoute() {
+  return window.location.pathname.startsWith('/share/notepad/')
+}
+
 // Dev-only: install __PERF_DRIVE__ + __PERF_PROBE__ on window so the
 // scripts/ harnesses can drive a synthetic stream + record render cost.
 // Tree-shaken out of production builds. (Uses MODE rather than DEV because
@@ -49,9 +54,13 @@ createRoot(document.getElementById('root')!).render(
           <ThemeProvider>
             <HapticsProvider>
               <BrowserRouter>
-                <VerxioAuthGate>
-                  <App />
-                </VerxioAuthGate>
+                {isPublicNotepadShareRoute() ? (
+                  <PublicNotepadShareView />
+                ) : (
+                  <VerxioAuthGate>
+                    <App />
+                  </VerxioAuthGate>
+                )}
               </BrowserRouter>
             </HapticsProvider>
           </ThemeProvider>

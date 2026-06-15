@@ -1,4 +1,6 @@
-import { type CSSProperties, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+
+import { VerxioWordmark } from '@/components/verxio-wordmark'
 
 import introCopyJsonl from './intro-copy.jsonl?raw'
 
@@ -157,8 +159,6 @@ function startIndex(copies: IntroCopy[], seed: number): number {
   return Math.abs(seed) % copies.length
 }
 
-const WORDMARK = 'VERXIO'
-
 export function Intro({ personality, seed }: IntroProps) {
   const [mountSeed] = useState(() => Math.floor(Math.random() * 100000))
   const copies = useMemo(() => copiesForPersonality(personality), [personality])
@@ -189,16 +189,7 @@ export function Intro({ personality, seed }: IntroProps) {
       data-slot="aui_intro"
     >
       <div className="w-full min-w-0">
-        <p
-          aria-label={WORDMARK}
-          className="fit-text verxio-wordmark mx-auto mb-3 w-[88%] font-['Collapse'] font-bold uppercase leading-[0.9] tracking-[0.08em] text-midground mix-blend-plus-lighter dark:text-foreground/90"
-          style={{ '--fit-text-line-height': '0.9', '--fit-text-min': '2.75rem' } as CSSProperties}
-        >
-          <span>
-            <span className="verxio-wordmark__text">{WORDMARK}</span>
-          </span>
-          <span aria-hidden="true">{WORDMARK}</span>
-        </p>
+        <VerxioWordmark className="mx-auto mb-3 w-[88%]" />
 
         <p aria-live="polite" className="m-0 text-center leading-normal tracking-tight">
           {body}

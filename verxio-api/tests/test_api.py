@@ -278,6 +278,117 @@ def test_artifacts_are_indexed_from_runtime_workspace_and_isolated(client):
     assert blocked.status_code == 404
 
 
+def test_notepad_notes_folders_and_public_shares(client):
+    _payload, token = signup(client, "notes@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    folder = client.post("/api/notepad/folders", json={"name": "User interviews"}, headers=headers)
+    assert folder.status_code == 200
+    folder_id = folder.json()["id"]
+
+    note = client.post(
+        "/api/notepad/notes",
+        json={
+            "folder_id": folder_id,
+            "title": "Acme discovery call",
+            "content": "Follow up with pricing.",
+            "transcript": "Buyer: We need SOC2.",
+            "summary": "Acme needs security proof before rollout.",
+            "meeting_type": "sales",
+        },
+        headers=headers,
+    )
+    assert note.status_code == 200
+    note_id = note.json()["id"]
+
+    moved = client.patch(
+        f"/api/notepad/notes/{note_id}",
+        json={"folder_id": None, "content": "Follow up with pricing and SOC2."},
+        headers=headers,
+    )
+    assert moved.status_code == 200
+    assert moved.json()["folder_id"] is None
+    assert "SOC2" in moved.json()["content"]
+
+    listing = client.get("/api/notepad", headers=headers)
+    assert listing.status_code == 200
+    assert listing.json()["folders"][0]["name"] == "User interviews"
+    assert listing.json()["notes"][0]["title"] == "Acme discovery call"
+
+    summary = client.post(f"/api/notepad/notes/{note_id}/summarize", headers=headers)
+    assert summary.status_code == 200
+    generated_summary = summary.json()["summary"]
+    assert generated_summary
+    assert summary.json()["source"] == "hermes-summary"
+
+    share = client.post(f"/api/notepad/notes/{note_id}/share", headers=headers)
+    assert share.status_code == 200
+    share_payload = share.json()
+    assert share_payload["url"].endswith(f"/share/notepad/{share_payload['token']}")
+
+    public = client.get(f"/api/public/notepad/{share_payload['token']}")
+    assert public.status_code == 200
+    assert public.json()["note"]["summary"] == generated_summary
+    assert public.json()["workspace_name"]
+
+    revoke = client.delete(f"/api/notepad/notes/{note_id}/share", headers=headers)
+    assert revoke.status_code == 200
+    assert client.get(f"/api/public/notepad/{share_payload['token']}").status_code == 404
+
+
+def test_notepad_summarize_uses_runtime_dashboard(client, monkeypatch):
+    monkeypatch.setenv("VERXIO_RUNTIME_MODE", "auto")
+
+    async def fake_run_agent_via_dashboard(workspace, profile, user_input, *, instructions=None):
+        assert "Acme discovery call" in user_input
+        return "Summary\n\nDecisions\n- Follow up on SOC2."
+
+    monkeypatch.setattr("app.notepad.run_agent_via_dashboard", fake_run_agent_via_dashboard)
+
+    _payload, token = signup(client, "dashboard-notes@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    note = client.post(
+        "/api/notepad/notes",
+        json={
+            "title": "Acme discovery call",
+            "content": "Follow up with pricing.",
+            "transcript": "Buyer: We need SOC2.",
+        },
+        headers=headers,
+    )
+    note_id = note.json()["id"]
+
+    summary = client.post(f"/api/notepad/notes/{note_id}/summarize", headers=headers)
+    assert summary.status_code == 200
+    assert "SOC2" in summary.json()["summary"]
+    assert summary.json()["source"] == "hermes-summary"
+
+
+def test_notepad_notes_are_workspace_isolated(client):
+    _user_one, token_one = signup(client, "notes-one@example.com")
+    _user_two, token_two = signup(client, "notes-two@example.com")
+
+    note = client.post(
+        "/api/notepad/notes",
+        json={"title": "Private note"},
+        headers={"Cookie": f"{SESSION_COOKIE}={token_one}"},
+    )
+    assert note.status_code == 200
+    note_id = note.json()["id"]
+
+    user_two_list = client.get("/api/notepad", headers={"Cookie": f"{SESSION_COOKIE}={token_two}"})
+    assert user_two_list.status_code == 200
+    assert user_two_list.json()["notes"] == []
+
+    blocked = client.patch(
+        f"/api/notepad/notes/{note_id}",
+        json={"title": "Stolen"},
+        headers={"Cookie": f"{SESSION_COOKIE}={token_two}"},
+    )
+    assert blocked.status_code == 404
+
+
 def test_composio_catalog_uses_authenticated_workspace_contract(client, monkeypatch):
     monkeypatch.delenv("COMPOSIO_API_KEY", raising=False)
     _payload, token = signup(client, "composio@example.com")
@@ -464,3 +575,29 @@ def test_runtime_start_updates_registry_without_real_docker(client, monkeypatch)
     run_call = next(call for call in calls if call[:1] == ["run"])
     assert "/host/verxio/runtimes" in " ".join(run_call)
     assert "/workspace" in " ".join(run_call)
+
+
+def test_leash_agent_config_is_runtime_local_not_db(client):
+    payload, token = signup(client, "leash@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+    config = {"version": 1, "agent_mint": "Agnt123", "executive_keypair": "secret"}
+
+    missing = client.get("/api/leash/agent-config", headers=headers)
+    assert missing.status_code == 404
+
+    saved = client.put("/api/leash/agent-config", headers=headers, json=config)
+    assert saved.status_code == 200
+    assert saved.json() == {"ok": True}
+
+    loaded = client.get("/api/leash/agent-config", headers=headers)
+    assert loaded.status_code == 200
+    assert loaded.json()["config"] == config
+
+    rows = db.fetch_all("SELECT * FROM runtime_instances WHERE workspace_id = ?", (payload["workspace"]["id"],))
+    assert rows
+    agent_path = Path(rows[0]["hermes_home_path"]) / ".config" / "leash" / "agent.json"
+    assert agent_path.is_file()
+
+    deleted = client.delete("/api/leash/agent-config", headers=headers)
+    assert deleted.status_code == 200
+    assert not agent_path.is_file()

@@ -142,6 +142,80 @@ class ArtifactListResponse(BaseModel):
     artifacts: list[ArtifactRecord]
 
 
+class NotepadFolderRecord(BaseModel):
+    id: str
+    tenant_id: str
+    workspace_id: str
+    agent_id: str
+    name: str
+    sort_order: int = 0
+    created_at: str
+    updated_at: str
+
+
+class NotepadNoteRecord(BaseModel):
+    id: str
+    tenant_id: str
+    workspace_id: str
+    agent_id: str
+    folder_id: str | None = None
+    title: str
+    content: str = ""
+    transcript: str = ""
+    summary: str = ""
+    meeting_type: str = "general"
+    source: str = "manual"
+    share_token: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class NotepadListResponse(BaseModel):
+    folders: list[NotepadFolderRecord]
+    notes: list[NotepadNoteRecord]
+
+
+class NotepadFolderCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+
+
+class NotepadFolderUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    sort_order: int | None = Field(default=None, ge=0)
+
+
+class NotepadNoteCreateRequest(BaseModel):
+    title: str = Field(default="Untitled note", min_length=1, max_length=180)
+    folder_id: str | None = None
+    content: str = ""
+    transcript: str = ""
+    summary: str = ""
+    meeting_type: str = Field(default="general", max_length=80)
+    source: str = Field(default="manual", max_length=80)
+
+
+class NotepadNoteUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=180)
+    folder_id: str | None = None
+    content: str | None = None
+    transcript: str | None = None
+    summary: str | None = None
+    meeting_type: str | None = Field(default=None, max_length=80)
+    source: str | None = Field(default=None, max_length=80)
+
+
+class NotepadShareResponse(BaseModel):
+    token: str
+    url: str
+    note: NotepadNoteRecord
+
+
+class PublicNotepadShareResponse(BaseModel):
+    note: NotepadNoteRecord
+    folder: NotepadFolderRecord | None = None
+    workspace_name: str
+
+
 class ComposioConnectedAccount(BaseModel):
     id: str
     appSlug: str

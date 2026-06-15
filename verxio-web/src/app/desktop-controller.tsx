@@ -70,7 +70,9 @@ import { ChatSidebar } from './chat/sidebar'
 import { CommandPalette } from './command-palette'
 import { useGatewayBoot } from './gateway/hooks/use-gateway-boot'
 import { useGatewayRequest } from './gateway/hooks/use-gateway-request'
+import { useDesktopWorkspace } from './hooks/use-desktop-workspace'
 import { useKeybinds } from './hooks/use-keybinds'
+import { useLeashHydration } from './hooks/use-leash-hydration'
 import { ModelPickerOverlay } from './model-picker-overlay'
 import { ModelVisibilityOverlay } from './model-visibility-overlay'
 import { RightSidebarPane } from './right-sidebar'
@@ -101,6 +103,7 @@ const ArtifactsView = lazy(async () => ({ default: (await import('./artifacts'))
 const CommandCenterView = lazy(async () => ({ default: (await import('./command-center')).CommandCenterView }))
 const CronView = lazy(async () => ({ default: (await import('./cron')).CronView }))
 const MessagingView = lazy(async () => ({ default: (await import('./messaging')).MessagingView }))
+const NotepadView = lazy(async () => ({ default: (await import('./notepad')).NotepadView }))
 const ProfilesView = lazy(async () => ({ default: (await import('./profiles')).ProfilesView }))
 const SettingsView = lazy(async () => ({ default: (await import('./settings')).SettingsView }))
 const SkillsView = lazy(async () => ({ default: (await import('./skills')).SkillsView }))
@@ -558,6 +561,9 @@ export function DesktopController() {
     refreshSessions
   })
 
+  useLeashHydration()
+  useDesktopWorkspace()
+
   useEffect(() => {
     if (gatewayState === 'open') {
       void refreshCurrentModel()
@@ -806,6 +812,14 @@ export function DesktopController() {
               </Suspense>
             }
             path="artifacts"
+          />
+          <Route
+            element={
+              <Suspense fallback={null}>
+                <NotepadView setStatusbarItemGroup={setStatusbarItemGroup} />
+              </Suspense>
+            }
+            path="notepad"
           />
           <Route element={null} path="cron" />
           <Route element={null} path="profiles" />

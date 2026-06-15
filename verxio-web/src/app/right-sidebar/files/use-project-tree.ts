@@ -2,6 +2,7 @@ import { useStore } from '@nanostores/react'
 import { atom } from 'nanostores'
 import { useCallback, useEffect, useMemo } from 'react'
 
+import { resolveDesktopWorkspaceCwd } from '@/lib/desktop-workspace'
 import { resolveWebLocalWorkspaceCwd } from '@/lib/web-local-fs'
 
 import { clearProjectDirCache, readProjectDir } from './ipc'
@@ -126,7 +127,7 @@ function clearProjectTree() {
  *  bricking the tree, display the sanitized browser-granted fallback when one
  *  exists. */
 function fallbackRootFor(cwd: string): string | null {
-  const fallback = resolveWebLocalWorkspaceCwd(cwd)
+  const fallback = resolveWebLocalWorkspaceCwd(cwd) ?? resolveDesktopWorkspaceCwd(cwd)
 
   return fallback && fallback !== cwd ? fallback : null
 }

@@ -1,3 +1,5 @@
+import type { LeashAgentConfig } from './lib/leash/types'
+
 export {}
 
 declare global {
@@ -28,6 +30,9 @@ declare global {
       }
       api: <T>(request: HermesApiRequest) => Promise<T>
       notify: (payload: HermesNotification) => Promise<boolean>
+      audio?: {
+        captureSupport: () => Promise<DesktopAudioCaptureSupport>
+      }
       requestMicrophoneAccess: () => Promise<boolean>
       readFileDataUrl: (filePath: string) => Promise<string>
       readFileText: (filePath: string) => Promise<HermesReadFileTextResult>
@@ -49,10 +54,26 @@ declare global {
         pickDefaultProjectDir: () => Promise<{ canceled: boolean; dir: null | string }>
         setDefaultProjectDir: (dir: null | string) => Promise<{ dir: null | string }>
       }
+      workspace: {
+        ensure: () => Promise<{ created: boolean; dir: string }>
+      }
       revealLogs: () => Promise<{ ok: boolean; path: string; error?: string }>
       getRecentLogs: () => Promise<{ path: string; lines: string[] }>
       readDir: (path: string) => Promise<HermesReadDirResult>
       gitRoot?: (path: string) => Promise<string | null>
+      permissions?: {
+        grantFolder: () => Promise<HermesPermissionGrantResult>
+        isAllowed: (path: string) => Promise<HermesPermissionCheckResult>
+        list: () => Promise<HermesPermissionListResult>
+        revokeFolder: (path: string) => Promise<HermesPermissionListResult>
+      }
+      leash?: {
+        clearAgent: () => Promise<boolean>
+        getAgent: () => Promise<LeashAgentConfig | null>
+        getBannerNeverShow: () => Promise<boolean>
+        setAgent: (config: LeashAgentConfig | null) => Promise<boolean>
+        setBannerNeverShow: (value: boolean) => Promise<boolean>
+      }
       terminal: {
         dispose: (id: string) => Promise<boolean>
         onData: (id: string, callback: (payload: string) => void) => () => void
@@ -333,6 +354,13 @@ export interface HermesNotification {
   silent?: boolean
 }
 
+export interface DesktopAudioCaptureSupport {
+  platform: string
+  systemAudio: boolean
+  loopbackAudio: boolean
+  systemPicker: boolean
+}
+
 export interface HermesPreviewTarget {
   binary?: boolean
   byteSize?: number
@@ -372,6 +400,20 @@ export interface HermesReadDirEntry {
 export interface HermesReadDirResult {
   entries: HermesReadDirEntry[]
   error?: string
+}
+
+export interface HermesPermissionListResult {
+  folders: string[]
+}
+
+export interface HermesPermissionGrantResult {
+  canceled: boolean
+  folders: string[]
+}
+
+export interface HermesPermissionCheckResult {
+  allowed: boolean
+  path: string
 }
 
 export interface HermesPreviewFileChanged {

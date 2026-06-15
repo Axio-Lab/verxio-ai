@@ -38,7 +38,8 @@ from app.composio_catalog import (
     list_composio_accounts,
     list_composio_apps,
 )
-from app.control_plane import get_context_for_user, get_runtime_for_user
+from app.control_plane import ensure_runtime_directories, get_context_for_user, get_runtime_for_user
+from app.leash_agent import clear_leash_agent, read_leash_agent, write_leash_agent
 from app.models import (
     ArtifactListResponse,
     AuthCodeChallengeResponse,
@@ -56,11 +57,33 @@ from app.models import (
     ComposioInitiateResponse,
     EmailRequest,
     LoginRequest,
+    NotepadFolderCreateRequest,
+    NotepadFolderRecord,
+    NotepadFolderUpdateRequest,
+    NotepadListResponse,
+    NotepadNoteCreateRequest,
+    NotepadNoteRecord,
+    NotepadNoteUpdateRequest,
+    NotepadShareResponse,
     PasswordResetRequest,
+    PublicNotepadShareResponse,
     RunRecord,
     RunRequest,
     RuntimeControlResponse,
     SignupRequest,
+)
+from app.notepad import (
+    create_folder,
+    create_note,
+    create_share,
+    delete_folder,
+    delete_note,
+    list_notepad,
+    public_share,
+    revoke_share,
+    summarize_note,
+    update_folder,
+    update_note,
 )
 from app.runtime import HermesRuntimeAdapter
 from app.runtime_manager import artifact_file, index_artifacts, restart_runtime, runtime_health, start_runtime, stop_runtime
@@ -271,6 +294,102 @@ async def download_artifact(artifact_id: str, request: Request) -> FileResponse:
     return FileResponse(path, media_type=record.content_type, filename=record.file_name)
 
 
+def _share_url(_request: Request, token: str) -> str:
+    public_base = os.getenv("VERXIO_PUBLIC_WEB_URL", "").strip().rstrip("/")
+    if not public_base:
+        public_base = "http://127.0.0.1:8080"
+    return f"{public_base}/share/notepad/{token}"
+
+
+@app.get("/api/notepad", response_model=NotepadListResponse)
+async def list_notepad_route(request: Request) -> NotepadListResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return list_notepad(workspace, profile)
+
+
+@app.post("/api/notepad/folders", response_model=NotepadFolderRecord)
+async def create_notepad_folder_route(
+    payload: NotepadFolderCreateRequest,
+    request: Request,
+) -> NotepadFolderRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return create_folder(workspace, profile, payload)
+
+
+@app.patch("/api/notepad/folders/{folder_id}", response_model=NotepadFolderRecord)
+async def update_notepad_folder_route(
+    folder_id: str,
+    payload: NotepadFolderUpdateRequest,
+    request: Request,
+) -> NotepadFolderRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return update_folder(workspace, profile, folder_id, payload)
+
+
+@app.delete("/api/notepad/folders/{folder_id}")
+async def delete_notepad_folder_route(folder_id: str, request: Request) -> dict[str, bool]:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return delete_folder(workspace, profile, folder_id)
+
+
+@app.post("/api/notepad/notes", response_model=NotepadNoteRecord)
+async def create_notepad_note_route(
+    payload: NotepadNoteCreateRequest,
+    request: Request,
+) -> NotepadNoteRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return create_note(workspace, profile, payload)
+
+
+@app.patch("/api/notepad/notes/{note_id}", response_model=NotepadNoteRecord)
+async def update_notepad_note_route(
+    note_id: str,
+    payload: NotepadNoteUpdateRequest,
+    request: Request,
+) -> NotepadNoteRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return update_note(workspace, profile, note_id, payload)
+
+
+@app.delete("/api/notepad/notes/{note_id}")
+async def delete_notepad_note_route(note_id: str, request: Request) -> dict[str, bool]:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return delete_note(workspace, profile, note_id)
+
+
+@app.post("/api/notepad/notes/{note_id}/summarize", response_model=NotepadNoteRecord)
+async def summarize_notepad_note_route(note_id: str, request: Request) -> NotepadNoteRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return await summarize_note(workspace, profile, note_id)
+
+
+@app.post("/api/notepad/notes/{note_id}/share", response_model=NotepadShareResponse)
+async def create_notepad_share_route(note_id: str, request: Request) -> NotepadShareResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return create_share(workspace, profile, note_id, lambda token: _share_url(request, token))
+
+
+@app.delete("/api/notepad/notes/{note_id}/share")
+async def revoke_notepad_share_route(note_id: str, request: Request) -> dict[str, bool]:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return revoke_share(workspace, profile, note_id)
+
+
+@app.get("/api/public/notepad/{token}", response_model=PublicNotepadShareResponse)
+async def public_notepad_share_route(token: str) -> PublicNotepadShareResponse:
+    return public_share(token)
+
+
 @app.get("/api/composio/connections", response_model=ComposioConnectionsResponse)
 async def list_composio_connections_route(request: Request) -> ComposioConnectionsResponse:
     user = require_user(request)
@@ -343,6 +462,42 @@ async def delete_composio_connection_route(account_id: str, request: Request) ->
     if not is_composio_configured():
         raise HTTPException(status_code=500, detail="Composio is not configured.")
     return delete_composio_account(account_id)
+
+
+@app.get("/api/leash/agent-config")
+async def get_leash_agent_config(request: Request) -> dict:
+    """Read Leash agent.json from the runtime volume. Pass-through cache only — never stored in Turso."""
+    user = require_user(request)
+    runtime = get_runtime_for_user(user)
+    ensure_runtime_directories(runtime)
+    payload = read_leash_agent(runtime)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Leash agent config not found.")
+    return {"ok": True, "config": payload}
+
+
+@app.put("/api/leash/agent-config")
+async def put_leash_agent_config(request: Request) -> dict[str, bool]:
+    """Write Leash agent.json to the runtime volume from the browser. Body is not logged or persisted in Turso."""
+    user = require_user(request)
+    runtime = get_runtime_for_user(user)
+    ensure_runtime_directories(runtime)
+    try:
+        body = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON body.") from exc
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Leash agent config must be a JSON object.")
+    write_leash_agent(runtime, body)
+    return {"ok": True}
+
+
+@app.delete("/api/leash/agent-config")
+async def delete_leash_agent_config(request: Request) -> dict[str, bool]:
+    user = require_user(request)
+    runtime = get_runtime_for_user(user)
+    clear_leash_agent(runtime)
+    return {"ok": True}
 
 
 def _runtime_dashboard_token(runtime_id: str) -> str:
@@ -568,3 +723,11 @@ async def stop_run(run_id: str) -> RunRecord:
         ),
     )
     return run
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+async def spa_fallback(full_path: str) -> FileResponse:
+    if full_path.startswith("api/") or full_path.startswith("static/"):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    return FileResponse(STATIC_ROOT / "index.html")

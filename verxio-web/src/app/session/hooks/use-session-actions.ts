@@ -6,6 +6,7 @@ import { deleteSession, getSessionMessages, listAllProfileSessions, setSessionAr
 import { useI18n } from '@/i18n'
 import { type ChatMessage, chatMessageText, preserveLocalAssistantErrors, toChatMessages } from '@/lib/chat-messages'
 import { normalizePersonalityValue } from '@/lib/chat-runtime'
+import { cwdForGatewaySubmission } from '@/lib/desktop-workspace'
 import { embeddedImageUrls, textWithoutEmbeddedImages } from '@/lib/embedded-images'
 import { ensureSessionYoloEnabled } from '@/lib/yolo-session'
 import { clearComposerAttachments, clearComposerDraft } from '@/store/composer'
@@ -372,7 +373,7 @@ export function useSessionActions({
         // so single-profile users are unaffected).
         const newChatProfile = $newChatProfile.get() ?? normalizeProfileKey($activeGatewayProfile.get())
         await ensureGatewayProfile(newChatProfile)
-        const cwd = $currentCwd.get().trim() || getRememberedWorkspaceCwd()
+        const cwd = cwdForGatewaySubmission($currentCwd.get().trim() || getRememberedWorkspaceCwd())
         // Pass the owning profile so a new chat under a non-launch profile (global
         // remote mode) builds its agent + persists against THAT profile's home/db.
 
@@ -726,7 +727,7 @@ export function useSessionActions({
 
         clearNotifications()
 
-        const cwd = $currentCwd.get().trim()
+        const cwd = cwdForGatewaySubmission($currentCwd.get().trim())
 
         const branched = await requestGateway<SessionCreateResponse>('session.create', {
           cols: 96,

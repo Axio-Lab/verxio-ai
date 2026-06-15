@@ -9,12 +9,15 @@ import {
   sortProviders
 } from '@/components/desktop-onboarding-overlay'
 import { Button } from '@/components/ui/button'
+import { PaginationControl } from '@/components/ui/pagination'
 import { listOAuthProviders } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { ChevronDown, KeyRound } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { $desktopOnboarding, startManualProviderOAuth } from '@/store/onboarding'
 import type { EnvVarInfo, OAuthProvider } from '@/types/hermes'
+
+import { DEFAULT_LIST_PAGE_SIZE, usePaginatedList } from '../hooks/use-paginated-list'
 
 import { isKeyVar, ProviderKeyRows } from './credential-key-ui'
 import { SettingsCategoryHeading, useEnvCredentials } from './env-credentials'
@@ -201,6 +204,15 @@ export function ProvidersSettings({ onViewChange, view }: ProvidersSettingsProps
     return () => void (cancelled = true)
   }, [onboardingActive])
 
+  const keyGroups = useMemo(() => (vars ? buildProviderKeyGroups(vars) : []), [vars])
+
+  const {
+    currentPage,
+    setPage,
+    total,
+    visibleItems: visibleKeyGroups
+  } = usePaginatedList(keyGroups, DEFAULT_LIST_PAGE_SIZE, view)
+
   if (!vars) {
     return <LoadingState label={t.settings.providers.loading} />
   }
@@ -210,14 +222,12 @@ export function ProvidersSettings({ onViewChange, view }: ProvidersSettingsProps
   // providers there's nothing for the "Accounts" view to show, so fall to keys.
   const showApiKeys = view === 'keys' || !hasOauth
 
-  const keyGroups = buildProviderKeyGroups(vars)
-
   if (showApiKeys) {
     return (
       <SettingsContent>
         {keyGroups.length > 0 ? (
           <div className="grid gap-2">
-            {keyGroups.map(group => (
+            {visibleKeyGroups.map(group => (
               <ProviderKeyRows
                 expanded={openProvider === group.name}
                 group={group}
@@ -227,6 +237,14 @@ export function ProvidersSettings({ onViewChange, view }: ProvidersSettingsProps
                 rowProps={rowProps}
               />
             ))}
+            <PaginationControl
+              className="pt-2"
+              itemLabel="providers"
+              onPageChange={setPage}
+              page={currentPage}
+              pageSize={DEFAULT_LIST_PAGE_SIZE}
+              total={total}
+            />
           </div>
         ) : (
           <NoProviderKeys />
