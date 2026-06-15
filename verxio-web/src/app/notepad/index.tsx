@@ -4,6 +4,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { PageLoader } from '@/components/page-loader'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { Tip } from '@/components/ui/tooltip'
 import { transcribeAudioBlob } from '@/lib/audio'
 import { cn } from '@/lib/utils'
@@ -50,7 +59,8 @@ const NOTE_TIME = new Intl.DateTimeFormat(undefined, {
 })
 
 const ALL_FOLDER = '__all__'
-const UNFILED_FOLDER = '__unfiled__'
+const DEFAULT_FOLDER = '__default__'
+const DEFAULT_FOLDER_LABEL = 'Default'
 
 const NOTEPAD_MIC_COPY = {
   microphoneAccessDenied: 'Microphone access was denied.',
@@ -125,6 +135,9 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [busyAction, setBusyAction] = useState<string | null>(null)
+  const [folderDialogOpen, setFolderDialogOpen] = useState(false)
+  const [folderName, setFolderName] = useState('')
+  const [folderNameError, setFolderNameError] = useState<string | null>(null)
   const [recordingMode, setRecordingMode] = useState<RecordingMode>('idle')
   const [recordingSeconds, setRecordingSeconds] = useState(0)
   const [systemAudioSupported, setSystemAudioSupported] = useState(Boolean(window.hermesDesktop))
@@ -147,7 +160,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     return notes.filter(note => {
       const folderMatches =
         selectedFolder === ALL_FOLDER ||
-        (selectedFolder === UNFILED_FOLDER ? !note.folder_id : note.folder_id === selectedFolder)
+        (selectedFolder === DEFAULT_FOLDER ? !note.folder_id : note.folder_id === selectedFolder)
 
       if (!folderMatches) {
         return false
@@ -255,7 +268,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     setBusyAction('new-note')
 
     try {
-      const folder_id = selectedFolder !== ALL_FOLDER && selectedFolder !== UNFILED_FOLDER ? selectedFolder : null
+      const folder_id = selectedFolder !== ALL_FOLDER && selectedFolder !== DEFAULT_FOLDER ? selectedFolder : null
       const note = await createNotepadNote({ folder_id, title: 'Untitled note' })
       setNotes(current => replaceNote(current, note))
       setSelectedNoteId(note.id)
@@ -266,19 +279,40 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     }
   }
 
-  async function handleNewFolder() {
-    const name = window.prompt('Folder name')
+  function handleFolderDialogOpenChange(open: boolean) {
+    if (busyAction === 'new-folder') {
+      return
+    }
 
-    if (!name?.trim()) {
+    setFolderDialogOpen(open)
+
+    if (open) {
+      setFolderName('')
+    } else {
+      setFolderNameError(null)
+    }
+  }
+
+  async function handleNewFolder(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    const name = folderName.trim()
+
+    if (!name) {
+      setFolderNameError('Enter a folder name.')
+
       return
     }
 
     setBusyAction('new-folder')
 
     try {
-      const folder = await createNotepadFolder(name.trim())
+      const folder = await createNotepadFolder(name)
       setFolders(current => [...current, folder])
       setSelectedFolder(folder.id)
+      setFolderDialogOpen(false)
+      setFolderName('')
+      setFolderNameError(null)
     } catch (error) {
       notifyError(error, 'Could not create folder')
     } finally {
@@ -287,7 +321,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   }
 
   async function handleDeleteFolder(folder: VerxioNotepadFolder) {
-    if (!window.confirm(`Delete "${folder.name}"? Notes stay in Unfiled.`)) {
+    if (!window.confirm(`Delete "${folder.name}"? Notes stay in ${DEFAULT_FOLDER_LABEL}.`)) {
       return
     }
 
@@ -611,213 +645,244 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   }
 
   return (
-    <div className="flex h-full min-h-0 bg-background text-foreground">
-      <aside className="flex w-[15rem] shrink-0 flex-col border-r border-(--ui-stroke-secondary) bg-(--ui-sidebar-surface-background)">
-        <div className="flex h-12 items-center justify-between border-b border-(--ui-stroke-secondary) px-3">
-          <h1 className="text-sm font-semibold tracking-normal">Notepad</h1>
-          <div className="flex items-center gap-1">
-            <Tip label="New folder">
-              <Button
-                aria-label="New folder"
-                disabled={busyAction === 'new-folder'}
-                onClick={handleNewFolder}
-                size="icon-xs"
-                type="button"
-                variant="ghost"
-              >
-                <Codicon name="new-folder" />
-              </Button>
-            </Tip>
-            <Tip label="New note">
-              <Button
-                aria-label="New note"
-                disabled={busyAction === 'new-note'}
-                onClick={handleNewNote}
-                size="icon-xs"
-                type="button"
-                variant="secondary"
-              >
-                <Codicon name="add" />
-              </Button>
-            </Tip>
+    <>
+      <div className="flex h-full min-h-0 bg-background text-foreground">
+        <aside className="flex w-[15rem] shrink-0 flex-col border-r border-(--ui-stroke-secondary) bg-(--ui-sidebar-surface-background)">
+          <div className="flex h-12 items-center justify-between border-b border-(--ui-stroke-secondary) px-3">
+            <h1 className="text-sm font-semibold tracking-normal">Notepad</h1>
+            <div className="flex items-center gap-1">
+              <Tip label="New folder">
+                <Button
+                  aria-label="New folder"
+                  disabled={busyAction === 'new-folder'}
+                  onClick={() => handleFolderDialogOpenChange(true)}
+                  size="icon-xs"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Codicon name="new-folder" />
+                </Button>
+              </Tip>
+              <Tip label="New note">
+                <Button
+                  aria-label="New note"
+                  disabled={busyAction === 'new-note'}
+                  onClick={handleNewNote}
+                  size="icon-xs"
+                  type="button"
+                  variant="secondary"
+                >
+                  <Codicon name="add" />
+                </Button>
+              </Tip>
+            </div>
           </div>
-        </div>
 
-        <div className="min-h-0 flex-1 overflow-auto p-2">
-          <FolderButton
-            active={selectedFolder === ALL_FOLDER}
-            count={notes.length}
-            icon="notebook"
-            label="All notes"
-            onClick={() => setSelectedFolder(ALL_FOLDER)}
-          />
-          <FolderButton
-            active={selectedFolder === UNFILED_FOLDER}
-            count={notes.filter(note => !note.folder_id).length}
-            icon="folder"
-            label="Unfiled"
-            onClick={() => setSelectedFolder(UNFILED_FOLDER)}
-          />
-
-          <div className="mt-3 space-y-1">
-            {folders.map(folder => (
-              <div className="group flex items-center gap-1" key={folder.id}>
-                <FolderButton
-                  active={selectedFolder === folder.id}
-                  count={notes.filter(note => note.folder_id === folder.id).length}
-                  icon="folder"
-                  label={folder.name}
-                  onClick={() => setSelectedFolder(folder.id)}
-                />
-                <Tip label="Delete folder">
-                  <Button
-                    aria-label={`Delete ${folder.name}`}
-                    className="opacity-0 group-hover:opacity-100"
-                    disabled={busyAction === folder.id}
-                    onClick={() => handleDeleteFolder(folder)}
-                    size="icon-xs"
-                    type="button"
-                    variant="ghost"
-                  >
-                    <Codicon name="trash" />
-                  </Button>
-                </Tip>
-              </div>
-            ))}
-          </div>
-        </div>
-      </aside>
-
-      <section className="flex w-[22rem] shrink-0 flex-col border-r border-(--ui-stroke-secondary)">
-        <div className="flex h-12 items-center gap-2 border-b border-(--ui-stroke-secondary) px-3">
-          <div className="relative min-w-0 flex-1">
-            <Codicon
-              className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
-              name="search"
+          <div className="min-h-0 flex-1 overflow-auto p-2">
+            <FolderButton
+              active={selectedFolder === ALL_FOLDER}
+              count={notes.length}
+              icon="notebook"
+              label="All notes"
+              onClick={() => setSelectedFolder(ALL_FOLDER)}
             />
-            <input
-              className="h-8 w-full rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) pl-7 pr-2 text-sm outline-none focus:border-ring"
-              onChange={event => setQuery(event.target.value)}
-              placeholder="Search notes"
-              value={query}
+            <FolderButton
+              active={selectedFolder === DEFAULT_FOLDER}
+              count={notes.filter(note => !note.folder_id).length}
+              icon="folder"
+              label={DEFAULT_FOLDER_LABEL}
+              onClick={() => setSelectedFolder(DEFAULT_FOLDER)}
             />
-          </div>
-        </div>
 
-        <div className="min-h-0 flex-1 overflow-auto">
-          {filteredNotes.length === 0 ? (
-            <div className="px-4 py-8 text-sm text-muted-foreground">No notes found.</div>
-          ) : (
-            filteredNotes.map(note => (
-              <button
-                className={cn(
-                  'block w-full border-b border-(--ui-stroke-secondary) px-3 py-3 text-left hover:bg-(--ui-control-hover-background)',
-                  selectedNote?.id === note.id && 'bg-(--ui-control-active-background)'
-                )}
-                key={note.id}
-                onClick={() => setSelectedNoteId(note.id)}
-                type="button"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium">{note.title}</span>
-                  {note.share_token && <Codicon className="text-muted-foreground" name="link" />}
-                </div>
-                <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="truncate">{folderById.get(note.folder_id || '')?.name || 'Unfiled'}</span>
-                  <span aria-hidden="true">·</span>
-                  <span>{noteTime(note.updated_at)}</span>
-                </div>
-                <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                  {note.summary || note.content || note.transcript || 'Empty note'}
-                </p>
-              </button>
-            ))
-          )}
-        </div>
-      </section>
-
-      <main className="min-w-0 flex-1 overflow-auto">
-        {selectedNote && draft ? (
-          <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col">
-            <div className="sticky top-0 z-10 flex min-h-12 items-center gap-2 border-b border-(--ui-stroke-secondary) bg-background/95 px-4 backdrop-blur">
-              <input
-                className="min-w-0 flex-1 bg-transparent text-lg font-semibold tracking-normal outline-none"
-                onChange={event => setDraft(current => (current ? { ...current, title: event.target.value } : current))}
-                value={draft.title}
-              />
-              <select
-                className="h-8 rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 text-xs outline-none"
-                onChange={event =>
-                  setDraft(current => (current ? { ...current, folder_id: event.target.value || null } : current))
-                }
-                value={draft.folder_id ?? ''}
-              >
-                <option value="">Unfiled</option>
-                {folders.map(folder => (
-                  <option key={folder.id} value={folder.id}>
-                    {folder.name}
-                  </option>
-                ))}
-              </select>
-              <Button disabled={!dirty || saving} onClick={handleSave} size="sm" type="button" variant="secondary">
-                <Codicon name={saving ? 'loading' : 'save'} spinning={saving} />
-                Save
-              </Button>
-              {recordingMode === 'idle' ? (
-                <>
-                  {systemAudioSupported && (
-                    <Button onClick={handleStartSystemRecording} size="sm" type="button" variant="secondary">
-                      <Codicon name="record" />
-                      Device
-                    </Button>
-                  )}
-                  <Tip label="Record microphone">
+            <div className="mt-3 space-y-1">
+              {folders.map(folder => (
+                <div className="group flex items-center gap-1" key={folder.id}>
+                  <FolderButton
+                    active={selectedFolder === folder.id}
+                    count={notes.filter(note => note.folder_id === folder.id).length}
+                    icon="folder"
+                    label={folder.name}
+                    onClick={() => setSelectedFolder(folder.id)}
+                  />
+                  <Tip label="Delete folder">
                     <Button
-                      aria-label="Record microphone"
-                      onClick={handleStartMicRecording}
-                      size="icon-sm"
+                      aria-label={`Delete ${folder.name}`}
+                      className="opacity-0 group-hover:opacity-100"
+                      disabled={busyAction === folder.id}
+                      onClick={() => handleDeleteFolder(folder)}
+                      size="icon-xs"
                       type="button"
                       variant="ghost"
                     >
-                      <Codicon name="mic" />
+                      <Codicon name="trash" />
                     </Button>
                   </Tip>
-                </>
-              ) : recordingMode === 'transcribing' ? (
-                <Button disabled size="sm" type="button" variant="secondary">
-                  <Codicon name="loading" spinning />
-                  Transcribing
-                </Button>
-              ) : (
-                <Button onClick={handleStopRecording} size="sm" type="button" variant="destructive">
-                  <Codicon name="debug-stop" />
-                  <span
-                    aria-hidden="true"
-                    className="h-2 w-2 rounded-full bg-current opacity-80"
-                    style={{ transform: `scale(${0.75 + recordingLevel * 0.7})` }}
-                  />
-                  {recordingMode === 'system' ? 'Device' : 'Mic'} {recordingSeconds}s
-                </Button>
-              )}
-              <Button
-                disabled={busyAction === 'summarize-note' || (!draft.transcript.trim() && !draft.content.trim())}
-                onClick={handleGenerateSummary}
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
-                <Codicon
-                  name={busyAction === 'summarize-note' ? 'loading' : 'sparkle'}
-                  spinning={busyAction === 'summarize-note'}
+                </div>
+              ))}
+            </div>
+          </div>
+        </aside>
+
+        <section className="flex w-[22rem] shrink-0 flex-col border-r border-(--ui-stroke-secondary)">
+          <div className="flex h-12 items-center gap-2 border-b border-(--ui-stroke-secondary) px-3">
+            <div className="relative min-w-0 flex-1">
+              <Codicon
+                className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+                name="search"
+              />
+              <input
+                className="h-8 w-full rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) pl-7 pr-2 text-sm outline-none focus:border-ring"
+                onChange={event => setQuery(event.target.value)}
+                placeholder="Search notes"
+                value={query}
+              />
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-auto">
+            {filteredNotes.length === 0 ? (
+              <div className="px-4 py-8 text-sm text-muted-foreground">No notes found.</div>
+            ) : (
+              filteredNotes.map(note => (
+                <button
+                  className={cn(
+                    'block w-full border-b border-(--ui-stroke-secondary) px-3 py-3 text-left hover:bg-(--ui-control-hover-background)',
+                    selectedNote?.id === note.id && 'bg-(--ui-control-active-background)'
+                  )}
+                  key={note.id}
+                  onClick={() => setSelectedNoteId(note.id)}
+                  type="button"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium">{note.title}</span>
+                    {note.share_token && <Codicon className="text-muted-foreground" name="link" />}
+                  </div>
+                  <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                    <span className="truncate">
+                      {folderById.get(note.folder_id || '')?.name || DEFAULT_FOLDER_LABEL}
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span>{noteTime(note.updated_at)}</span>
+                  </div>
+                  <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                    {note.summary || note.content || note.transcript || 'Empty note'}
+                  </p>
+                </button>
+              ))
+            )}
+          </div>
+        </section>
+
+        <main className="min-w-0 flex-1 overflow-auto">
+          {selectedNote && draft ? (
+            <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col">
+              <div className="sticky top-0 z-10 flex min-h-12 items-center gap-2 border-b border-(--ui-stroke-secondary) bg-background/95 px-4 backdrop-blur">
+                <input
+                  className="min-w-0 flex-1 bg-transparent text-lg font-semibold tracking-normal outline-none"
+                  onChange={event =>
+                    setDraft(current => (current ? { ...current, title: event.target.value } : current))
+                  }
+                  value={draft.title}
                 />
-                Summary
-              </Button>
-              {selectedNote.share_token ? (
-                <>
-                  <Tip label="Copy public URL">
+                <select
+                  className="h-8 rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 text-xs outline-none"
+                  onChange={event =>
+                    setDraft(current => (current ? { ...current, folder_id: event.target.value || null } : current))
+                  }
+                  value={draft.folder_id ?? ''}
+                >
+                  <option value="">{DEFAULT_FOLDER_LABEL}</option>
+                  {folders.map(folder => (
+                    <option key={folder.id} value={folder.id}>
+                      {folder.name}
+                    </option>
+                  ))}
+                </select>
+                <Button disabled={!dirty || saving} onClick={handleSave} size="sm" type="button" variant="secondary">
+                  <Codicon name={saving ? 'loading' : 'save'} spinning={saving} />
+                  Save
+                </Button>
+                {recordingMode === 'idle' ? (
+                  <>
+                    {systemAudioSupported && (
+                      <Button onClick={handleStartSystemRecording} size="sm" type="button" variant="secondary">
+                        <Codicon name="record" />
+                        Device
+                      </Button>
+                    )}
+                    <Tip label="Record microphone">
+                      <Button
+                        aria-label="Record microphone"
+                        onClick={handleStartMicRecording}
+                        size="icon-sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <Codicon name="mic" />
+                      </Button>
+                    </Tip>
+                  </>
+                ) : recordingMode === 'transcribing' ? (
+                  <Button disabled size="sm" type="button" variant="secondary">
+                    <Codicon name="loading" spinning />
+                    Transcribing
+                  </Button>
+                ) : (
+                  <Button onClick={handleStopRecording} size="sm" type="button" variant="destructive">
+                    <Codicon name="debug-stop" />
+                    <span
+                      aria-hidden="true"
+                      className="h-2 w-2 rounded-full bg-current opacity-80"
+                      style={{ transform: `scale(${0.75 + recordingLevel * 0.7})` }}
+                    />
+                    {recordingMode === 'system' ? 'Device' : 'Mic'} {recordingSeconds}s
+                  </Button>
+                )}
+                <Button
+                  disabled={busyAction === 'summarize-note' || (!draft.transcript.trim() && !draft.content.trim())}
+                  onClick={handleGenerateSummary}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Codicon
+                    name={busyAction === 'summarize-note' ? 'loading' : 'sparkle'}
+                    spinning={busyAction === 'summarize-note'}
+                  />
+                  Summary
+                </Button>
+                {selectedNote.share_token ? (
+                  <>
+                    <Tip label="Copy public URL">
+                      <Button
+                        aria-label="Copy public URL"
+                        onClick={handleCopyShareUrl}
+                        size="icon-sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <Codicon name="link" />
+                      </Button>
+                    </Tip>
+                    <Tip label="Revoke public URL">
+                      <Button
+                        aria-label="Revoke public URL"
+                        disabled={busyAction === 'revoke-share'}
+                        onClick={handleRevokeShare}
+                        size="icon-sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <Codicon name="link-external" />
+                      </Button>
+                    </Tip>
+                  </>
+                ) : (
+                  <Tip label="Create public URL">
                     <Button
-                      aria-label="Copy public URL"
-                      onClick={handleCopyShareUrl}
+                      aria-label="Create public URL"
+                      disabled={busyAction === 'share-note'}
+                      onClick={handleShare}
                       size="icon-sm"
                       type="button"
                       variant="ghost"
@@ -825,113 +890,142 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                       <Codicon name="link" />
                     </Button>
                   </Tip>
-                  <Tip label="Revoke public URL">
-                    <Button
-                      aria-label="Revoke public URL"
-                      disabled={busyAction === 'revoke-share'}
-                      onClick={handleRevokeShare}
-                      size="icon-sm"
-                      type="button"
-                      variant="ghost"
-                    >
-                      <Codicon name="link-external" />
-                    </Button>
-                  </Tip>
-                </>
-              ) : (
-                <Tip label="Create public URL">
+                )}
+                <Tip label="Delete note">
                   <Button
-                    aria-label="Create public URL"
-                    disabled={busyAction === 'share-note'}
-                    onClick={handleShare}
+                    aria-label="Delete note"
+                    disabled={busyAction === 'delete-note'}
+                    onClick={handleDeleteNote}
                     size="icon-sm"
                     type="button"
                     variant="ghost"
                   >
-                    <Codicon name="link" />
+                    <Codicon name="trash" />
                   </Button>
                 </Tip>
-              )}
-              <Tip label="Delete note">
-                <Button
-                  aria-label="Delete note"
-                  disabled={busyAction === 'delete-note'}
-                  onClick={handleDeleteNote}
-                  size="icon-sm"
-                  type="button"
-                  variant="ghost"
-                >
-                  <Codicon name="trash" />
-                </Button>
-              </Tip>
-            </div>
+              </div>
 
-            <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(20rem,0.8fr)] gap-0">
-              <section className="border-r border-(--ui-stroke-secondary) p-4">
-                <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-summary">
-                  Summary
-                </label>
-                <textarea
-                  className="mt-2 min-h-28 w-full resize-y rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3 text-sm leading-6 outline-none focus:border-ring"
-                  id="notepad-summary"
-                  onChange={event =>
-                    setDraft(current => (current ? { ...current, summary: event.target.value } : current))
-                  }
-                  value={draft.summary}
-                />
-
-                <label className="mt-5 block text-xs font-medium text-muted-foreground" htmlFor="notepad-notes">
-                  Notes
-                </label>
-                <textarea
-                  className="mt-2 min-h-[26rem] w-full resize-y rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3 text-sm leading-6 outline-none focus:border-ring"
-                  id="notepad-notes"
-                  onChange={event =>
-                    setDraft(current => (current ? { ...current, content: event.target.value } : current))
-                  }
-                  value={draft.content}
-                />
-              </section>
-
-              <section className="p-4">
-                <div className="flex items-center gap-2">
-                  <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-meeting-type">
-                    Type
+              <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(20rem,0.8fr)] gap-0">
+                <section className="border-r border-(--ui-stroke-secondary) p-4">
+                  <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-summary">
+                    Summary
                   </label>
-                  <input
-                    className="h-8 min-w-0 flex-1 rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 text-sm outline-none focus:border-ring"
-                    id="notepad-meeting-type"
+                  <textarea
+                    className="mt-2 min-h-28 w-full resize-y rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3 text-sm leading-6 outline-none focus:border-ring"
+                    id="notepad-summary"
                     onChange={event =>
-                      setDraft(current => (current ? { ...current, meeting_type: event.target.value } : current))
+                      setDraft(current => (current ? { ...current, summary: event.target.value } : current))
                     }
-                    value={draft.meeting_type}
+                    value={draft.summary}
                   />
-                </div>
 
-                <label className="mt-5 block text-xs font-medium text-muted-foreground" htmlFor="notepad-transcript">
-                  Transcript
-                </label>
-                <textarea
-                  className="mt-2 min-h-[34rem] w-full resize-y rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3 font-mono text-xs leading-5 outline-none focus:border-ring"
-                  id="notepad-transcript"
-                  onChange={event =>
-                    setDraft(current => (current ? { ...current, transcript: event.target.value } : current))
-                  }
-                  value={draft.transcript}
-                />
-              </section>
+                  <label className="mt-5 block text-xs font-medium text-muted-foreground" htmlFor="notepad-notes">
+                    Notes
+                  </label>
+                  <textarea
+                    className="mt-2 min-h-[26rem] w-full resize-y rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3 text-sm leading-6 outline-none focus:border-ring"
+                    id="notepad-notes"
+                    onChange={event =>
+                      setDraft(current => (current ? { ...current, content: event.target.value } : current))
+                    }
+                    value={draft.content}
+                  />
+                </section>
+
+                <section className="p-4">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-meeting-type">
+                      Type
+                    </label>
+                    <input
+                      className="h-8 min-w-0 flex-1 rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 text-sm outline-none focus:border-ring"
+                      id="notepad-meeting-type"
+                      onChange={event =>
+                        setDraft(current => (current ? { ...current, meeting_type: event.target.value } : current))
+                      }
+                      value={draft.meeting_type}
+                    />
+                  </div>
+
+                  <label className="mt-5 block text-xs font-medium text-muted-foreground" htmlFor="notepad-transcript">
+                    Transcript
+                  </label>
+                  <textarea
+                    className="mt-2 min-h-[34rem] w-full resize-y rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3 font-mono text-xs leading-5 outline-none focus:border-ring"
+                    id="notepad-transcript"
+                    onChange={event =>
+                      setDraft(current => (current ? { ...current, transcript: event.target.value } : current))
+                    }
+                    value={draft.transcript}
+                  />
+                </section>
+              </div>
             </div>
-          </div>
-        ) : (
-          <div className="grid h-full place-items-center p-8 text-sm text-muted-foreground">
-            <Button onClick={handleNewNote} type="button" variant="secondary">
-              <Codicon name="add" />
-              Create note
-            </Button>
-          </div>
-        )}
-      </main>
-    </div>
+          ) : (
+            <div className="grid h-full place-items-center p-8 text-sm text-muted-foreground">
+              <Button onClick={handleNewNote} type="button" variant="secondary">
+                <Codicon name="add" />
+                Create note
+              </Button>
+            </div>
+          )}
+        </main>
+      </div>
+
+      <Dialog onOpenChange={handleFolderDialogOpenChange} open={folderDialogOpen}>
+        <DialogContent className="max-w-sm" showCloseButton={busyAction !== 'new-folder'}>
+          <DialogHeader>
+            <DialogTitle>New folder</DialogTitle>
+            <DialogDescription className="sr-only">Enter a name for the new Notepad folder.</DialogDescription>
+          </DialogHeader>
+
+          <form aria-busy={busyAction === 'new-folder'} className="grid gap-3" onSubmit={handleNewFolder}>
+            <div className="grid gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-folder-name">
+                Folder name
+              </label>
+              <Input
+                aria-describedby={folderNameError ? 'notepad-folder-name-error' : undefined}
+                aria-invalid={folderNameError ? 'true' : undefined}
+                autoComplete="off"
+                autoFocus
+                disabled={busyAction === 'new-folder'}
+                id="notepad-folder-name"
+                maxLength={120}
+                onChange={event => {
+                  setFolderName(event.target.value)
+                  setFolderNameError(null)
+                }}
+                placeholder="Investor calls"
+                spellCheck
+                type="text"
+                value={folderName}
+              />
+              {folderNameError ? (
+                <p className="text-xs text-destructive" id="notepad-folder-name-error">
+                  {folderNameError}
+                </p>
+              ) : null}
+            </div>
+
+            <DialogFooter>
+              <Button
+                disabled={busyAction === 'new-folder'}
+                onClick={() => handleFolderDialogOpenChange(false)}
+                type="button"
+                variant="ghost"
+              >
+                Cancel
+              </Button>
+              <Button disabled={busyAction === 'new-folder'} type="submit">
+                {busyAction === 'new-folder' ? <Codicon name="loading" spinning /> : <Codicon name="new-folder" />}
+                Create folder
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
