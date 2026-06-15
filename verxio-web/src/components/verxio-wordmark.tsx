@@ -13,7 +13,7 @@ export function VerxioWordmark({ className, style, textClassName, ...props }: Ve
     <span
       aria-label={VERXIO_WORDMARK}
       className={cn(
-        "fit-text verxio-wordmark font-['Collapse'] font-bold uppercase leading-[0.9] tracking-[0.08em] text-midground mix-blend-plus-lighter dark:text-foreground/90",
+        'fit-text verxio-wordmark font-bold uppercase leading-[0.9] tracking-[0.08em] text-midground mix-blend-plus-lighter dark:text-foreground/90',
         className
       )}
       style={

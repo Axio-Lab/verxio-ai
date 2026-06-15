@@ -6,10 +6,10 @@
 @custom-variant dark (&:is(.dark *));
 
 @font-face {
-  font-family: 'Collapse';
+  font-family: 'VerxioCollapse';
   font-style: normal;
   font-weight: 700;
-  font-display: swap;
+  font-display: block;
   src: url('./assets/fonts/Collapse-Bold.woff2') format('woff2');
 }
 
@@ -920,8 +920,13 @@ canvas {
 
 .verxio-wordmark {
   position: relative;
+  font-family: 'VerxioCollapse', ui-sans-serif, system-ui, sans-serif;
+  font-kerning: normal;
+  font-synthesis: none;
   filter: drop-shadow(0 0.375rem 1.5rem color-mix(in srgb, var(--ui-accent) 18%, transparent));
   isolation: isolate;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
 }
 
 .verxio-wordmark__text {
