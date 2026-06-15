@@ -1028,7 +1028,6 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                     }
                     value={draft.content}
                   />
-                  <MarkdownPreview text={draft.content} />
                 </section>
 
                 <section className="p-3 sm:p-4">
@@ -1043,7 +1042,6 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                     }
                     value={draft.summary}
                   />
-                  <MarkdownPreview text={draft.summary} />
                 </section>
               </div>
             </div>
@@ -1176,23 +1174,6 @@ function FolderButton({
       <span className="min-w-0 flex-1 truncate">{label}</span>
       <span className="shrink-0 text-xs text-muted-foreground">{count}</span>
     </button>
-  )
-}
-
-function MarkdownPreview({ text }: { text: string }) {
-  const value = text.trim()
-
-  if (!value) {
-    return null
-  }
-
-  return (
-    <div
-      aria-label="Rendered markdown"
-      className="mt-3 max-h-72 overflow-auto rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3"
-    >
-      <CompactMarkdown className="text-sm text-foreground/90" text={value} />
-    </div>
   )
 }
 
