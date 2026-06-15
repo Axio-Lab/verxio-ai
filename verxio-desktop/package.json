@@ -1,0 +1,31 @@
+{
+  "name": "verxio-desktop",
+  "productName": "Verxio",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Native desktop shell for Verxio.",
+  "author": "Verxio",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\"",
+    "dev:renderer": "cross-env VITE_VERXIO_API_ENABLED=true VITE_VERXIO_API_URL=http://127.0.0.1:8787 npm run dev --prefix ../verxio-web",
+    "dev:electron": "wait-on http://127.0.0.1:5180 && cross-env VERXIO_DESKTOP_DEV_SERVER=http://127.0.0.1:5180 VITE_VERXIO_API_ENABLED=true VITE_VERXIO_API_URL=http://127.0.0.1:8787 VERXIO_API_URL=http://127.0.0.1:8787 node scripts/run-electron.cjs .",
+    "start": "cross-env VERXIO_DESKTOP_WEB_DIST=../verxio-web/dist VITE_VERXIO_API_ENABLED=true VITE_VERXIO_API_URL=http://127.0.0.1:8787 VERXIO_API_URL=http://127.0.0.1:8787 node scripts/run-electron.cjs .",
+    "build": "npm run build --prefix ../verxio-web && node scripts/assert-web-dist.cjs",
+    "ci": "npm run format:check && npm run build",
+    "fmt": "prettier --write 'electron/**/*.{js,cjs}' 'scripts/**/*.{js,cjs}' 'package.json' 'README.md'",
+    "format": "npm run fmt",
+    "format:check": "prettier --check 'electron/**/*.{js,cjs}' 'scripts/**/*.{js,cjs}' 'package.json' 'README.md'"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.3",
+    "cross-env": "^10.1.0",
+    "electron": "40.9.3",
+    "prettier": "^3.8.3",
+    "wait-on": "^9.0.5"
+  }
+}
