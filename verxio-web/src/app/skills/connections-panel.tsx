@@ -252,15 +252,6 @@ function clearComposioCallbackParams(): void {
   window.history.replaceState({}, '', url.toString())
 }
 
-interface ConnectionsPanelProps {
-  onPageChange: (page: number) => void
-  onSearchChange: (query: string) => void
-  page: number
-  pageSize: number
-  query: string
-  searchPlaceholder: string
-}
-
 export function ConnectionsPanel({
   onPageChange,
   onSearchChange,

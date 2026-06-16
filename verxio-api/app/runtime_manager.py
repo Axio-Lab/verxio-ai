@@ -44,6 +44,31 @@ def _container_name(runtime: RuntimeInstance) -> str:
     return f"verxio-{safe_path_part(runtime.workspace_id)}-{safe_path_part(runtime.agent_id)}"
 
 
+def runtime_container_env_matches(runtime: RuntimeInstance, key: str, expected_value: str) -> bool:
+    """Return True when the running runtime container has the expected env value."""
+
+    if not key or not expected_value:
+        return False
+
+    result = _run_docker(
+        [
+            "inspect",
+            "-f",
+            "{{range .Config.Env}}{{println .}}{{end}}",
+            _container_name(runtime),
+        ]
+    )
+    if result.returncode != 0:
+        return False
+
+    prefix = f"{key}="
+    for line in result.stdout.splitlines():
+        if line.startswith(prefix):
+            return line[len(prefix) :] == expected_value
+
+    return False
+
+
 def _port_is_free(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(0.2)

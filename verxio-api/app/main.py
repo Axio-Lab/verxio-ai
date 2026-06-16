@@ -88,7 +88,16 @@ from app.notepad import (
     update_note,
 )
 from app.runtime import HermesRuntimeAdapter
-from app.runtime_manager import artifact_file, index_artifacts, restart_runtime, runtime_health, start_runtime, stop_runtime, sync_runtime_workspace
+from app.runtime_manager import (
+    artifact_file,
+    index_artifacts,
+    restart_runtime,
+    runtime_container_env_matches,
+    runtime_health,
+    start_runtime,
+    stop_runtime,
+    sync_runtime_workspace,
+)
 from app.store import AUDIT_LOG, PROFILE, RUNS, WORKSPACE
 
 
@@ -235,7 +244,7 @@ async def get_runtime(request: Request) -> RuntimeControlResponse:
 @app.post("/api/runtime/start", response_model=RuntimeControlResponse)
 async def start_runtime_route(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
-    _accounts, _bridge = await _sync_composio_bridge_for_user(user)
+    _accounts, _bridge = await _sync_composio_bridge_for_user(user, refresh_running=True)
     runtime = await start_runtime(get_runtime_for_user(user))
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
@@ -412,7 +421,17 @@ async def _sync_composio_bridge_for_user(user: dict, *, refresh_running: bool = 
     accounts = list_composio_accounts(str(user["id"]))
     bridge = sync_composio_runtime_bridge(runtime, str(user["id"]), accounts)
 
-    if refresh_running and bridge.changed and runtime.status == "running":
+    composio_api_key = os.getenv("COMPOSIO_API_KEY", "").strip()
+    runtime_env_changed = (
+        bridge.enabled
+        and bool(composio_api_key)
+        and runtime.status == "running"
+        and not runtime_container_env_matches(runtime, "COMPOSIO_API_KEY", composio_api_key)
+    )
+
+    if runtime.status == "running" and (
+        runtime_env_changed or (refresh_running and bridge.changed)
+    ):
         await restart_runtime(runtime)
 
     return accounts, bridge
