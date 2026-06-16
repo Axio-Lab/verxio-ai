@@ -555,6 +555,7 @@ export const en: Translations = {
     all: 'All',
     searchSkills: 'Search skills...',
     searchToolsets: 'Search toolsets...',
+    searchConnections: 'Search connections...',
     refresh: 'Refresh skills',
     refreshing: 'Refreshing skills',
     loading: 'Loading capabilities...',

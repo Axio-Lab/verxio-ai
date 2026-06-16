@@ -218,7 +218,11 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
     mode === 'connections' ? true : mode === 'skills' ? (skills?.length ?? 0) === 0 : (toolsets?.length ?? 0) === 0
 
   const searchPlaceholder =
-    mode === 'skills' ? t.skills.searchSkills : mode === 'toolsets' ? t.skills.searchToolsets : 'Search connections...'
+    mode === 'skills'
+      ? t.skills.searchSkills
+      : mode === 'toolsets'
+        ? t.skills.searchToolsets
+        : t.skills.searchConnections
 
   async function handleToggleSkill(skill: SkillInfo, enabled: boolean) {
     setSavingSkill(skill.name)
@@ -343,7 +347,14 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
       }
     >
       {mode === 'connections' ? (
-        <ConnectionsPanel onPageChange={setPage} page={page} pageSize={CONNECTIONS_PAGE_SIZE} query={query} />
+        <ConnectionsPanel
+          onPageChange={setPage}
+          onSearchChange={handleSearchChange}
+          page={page}
+          pageSize={CONNECTIONS_PAGE_SIZE}
+          query={query}
+          searchPlaceholder={t.skills.searchConnections}
+        />
       ) : !skills || !toolsets ? (
         <PageLoader label={t.skills.loading} />
       ) : mode === 'skills' ? (

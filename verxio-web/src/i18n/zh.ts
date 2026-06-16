@@ -709,6 +709,7 @@ export const zh: Translations = {
     all: '全部',
     searchSkills: '搜索技能…',
     searchToolsets: '搜索工具集…',
+    searchConnections: '搜索连接…',
     refresh: '刷新技能',
     refreshing: '正在刷新技能',
     loading: '正在加载能力…',

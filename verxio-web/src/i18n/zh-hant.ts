@@ -631,6 +631,7 @@ export const zhHant = defineLocale({
     all: '全部',
     searchSkills: '搜尋技能...',
     searchToolsets: '搜尋工具集...',
+    searchConnections: '搜尋連線...',
     refresh: '重新整理技能',
     refreshing: '正在重新整理技能',
     loading: '正在載入功能…',

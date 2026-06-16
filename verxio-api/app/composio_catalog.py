@@ -25,6 +25,8 @@ from app.models import (
 
 COMPOSIO_MCP_SERVER_NAME = "composio"
 COMPOSIO_BRIDGE_STATE_FILE = "composio-tool-router-session.json"
+COMPOSIO_PROMPT_START = "<!-- VERXIO_COMPOSIO_CONTEXT_START -->"
+COMPOSIO_PROMPT_END = "<!-- VERXIO_COMPOSIO_CONTEXT_END -->"
 
 COMPOSIO_APP_CATALOG = [
     ComposioApp(
@@ -370,7 +372,9 @@ def sync_composio_runtime_bridge(
     """
 
     if not is_composio_configured():
-        changed = _remove_runtime_mcp_server(runtime)
+        mcp_changed = _remove_runtime_mcp_server(runtime)
+        prompt_changed = _remove_runtime_composio_prompt(runtime)
+        changed = mcp_changed or prompt_changed
         return ComposioToolBridgeStatus(
             changed=changed,
             configured=False,
@@ -384,7 +388,9 @@ def sync_composio_runtime_bridge(
     connected_apps = sorted(connected_accounts)
 
     if not connected_apps:
-        changed = _remove_runtime_mcp_server(runtime)
+        mcp_changed = _remove_runtime_mcp_server(runtime)
+        prompt_changed = _remove_runtime_composio_prompt(runtime)
+        changed = mcp_changed or prompt_changed
         _bridge_state_path(runtime).unlink(missing_ok=True)
         return ComposioToolBridgeStatus(
             changed=changed,
@@ -416,7 +422,12 @@ def sync_composio_runtime_bridge(
                 },
             )
 
-        changed = _upsert_runtime_mcp_server(runtime, mcp_url) or created_session
+        config = _read_runtime_config(runtime)
+        mcp_changed = _upsert_runtime_mcp_server(config, mcp_url)
+        prompt_changed = _upsert_runtime_composio_prompt(config, connected_apps)
+        if mcp_changed or prompt_changed:
+            _write_runtime_config(runtime, config)
+        changed = mcp_changed or prompt_changed or created_session
     except Exception as exc:
         return ComposioToolBridgeStatus(
             connectedApps=connected_apps,
@@ -675,7 +686,7 @@ def _create_tool_router_session(user_id: str, connected_accounts: dict[str, list
             "enable_wait_for_connections": False,
         },
         "search": {"enable": True},
-        "toolkits": {"enabled": toolkits},
+        "toolkits": {"enable": toolkits},
         "user_id": user_id,
         "workbench": {"enable": False, "enable_proxy_execution": False},
     }
@@ -722,8 +733,7 @@ def _write_runtime_config(runtime: RuntimeInstance, config: dict[str, Any]) -> N
     config_path.write_text(rendered, encoding="utf-8")
 
 
-def _upsert_runtime_mcp_server(runtime: RuntimeInstance, mcp_url: str) -> bool:
-    config = _read_runtime_config(runtime)
+def _upsert_runtime_mcp_server(config: dict[str, Any], mcp_url: str) -> bool:
     servers = config.get("mcp_servers")
 
     if not isinstance(servers, dict):
@@ -747,7 +757,6 @@ def _upsert_runtime_mcp_server(runtime: RuntimeInstance, mcp_url: str) -> bool:
     if "terminal" not in config:
         config["terminal"] = {"backend": "local", "cwd": "/workspace"}
 
-    _write_runtime_config(runtime, config)
     return True
 
 
@@ -773,6 +782,97 @@ def _remove_runtime_mcp_server(runtime: RuntimeInstance) -> bool:
 
     _write_runtime_config(runtime, config)
     return True
+
+
+def _upsert_runtime_composio_prompt(config: dict[str, Any], connected_apps: list[str]) -> bool:
+    agent = config.get("agent")
+    if not isinstance(agent, dict):
+        agent = {}
+
+    current_prompt = agent.get("system_prompt")
+    base_prompt = _strip_managed_composio_prompt(str(current_prompt or ""))
+    desired_prompt = _join_prompt_parts(base_prompt, _build_composio_context_prompt(connected_apps))
+
+    if current_prompt == desired_prompt:
+        return False
+
+    agent["system_prompt"] = desired_prompt
+    config["agent"] = agent
+    return True
+
+
+def _remove_runtime_composio_prompt(runtime: RuntimeInstance) -> bool:
+    config_path = _runtime_config_path(runtime)
+    if not config_path.exists():
+        return False
+
+    try:
+        config = _read_runtime_config(runtime)
+    except RuntimeError:
+        return False
+
+    agent = config.get("agent")
+    if not isinstance(agent, dict):
+        return False
+
+    current_prompt = agent.get("system_prompt")
+    if not isinstance(current_prompt, str) or COMPOSIO_PROMPT_START not in current_prompt:
+        return False
+
+    next_prompt = _strip_managed_composio_prompt(current_prompt)
+    if next_prompt:
+        agent["system_prompt"] = next_prompt
+    else:
+        agent.pop("system_prompt", None)
+    config["agent"] = agent
+    _write_runtime_config(runtime, config)
+    return True
+
+
+def _strip_managed_composio_prompt(prompt: str) -> str:
+    start = prompt.find(COMPOSIO_PROMPT_START)
+    end = prompt.find(COMPOSIO_PROMPT_END)
+    if start == -1 or end == -1 or end < start:
+        return prompt.strip()
+
+    end += len(COMPOSIO_PROMPT_END)
+    return (prompt[:start] + prompt[end:]).strip()
+
+
+def _join_prompt_parts(*parts: str) -> str:
+    return "\n\n".join(part.strip() for part in parts if part and part.strip())
+
+
+def _build_composio_context_prompt(connected_apps: list[str]) -> str:
+    labels = [_composio_app_label(slug) for slug in connected_apps]
+    app_lines = [f"- {label} (`{slug}`)" for slug, label in zip(connected_apps, labels, strict=False)]
+    app_list = "\n".join(app_lines) if app_lines else "- None"
+
+    return "\n".join(
+        [
+            COMPOSIO_PROMPT_START,
+            "## Verxio Connected Apps",
+            "",
+            "Verxio app connections are managed through Composio.",
+            "",
+            "Connected apps:",
+            app_list,
+            "",
+            "Use the `composio` MCP tools for these connected apps when the user asks to read, search, summarize, create, update, or schedule through them.",
+            "When the user asks whether Gmail, Google Calendar, Google Drive, Google Docs, Google Sheets, Notion, Slack, or another app is connected, treat this connected-app list as the source of truth for Verxio.",
+            "Do not report a connected Verxio app as disconnected just because legacy Hermes credential files or environment variables are missing, including `/opt/data/google_token.json`, `/opt/data/google_client_secret.json`, `NOTION_API_KEY`, or `NOTION_API_TOKEN`.",
+            "Only mention those legacy credential paths if the user explicitly asks about the legacy Hermes integration.",
+            "If an app is not listed above, say it is not connected in Verxio and can be connected from Skills > Connections.",
+            COMPOSIO_PROMPT_END,
+        ]
+    )
+
+
+def _composio_app_label(slug: str) -> str:
+    app = next((item for item in COMPOSIO_APP_CATALOG if item.slug == slug), None)
+    if app:
+        return app.name
+    return slug.replace("_", " ").replace("-", " ").title()
 
 
 def _api_key() -> str:
@@ -1026,6 +1126,11 @@ def _format_composio_error(response: httpx.Response) -> str:
     if isinstance(error, dict):
         message = error.get("message") or error.get("detail")
         if isinstance(message, str) and message.strip():
+            errors = error.get("errors")
+            if isinstance(errors, list) and errors:
+                details = "; ".join(str(item) for item in errors if item)
+                if details:
+                    return f"{message.strip()} ({details})"
             return message.strip()
 
     detail = payload.get("detail")

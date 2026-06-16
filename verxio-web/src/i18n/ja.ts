@@ -655,6 +655,7 @@ export const ja = defineLocale({
     all: 'すべて',
     searchSkills: 'スキルを検索...',
     searchToolsets: 'ツールセットを検索...',
+    searchConnections: '接続を検索...',
     refresh: 'スキルを更新',
     refreshing: 'スキルを更新中',
     loading: '機能を読み込み中...',

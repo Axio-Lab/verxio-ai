@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { PaginationControl } from '@/components/ui/pagination'
-import { AlertTriangle, CheckCircle2, ChevronDown, ExternalLink, Loader2, PlugOff, Wrench } from '@/lib/icons'
+import { SearchField } from '@/components/ui/search-field'
+import { AlertTriangle, ExternalLink, Loader2, PlugOff } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import {
   completeComposioConnection,
@@ -155,10 +156,13 @@ const FALLBACK_COMPOSIO_APPS: ComposioApp[] = [
 const TOOLS_DIALOG_LIMIT = 50
 const CONNECTED_PAGE_SIZE = 10
 
-interface ConnectedToolsState {
-  error: string | null
-  loading: boolean
-  tools: ComposioToolPreview[]
+interface ConnectionsPanelProps {
+  onPageChange: (page: number) => void
+  onSearchChange: (query: string) => void
+  page: number
+  pageSize: number
+  query: string
+  searchPlaceholder: string
 }
 
 function resolveAuthMode(app: ComposioApp): ComposioAuthMode {
@@ -250,12 +254,21 @@ function clearComposioCallbackParams(): void {
 
 interface ConnectionsPanelProps {
   onPageChange: (page: number) => void
+  onSearchChange: (query: string) => void
   page: number
   pageSize: number
   query: string
+  searchPlaceholder: string
 }
 
-export function ConnectionsPanel({ onPageChange, page, pageSize, query }: ConnectionsPanelProps) {
+export function ConnectionsPanel({
+  onPageChange,
+  onSearchChange,
+  page,
+  pageSize,
+  query,
+  searchPlaceholder
+}: ConnectionsPanelProps) {
   const [apps, setApps] = useState<ComposioApp[]>(FALLBACK_COMPOSIO_APPS)
   const [accounts, setAccounts] = useState<ComposioConnectedAccount[]>([])
   const [toolBridge, setToolBridge] = useState<ComposioToolBridgeStatus | null>(null)
@@ -263,8 +276,6 @@ export function ConnectionsPanel({ onPageChange, page, pageSize, query }: Connec
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState<string | null>(null)
   const [connectedPage, setConnectedPage] = useState(1)
-  const [expandedConnectedId, setExpandedConnectedId] = useState<string | null>(null)
-  const [connectedToolsBySlug, setConnectedToolsBySlug] = useState<Record<string, ConnectedToolsState>>({})
   const [connectingSlug, setConnectingSlug] = useState<string | null>(null)
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null)
   const [toolsDialogApp, setToolsDialogApp] = useState<ComposioApp | null>(null)
@@ -496,53 +507,6 @@ export function ConnectionsPanel({ onPageChange, page, pageSize, query }: Connec
     }
   }, [connectedPage, connectedPageCount])
 
-  async function toggleConnectedTools(app: ComposioApp, account: ComposioConnectedAccount) {
-    const nextId = account.id
-    const appKey = normalizeSlug(app.slug)
-
-    if (expandedConnectedId === nextId) {
-      setExpandedConnectedId(null)
-
-      return
-    }
-
-    setExpandedConnectedId(nextId)
-
-    if (connectedToolsBySlug[appKey]?.tools.length || connectedToolsBySlug[appKey]?.loading) {
-      return
-    }
-
-    setConnectedToolsBySlug(current => ({
-      ...current,
-      [appKey]: {
-        error: null,
-        loading: true,
-        tools: app.sampleTools ?? []
-      }
-    }))
-
-    try {
-      const response = await listComposioAppTools(app.slug, TOOLS_DIALOG_LIMIT)
-      setConnectedToolsBySlug(current => ({
-        ...current,
-        [appKey]: {
-          error: null,
-          loading: false,
-          tools: response.tools.length > 0 ? response.tools : (app.sampleTools ?? [])
-        }
-      }))
-    } catch (err) {
-      setConnectedToolsBySlug(current => ({
-        ...current,
-        [appKey]: {
-          error: err instanceof Error ? err.message : 'Could not load tools.',
-          loading: false,
-          tools: app.sampleTools ?? []
-        }
-      }))
-    }
-  }
-
   async function openConnectLink(app: ComposioApp) {
     setConnectingSlug(app.slug)
 
@@ -646,13 +610,6 @@ export function ConnectionsPanel({ onPageChange, page, pageSize, query }: Connec
     try {
       await disconnectComposioAccount(account.id)
       setAccounts(current => current.filter(row => row.id !== account.id))
-      setExpandedConnectedId(current => (current === account.id ? null : current))
-      setConnectedToolsBySlug(current => {
-        const next = { ...current }
-        delete next[normalizeSlug(app.slug)]
-
-        return next
-      })
       notify({ kind: 'success', message: `${app.name} was disconnected.`, title: 'Connection removed' })
     } catch (err) {
       notifyError(err, `Could not disconnect ${app.name}`)
@@ -668,73 +625,81 @@ export function ConnectionsPanel({ onPageChange, page, pageSize, query }: Connec
       ) : (
         <div className={cn('h-full min-w-0 overflow-y-auto overflow-x-hidden py-3', PAGE_INSET_X)}>
           <div className="min-w-0 space-y-3">
-            {message && (
+            {(message || (configured && toolBridge && !toolBridge.enabled && toolBridge.message)) && (
               <div className="flex items-start gap-2 rounded-[6px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-3 py-2 text-xs break-words text-muted-foreground">
                 <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-                <span>{message}</span>
+                <span>{message || toolBridge?.message}</span>
               </div>
             )}
 
             {connectedRows.length > 0 ? (
               <section className="space-y-2">
-                <div className="flex min-w-0 flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium">Connected tools</div>
-                    <div className="text-xs text-muted-foreground">
-                      Apps the agent can use through the Composio bridge.
-                    </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">Connected tools</div>
+                  <div className="text-xs text-muted-foreground">
+                    Apps the agent can use through the Composio bridge.
                   </div>
-                  <ToolBridgePill status={toolBridge} />
                 </div>
 
                 <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-                  {visibleConnectedRows.map(({ account, app }) => {
-                    const appKey = normalizeSlug(app.slug)
-
-                    return (
-                      <ConnectedToolCard
-                        account={account}
-                        app={app}
-                        disconnecting={disconnectingId === account.id}
-                        expanded={expandedConnectedId === account.id}
-                        key={account.id}
-                        onDisconnect={() => void handleDisconnect(app, account)}
-                        onToggleTools={() => void toggleConnectedTools(app, account)}
-                        toolsState={connectedToolsBySlug[appKey]}
-                      />
-                    )
-                  })}
+                  {visibleConnectedRows.map(({ account, app }) => (
+                    <ConnectionCard
+                      app={app}
+                      connected
+                      disconnecting={disconnectingId === account.id}
+                      key={account.id}
+                      onDisconnect={() => void handleDisconnect(app, account)}
+                      onViewTools={() => setToolsDialogApp(app)}
+                      setupRequired={false}
+                    />
+                  ))}
                 </div>
 
-                <PaginationControl
-                  className="pt-1"
-                  itemLabel="connected"
-                  onPageChange={setConnectedPage}
-                  page={currentConnectedPage}
-                  pageSize={CONNECTED_PAGE_SIZE}
-                  total={connectedRows.length}
-                />
+                {connectedRows.length > CONNECTED_PAGE_SIZE ? (
+                  <PaginationControl
+                    className="pt-1"
+                    itemLabel="connected"
+                    onPageChange={setConnectedPage}
+                    page={currentConnectedPage}
+                    pageSize={CONNECTED_PAGE_SIZE}
+                    total={connectedRows.length}
+                  />
+                ) : null}
               </section>
             ) : null}
 
             <section className="space-y-2">
-              <div className="min-w-0">
-                <div className="text-sm font-medium">Available connections</div>
-                <div className="text-xs text-muted-foreground">
-                  Connect an app to make its tools available to Verxio agents.
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium">Available connections</div>
+                  <div className="text-xs text-muted-foreground">
+                    Connect an app to make its tools available to Verxio agents.
+                  </div>
                 </div>
+                <SearchField
+                  containerClassName="w-full sm:max-w-xs"
+                  onChange={onSearchChange}
+                  placeholder={searchPlaceholder}
+                  value={query}
+                />
               </div>
 
               {filteredApps.length === 0 ? (
                 <div className="grid h-full min-h-40 place-items-center rounded-[6px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) text-center">
                   <div>
                     <div className="text-sm font-medium">
-                      {connectedRows.length > 0 ? 'No more connections to add' : 'No connections found'}
+                      {query.trim()
+                        ? 'No connections found'
+                        : connectedRows.length > 0
+                          ? 'No more connections to add'
+                          : 'No connections found'}
                     </div>
                     <div className="mt-1 text-xs text-muted-foreground">
-                      {connectedRows.length > 0
-                        ? 'Disconnect an app above to make it available here again.'
-                        : 'Try another business app or data source.'}
+                      {query.trim()
+                        ? 'Try another search term.'
+                        : connectedRows.length > 0
+                          ? 'Disconnect an app above to make it available here again.'
+                          : 'Try another business app or data source.'}
                     </div>
                   </div>
                 </div>
@@ -811,15 +776,27 @@ export function ConnectionsPanel({ onPageChange, page, pageSize, query }: Connec
 
 interface ConnectionCardProps {
   app: ComposioApp
-  connecting: boolean
-  onConnect: () => void
+  connected?: boolean
+  connecting?: boolean
+  disconnecting?: boolean
+  onConnect?: () => void
+  onDisconnect?: () => void
   onViewTools: () => void
   setupRequired: boolean
 }
 
-function ConnectionCard({ app, connecting, onConnect, onViewTools, setupRequired }: ConnectionCardProps) {
+function ConnectionCard({
+  app,
+  connected = false,
+  connecting = false,
+  disconnecting = false,
+  onConnect,
+  onDisconnect,
+  onViewTools,
+  setupRequired
+}: ConnectionCardProps) {
   const connectable = isAppConnectable(app)
-  const disabled = connecting
+  const actionLoading = connecting || disconnecting
   const toolCount = app.toolsCount ?? app.sampleTools?.length ?? 0
 
   return (
@@ -842,16 +819,20 @@ function ConnectionCard({ app, connecting, onConnect, onViewTools, setupRequired
               <div className="truncate text-sm font-medium">{app.name}</div>
             </div>
             <div className="mt-1 flex flex-wrap gap-1">
-              <ConnectionStatus connected={false} setupRequired={setupRequired} />
-              {app.noAuth ? <Badge variant="muted">No auth</Badge> : null}
-              {authBadgeLabel(app) ? <Badge variant="muted">{authBadgeLabel(app)}</Badge> : null}
+              <ConnectionStatus connected={connected} setupRequired={setupRequired} />
+              {!connected && app.noAuth ? <Badge variant="muted">No auth</Badge> : null}
+              {!connected && authBadgeLabel(app) ? <Badge variant="muted">{authBadgeLabel(app)}</Badge> : null}
             </div>
           </div>
         </div>
         <p className="mt-3 line-clamp-3 text-xs leading-5 text-muted-foreground">
           {app.description || 'Connect this data source for agent actions.'}
         </p>
-        {toolCount > 0 ? <div className="mt-2 text-[0.68rem] text-neutral-500">{toolCount} available tools</div> : null}
+        {toolCount > 0 ? (
+          <div className="mt-2 text-[0.68rem] text-neutral-500">
+            {toolCount} {connected ? 'tools' : 'available tools'}
+          </div>
+        ) : null}
         {app.categories.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-1">
             {app.categories.slice(0, 3).map(category => (
@@ -869,7 +850,7 @@ function ConnectionCard({ app, connecting, onConnect, onViewTools, setupRequired
       <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:items-center sm:justify-end">
         <Button
           className="w-full min-w-0 sm:w-auto"
-          disabled={disabled}
+          disabled={actionLoading}
           onClick={onViewTools}
           size="xs"
           type="button"
@@ -877,137 +858,41 @@ function ConnectionCard({ app, connecting, onConnect, onViewTools, setupRequired
         >
           View tools
         </Button>
-        <Button
-          className="w-full min-w-0 sm:w-auto"
-          disabled={disabled || !connectable}
-          onClick={onConnect}
-          size="xs"
-          title={
-            connectable ? undefined : 'Create a custom OAuth app in Composio before users can connect this integration.'
-          }
-          type="button"
-          variant="secondary"
-        >
-          {connecting ? <Loader2 className="size-3 animate-spin" /> : <ExternalLink className="size-3" />}
-          Connect
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-function ConnectedToolCard({
-  account,
-  app,
-  disconnecting,
-  expanded,
-  onDisconnect,
-  onToggleTools,
-  toolsState
-}: {
-  account: ComposioConnectedAccount
-  app: ComposioApp
-  disconnecting: boolean
-  expanded: boolean
-  onDisconnect: () => void
-  onToggleTools: () => void
-  toolsState?: ConnectedToolsState
-}) {
-  const panelId = `connected-tools-${account.id}`
-  const toolCount = app.toolsCount ?? toolsState?.tools.length ?? app.sampleTools?.length ?? 0
-
-  return (
-    <div className="min-w-0 rounded-[6px] border border-primary/45 bg-white text-neutral-950">
-      <button
-        aria-controls={panelId}
-        aria-expanded={expanded}
-        className="flex min-h-28 w-full min-w-0 items-start gap-2 rounded-t-[6px] p-3 text-left transition-colors hover:bg-primary/5 focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none"
-        onClick={onToggleTools}
-        type="button"
-      >
-        {app.logoUrl ? (
-          <img
-            alt=""
-            className="size-8 shrink-0 rounded-[5px] border border-primary/20 bg-white object-contain p-1"
-            src={app.logoUrl}
-          />
+        {connected ? (
+          <Button
+            className="w-full min-w-0 text-destructive hover:text-destructive sm:w-auto"
+            disabled={actionLoading}
+            onClick={onDisconnect}
+            size="xs"
+            type="button"
+            variant="outline"
+          >
+            {disconnecting ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <PlugOff className="size-3 text-destructive" />
+            )}
+            Disconnect
+          </Button>
         ) : (
-          <div className="grid size-8 shrink-0 place-items-center rounded-[5px] bg-primary/10 text-[0.68rem] font-semibold text-primary">
-            {initials(app.name)}
-          </div>
+          <Button
+            className="w-full min-w-0 sm:w-auto"
+            disabled={actionLoading || !connectable}
+            onClick={onConnect}
+            size="xs"
+            title={
+              connectable
+                ? undefined
+                : 'Create a custom OAuth app in Composio before users can connect this integration.'
+            }
+            type="button"
+            variant="secondary"
+          >
+            {connecting ? <Loader2 className="size-3 animate-spin" /> : <ExternalLink className="size-3" />}
+            Connect
+          </Button>
         )}
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <div className="truncate text-sm font-medium">{app.name}</div>
-            <CheckCircle2 className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-          </div>
-          <div className="mt-1 flex flex-wrap gap-1">
-            <ConnectionStatus connected setupRequired={false} />
-            <Badge variant="outline">{prettyStatus(account.status)}</Badge>
-          </div>
-          {toolCount > 0 ? <div className="mt-2 text-[0.68rem] text-neutral-500">{toolCount} tools</div> : null}
-        </div>
-        <ChevronDown className={cn('mt-1 size-4 shrink-0 transition-transform', expanded && 'rotate-180')} />
-      </button>
-
-      {expanded ? (
-        <div className="border-t border-primary/15 px-3 py-2" id={panelId}>
-          {toolsState?.loading ? (
-            <div className="flex min-h-20 items-center gap-2 text-xs text-muted-foreground">
-              <Loader2 className="size-3.5 animate-spin" />
-              Loading tools
-            </div>
-          ) : toolsState?.error ? (
-            <div className="rounded-[6px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 py-1.5 text-xs break-words text-muted-foreground">
-              {toolsState.error}
-            </div>
-          ) : (toolsState?.tools.length ?? 0) === 0 ? (
-            <div className="py-2 text-xs text-muted-foreground">No tools were returned for this connection.</div>
-          ) : (
-            <div className="max-h-52 space-y-1 overflow-y-auto pr-1">
-              {toolsState?.tools.map(tool => (
-                <div
-                  className="truncate rounded-[4px] bg-neutral-100 px-2 py-1.5 text-xs text-neutral-700"
-                  key={tool.slug || tool.name}
-                  title={tool.name}
-                >
-                  {tool.name}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      ) : null}
-
-      <div className="flex justify-end border-t border-primary/15 px-3 py-2">
-        <Button disabled={disconnecting} onClick={onDisconnect} size="xs" type="button" variant="outline">
-          {disconnecting ? <Loader2 className="size-3 animate-spin" /> : <PlugOff className="size-3" />}
-          Disconnect
-        </Button>
       </div>
-    </div>
-  )
-}
-
-function ToolBridgePill({ status }: { status: ComposioToolBridgeStatus | null }) {
-  if (!status) {
-    return null
-  }
-
-  return (
-    <div
-      className={cn(
-        'inline-flex min-h-7 max-w-full items-center gap-1.5 rounded-[6px] border px-2 py-1 text-xs',
-        status.enabled
-          ? 'border-primary/35 bg-primary/5 text-primary'
-          : 'border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) text-muted-foreground'
-      )}
-      title={status.message ?? undefined}
-    >
-      <Wrench className="size-3.5 shrink-0" />
-      <span className="truncate">
-        {status.enabled ? 'Agent bridge active' : status.message || 'Agent bridge inactive'}
-      </span>
     </div>
   )
 }
@@ -1263,10 +1148,4 @@ function normalizeSlug(value: string): string {
     .trim()
     .toLowerCase()
     .replace(/[_\s]+/g, '')
-}
-
-function prettyStatus(status: string): string {
-  const normalized = status.trim().replace(/[_-]+/g, ' ')
-
-  return normalized ? normalized[0].toUpperCase() + normalized.slice(1) : 'Pending'
 }

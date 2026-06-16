@@ -485,7 +485,7 @@ def test_composio_bridge_writes_runtime_mcp_server(client, monkeypatch):
     assert status.changed is True
     assert status.connectedApps == ["gmail"]
     assert calls[0]["connected_accounts"] == {"gmail": ["ca_gmail"]}
-    assert calls[0]["toolkits"] == {"enabled": ["gmail"]}
+    assert calls[0]["toolkits"] == {"enable": ["gmail"]}
 
     config_path = Path(runtime.hermes_home_path) / "config.yaml"
     config = config_path.read_text(encoding="utf-8")
@@ -493,6 +493,10 @@ def test_composio_bridge_writes_runtime_mcp_server(client, monkeypatch):
     assert "composio:" in config
     assert "https://mcp.composio.dev/session_123" in config
     assert "${COMPOSIO_API_KEY}" in config
+    assert "## Verxio Connected Apps" in config
+    assert "Gmail (`gmail`)" in config
+    assert "/opt/data/google_token.json" in config
+    assert "source of truth for Verxio" in config
 
 
 def test_composio_setup_returns_inline_fields(client, monkeypatch):

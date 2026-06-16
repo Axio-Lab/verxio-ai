@@ -463,6 +463,7 @@ export interface Translations {
     all: string
     searchSkills: string
     searchToolsets: string
+    searchConnections: string
     refresh: string
     refreshing: string
     loading: string
