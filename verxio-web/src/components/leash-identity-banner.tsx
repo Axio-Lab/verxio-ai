@@ -2,11 +2,7 @@ import { useStore } from '@nanostores/react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import {
-  LEASH_BANNER_CLEARANCE_LEFT,
-  LEASH_BANNER_CLEARANCE_RIGHT,
-  LEASH_BANNER_CLEARANCE_TOP
-} from '@/app/layout-constants'
+import { LEASH_BANNER_CLEARANCE_TOP, LEASH_BANNER_PADDING_X } from '@/app/layout-constants'
 import { SETTINGS_ROUTE } from '@/app/routes'
 import { Button } from '@/components/ui/button'
 import { useI18n } from '@/i18n'
@@ -32,16 +28,15 @@ export function LeashIdentityBanner() {
   return (
     <div
       className={cn(
-        'relative z-4 shrink-0 border-b border-(--ui-stroke-tertiary) bg-(--ui-bg-quinary) py-2.5',
+        'relative z-4 w-full shrink-0 border-b border-(--ui-stroke-tertiary) bg-(--ui-bg-quinary) py-2.5',
         LEASH_BANNER_CLEARANCE_TOP,
-        LEASH_BANNER_CLEARANCE_LEFT,
-        LEASH_BANNER_CLEARANCE_RIGHT
+        LEASH_BANNER_PADDING_X
       )}
       role="status"
     >
       <Button
         aria-label={copy.dismiss}
-        className="absolute top-2 right-2 text-muted-foreground sm:hidden"
+        className="absolute top-2 right-2 z-1 text-muted-foreground sm:hidden"
         onClick={() => setDismissed(true)}
         size="icon-xs"
         type="button"
@@ -49,16 +44,18 @@ export function LeashIdentityBanner() {
       >
         <X className="size-3.5" />
       </Button>
-      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-        <div className="min-w-0 flex-1 pr-8 sm:pr-0">
-          <p className="text-[length:var(--conversation-caption-font-size)] font-medium leading-snug text-foreground">
+
+      <div className="flex w-full flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="min-w-0 w-full pr-7 sm:max-w-none sm:flex-1 sm:pr-0">
+          <p className="text-sm font-medium leading-snug text-foreground sm:text-[length:var(--conversation-caption-font-size)]">
             {copy.title}
           </p>
-          <p className="mt-0.5 text-[length:var(--conversation-caption-font-size)] leading-snug text-muted-foreground">
+          <p className="mt-1 text-sm leading-relaxed text-muted-foreground sm:mt-0.5 sm:text-[length:var(--conversation-caption-font-size)] sm:leading-snug">
             {copy.body}
           </p>
         </div>
-        <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:shrink-0">
+
+        <div className="flex w-full shrink-0 flex-wrap items-stretch gap-2 sm:w-auto sm:items-center sm:justify-end">
           <Button
             className="min-w-0 flex-1 sm:flex-none"
             onClick={() => navigate(`${SETTINGS_ROUTE}?tab=mcp&server=leash`)}
