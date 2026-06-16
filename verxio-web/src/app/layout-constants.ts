@@ -19,3 +19,10 @@ export const PAGE_INSET_NEG_X = '-mx-[clamp(1.25rem,4vw,4rem)]'
 // NOTE: literal strings for Tailwind's scanner (same rule as PAGE_INSET_X).
 export const TITLEBAR_CLEARANCE_TOP = 'pt-[calc(var(--titlebar-height)+0.5rem)]'
 export const TITLEBAR_CLEARANCE_RIGHT = 'pr-[calc(var(--titlebar-tools-right)+var(--titlebar-tools-width)+0.75rem)]'
+
+// Full-width banners (e.g. Leash identity) sit below the fixed titlebar and must
+// inset horizontally so copy/actions never sit under the window controls.
+export const LEASH_BANNER_CLEARANCE_TOP = 'mt-[var(--titlebar-height)]'
+export const LEASH_BANNER_CLEARANCE_LEFT =
+  'pl-[max(0.75rem,calc(var(--titlebar-controls-left)+2*var(--titlebar-control-size)+0.75rem))]'
+export const LEASH_BANNER_CLEARANCE_RIGHT = TITLEBAR_CLEARANCE_RIGHT
