@@ -123,6 +123,15 @@ export interface ComposioToolPreview {
   description: string
 }
 
+export interface ComposioToolBridgeStatus {
+  configured: boolean
+  enabled: boolean
+  changed?: boolean
+  serverName: string
+  connectedApps: string[]
+  message?: string | null
+}
+
 export type ComposioAuthMode = 'no_auth' | 'managed_oauth' | 'connect_link' | 'requires_oauth_app'
 
 export interface ComposioApp {
@@ -162,6 +171,7 @@ export interface ComposioConnectionSetupResponse {
 export interface ComposioConnectionsResponse {
   accounts: ComposioConnectedAccount[]
   configured: boolean
+  toolBridge?: ComposioToolBridgeStatus | null
 }
 
 export interface ComposioAppsResponse {

@@ -157,10 +157,13 @@ async def start_runtime(runtime: RuntimeInstance) -> RuntimeInstance:
         f"HERMES_UID={os.getenv('VERXIO_RUNTIME_UID', os.getenv('HERMES_UID', '10000'))}",
         "-e",
         f"HERMES_GID={os.getenv('VERXIO_RUNTIME_GID', os.getenv('HERMES_GID', '10000'))}",
-        image,
-        "gateway",
-        "run",
     ]
+    composio_api_key = os.getenv("COMPOSIO_API_KEY", "").strip()
+    if composio_api_key:
+        cmd.extend(["-e", f"COMPOSIO_API_KEY={composio_api_key}"])
+
+    cmd.extend([image, "gateway", "run"])
+
     result = _run_docker(cmd)
     if result.returncode != 0:
         return save_runtime(

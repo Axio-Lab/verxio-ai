@@ -37,6 +37,7 @@ from app.composio_catalog import (
     list_composio_app_tools,
     list_composio_accounts,
     list_composio_apps,
+    sync_composio_runtime_bridge,
 )
 from app.control_plane import ensure_runtime_directories, get_context_for_user, get_runtime_for_user
 from app.leash_agent import clear_leash_agent, read_leash_agent, write_leash_agent
@@ -234,6 +235,7 @@ async def get_runtime(request: Request) -> RuntimeControlResponse:
 @app.post("/api/runtime/start", response_model=RuntimeControlResponse)
 async def start_runtime_route(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
+    _accounts, _bridge = await _sync_composio_bridge_for_user(user)
     runtime = await start_runtime(get_runtime_for_user(user))
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
@@ -405,12 +407,25 @@ async def public_notepad_share_route(token: str) -> PublicNotepadShareResponse:
     return public_share(token)
 
 
+async def _sync_composio_bridge_for_user(user: dict, *, refresh_running: bool = False):
+    runtime = get_runtime_for_user(user)
+    accounts = list_composio_accounts(str(user["id"]))
+    bridge = sync_composio_runtime_bridge(runtime, str(user["id"]), accounts)
+
+    if refresh_running and bridge.changed and runtime.status == "running":
+        await restart_runtime(runtime)
+
+    return accounts, bridge
+
+
 @app.get("/api/composio/connections", response_model=ComposioConnectionsResponse)
 async def list_composio_connections_route(request: Request) -> ComposioConnectionsResponse:
     user = require_user(request)
+    accounts, bridge = await _sync_composio_bridge_for_user(user, refresh_running=True)
     return ComposioConnectionsResponse(
-        accounts=list_composio_accounts(str(user["id"])),
+        accounts=accounts,
         configured=is_composio_configured(),
+        toolBridge=bridge,
     )
 
 
@@ -466,17 +481,21 @@ async def complete_composio_connection_route(
     payload: ComposioCompleteConnectionRequest, request: Request
 ) -> ComposioCompleteConnectionResponse:
     user = require_user(request)
-    return complete_composio_connection(str(user["id"]), payload.appSlug, payload.credentials)
+    result = complete_composio_connection(str(user["id"]), payload.appSlug, payload.credentials)
+    await _sync_composio_bridge_for_user(user, refresh_running=True)
+    return result
 
 
 @app.delete("/api/composio/connections/{account_id}")
 async def delete_composio_connection_route(account_id: str, request: Request) -> dict[str, str]:
-    require_user(request)
+    user = require_user(request)
     if not account_id:
         raise HTTPException(status_code=400, detail="account_id is required.")
     if not is_composio_configured():
         raise HTTPException(status_code=500, detail="Composio is not configured.")
-    return delete_composio_account(account_id)
+    result = delete_composio_account(account_id)
+    await _sync_composio_bridge_for_user(user, refresh_running=True)
+    return result
 
 
 @app.get("/api/leash/agent-config")
@@ -537,6 +556,7 @@ def _proxy_headers(request: Request, token: str) -> dict[str, str]:
 )
 async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     user = require_user(request)
+    await _sync_composio_bridge_for_user(user)
     runtime = await start_runtime(get_runtime_for_user(user))
     if not runtime.dashboard_url:
         raise HTTPException(status_code=503, detail="Runtime dashboard is not ready.")
@@ -576,6 +596,7 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
         await websocket.close(code=4401)
         return
 
+    await _sync_composio_bridge_for_user(user)
     runtime = await start_runtime(get_runtime_for_user(user))
     if not runtime.dashboard_url:
         await websocket.close(code=1011)

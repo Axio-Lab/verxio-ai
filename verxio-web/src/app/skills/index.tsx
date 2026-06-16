@@ -32,7 +32,7 @@ import { WEB_SEARCH_TOOLSET_NAME, WebSearchToolsetPanel } from './web-search-too
 const SKILLS_MODES = ['skills', 'toolsets', 'connections'] as const
 type SkillsMode = (typeof SKILLS_MODES)[number]
 const SKILLS_PAGE_SIZE = 10
-const CONNECTIONS_PAGE_SIZE = 15
+const CONNECTIONS_PAGE_SIZE = 10
 
 function categoryFor(skill: SkillInfo): string {
   return asText(skill.category) || 'general'

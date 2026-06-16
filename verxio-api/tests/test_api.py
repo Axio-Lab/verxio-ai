@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from app import composio_catalog, control_plane, db, emailer, main
 from app.auth import SESSION_COOKIE
 from app.main import app
+from app.models import ComposioConnectedAccount
 
 
 @pytest.fixture()
@@ -435,13 +436,63 @@ def test_composio_catalog_uses_authenticated_workspace_contract(client, monkeypa
     assert accounts.status_code == 200
     assert apps.json()["configured"] is False
     assert apps.json()["catalogReady"] is False
-    assert accounts.json() == {"accounts": [], "configured": False}
+    assert accounts.json() == {
+        "accounts": [],
+        "configured": False,
+        "toolBridge": {
+            "changed": False,
+            "configured": False,
+            "connectedApps": [],
+            "enabled": False,
+            "message": "Composio is not configured.",
+            "serverName": "composio",
+        },
+    }
     assert len(apps.json()["apps"]) == 15
     assert apps.json()["apps"][0]["slug"] == "gmail"
     assert tools.json()["configured"] is False
     assert tools.json()["tools"][0]["slug"] == "GMAIL_SEARCH_EMAILS"
     assert initiate.status_code == 500
     assert initiate.json()["detail"] == "Composio is not configured."
+
+
+def test_composio_bridge_writes_runtime_mcp_server(client, monkeypatch):
+    monkeypatch.setenv("COMPOSIO_API_KEY", "test-key")
+    payload, _token = signup(client, "composio-bridge@example.com")
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    runtime = control_plane.runtime_from_row(runtime_row)
+
+    calls: list[dict] = []
+
+    def fake_post(url: str, body: dict, timeout: int = 30):
+        assert url.endswith("/tool_router/session")
+        calls.append(body)
+        return {"id": "session_123", "mcp": {"url": "https://mcp.composio.dev/session_123"}}
+
+    monkeypatch.setattr(composio_catalog, "_post", fake_post)
+
+    status = composio_catalog.sync_composio_runtime_bridge(
+        runtime,
+        payload["user"]["id"],
+        [ComposioConnectedAccount(appSlug="gmail", id="ca_gmail", status="ACTIVE")],
+    )
+
+    assert status.enabled is True
+    assert status.changed is True
+    assert status.connectedApps == ["gmail"]
+    assert calls[0]["connected_accounts"] == {"gmail": ["ca_gmail"]}
+    assert calls[0]["toolkits"] == {"enabled": ["gmail"]}
+
+    config_path = Path(runtime.hermes_home_path) / "config.yaml"
+    config = config_path.read_text(encoding="utf-8")
+    assert "mcp_servers:" in config
+    assert "composio:" in config
+    assert "https://mcp.composio.dev/session_123" in config
+    assert "${COMPOSIO_API_KEY}" in config
 
 
 def test_composio_setup_returns_inline_fields(client, monkeypatch):
