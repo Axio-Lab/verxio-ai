@@ -549,8 +549,9 @@ export const en: Translations = {
 
   skills: {
     tabSkills: 'Skills',
-    tabAdd: 'Add',
     tabToolsets: 'Toolsets',
+    webSearchTitle: 'Web search',
+    webSearchDescription: 'Choose a search provider and API keys so the agent can use web_search in chat.',
     all: 'All',
     searchSkills: 'Search skills...',
     searchToolsets: 'Search toolsets...',

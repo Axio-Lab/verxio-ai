@@ -24,14 +24,22 @@ export function LeashIdentityBanner() {
   const copy = t.leash.banner
 
   return (
-    <div className="relative z-4 border-b border-(--ui-stroke-tertiary) bg-(--ui-bg-quinary) px-4 py-2.5" role="status">
-      <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0 flex-1 text-[length:var(--conversation-caption-font-size)] leading-snug text-foreground">
-          <p className="font-medium">{copy.title}</p>
-          <p className="text-muted-foreground">{copy.body}</p>
+    <div
+      className="relative z-4 border-b border-(--ui-stroke-tertiary) bg-(--ui-bg-quinary) px-3 py-3 sm:px-4"
+      role="status"
+    >
+      <div className="mx-auto flex max-w-5xl flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div className="min-w-0 flex-1 pr-8 sm:pr-0">
+          <p className="text-[length:var(--conversation-caption-font-size)] font-medium leading-snug text-foreground">
+            {copy.title}
+          </p>
+          <p className="mt-0.5 text-[length:var(--conversation-caption-font-size)] leading-snug text-muted-foreground">
+            {copy.body}
+          </p>
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:shrink-0 sm:justify-end">
           <Button
+            className="min-w-0 flex-1 sm:flex-none"
             onClick={() => navigate(`${SETTINGS_ROUTE}?tab=mcp&server=leash`)}
             size="sm"
             type="button"
@@ -39,12 +47,18 @@ export function LeashIdentityBanner() {
           >
             {copy.setup}
           </Button>
-          <Button onClick={() => suppressLeashBannerForever()} size="sm" type="button" variant="text">
+          <Button
+            className="min-w-0 flex-1 sm:flex-none"
+            onClick={() => suppressLeashBannerForever()}
+            size="sm"
+            type="button"
+            variant="text"
+          >
             {copy.never}
           </Button>
           <Button
             aria-label={copy.dismiss}
-            className="text-muted-foreground"
+            className="absolute right-2 top-2 text-muted-foreground sm:static sm:shrink-0"
             onClick={() => setDismissed(true)}
             size="icon-xs"
             type="button"

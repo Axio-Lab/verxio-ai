@@ -649,8 +649,9 @@ export const ja = defineLocale({
 
   skills: {
     tabSkills: 'スキル',
-    tabAdd: '追加',
     tabToolsets: 'ツールセット',
+    webSearchTitle: 'Web 検索',
+    webSearchDescription: '検索プロバイダーと API キーを設定すると、エージェントが web_search を使えるようになります。',
     all: 'すべて',
     searchSkills: 'スキルを検索...',
     searchToolsets: 'ツールセットを検索...',

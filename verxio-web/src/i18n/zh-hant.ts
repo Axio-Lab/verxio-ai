@@ -625,8 +625,9 @@ export const zhHant = defineLocale({
 
   skills: {
     tabSkills: '技能',
-    tabAdd: '新增',
     tabToolsets: '工具集',
+    webSearchTitle: '網頁搜尋',
+    webSearchDescription: '選擇搜尋供應商並設定 API 金鑰，讓代理在對話中使用 web_search。',
     all: '全部',
     searchSkills: '搜尋技能...',
     searchToolsets: '搜尋工具集...',
