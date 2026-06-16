@@ -1100,7 +1100,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       </div>
 
       <Dialog onOpenChange={handleFolderDialogOpenChange} open={folderDialogOpen}>
-        <DialogContent className="max-w-sm" showCloseButton={busyAction !== 'new-folder'}>
+        <DialogContent className="max-w-sm" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>New folder</DialogTitle>
             <DialogDescription className="sr-only">Enter a name for the new Notepad folder.</DialogDescription>
@@ -1154,7 +1154,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       </Dialog>
 
       <Dialog onOpenChange={handleDeleteDialogOpenChange} open={Boolean(pendingDelete)}>
-        <DialogContent className="max-w-sm" showCloseButton={!pendingDeleteBusy}>
+        <DialogContent className="max-w-sm" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>{pendingDelete?.kind === 'folder' ? 'Delete folder' : 'Delete note'}</DialogTitle>
             <DialogDescription>
