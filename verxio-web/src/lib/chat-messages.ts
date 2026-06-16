@@ -1,5 +1,6 @@
 import type { ThreadMessageLike } from '@assistant-ui/react'
 
+import { rewriteRuntimePathsInText } from '@/lib/desktop-workspace'
 import { mediaDisplayLabel, mediaMarkdownHref } from '@/lib/media'
 import { parseTodos } from '@/lib/todos'
 import type { SessionMessage, UsageStats } from '@/types/hermes'
@@ -155,7 +156,8 @@ function textFromUnknown(value: unknown, depth = 0): string {
 }
 
 function displayContentForMessage(role: SessionMessage['role'], content: unknown): string {
-  const textContent = textFromUnknown(content)
+  let textContent = textFromUnknown(content)
+  textContent = rewriteRuntimePathsInText(textContent)
 
   if (role !== 'user') {
     return textContent

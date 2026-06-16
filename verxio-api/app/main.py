@@ -70,6 +70,7 @@ from app.models import (
     RunRecord,
     RunRequest,
     RuntimeControlResponse,
+    RuntimeWorkspaceSyncRequest,
     SignupRequest,
 )
 from app.notepad import (
@@ -86,7 +87,7 @@ from app.notepad import (
     update_note,
 )
 from app.runtime import HermesRuntimeAdapter
-from app.runtime_manager import artifact_file, index_artifacts, restart_runtime, runtime_health, start_runtime, stop_runtime
+from app.runtime_manager import artifact_file, index_artifacts, restart_runtime, runtime_health, start_runtime, stop_runtime, sync_runtime_workspace
 from app.store import AUDIT_LOG, PROFILE, RUNS, WORKSPACE
 
 
@@ -250,6 +251,20 @@ async def stop_runtime_route(request: Request) -> RuntimeControlResponse:
 async def restart_runtime_route(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
     runtime = await restart_runtime(get_runtime_for_user(user))
+    connected, detail = await runtime_health(runtime)
+    return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
+
+
+@app.post("/api/runtime/workspace", response_model=RuntimeControlResponse)
+async def sync_runtime_workspace_route(
+    request: Request, body: RuntimeWorkspaceSyncRequest
+) -> RuntimeControlResponse:
+    user = require_user(request)
+    runtime = get_runtime_for_user(user)
+    try:
+        runtime = await sync_runtime_workspace(runtime, body.workspace_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
 

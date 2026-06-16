@@ -124,6 +124,10 @@ class RuntimeControlResponse(BaseModel):
     detail: str
 
 
+class RuntimeWorkspaceSyncRequest(BaseModel):
+    workspace_path: str = Field(min_length=1)
+
+
 class ArtifactRecord(BaseModel):
     id: str
     tenant_id: str

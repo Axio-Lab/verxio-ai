@@ -1,6 +1,8 @@
 const VALID_LANGUAGE_RE = /^[a-z0-9][a-z0-9+#-]*$/i
 const NON_CODE_FENCE_LANGUAGES = new Set(['', 'text', 'plain', 'plaintext', 'md', 'markdown'])
 
+import { isVerxioDesktop } from '@/lib/platform'
+
 const COMMON_CODE_LANGUAGES = new Set([
   'bash',
   'c',
@@ -176,6 +178,10 @@ export function isLikelyProseFence(info: string, body: string): boolean {
 }
 
 export function isLikelyProseCodeBlock(language: string | undefined, code: string | undefined): boolean {
+  if (isVerxioDesktop()) {
+    return false
+  }
+
   const cleanLanguage = sanitizeLanguageTag(language || '')
   const signals = codeSignals(code || '')
 

@@ -1223,6 +1223,11 @@ canvas {
   margin: 0 !important;
 }
 
+[data-slot='aui_assistant-message-content'] .aui-md [data-slot='code-card-body'] .rs-root pre,
+[data-slot='aui_assistant-message-content'] .aui-md [data-slot='code-card-body'] .rs-root code {
+  background: transparent !important;
+}
+
 [data-slot='aui_assistant-message-content'] .aui-md .aui-md-table {
   border-spacing: 0;
 }

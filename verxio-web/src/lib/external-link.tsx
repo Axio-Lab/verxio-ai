@@ -189,9 +189,17 @@ export function useLinkTitle(url?: null | string): string {
 }
 
 export function openExternalLink(href: string): void {
-  if (href) {
-    void window.hermesDesktop?.openExternal?.(href)
+  if (!href) {
+    return
   }
+
+  if (window.hermesDesktop?.openExternal) {
+    void window.hermesDesktop.openExternal(href)
+
+    return
+  }
+
+  window.open(href, '_blank', 'noopener,noreferrer')
 }
 
 interface ExternalLinkProps extends Omit<ComponentProps<'a'>, 'href' | 'target'> {

@@ -102,6 +102,34 @@ def test_protected_runtime_endpoint_rejects_anonymous_users(client):
     assert response.status_code == 401
 
 
+def test_sync_runtime_workspace_updates_mount_paths(client, monkeypatch, tmp_path):
+    payload, _token = signup(client)
+    local_workspace = tmp_path / "Documents" / "Verxio"
+
+    async def fake_restart(runtime):
+        return runtime
+
+    monkeypatch.setattr("app.runtime_manager.restart_runtime", fake_restart)
+
+    response = client.post(
+        "/api/runtime/workspace",
+        json={"workspace_path": str(local_workspace)},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["runtime"]["workspace_path"] == str(local_workspace.resolve())
+    assert body["runtime"]["artifact_path"] == str((local_workspace / "artifacts").resolve())
+
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    assert runtime_row["workspace_path"] == str(local_workspace.resolve())
+    assert (local_workspace / "artifacts").is_dir()
+
+
 def test_protected_composio_endpoint_rejects_anonymous_users(client):
     response = client.get("/api/composio/connections/apps")
 

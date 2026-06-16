@@ -703,6 +703,8 @@ export function useMessageStream({
           }
 
           if (runningChanged && sessionId) {
+            let hydrateAfterIdle = false
+
             updateSessionState(sessionId, state => {
               const busy = Boolean(payload!.running)
 
@@ -718,7 +720,15 @@ export function useMessageStream({
               }
 
               if (state.awaitingResponse && !state.sawAssistantPayload) {
-                return state
+                hydrateAfterIdle = true
+
+                return {
+                  ...state,
+                  awaitingResponse: false,
+                  busy: false,
+                  pendingBranchGroup: null,
+                  streamId: null
+                }
               }
 
               return {
@@ -729,6 +739,10 @@ export function useMessageStream({
                 streamId: null
               }
             })
+
+            if (hydrateAfterIdle) {
+              void hydrateFromStoredSession(3, undefined, sessionId)
+            }
           }
         }
 
@@ -978,6 +992,7 @@ export function useMessageStream({
       completeAssistantMessage,
       failAssistantMessage,
       flushQueuedDeltas,
+      hydrateFromStoredSession,
       queryClient,
       refreshHermesConfig,
       sessionInterrupted,

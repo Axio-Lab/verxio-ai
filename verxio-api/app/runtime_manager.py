@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 import httpx
 
 from app import db
-from app.control_plane import ensure_runtime_directories, now_iso, safe_path_part, save_runtime
+from app.control_plane import ensure_runtime_directories, now_iso, runtime_from_row, safe_path_part, save_runtime
 from app.models import ArtifactRecord, RuntimeInstance, new_id
 
 
@@ -197,6 +197,54 @@ def stop_runtime(runtime: RuntimeInstance) -> RuntimeInstance:
 async def restart_runtime(runtime: RuntimeInstance) -> RuntimeInstance:
     stopped = stop_runtime(runtime)
     return await start_runtime(stopped)
+
+
+def _merge_workspace_tree(source: Path, destination: Path) -> None:
+    if not source.exists():
+        return
+
+    for item in source.rglob("*"):
+        if not item.is_file():
+            continue
+
+        relative = item.relative_to(source)
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+
+        if not target.exists():
+            import shutil
+
+            shutil.copy2(item, target)
+
+
+async def sync_runtime_workspace(runtime: RuntimeInstance, workspace_path: str) -> RuntimeInstance:
+    """Point the runtime Docker mount at a host workspace folder (desktop sync)."""
+    resolved = Path(workspace_path).expanduser().resolve()
+
+    if not resolved.is_absolute():
+        raise ValueError("workspace_path must be an absolute path.")
+
+    artifact_path = resolved / "artifacts"
+    for path in (resolved, artifact_path):
+        path.mkdir(parents=True, exist_ok=True)
+
+    previous_workspace = Path(runtime.workspace_path).expanduser().resolve()
+    if previous_workspace != resolved:
+        _merge_workspace_tree(previous_workspace, resolved)
+        _merge_workspace_tree(previous_workspace / "artifacts", artifact_path)
+
+    db.execute(
+        """
+        UPDATE runtime_instances
+        SET workspace_path = ?, artifact_path = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (str(resolved), str(artifact_path), now_iso(), runtime.id),
+    )
+    row = db.fetch_one("SELECT * FROM runtime_instances WHERE id = ?", (runtime.id,))
+    updated = runtime_from_row(row or {})
+
+    return await restart_runtime(updated)
 
 
 def index_artifacts(runtime: RuntimeInstance) -> list[ArtifactRecord]:

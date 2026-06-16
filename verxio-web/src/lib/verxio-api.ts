@@ -255,6 +255,24 @@ export async function verxioFetch<T>(path: string, init: RequestInit = {}): Prom
   return (await response.json()) as T
 }
 
+export interface VerxioRuntimeControlResponse {
+  runtime: {
+    id: string
+    workspace_path: string
+    artifact_path: string
+    status: string
+  }
+  connected: boolean
+  detail: string
+}
+
+export function syncRuntimeWorkspace(workspacePath: string): Promise<VerxioRuntimeControlResponse> {
+  return verxioFetch<VerxioRuntimeControlResponse>('/api/runtime/workspace', {
+    body: JSON.stringify({ workspace_path: workspacePath }),
+    method: 'POST'
+  })
+}
+
 export function authMe(): Promise<VerxioAuthResponse> {
   return verxioFetch<VerxioAuthResponse>('/api/auth/me')
 }

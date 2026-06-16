@@ -6,6 +6,7 @@ import {
   StreamdownTextPrimitive,
   type SyntaxHighlighterProps
 } from '@assistant-ui/react-streamdown'
+import { useStore } from '@nanostores/react'
 import { code } from '@streamdown/code'
 import {
   type ComponentProps,
@@ -21,8 +22,11 @@ import {
 import { PreviewAttachment } from '@/components/chat/preview-attachment'
 import { SyntaxHighlighter } from '@/components/chat/shiki-highlighter'
 import { ZoomableImage } from '@/components/chat/zoomable-image'
-import { normalizeExternalUrl, openExternalLink, PrettyLink } from '@/lib/external-link'
+import { resolvePathForDesktopPreview } from '@/lib/desktop-workspace'
+import { ExternalLink, normalizeExternalUrl, openExternalLink, PrettyLink } from '@/lib/external-link'
 import { createMemoizedMathPlugin } from '@/lib/katex-memo'
+import { normalizeOrLocalPreviewTarget } from '@/lib/local-preview'
+import { looksLikeFilePath } from '@/lib/markdown-paths'
 import { preprocessMarkdown } from '@/lib/markdown-preprocess'
 import {
   filePathFromMediaPath,
@@ -34,6 +38,9 @@ import {
 } from '@/lib/media'
 import { previewTargetFromMarkdownHref } from '@/lib/preview-targets'
 import { cn } from '@/lib/utils'
+import { notifyError } from '@/store/notifications'
+import { setCurrentSessionPreviewTarget } from '@/store/preview'
+import { $currentCwd } from '@/store/session'
 
 // Math rendering plugin (KaTeX). Configured once at module scope — the
 // plugin is stateless beyond its internal cache so re-creating per-render
@@ -177,6 +184,43 @@ function childrenToText(children: unknown): string {
   return ''
 }
 
+function MarkdownPathLink({ children, className, href, ...props }: ComponentProps<'a'>) {
+  const cwd = useStore($currentCwd)
+  const path = (href || '').trim()
+
+  return (
+    <button
+      className={cn(
+        'inline cursor-pointer border-0 bg-transparent p-0 text-left font-semibold text-foreground underline underline-offset-4 decoration-current/20 wrap-anywhere',
+        className
+      )}
+      onClick={event => {
+        event.preventDefault()
+        event.stopPropagation()
+
+        void (async () => {
+          try {
+            const resolvedPath = resolvePathForDesktopPreview(path, cwd || undefined)
+            const preview = await normalizeOrLocalPreviewTarget(resolvedPath, cwd || undefined)
+
+            if (!preview) {
+              throw new Error(`Could not open ${path}`)
+            }
+
+            setCurrentSessionPreviewTarget(preview, 'manual', path)
+          } catch (error) {
+            notifyError(error, 'Could not open file')
+          }
+        })()
+      }}
+      type="button"
+      {...(props as ComponentProps<'button'>)}
+    >
+      {children}
+    </button>
+  )
+}
+
 function MarkdownLink({ children, className, href, ...props }: ComponentProps<'a'>) {
   const mediaPath = mediaPathFromMarkdownHref(href)
 
@@ -192,28 +236,27 @@ function MarkdownLink({ children, className, href, ...props }: ComponentProps<'a
 
   const target = href ? normalizeExternalUrl(href) : href
 
-  if (!target || !/^https?:\/\//i.test(target)) {
+  if (target && /^https?:\/\//i.test(target)) {
+    const text = childrenToText(children)
+    const fallbackLabel = text && normalizeExternalUrl(text) !== target ? text : undefined
+
     return (
-      <a
-        className={cn(
-          'font-semibold text-foreground underline underline-offset-4 decoration-current/20 wrap-anywhere',
-          className
-        )}
-        href={href}
-        rel="noopener noreferrer"
-        target="_blank"
-        {...props}
-      >
-        {children}
-      </a>
+      <PrettyLink className={cn('wrap-anywhere', className)} fallbackLabel={fallbackLabel} href={target} {...props} />
     )
   }
 
-  const text = childrenToText(children)
-  const fallbackLabel = text && normalizeExternalUrl(text) !== target ? text : undefined
+  if (href && looksLikeFilePath(href)) {
+    return (
+      <MarkdownPathLink className={className} href={href} {...props}>
+        {children}
+      </MarkdownPathLink>
+    )
+  }
 
   return (
-    <PrettyLink className={cn('wrap-anywhere', className)} fallbackLabel={fallbackLabel} href={target} {...props} />
+    <ExternalLink className={cn('wrap-anywhere', className)} href={target || href || '#'} {...props}>
+      {children}
+    </ExternalLink>
   )
 }
 
