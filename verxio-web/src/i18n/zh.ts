@@ -703,11 +703,13 @@ export const zh: Translations = {
 
   skills: {
     tabSkills: '技能',
-    tabAdd: '添加',
     tabToolsets: '工具集',
+    webSearchTitle: '网页搜索',
+    webSearchDescription: '选择搜索提供商并配置 API 密钥，以便代理在对话中使用 web_search。',
     all: '全部',
     searchSkills: '搜索技能…',
     searchToolsets: '搜索工具集…',
+    searchConnections: '搜索连接…',
     refresh: '刷新技能',
     refreshing: '正在刷新技能',
     loading: '正在加载能力…',

@@ -457,11 +457,13 @@ export interface Translations {
 
   skills: {
     tabSkills: string
-    tabAdd: string
     tabToolsets: string
+    webSearchTitle: string
+    webSearchDescription: string
     all: string
     searchSkills: string
     searchToolsets: string
+    searchConnections: string
     refresh: string
     refreshing: string
     loading: string

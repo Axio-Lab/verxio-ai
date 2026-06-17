@@ -45,6 +45,50 @@ export function resolveDesktopWorkspaceCwd(currentCwd?: string | null, localRoot
   return trimmed
 }
 
+const RUNTIME_PATH_IN_TEXT_RE = /\/workspace(?:\/[\w./-]+)*/g
+
+/** Replace Docker `/workspace` paths with the user's local project folder in UI copy. */
+export function rewriteRuntimePathsInText(text: string): string {
+  if (!isVerxioDesktop() || !text.includes('/workspace')) {
+    return text
+  }
+
+  return text.replace(RUNTIME_PATH_IN_TEXT_RE, match => {
+    const localRoot = getDesktopWorkspaceRoot()
+
+    if (localRoot) {
+      return resolveDesktopWorkspaceCwd(match, localRoot) ?? match
+    }
+
+    if (match === RUNTIME_WORKSPACE_ROOT) {
+      return 'your project folder'
+    }
+
+    const relative = match.slice(RUNTIME_WORKSPACE_ROOT.length + 1)
+
+    return relative ? `your project folder/${relative}` : 'your project folder'
+  })
+}
+
+/** Resolve a runtime or local path for preview/open actions on desktop. */
+export function resolvePathForDesktopPreview(rawTarget: string, cwd?: string | null): string {
+  const trimmed = rawTarget.trim().replace(/^`|`$/g, '')
+
+  if (isVerxioDesktop() && isRuntimeWorkspacePath(trimmed)) {
+    return resolveDesktopWorkspaceCwd(trimmed, getDesktopWorkspaceRoot()) ?? trimmed
+  }
+
+  if (isVerxioDesktop() && !trimmed.startsWith('/') && cwd && isRuntimeWorkspacePath(cwd)) {
+    const localCwd = resolveDesktopWorkspaceCwd(cwd, getDesktopWorkspaceRoot())
+
+    if (localCwd) {
+      return `${localCwd.replace(/\/+$/, '')}/${trimmed.replace(/^\.?\//, '')}`
+    }
+  }
+
+  return trimmed
+}
+
 /** Runtime sessions in Docker still use /workspace even though the UI browses locally. */
 export function cwdForGatewaySubmission(localCwd: string): string | undefined {
   const trimmed = localCwd.trim()

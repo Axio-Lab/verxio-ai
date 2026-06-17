@@ -124,6 +124,10 @@ class RuntimeControlResponse(BaseModel):
     detail: str
 
 
+class RuntimeWorkspaceSyncRequest(BaseModel):
+    workspace_path: str = Field(min_length=1)
+
+
 class ArtifactRecord(BaseModel):
     id: str
     tenant_id: str
@@ -229,6 +233,15 @@ class ComposioToolPreview(BaseModel):
     description: str = ""
 
 
+class ComposioToolBridgeStatus(BaseModel):
+    configured: bool
+    enabled: bool
+    changed: bool = False
+    serverName: str = "composio"
+    connectedApps: list[str] = Field(default_factory=list)
+    message: str | None = None
+
+
 class ComposioApp(BaseModel):
     slug: str
     name: str
@@ -247,6 +260,7 @@ class ComposioApp(BaseModel):
 class ComposioConnectionsResponse(BaseModel):
     accounts: list[ComposioConnectedAccount]
     configured: bool
+    toolBridge: ComposioToolBridgeStatus | None = None
 
 
 class ComposioAppsResponse(BaseModel):

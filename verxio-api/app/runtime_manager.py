@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 import httpx
 
 from app import db
-from app.control_plane import ensure_runtime_directories, now_iso, safe_path_part, save_runtime
+from app.control_plane import ensure_runtime_directories, now_iso, runtime_from_row, safe_path_part, save_runtime
 from app.models import ArtifactRecord, RuntimeInstance, new_id
 
 
@@ -42,6 +42,31 @@ def _container_name(runtime: RuntimeInstance) -> str:
     if runtime.container_name:
         return runtime.container_name
     return f"verxio-{safe_path_part(runtime.workspace_id)}-{safe_path_part(runtime.agent_id)}"
+
+
+def runtime_container_env_matches(runtime: RuntimeInstance, key: str, expected_value: str) -> bool:
+    """Return True when the running runtime container has the expected env value."""
+
+    if not key or not expected_value:
+        return False
+
+    result = _run_docker(
+        [
+            "inspect",
+            "-f",
+            "{{range .Config.Env}}{{println .}}{{end}}",
+            _container_name(runtime),
+        ]
+    )
+    if result.returncode != 0:
+        return False
+
+    prefix = f"{key}="
+    for line in result.stdout.splitlines():
+        if line.startswith(prefix):
+            return line[len(prefix) :] == expected_value
+
+    return False
 
 
 def _port_is_free(port: int) -> bool:
@@ -157,10 +182,13 @@ async def start_runtime(runtime: RuntimeInstance) -> RuntimeInstance:
         f"HERMES_UID={os.getenv('VERXIO_RUNTIME_UID', os.getenv('HERMES_UID', '10000'))}",
         "-e",
         f"HERMES_GID={os.getenv('VERXIO_RUNTIME_GID', os.getenv('HERMES_GID', '10000'))}",
-        image,
-        "gateway",
-        "run",
     ]
+    composio_api_key = os.getenv("COMPOSIO_API_KEY", "").strip()
+    if composio_api_key:
+        cmd.extend(["-e", f"COMPOSIO_API_KEY={composio_api_key}"])
+
+    cmd.extend([image, "gateway", "run"])
+
     result = _run_docker(cmd)
     if result.returncode != 0:
         return save_runtime(
@@ -197,6 +225,54 @@ def stop_runtime(runtime: RuntimeInstance) -> RuntimeInstance:
 async def restart_runtime(runtime: RuntimeInstance) -> RuntimeInstance:
     stopped = stop_runtime(runtime)
     return await start_runtime(stopped)
+
+
+def _merge_workspace_tree(source: Path, destination: Path) -> None:
+    if not source.exists():
+        return
+
+    for item in source.rglob("*"):
+        if not item.is_file():
+            continue
+
+        relative = item.relative_to(source)
+        target = destination / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+
+        if not target.exists():
+            import shutil
+
+            shutil.copy2(item, target)
+
+
+async def sync_runtime_workspace(runtime: RuntimeInstance, workspace_path: str) -> RuntimeInstance:
+    """Point the runtime Docker mount at a host workspace folder (desktop sync)."""
+    resolved = Path(workspace_path).expanduser().resolve()
+
+    if not resolved.is_absolute():
+        raise ValueError("workspace_path must be an absolute path.")
+
+    artifact_path = resolved / "artifacts"
+    for path in (resolved, artifact_path):
+        path.mkdir(parents=True, exist_ok=True)
+
+    previous_workspace = Path(runtime.workspace_path).expanduser().resolve()
+    if previous_workspace != resolved:
+        _merge_workspace_tree(previous_workspace, resolved)
+        _merge_workspace_tree(previous_workspace / "artifacts", artifact_path)
+
+    db.execute(
+        """
+        UPDATE runtime_instances
+        SET workspace_path = ?, artifact_path = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (str(resolved), str(artifact_path), now_iso(), runtime.id),
+    )
+    row = db.fetch_one("SELECT * FROM runtime_instances WHERE id = ?", (runtime.id,))
+    updated = runtime_from_row(row or {})
+
+    return await restart_runtime(updated)
 
 
 def index_artifacts(runtime: RuntimeInstance) -> list[ArtifactRecord]:

@@ -8,6 +8,7 @@ dependencies = [
   "httpx>=0.28.0,<1",
   "libsql>=0.1.0,<1",
   "pydantic>=2.7.0,<3",
+  "PyYAML>=6.0.2,<7",
   "uvicorn[standard]>=0.24.0,<1",
 ]
 

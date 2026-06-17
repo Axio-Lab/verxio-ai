@@ -27,12 +27,12 @@ import { ToolsetConfigPanel } from '../settings/toolset-config-panel'
 import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 
 import { ConnectionsPanel } from './connections-panel'
-import { SkillsAddPanel } from './skills-add-panel'
+import { WEB_SEARCH_TOOLSET_NAME, WebSearchToolsetPanel } from './web-search-toolset-panel'
 
-const SKILLS_MODES = ['skills', 'add', 'toolsets', 'connections'] as const
+const SKILLS_MODES = ['skills', 'toolsets', 'connections'] as const
 type SkillsMode = (typeof SKILLS_MODES)[number]
 const SKILLS_PAGE_SIZE = 10
-const CONNECTIONS_PAGE_SIZE = 15
+const CONNECTIONS_PAGE_SIZE = 10
 
 function categoryFor(skill: SkillInfo): string {
   return asText(skill.category) || 'general'
@@ -56,11 +56,16 @@ function filteredSkills(skills: SkillInfo[], query: string, category: string | n
     .sort((a, b) => asText(a.name).localeCompare(asText(b.name)))
 }
 
-function filteredToolsets(toolsets: ToolsetInfo[], query: string): ToolsetInfo[] {
+function filteredToolsets(toolsets: ToolsetInfo[], query: string, excludeNames: readonly string[] = []): ToolsetInfo[] {
   const q = query.trim().toLowerCase()
+  const excluded = new Set(excludeNames)
 
   return toolsets
     .filter(toolset => {
+      if (excluded.has(toolset.name)) {
+        return false
+      }
+
       if (!q) {
         return true
       }
@@ -148,7 +153,15 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
     [activeCategory, mode, query, skills]
   )
 
-  const visibleToolsets = useMemo(() => (toolsets ? filteredToolsets(toolsets, query) : []), [query, toolsets])
+  const visibleToolsets = useMemo(
+    () => (toolsets ? filteredToolsets(toolsets, query, [WEB_SEARCH_TOOLSET_NAME]) : []),
+    [query, toolsets]
+  )
+
+  const webSearchToolset = useMemo(
+    () => toolsets?.find(toolset => toolset.name === WEB_SEARCH_TOOLSET_NAME) ?? null,
+    [toolsets]
+  )
 
   const activeTotal = mode === 'skills' ? visibleSkills.length : mode === 'toolsets' ? visibleToolsets.length : 0
   const activePageCount = Math.max(1, Math.ceil(activeTotal / SKILLS_PAGE_SIZE))
@@ -173,7 +186,7 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
   const totalToolsets = toolsets?.length || 0
 
   useEffect(() => {
-    if (mode !== 'connections' && mode !== 'add' && page > activePageCount) {
+    if (mode !== 'connections' && page > activePageCount) {
       setPage(activePageCount)
     }
   }, [activePageCount, mode, page, setPage])
@@ -202,14 +215,14 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
   }
 
   const searchHidden =
-    mode === 'add' || mode === 'connections'
-      ? true
-      : mode === 'skills'
-        ? (skills?.length ?? 0) === 0
-        : (toolsets?.length ?? 0) === 0
+    mode === 'connections' ? true : mode === 'skills' ? (skills?.length ?? 0) === 0 : (toolsets?.length ?? 0) === 0
 
   const searchPlaceholder =
-    mode === 'skills' ? t.skills.searchSkills : mode === 'toolsets' ? t.skills.searchToolsets : 'Search connections...'
+    mode === 'skills'
+      ? t.skills.searchSkills
+      : mode === 'toolsets'
+        ? t.skills.searchToolsets
+        : t.skills.searchConnections
 
   async function handleToggleSkill(skill: SkillInfo, enabled: boolean) {
     setSavingSkill(skill.name)
@@ -285,7 +298,7 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
       searchHidden={searchHidden}
       searchPlaceholder={searchPlaceholder}
       searchTrailingAction={
-        mode === 'connections' || mode === 'add' ? undefined : mode === 'skills' ? (
+        mode === 'connections' ? undefined : mode === 'skills' ? (
           <div className="flex items-center gap-1">
             <Button onClick={openCreateEditor} size="sm" type="button" variant="ghost">
               {t.skills.newSkill}
@@ -324,9 +337,6 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
           <TextTab active={mode === 'skills'} onClick={() => handleModeChange('skills')}>
             {t.skills.tabSkills}
           </TextTab>
-          <TextTab active={mode === 'add'} onClick={() => handleModeChange('add')}>
-            {t.skills.tabAdd}
-          </TextTab>
           <TextTab active={mode === 'toolsets'} onClick={() => handleModeChange('toolsets')}>
             {t.skills.tabToolsets}
           </TextTab>
@@ -337,9 +347,14 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
       }
     >
       {mode === 'connections' ? (
-        <ConnectionsPanel onPageChange={setPage} page={page} pageSize={CONNECTIONS_PAGE_SIZE} query={query} />
-      ) : mode === 'add' ? (
-        <SkillsAddPanel onSkillsChanged={() => void refreshCapabilities()} />
+        <ConnectionsPanel
+          onPageChange={setPage}
+          onSearchChange={handleSearchChange}
+          page={page}
+          pageSize={CONNECTIONS_PAGE_SIZE}
+          query={query}
+          searchPlaceholder={t.skills.searchConnections}
+        />
       ) : !skills || !toolsets ? (
         <PageLoader label={t.skills.loading} />
       ) : mode === 'skills' ? (
@@ -401,76 +416,92 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
           )}
         </div>
       ) : (
-        <div className={cn('h-full overflow-y-auto py-3', PAGE_INSET_X)}>
-          {visibleToolsets.length === 0 ? (
-            <EmptyState description={t.skills.noToolsetsDesc} title={t.skills.noToolsetsTitle} />
-          ) : (
-            <div className="space-y-2">
-              <div className="text-xs text-muted-foreground">
-                {t.skills.toolsetsEnabled(enabledToolsets, totalToolsets)}
-              </div>
-              <div>
-                {pagedToolsets.map(toolset => {
-                  const tools = toolNames(toolset)
-                  const label = toolsetDisplayLabel(toolset)
-                  const expanded = expandedToolset === toolset.name
+        <div className={cn('flex h-full flex-col overflow-y-auto py-3')}>
+          <WebSearchToolsetPanel
+            onConfiguredChange={refreshToolsets}
+            onToggle={enabled => {
+              if (webSearchToolset) {
+                void handleToggleToolset(webSearchToolset, enabled)
+              }
+            }}
+            saving={webSearchToolset ? savingToolset === webSearchToolset.name : false}
+            toolset={webSearchToolset}
+          />
+          <div className={cn(PAGE_INSET_X)}>
+            {visibleToolsets.length === 0 ? (
+              query.trim() ? (
+                <p className="pt-2 text-xs text-muted-foreground">{t.skills.noToolsetsDesc}</p>
+              ) : webSearchToolset ? null : (
+                <EmptyState description={t.skills.noToolsetsDesc} title={t.skills.noToolsetsTitle} />
+              )
+            ) : (
+              <div className="space-y-2">
+                <div className="text-xs text-muted-foreground">
+                  {t.skills.toolsetsEnabled(enabledToolsets, totalToolsets)}
+                </div>
+                <div>
+                  {pagedToolsets.map(toolset => {
+                    const tools = toolNames(toolset)
+                    const label = toolsetDisplayLabel(toolset)
+                    const expanded = expandedToolset === toolset.name
 
-                  return (
-                    <div className="px-0 py-2.5" key={toolset.name}>
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="truncate text-sm font-medium">{label}</div>
-                        <div className="flex shrink-0 items-center gap-1.5">
-                          <button
-                            aria-expanded={expanded}
-                            aria-label={t.skills.configureToolset(label)}
-                            className="cursor-pointer rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-                            onClick={() =>
-                              setExpandedToolset(current => (current === toolset.name ? null : toolset.name))
-                            }
-                            type="button"
-                          >
-                            <StatusPill active={toolset.configured}>
-                              {toolset.configured ? t.skills.configured : t.skills.needsKeys}
-                            </StatusPill>
-                          </button>
-                          <Switch
-                            aria-label={t.skills.toggleToolset(label)}
-                            checked={toolset.enabled}
-                            disabled={savingToolset === toolset.name}
-                            onCheckedChange={checked => void handleToggleToolset(toolset, checked)}
-                          />
-                        </div>
-                      </div>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {asText(toolset.description) || t.skills.noDescription}
-                      </p>
-                      {tools.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {tools.map(name => (
-                            <span
-                              className="rounded-md bg-(--ui-bg-quinary) px-1.5 py-0.5 font-mono text-[0.65rem] text-(--ui-text-tertiary)"
-                              key={name}
+                    return (
+                      <div className="px-0 py-2.5" key={toolset.name}>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="truncate text-sm font-medium">{label}</div>
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            <button
+                              aria-expanded={expanded}
+                              aria-label={t.skills.configureToolset(label)}
+                              className="cursor-pointer rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                              onClick={() =>
+                                setExpandedToolset(current => (current === toolset.name ? null : toolset.name))
+                              }
+                              type="button"
                             >
-                              {name}
-                            </span>
-                          ))}
+                              <StatusPill active={toolset.configured}>
+                                {toolset.configured ? t.skills.configured : t.skills.needsKeys}
+                              </StatusPill>
+                            </button>
+                            <Switch
+                              aria-label={t.skills.toggleToolset(label)}
+                              checked={toolset.enabled}
+                              disabled={savingToolset === toolset.name}
+                              onCheckedChange={checked => void handleToggleToolset(toolset, checked)}
+                            />
+                          </div>
                         </div>
-                      )}
-                      {expanded && <ToolsetConfigPanel onConfiguredChange={refreshToolsets} toolset={toolset.name} />}
-                    </div>
-                  )
-                })}
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {asText(toolset.description) || t.skills.noDescription}
+                        </p>
+                        {tools.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {tools.map(name => (
+                              <span
+                                className="rounded-md bg-(--ui-bg-quinary) px-1.5 py-0.5 font-mono text-[0.65rem] text-(--ui-text-tertiary)"
+                                key={name}
+                              >
+                                {name}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {expanded && <ToolsetConfigPanel onConfiguredChange={refreshToolsets} toolset={toolset.name} />}
+                      </div>
+                    )
+                  })}
+                </div>
+                <PaginationControl
+                  className="pt-2"
+                  itemLabel="toolsets"
+                  onPageChange={setPage}
+                  page={currentPage}
+                  pageSize={SKILLS_PAGE_SIZE}
+                  total={visibleToolsets.length}
+                />
               </div>
-              <PaginationControl
-                className="pt-2"
-                itemLabel="toolsets"
-                onPageChange={setPage}
-                page={currentPage}
-                pageSize={SKILLS_PAGE_SIZE}
-                total={visibleToolsets.length}
-              />
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
       <SkillEditorDialog

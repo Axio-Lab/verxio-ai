@@ -123,6 +123,15 @@ export interface ComposioToolPreview {
   description: string
 }
 
+export interface ComposioToolBridgeStatus {
+  configured: boolean
+  enabled: boolean
+  changed?: boolean
+  serverName: string
+  connectedApps: string[]
+  message?: string | null
+}
+
 export type ComposioAuthMode = 'no_auth' | 'managed_oauth' | 'connect_link' | 'requires_oauth_app'
 
 export interface ComposioApp {
@@ -162,6 +171,7 @@ export interface ComposioConnectionSetupResponse {
 export interface ComposioConnectionsResponse {
   accounts: ComposioConnectedAccount[]
   configured: boolean
+  toolBridge?: ComposioToolBridgeStatus | null
 }
 
 export interface ComposioAppsResponse {
@@ -253,6 +263,24 @@ export async function verxioFetch<T>(path: string, init: RequestInit = {}): Prom
   }
 
   return (await response.json()) as T
+}
+
+export interface VerxioRuntimeControlResponse {
+  runtime: {
+    id: string
+    workspace_path: string
+    artifact_path: string
+    status: string
+  }
+  connected: boolean
+  detail: string
+}
+
+export function syncRuntimeWorkspace(workspacePath: string): Promise<VerxioRuntimeControlResponse> {
+  return verxioFetch<VerxioRuntimeControlResponse>('/api/runtime/workspace', {
+    body: JSON.stringify({ workspace_path: workspacePath }),
+    method: 'POST'
+  })
 }
 
 export function authMe(): Promise<VerxioAuthResponse> {

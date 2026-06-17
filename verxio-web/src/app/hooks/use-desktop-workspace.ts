@@ -6,6 +6,7 @@ import {
   resolveDesktopWorkspaceCwd,
   setDesktopWorkspaceRoot
 } from '@/lib/desktop-workspace'
+import { syncRuntimeWorkspace, verxioApiEnabled } from '@/lib/verxio-api'
 import { $currentCwd, setCurrentCwd } from '@/store/session'
 
 /** Ensure a local workspace folder exists and keep UI cwd off Docker /workspace paths. */
@@ -29,6 +30,12 @@ export function useDesktopWorkspace() {
 
       if (resolved !== current) {
         setCurrentCwd(resolved)
+      }
+
+      if (verxioApiEnabled()) {
+        void syncRuntimeWorkspace(result.dir).catch(() => {
+          // Runtime may not be up yet; a later session start can retry sync.
+        })
       }
     })
 

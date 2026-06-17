@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import os
+import hashlib
+import json
+from pathlib import Path
 from typing import Any
 
 import httpx
+import yaml
 from fastapi import HTTPException
 
 from app.models import (
@@ -13,9 +17,16 @@ from app.models import (
     ComposioConnectedAccount,
     ComposioConnectionSetupResponse,
     ComposioInitiateResponse,
+    ComposioToolBridgeStatus,
     ComposioToolPreview,
+    RuntimeInstance,
 )
 
+
+COMPOSIO_MCP_SERVER_NAME = "composio"
+COMPOSIO_BRIDGE_STATE_FILE = "composio-tool-router-session.json"
+COMPOSIO_PROMPT_START = "<!-- VERXIO_COMPOSIO_CONTEXT_START -->"
+COMPOSIO_PROMPT_END = "<!-- VERXIO_COMPOSIO_CONTEXT_END -->"
 
 COMPOSIO_APP_CATALOG = [
     ComposioApp(
@@ -349,6 +360,93 @@ def list_composio_accounts(user_id: str) -> list[ComposioConnectedAccount]:
     return [_account_to_model(item) for item in _extract_items(response)]
 
 
+def sync_composio_runtime_bridge(
+    runtime: RuntimeInstance, user_id: str, accounts: list[ComposioConnectedAccount]
+) -> ComposioToolBridgeStatus:
+    """Expose connected Composio apps to Hermes as an MCP server.
+
+    Composio connections live in Composio, while Hermes only sees callable
+    tools through its configured tool registry. This bridge creates a
+    Tool Router MCP session scoped to the user's active connected accounts and
+    writes the session URL into the user's isolated Hermes config.
+    """
+
+    if not is_composio_configured():
+        mcp_changed = _remove_runtime_mcp_server(runtime)
+        prompt_changed = _remove_runtime_composio_prompt(runtime)
+        changed = mcp_changed or prompt_changed
+        return ComposioToolBridgeStatus(
+            changed=changed,
+            configured=False,
+            enabled=False,
+            message="Composio is not configured.",
+            serverName=COMPOSIO_MCP_SERVER_NAME,
+        )
+
+    active_accounts = [account for account in accounts if _is_connected_status(account.status)]
+    connected_accounts = _connected_accounts_by_app(active_accounts)
+    connected_apps = sorted(connected_accounts)
+
+    if not connected_apps:
+        mcp_changed = _remove_runtime_mcp_server(runtime)
+        prompt_changed = _remove_runtime_composio_prompt(runtime)
+        changed = mcp_changed or prompt_changed
+        _bridge_state_path(runtime).unlink(missing_ok=True)
+        return ComposioToolBridgeStatus(
+            changed=changed,
+            configured=True,
+            enabled=False,
+            message="Connect an app to enable Composio tools in Hermes.",
+            serverName=COMPOSIO_MCP_SERVER_NAME,
+        )
+
+    signature = _bridge_signature(user_id, connected_accounts)
+    state = _read_bridge_state(runtime)
+    mcp_url = str(state.get("mcp_url") or "").strip() if state.get("signature") == signature else ""
+
+    try:
+        created_session = False
+        if not mcp_url:
+            session = _create_tool_router_session(user_id, connected_accounts)
+            mcp_url = _pick_mcp_url(session)
+            if not mcp_url:
+                raise RuntimeError("Composio did not return an MCP session URL.")
+            created_session = True
+            _write_bridge_state(
+                runtime,
+                {
+                    "connected_apps": connected_apps,
+                    "mcp_url": mcp_url,
+                    "session_id": _pick_string(session, "id", "session_id", "sessionId"),
+                    "signature": signature,
+                },
+            )
+
+        config = _read_runtime_config(runtime)
+        mcp_changed = _upsert_runtime_mcp_server(config, mcp_url)
+        prompt_changed = _upsert_runtime_composio_prompt(config, connected_apps)
+        if mcp_changed or prompt_changed:
+            _write_runtime_config(runtime, config)
+        changed = mcp_changed or prompt_changed or created_session
+    except Exception as exc:
+        return ComposioToolBridgeStatus(
+            connectedApps=connected_apps,
+            configured=True,
+            enabled=False,
+            message=f"Could not enable Composio tools in Hermes: {exc}",
+            serverName=COMPOSIO_MCP_SERVER_NAME,
+        )
+
+    return ComposioToolBridgeStatus(
+        changed=changed,
+        connectedApps=connected_apps,
+        configured=True,
+        enabled=True,
+        message="Connected Composio tools are available to Hermes.",
+        serverName=COMPOSIO_MCP_SERVER_NAME,
+    )
+
+
 def initiate_composio_connection(
     user_id: str, app_slug: str, callback_url: str | None = None
 ) -> ComposioInitiateResponse:
@@ -527,6 +625,258 @@ def disconnected_response() -> dict[str, str]:
     return {"message": "Connection removed."}
 
 
+def _is_connected_status(status: str) -> bool:
+    normalized = status.strip().lower()
+    return bool(normalized and normalized not in {"deleted", "disabled", "disconnected", "failed", "inactive"})
+
+
+def _connected_accounts_by_app(accounts: list[ComposioConnectedAccount]) -> dict[str, list[str]]:
+    rows: dict[str, list[str]] = {}
+
+    for account in accounts:
+        app_slug = account.appSlug.strip().lower()
+        account_id = account.id.strip()
+
+        if not app_slug or not account_id or app_slug == "unknown":
+            continue
+
+        rows.setdefault(app_slug, []).append(account_id)
+
+    return {slug: sorted(set(ids)) for slug, ids in rows.items() if ids}
+
+
+def _bridge_signature(user_id: str, connected_accounts: dict[str, list[str]]) -> str:
+    payload = {"connected_accounts": connected_accounts, "user_id": user_id}
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _bridge_state_path(runtime: RuntimeInstance) -> Path:
+    state_dir = Path(runtime.hermes_home_path) / ".verxio"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    return state_dir / COMPOSIO_BRIDGE_STATE_FILE
+
+
+def _read_bridge_state(runtime: RuntimeInstance) -> dict[str, Any]:
+    path = _bridge_state_path(runtime)
+    if not path.exists():
+        return {}
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+    return payload if isinstance(payload, dict) else {}
+
+
+def _write_bridge_state(runtime: RuntimeInstance, payload: dict[str, Any]) -> None:
+    path = _bridge_state_path(runtime)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _create_tool_router_session(user_id: str, connected_accounts: dict[str, list[str]]) -> dict[str, Any]:
+    toolkits = sorted(connected_accounts)
+    preload_tools = os.getenv("COMPOSIO_MCP_PRELOAD_TOOLS", "all").strip() or "all"
+    payload: dict[str, Any] = {
+        "connected_accounts": connected_accounts,
+        "manage_connections": {
+            "enable": False,
+            "enable_connection_removal": False,
+            "enable_wait_for_connections": False,
+        },
+        "search": {"enable": True},
+        "toolkits": {"enable": toolkits},
+        "user_id": user_id,
+        "workbench": {"enable": False, "enable_proxy_execution": False},
+    }
+
+    if preload_tools.lower() not in {"0", "false", "none", "off"}:
+        payload["preload"] = {"tools": preload_tools}
+
+    response = _post(f"{_tools_api_base()}/tool_router/session", payload, timeout=30)
+    return response if isinstance(response, dict) else {}
+
+
+def _pick_mcp_url(payload: dict[str, Any]) -> str:
+    mcp = payload.get("mcp")
+    if isinstance(mcp, dict):
+        value = _pick_string(mcp, "url", "mcp_url", "mcpUrl")
+        if value:
+            return value
+
+    return _pick_string(payload, "mcp_url", "mcpUrl")
+
+
+def _runtime_config_path(runtime: RuntimeInstance) -> Path:
+    path = Path(runtime.hermes_home_path)
+    path.mkdir(parents=True, exist_ok=True)
+    return path / "config.yaml"
+
+
+def _read_runtime_config(runtime: RuntimeInstance) -> dict[str, Any]:
+    config_path = _runtime_config_path(runtime)
+    if not config_path.exists():
+        return {}
+
+    try:
+        payload = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise RuntimeError(f"Hermes config is not valid YAML: {exc}") from exc
+
+    return payload if isinstance(payload, dict) else {}
+
+
+def _write_runtime_config(runtime: RuntimeInstance, config: dict[str, Any]) -> None:
+    config_path = _runtime_config_path(runtime)
+    rendered = yaml.safe_dump(config, allow_unicode=False, sort_keys=False)
+    config_path.write_text(rendered, encoding="utf-8")
+
+
+def _upsert_runtime_mcp_server(config: dict[str, Any], mcp_url: str) -> bool:
+    servers = config.get("mcp_servers")
+
+    if not isinstance(servers, dict):
+        servers = {}
+
+    desired = {
+        "connect_timeout": 30,
+        "enabled": True,
+        "headers": {"x-api-key": "${COMPOSIO_API_KEY}"},
+        "supports_parallel_tool_calls": False,
+        "timeout": 120,
+        "url": mcp_url,
+    }
+
+    if servers.get(COMPOSIO_MCP_SERVER_NAME) == desired:
+        return False
+
+    servers[COMPOSIO_MCP_SERVER_NAME] = desired
+    config["mcp_servers"] = servers
+
+    if "terminal" not in config:
+        config["terminal"] = {"backend": "local", "cwd": "/workspace"}
+
+    return True
+
+
+def _remove_runtime_mcp_server(runtime: RuntimeInstance) -> bool:
+    config_path = _runtime_config_path(runtime)
+    if not config_path.exists():
+        return False
+
+    try:
+        config = _read_runtime_config(runtime)
+    except RuntimeError:
+        return False
+
+    servers = config.get("mcp_servers")
+    if not isinstance(servers, dict) or COMPOSIO_MCP_SERVER_NAME not in servers:
+        return False
+
+    servers.pop(COMPOSIO_MCP_SERVER_NAME, None)
+    if servers:
+        config["mcp_servers"] = servers
+    else:
+        config.pop("mcp_servers", None)
+
+    _write_runtime_config(runtime, config)
+    return True
+
+
+def _upsert_runtime_composio_prompt(config: dict[str, Any], connected_apps: list[str]) -> bool:
+    agent = config.get("agent")
+    if not isinstance(agent, dict):
+        agent = {}
+
+    current_prompt = agent.get("system_prompt")
+    base_prompt = _strip_managed_composio_prompt(str(current_prompt or ""))
+    desired_prompt = _join_prompt_parts(base_prompt, _build_composio_context_prompt(connected_apps))
+
+    if current_prompt == desired_prompt:
+        return False
+
+    agent["system_prompt"] = desired_prompt
+    config["agent"] = agent
+    return True
+
+
+def _remove_runtime_composio_prompt(runtime: RuntimeInstance) -> bool:
+    config_path = _runtime_config_path(runtime)
+    if not config_path.exists():
+        return False
+
+    try:
+        config = _read_runtime_config(runtime)
+    except RuntimeError:
+        return False
+
+    agent = config.get("agent")
+    if not isinstance(agent, dict):
+        return False
+
+    current_prompt = agent.get("system_prompt")
+    if not isinstance(current_prompt, str) or COMPOSIO_PROMPT_START not in current_prompt:
+        return False
+
+    next_prompt = _strip_managed_composio_prompt(current_prompt)
+    if next_prompt:
+        agent["system_prompt"] = next_prompt
+    else:
+        agent.pop("system_prompt", None)
+    config["agent"] = agent
+    _write_runtime_config(runtime, config)
+    return True
+
+
+def _strip_managed_composio_prompt(prompt: str) -> str:
+    start = prompt.find(COMPOSIO_PROMPT_START)
+    end = prompt.find(COMPOSIO_PROMPT_END)
+    if start == -1 or end == -1 or end < start:
+        return prompt.strip()
+
+    end += len(COMPOSIO_PROMPT_END)
+    return (prompt[:start] + prompt[end:]).strip()
+
+
+def _join_prompt_parts(*parts: str) -> str:
+    return "\n\n".join(part.strip() for part in parts if part and part.strip())
+
+
+def _build_composio_context_prompt(connected_apps: list[str]) -> str:
+    labels = [_composio_app_label(slug) for slug in connected_apps]
+    app_lines = [f"- {label} (`{slug}`)" for slug, label in zip(connected_apps, labels, strict=False)]
+    app_list = "\n".join(app_lines) if app_lines else "- None"
+
+    return "\n".join(
+        [
+            COMPOSIO_PROMPT_START,
+            "## Verxio Connected Apps",
+            "",
+            "Verxio app connections are managed through Composio.",
+            "",
+            "Connected apps:",
+            app_list,
+            "",
+            "Use the Composio MCP server (`mcp_servers.composio`) for these connected apps when the user asks to read, search, summarize, create, update, or schedule through them.",
+            "Hermes exposes Composio tools with the `mcp_composio_` prefix (for example `mcp_composio_GMAIL_FETCH_EMAILS` or `mcp_composio_COMPOSIO_SEARCH_TOOLS`). Use those callable tools directly; do not wait for bare `GMAIL_*` tool names.",
+            "If you need to discover a tool slug first, call `mcp_composio_COMPOSIO_SEARCH_TOOLS`, then execute with `mcp_composio_COMPOSIO_MULTI_EXECUTE_TOOL`.",
+            "When the user asks whether Gmail, Google Calendar, Google Drive, Google Docs, Google Sheets, Notion, Slack, or another app is connected, treat this connected-app list as the source of truth for Verxio.",
+            "Do not report a connected Verxio app as disconnected just because legacy Hermes credential files or environment variables are missing, including `/opt/data/google_token.json`, `/opt/data/google_client_secret.json`, `NOTION_API_KEY`, or `NOTION_API_TOKEN`.",
+            "Only mention those legacy credential paths if the user explicitly asks about the legacy Hermes integration.",
+            "If an app is not listed above, say it is not connected in Verxio and can be connected from Skills > Connections.",
+            COMPOSIO_PROMPT_END,
+        ]
+    )
+
+
+def _composio_app_label(slug: str) -> str:
+    app = next((item for item in COMPOSIO_APP_CATALOG if item.slug == slug), None)
+    if app:
+        return app.name
+    return slug.replace("_", " ").replace("-", " ").title()
+
+
 def _api_key() -> str:
     return os.getenv("COMPOSIO_API_KEY", "").strip()
 
@@ -541,7 +891,7 @@ def _tools_api_base() -> str:
 
 def _headers() -> dict[str, str]:
     key = _api_key()
-    return {"Authorization": f"Bearer {key}", "x-api-key": key}
+    return {"x-api-key": key}
 
 
 def _get(base_url: str, path: str, params: dict[str, Any] | None = None, timeout: int = 30) -> Any:
@@ -778,6 +1128,11 @@ def _format_composio_error(response: httpx.Response) -> str:
     if isinstance(error, dict):
         message = error.get("message") or error.get("detail")
         if isinstance(message, str) and message.strip():
+            errors = error.get("errors")
+            if isinstance(errors, list) and errors:
+                details = "; ".join(str(item) for item in errors if item)
+                if details:
+                    return f"{message.strip()} ({details})"
             return message.strip()
 
     detail = payload.get("detail")

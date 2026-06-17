@@ -38,6 +38,7 @@ import {
 import { notify, notifyError } from '@/store/notifications'
 
 import { useMicRecorder } from '../chat/composer/hooks/use-mic-recorder'
+import { TITLEBAR_CLEARANCE_RIGHT, TITLEBAR_CLEARANCE_TOP } from '../layout-constants'
 import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 
 interface NotepadViewProps {
@@ -733,11 +734,22 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
 
   return (
     <>
-      <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground lg:flex-row">
-        <aside className="flex max-h-40 w-full shrink-0 flex-col border-b border-(--ui-stroke-secondary) bg-(--ui-sidebar-surface-background) lg:h-full lg:max-h-none lg:w-[15rem] lg:border-b-0 lg:border-r">
-          <div className="flex h-12 items-center justify-between border-b border-(--ui-stroke-secondary) px-3">
-            <h1 className="text-sm font-semibold tracking-normal">Notepad</h1>
-            <div className="flex items-center gap-1">
+      <div
+        className={cn(
+          'flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground lg:flex-row',
+          TITLEBAR_CLEARANCE_TOP
+        )}
+      >
+        <aside className="flex min-w-0 max-h-40 w-full shrink-0 flex-col overflow-hidden border-b border-(--ui-stroke-secondary) bg-(--ui-sidebar-surface-background) lg:h-full lg:max-h-none lg:w-48 lg:border-b-0 lg:border-r">
+          <div
+            className={cn(
+              'flex h-12 min-w-0 items-center justify-between gap-2 border-b border-(--ui-stroke-secondary) px-3',
+              TITLEBAR_CLEARANCE_RIGHT,
+              'lg:pr-3'
+            )}
+          >
+            <h1 className="min-w-0 truncate text-sm font-semibold tracking-normal">Notepad</h1>
+            <div className="flex shrink-0 items-center gap-1">
               <Tip label="New folder">
                 <Button
                   aria-label="New folder"
@@ -810,7 +822,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
           </div>
         </aside>
 
-        <section className="flex h-80 w-full shrink-0 flex-col border-b border-(--ui-stroke-secondary) sm:h-[22rem] lg:h-full lg:w-[22rem] lg:border-b-0 lg:border-r">
+        <section className="flex h-80 min-w-0 w-full shrink-0 flex-col overflow-hidden border-b border-(--ui-stroke-secondary) sm:h-[22rem] lg:h-full lg:w-[22rem] lg:border-b-0 lg:border-r">
           <div className="flex h-12 items-center gap-2 border-b border-(--ui-stroke-secondary) px-3">
             <div className="relative min-w-0 flex-1">
               <Codicon
@@ -901,10 +913,15 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
           </div>
         </section>
 
-        <main className="min-h-0 min-w-0 flex-1 overflow-auto">
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {selectedNote && draft ? (
-            <div className="mx-auto flex min-h-full w-full max-w-7xl flex-col">
-              <div className="sticky top-0 z-10 flex min-h-12 flex-wrap items-center gap-2 border-b border-(--ui-stroke-secondary) bg-background/95 px-3 py-2 backdrop-blur sm:px-4">
+            <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col">
+              <div
+                className={cn(
+                  'flex min-h-12 shrink-0 min-w-0 max-w-full flex-wrap items-center gap-2 overflow-x-hidden border-b border-(--ui-stroke-secondary) bg-background/95 px-3 py-2 backdrop-blur sm:px-4',
+                  TITLEBAR_CLEARANCE_RIGHT
+                )}
+              >
                 <input
                   className="h-9 min-w-0 flex-1 basis-full bg-transparent text-lg font-semibold tracking-normal outline-none sm:basis-72"
                   onChange={event =>
@@ -1033,13 +1050,13 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                 </Tip>
               </div>
 
-              <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)]">
-                <section className="border-b border-(--ui-stroke-secondary) p-3 sm:p-4 xl:border-b-0 xl:border-r">
-                  <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-notes">
+              <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] overflow-hidden xl:grid-cols-[minmax(0,1.15fr)_minmax(20rem,0.85fr)] xl:grid-rows-1">
+                <section className="flex min-h-0 flex-col border-b border-(--ui-stroke-secondary) p-3 sm:p-4 xl:border-b-0 xl:border-r">
+                  <label className="shrink-0 text-xs font-medium text-muted-foreground" htmlFor="notepad-notes">
                     Notes
                   </label>
                   <textarea
-                    className="mt-2 min-h-[24rem] w-full resize-y rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3 text-sm leading-6 outline-none focus:border-ring sm:min-h-[30rem] xl:min-h-[36rem]"
+                    className="mt-2 min-h-0 flex-1 w-full resize-none overflow-auto rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3 text-sm leading-6 outline-none focus:border-ring"
                     id="notepad-notes"
                     onChange={event =>
                       setDraft(current => (current ? { ...current, content: event.target.value } : current))
@@ -1048,8 +1065,8 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                   />
                 </section>
 
-                <section className="p-3 sm:p-4">
-                  <div className="flex items-center justify-between gap-2">
+                <section className="flex min-h-0 flex-col p-3 sm:p-4">
+                  <div className="flex shrink-0 items-center justify-between gap-2">
                     <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-summary">
                       Summary
                     </label>
@@ -1066,7 +1083,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
 
                   {summaryEditing ? (
                     <textarea
-                      className="mt-2 min-h-[18rem] w-full resize-y rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3 text-sm leading-6 outline-none focus:border-ring sm:min-h-[24rem] xl:min-h-[36rem]"
+                      className="mt-2 min-h-0 flex-1 w-full resize-none overflow-auto rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3 text-sm leading-6 outline-none focus:border-ring"
                       id="notepad-summary"
                       onChange={event =>
                         setDraft(current => (current ? { ...current, summary: event.target.value } : current))
@@ -1076,12 +1093,12 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                   ) : draft.summary.trim() ? (
                     <div
                       aria-label="Formatted summary"
-                      className="mt-2 min-h-[18rem] overflow-auto rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-4 sm:min-h-[24rem] xl:max-h-[36rem] xl:min-h-[36rem]"
+                      className="mt-2 min-h-0 flex-1 overflow-auto rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-4"
                     >
                       <NotepadMarkdown text={draft.summary} />
                     </div>
                   ) : (
-                    <div className="mt-2 grid min-h-[18rem] place-items-center rounded-[4px] border border-dashed border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-4 text-center text-sm text-muted-foreground sm:min-h-[24rem] xl:min-h-[36rem]">
+                    <div className="mt-2 grid min-h-0 flex-1 place-items-center rounded-[4px] border border-dashed border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-4 text-center text-sm text-muted-foreground">
                       Generate a summary to view it here.
                     </div>
                   )}
@@ -1100,7 +1117,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       </div>
 
       <Dialog onOpenChange={handleFolderDialogOpenChange} open={folderDialogOpen}>
-        <DialogContent className="max-w-sm" showCloseButton={busyAction !== 'new-folder'}>
+        <DialogContent className="max-w-sm" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>New folder</DialogTitle>
             <DialogDescription className="sr-only">Enter a name for the new Notepad folder.</DialogDescription>
@@ -1154,7 +1171,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       </Dialog>
 
       <Dialog onOpenChange={handleDeleteDialogOpenChange} open={Boolean(pendingDelete)}>
-        <DialogContent className="max-w-sm" showCloseButton={!pendingDeleteBusy}>
+        <DialogContent className="max-w-sm" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>{pendingDelete?.kind === 'folder' ? 'Delete folder' : 'Delete note'}</DialogTitle>
             <DialogDescription>

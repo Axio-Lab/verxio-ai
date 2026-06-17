@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from app import composio_catalog, control_plane, db, emailer, main
 from app.auth import SESSION_COOKIE
 from app.main import app
+from app.models import ComposioConnectedAccount, ComposioToolBridgeStatus
 
 
 @pytest.fixture()
@@ -100,6 +101,34 @@ def test_protected_runtime_endpoint_rejects_anonymous_users(client):
     response = client.get("/api/runtime")
 
     assert response.status_code == 401
+
+
+def test_sync_runtime_workspace_updates_mount_paths(client, monkeypatch, tmp_path):
+    payload, _token = signup(client)
+    local_workspace = tmp_path / "Documents" / "Verxio"
+
+    async def fake_restart(runtime):
+        return runtime
+
+    monkeypatch.setattr("app.runtime_manager.restart_runtime", fake_restart)
+
+    response = client.post(
+        "/api/runtime/workspace",
+        json={"workspace_path": str(local_workspace)},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["runtime"]["workspace_path"] == str(local_workspace.resolve())
+    assert body["runtime"]["artifact_path"] == str((local_workspace / "artifacts").resolve())
+
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    assert runtime_row["workspace_path"] == str(local_workspace.resolve())
+    assert (local_workspace / "artifacts").is_dir()
 
 
 def test_protected_composio_endpoint_rejects_anonymous_users(client):
@@ -407,13 +436,156 @@ def test_composio_catalog_uses_authenticated_workspace_contract(client, monkeypa
     assert accounts.status_code == 200
     assert apps.json()["configured"] is False
     assert apps.json()["catalogReady"] is False
-    assert accounts.json() == {"accounts": [], "configured": False}
+    assert accounts.json() == {
+        "accounts": [],
+        "configured": False,
+        "toolBridge": {
+            "changed": False,
+            "configured": False,
+            "connectedApps": [],
+            "enabled": False,
+            "message": "Composio is not configured.",
+            "serverName": "composio",
+        },
+    }
     assert len(apps.json()["apps"]) == 15
     assert apps.json()["apps"][0]["slug"] == "gmail"
     assert tools.json()["configured"] is False
     assert tools.json()["tools"][0]["slug"] == "GMAIL_SEARCH_EMAILS"
     assert initiate.status_code == 500
     assert initiate.json()["detail"] == "Composio is not configured."
+
+
+def test_composio_bridge_writes_runtime_mcp_server(client, monkeypatch):
+    monkeypatch.setenv("COMPOSIO_API_KEY", "test-key")
+    payload, _token = signup(client, "composio-bridge@example.com")
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    runtime = control_plane.runtime_from_row(runtime_row)
+
+    calls: list[dict] = []
+
+    def fake_post(url: str, body: dict, timeout: int = 30):
+        assert url.endswith("/tool_router/session")
+        calls.append(body)
+        return {"id": "session_123", "mcp": {"url": "https://mcp.composio.dev/session_123"}}
+
+    monkeypatch.setattr(composio_catalog, "_post", fake_post)
+
+    status = composio_catalog.sync_composio_runtime_bridge(
+        runtime,
+        payload["user"]["id"],
+        [ComposioConnectedAccount(appSlug="gmail", id="ca_gmail", status="ACTIVE")],
+    )
+
+    assert status.enabled is True
+    assert status.changed is True
+    assert status.connectedApps == ["gmail"]
+    assert calls[0]["connected_accounts"] == {"gmail": ["ca_gmail"]}
+    assert calls[0]["toolkits"] == {"enable": ["gmail"]}
+
+    config_path = Path(runtime.hermes_home_path) / "config.yaml"
+    config = config_path.read_text(encoding="utf-8")
+    assert "mcp_servers:" in config
+    assert "composio:" in config
+    assert "https://mcp.composio.dev/session_123" in config
+    assert "${COMPOSIO_API_KEY}" in config
+    assert "## Verxio Connected Apps" in config
+    assert "Gmail (`gmail`)" in config
+    assert "/opt/data/google_token.json" in config
+    assert "source of truth for Verxio" in config
+
+
+def test_composio_connections_restart_stale_runtime_env(client, monkeypatch):
+    monkeypatch.setenv("COMPOSIO_API_KEY", "test-key")
+    payload, token = signup(client, "composio-stale-runtime@example.com")
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    db.execute(
+        "UPDATE runtime_instances SET status = 'running', container_name = ? WHERE id = ?",
+        ("verxio-test-runtime", runtime_row["id"]),
+    )
+
+    monkeypatch.setattr(
+        main,
+        "list_composio_accounts",
+        lambda _user_id: [ComposioConnectedAccount(appSlug="gmail", id="ca_gmail", status="ACTIVE")],
+    )
+    monkeypatch.setattr(
+        main,
+        "sync_composio_runtime_bridge",
+        lambda _runtime, _user_id, _accounts: ComposioToolBridgeStatus(
+            configured=True,
+            enabled=True,
+            changed=False,
+            connectedApps=["gmail"],
+        ),
+    )
+    monkeypatch.setattr(main, "runtime_container_env_matches", lambda _runtime, _key, _value: False)
+
+    restarted: list[str] = []
+
+    async def fake_restart(runtime):
+        restarted.append(runtime.id)
+        return runtime
+
+    monkeypatch.setattr(main, "restart_runtime", fake_restart)
+
+    response = client.get("/api/composio/connections", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+
+    assert response.status_code == 200
+    assert restarted == [runtime_row["id"]]
+
+
+def test_composio_bridge_sync_restarts_stale_runtime_env_without_refresh_flag(client, monkeypatch):
+    monkeypatch.setenv("COMPOSIO_API_KEY", "test-key")
+    payload, _token = signup(client, "composio-stale-runtime-login@example.com")
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    db.execute(
+        "UPDATE runtime_instances SET status = 'running', container_name = ? WHERE id = ?",
+        ("verxio-test-runtime", runtime_row["id"]),
+    )
+
+    monkeypatch.setattr(
+        main,
+        "list_composio_accounts",
+        lambda _user_id: [ComposioConnectedAccount(appSlug="gmail", id="ca_gmail", status="ACTIVE")],
+    )
+    monkeypatch.setattr(
+        main,
+        "sync_composio_runtime_bridge",
+        lambda _runtime, _user_id, _accounts: ComposioToolBridgeStatus(
+            configured=True,
+            enabled=True,
+            changed=False,
+            connectedApps=["gmail"],
+        ),
+    )
+    monkeypatch.setattr(main, "runtime_container_env_matches", lambda _runtime, _key, _value: False)
+
+    restarted: list[str] = []
+
+    async def fake_restart(runtime):
+        restarted.append(runtime.id)
+        return runtime
+
+    monkeypatch.setattr(main, "restart_runtime", fake_restart)
+
+    import asyncio
+
+    asyncio.run(main._sync_composio_bridge_for_user(payload["user"], refresh_running=False))
+
+    assert restarted == [runtime_row["id"]]
 
 
 def test_composio_setup_returns_inline_fields(client, monkeypatch):

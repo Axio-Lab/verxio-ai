@@ -1,5 +1,12 @@
 import type { PreviewTarget } from '@/store/preview'
 
+import {
+  getDesktopWorkspaceRoot,
+  isRuntimeWorkspacePath,
+  isVerxioDesktop,
+  resolveDesktopWorkspaceCwd
+} from './desktop-workspace'
+
 const HTML_EXTENSIONS = new Set(['.htm', '.html'])
 const IMAGE_EXTENSIONS = new Set(['.bmp', '.gif', '.jpeg', '.jpg', '.png', '.svg', '.webp'])
 
@@ -67,10 +74,14 @@ function pathToFileUrl(path: string) {
 }
 
 export function localPreviewTarget(rawTarget: string, cwd?: string | null): PreviewTarget | null {
-  const raw = rawTarget.trim().replace(/^`|`$/g, '')
+  let raw = rawTarget.trim().replace(/^`|`$/g, '')
 
   if (!raw) {
     return null
+  }
+
+  if (isVerxioDesktop() && isRuntimeWorkspacePath(raw)) {
+    raw = resolveDesktopWorkspaceCwd(raw, getDesktopWorkspaceRoot()) ?? raw
   }
 
   if (/^https?:\/\//i.test(raw)) {
@@ -86,7 +97,14 @@ export function localPreviewTarget(rawTarget: string, cwd?: string | null): Prev
       path = raw.replace(/^file:\/\//i, '')
     }
   } else if (!raw.startsWith('/') && cwd) {
-    path = joinPath(cwd, raw)
+    const resolvedCwd =
+      isVerxioDesktop() && isRuntimeWorkspacePath(cwd)
+        ? (resolveDesktopWorkspaceCwd(cwd, getDesktopWorkspaceRoot()) ?? cwd)
+        : cwd
+
+    path = joinPath(resolvedCwd, raw)
+  } else if (isVerxioDesktop() && !raw.startsWith('/') && isRuntimeWorkspacePath(raw)) {
+    path = resolveDesktopWorkspaceCwd(raw, getDesktopWorkspaceRoot()) ?? raw
   }
 
   const ext = extension(path)
