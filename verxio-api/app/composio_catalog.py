@@ -891,7 +891,7 @@ def _tools_api_base() -> str:
 
 def _headers() -> dict[str, str]:
     key = _api_key()
-    return {"Authorization": f"Bearer {key}", "x-api-key": key}
+    return {"x-api-key": key}
 
 
 def _get(base_url: str, path: str, params: dict[str, Any] | None = None, timeout: int = 30) -> Any:
