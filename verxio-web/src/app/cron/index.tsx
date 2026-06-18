@@ -701,7 +701,7 @@ function CronEditorDialog({
 
           <Field htmlFor="cron-prompt" label={c.promptLabel}>
             <Textarea
-              className="min-h-24 font-mono"
+              className="max-h-64 min-h-24 overflow-y-auto font-mono"
               id="cron-prompt"
               onChange={event => setPrompt(event.target.value)}
               placeholder={c.promptPlaceholder}

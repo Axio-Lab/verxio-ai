@@ -50,6 +50,8 @@ declare global {
       setTitleBarTheme?: (payload: HermesTitleBarTheme) => void
       setPreviewShortcutActive?: (active: boolean) => void
       openExternal: (url: string) => Promise<void>
+      openComposioOAuth?: (authUrl: string, callbackUrl: string) => Promise<{ error?: string; ok: boolean }>
+      onComposioOAuthComplete?: (callback: (href: string) => void) => () => void
       fetchLinkTitle: (url: string) => Promise<string>
       settings: {
         getDefaultProjectDir: () => Promise<{ defaultLabel: string; dir: null | string }>
