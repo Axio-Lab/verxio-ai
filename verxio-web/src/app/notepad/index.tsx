@@ -16,7 +16,9 @@ import {
 import { Input } from '@/components/ui/input'
 import { Tip } from '@/components/ui/tooltip'
 import { VerxioWordmark } from '@/components/verxio-wordmark'
+import type { DesktopCaptureSource } from '@/global'
 import { NOTEPAD_RECORDING_BITS_PER_SECOND, transcribeAudioBlob } from '@/lib/audio'
+import { isVerxioDesktop } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import {
   createNotepadFolder,
@@ -160,7 +162,18 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
   const [recordingMode, setRecordingMode] = useState<RecordingMode>('idle')
   const [recordingSeconds, setRecordingSeconds] = useState(0)
-  const [systemAudioSupported, setSystemAudioSupported] = useState(Boolean(window.hermesDesktop))
+
+  const [systemAudioSupported, setSystemAudioSupported] = useState(
+    () =>
+      typeof navigator !== 'undefined' &&
+      Boolean(navigator.mediaDevices?.getDisplayMedia) &&
+      (!isVerxioDesktop() || Boolean(window.hermesDesktop?.audio?.listCaptureSources))
+  )
+
+  const [capturePickerOpen, setCapturePickerOpen] = useState(false)
+  const [captureSources, setCaptureSources] = useState<DesktopCaptureSource[]>([])
+  const [selectedCaptureSourceId, setSelectedCaptureSourceId] = useState<string | null>(null)
+  const [capturePickerLoading, setCapturePickerLoading] = useState(false)
   const { handle: micRecorder, level: micLevel } = useMicRecorder(NOTEPAD_MIC_COPY)
   const systemRecorderRef = useRef<MediaRecorder | null>(null)
   const systemStreamRef = useRef<MediaStream | null>(null)
@@ -503,7 +516,11 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
 
     if (!audioTracks.length) {
       capture.getTracks().forEach(track => track.stop())
-      throw new Error('No device audio track was provided. Use microphone recording for this meeting.')
+      throw new Error(
+        isVerxioDesktop()
+          ? 'No system audio track was available for the selected source. Try another screen or window, or use microphone recording.'
+          : 'No audio was shared. Select a screen or window and enable audio sharing in the browser dialog, or use microphone recording.'
+      )
     }
 
     capture.getVideoTracks().forEach(track => track.stop())
@@ -529,7 +546,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       }
     }
 
-    recorder.start()
+    recorder.start(1000)
     setRecordingMode('system')
   }
 
@@ -581,7 +598,8 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   }
 
   async function transcribeRecording(audio: Blob | null, source: 'desktop-audio' | 'microphone') {
-    if (!audio) {
+    if (!audio || audio.size === 0) {
+      notify({ kind: 'warning', message: 'Recording was empty. Try again and speak or play audio before stopping.' })
       setRecordingMode('idle')
 
       return
@@ -609,11 +627,68 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       return
     }
 
+    if (isVerxioDesktop()) {
+      setCapturePickerLoading(true)
+      setCapturePickerOpen(true)
+      setSelectedCaptureSourceId(null)
+
+      try {
+        const sources = (await window.hermesDesktop?.audio?.listCaptureSources?.()) ?? []
+        setCaptureSources(sources)
+
+        if (!sources.length) {
+          setCapturePickerOpen(false)
+          notifyError(
+            new Error('No screens or windows are available to record.'),
+            'Could not start device audio recording'
+          )
+        }
+      } catch (error) {
+        setCapturePickerOpen(false)
+        notifyError(error, 'Could not start device audio recording')
+      } finally {
+        setCapturePickerLoading(false)
+      }
+
+      return
+    }
+
     try {
       await startSystemRecording()
     } catch (error) {
       notifyError(error, 'Could not start device audio recording')
       setRecordingMode('idle')
+    }
+  }
+
+  async function handleConfirmCaptureSource() {
+    if (!selectedCaptureSourceId) {
+      return
+    }
+
+    setCapturePickerOpen(false)
+
+    try {
+      const prepared = await window.hermesDesktop?.audio?.prepareCaptureSource?.(selectedCaptureSourceId)
+
+      if (!prepared?.ok) {
+        throw new Error('Could not prepare the selected capture source.')
+      }
+
+      await startSystemRecording()
+    } catch (error) {
+      notifyError(error, 'Could not start device audio recording')
+      setRecordingMode('idle')
+    }
+  }
+
+  function handleCapturePickerOpenChange(open: boolean) {
+    setCapturePickerOpen(open)
+
+    if (!open) {
+      setCaptureSources([])
+      setSelectedCaptureSourceId(null)
+      setCapturePickerLoading(false)
     }
   }
 
@@ -953,10 +1028,12 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                 {recordingMode === 'idle' ? (
                   <>
                     {systemAudioSupported && (
-                      <Button onClick={handleStartSystemRecording} size="sm" type="button" variant="secondary">
-                        <Codicon name="record" />
-                        Device
-                      </Button>
+                      <Tip label="Record device audio from a screen or window">
+                        <Button onClick={handleStartSystemRecording} size="sm" type="button" variant="secondary">
+                          <Codicon name="record" />
+                          Device
+                        </Button>
+                      </Tip>
                     )}
                     <Tip label="Record microphone">
                       <Button
@@ -1203,6 +1280,61 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
             <Button disabled={pendingDeleteBusy} onClick={handleConfirmDelete} type="button" variant="destructive">
               {pendingDeleteBusy ? <Codicon name="loading" spinning /> : <Codicon name="trash" />}
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog onOpenChange={handleCapturePickerOpenChange} open={capturePickerOpen}>
+        <DialogContent className="max-w-md" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Choose what to record</DialogTitle>
+            <DialogDescription>
+              Select a screen or window. Verxio records system audio from your device while the meeting plays.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-64 space-y-2 overflow-y-auto">
+            {capturePickerLoading ? (
+              <div className="text-dt-muted flex items-center gap-2 px-1 py-2 text-sm">
+                <Codicon name="loading" spinning />
+                Loading screens and windows…
+              </div>
+            ) : captureSources.length ? (
+              captureSources.map(source => {
+                const selected = selectedCaptureSourceId === source.id
+
+                return (
+                  <button
+                    className={cn(
+                      'border-dt-border hover:bg-dt-muted/40 flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors',
+                      selected && 'border-dt-primary bg-dt-primary/10'
+                    )}
+                    key={source.id}
+                    onClick={() => setSelectedCaptureSourceId(source.id)}
+                    type="button"
+                  >
+                    <Codicon name={source.type === 'screen' ? 'device-desktop' : 'window'} />
+                    <span className="truncate">{source.name}</span>
+                  </button>
+                )
+              })
+            ) : (
+              <p className="text-dt-muted px-1 py-2 text-sm">No screens or windows are available.</p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button onClick={() => handleCapturePickerOpenChange(false)} type="button" variant="ghost">
+              Cancel
+            </Button>
+            <Button
+              disabled={!selectedCaptureSourceId || capturePickerLoading}
+              onClick={() => void handleConfirmCaptureSource()}
+              type="button"
+              variant="secondary"
+            >
+              Start recording
             </Button>
           </DialogFooter>
         </DialogContent>
