@@ -174,6 +174,12 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   const [captureSources, setCaptureSources] = useState<DesktopCaptureSource[]>([])
   const [selectedCaptureSourceId, setSelectedCaptureSourceId] = useState<string | null>(null)
   const [capturePickerLoading, setCapturePickerLoading] = useState(false)
+
+  const selectedCaptureSource = useMemo(
+    () => captureSources.find(source => source.id === selectedCaptureSourceId) ?? null,
+    [captureSources, selectedCaptureSourceId]
+  )
+
   const { handle: micRecorder, level: micLevel } = useMicRecorder(NOTEPAD_MIC_COPY)
   const systemRecorderRef = useRef<MediaRecorder | null>(null)
   const systemStreamRef = useRef<MediaStream | null>(null)
@@ -1029,7 +1035,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                   <>
                     {systemAudioSupported && (
                       <Tip label="Record device audio from a screen or window">
-                        <Button onClick={handleStartSystemRecording} size="sm" type="button" variant="secondary">
+                        <Button onClick={handleStartSystemRecording} size="sm" type="button" variant="default">
                           <Codicon name="record" />
                           Device
                         </Button>
@@ -1290,11 +1296,13 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
           <DialogHeader>
             <DialogTitle>Choose what to record</DialogTitle>
             <DialogDescription>
-              Select a screen or window. Verxio records system audio from your device while the meeting plays.
+              {selectedCaptureSource
+                ? `Selected: ${selectedCaptureSource.name}. Verxio records system audio while your meeting plays.`
+                : 'Pick a screen or window to capture device audio from your meeting.'}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="max-h-64 space-y-2 overflow-y-auto">
+          <div aria-label="Available screens and windows" className="max-h-64 space-y-2 overflow-y-auto" role="listbox">
             {capturePickerLoading ? (
               <div className="text-dt-muted flex items-center gap-2 px-1 py-2 text-sm">
                 <Codicon name="loading" spinning />
@@ -1306,16 +1314,33 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
 
                 return (
                   <button
+                    aria-selected={selected}
                     className={cn(
-                      'border-dt-border hover:bg-dt-muted/40 flex w-full items-center gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors',
-                      selected && 'border-dt-primary bg-dt-primary/10'
+                      'flex w-full items-center gap-3 rounded-md border px-3 py-2.5 text-left text-sm transition-all outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                      selected
+                        ? 'border-primary bg-primary/12 text-foreground ring-2 ring-primary/30 shadow-sm'
+                        : 'border-(--ui-stroke-secondary) text-(--ui-text-secondary) hover:border-(--ui-stroke-primary) hover:bg-(--ui-control-hover-background) hover:text-foreground'
                     )}
                     key={source.id}
                     onClick={() => setSelectedCaptureSourceId(source.id)}
+                    role="option"
                     type="button"
                   >
-                    <Codicon name={source.type === 'screen' ? 'device-desktop' : 'window'} />
-                    <span className="truncate">{source.name}</span>
+                    <span
+                      className={cn(
+                        'grid size-8 shrink-0 place-items-center rounded-md',
+                        selected ? 'bg-primary/15 text-primary' : 'bg-(--ui-bg-quaternary) text-(--ui-text-tertiary)'
+                      )}
+                    >
+                      <Codicon name={source.type === 'screen' ? 'device-desktop' : 'window'} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className={cn('block truncate', selected && 'font-medium')}>{source.name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {source.type === 'screen' ? 'Screen' : 'Window'}
+                      </span>
+                    </span>
+                    {selected ? <Codicon className="shrink-0 text-primary" name="check" /> : null}
                   </button>
                 )
               })
@@ -1332,8 +1357,9 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
               disabled={!selectedCaptureSourceId || capturePickerLoading}
               onClick={() => void handleConfirmCaptureSource()}
               type="button"
-              variant="secondary"
+              variant={selectedCaptureSourceId ? 'default' : 'secondary'}
             >
+              <Codicon name="record" />
               Start recording
             </Button>
           </DialogFooter>
