@@ -351,7 +351,9 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
     }),
   notify: payload => ipcRenderer.invoke('verxio:notify', payload),
   audio: {
-    captureSupport: () => ipcRenderer.invoke('verxio:audio:captureSupport')
+    captureSupport: () => ipcRenderer.invoke('verxio:audio:captureSupport'),
+    listCaptureSources: () => ipcRenderer.invoke('verxio:audio:listCaptureSources'),
+    prepareCaptureSource: sourceId => ipcRenderer.invoke('verxio:audio:prepareCaptureSource', sourceId)
   },
   requestMicrophoneAccess: async () => {
     const nativeAllowed = await ipcRenderer.invoke('verxio:requestMicrophoneAccess')

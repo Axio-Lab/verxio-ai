@@ -394,33 +394,58 @@ function supportsSystemAudioLoopback() {
   return IS_WINDOWS || IS_MAC
 }
 
+let pendingCaptureSourceId = null
+
+async function listDesktopCaptureSources() {
+  const sources = await desktopCapturer.getSources({
+    fetchWindowIcons: false,
+    thumbnailSize: { height: 1, width: 1 },
+    types: ['screen', 'window']
+  })
+
+  return sources.map(source => ({
+    id: source.id,
+    name: source.name,
+    type: source.id.startsWith('screen:') ? 'screen' : 'window'
+  }))
+}
+
 function configureDisplayMediaCapture() {
   session.defaultSession.setDisplayMediaRequestHandler(
     async (request, callback) => {
+      const sourceId = pendingCaptureSourceId
+      pendingCaptureSourceId = null
+
       try {
+        if (!sourceId) {
+          callback({})
+
+          return
+        }
+
         const sources = await desktopCapturer.getSources({
           fetchWindowIcons: false,
           thumbnailSize: { height: 1, width: 1 },
           types: ['screen', 'window']
         })
-        const screen = sources.find(source => /screen|entire/i.test(source.name)) || sources[0]
+        const chosen = sources.find(source => source.id === sourceId)
 
-        if (!screen) {
+        if (!chosen) {
           callback({})
 
           return
         }
 
         callback({
-          video: request.videoRequested ? screen : undefined,
+          video: request.videoRequested ? chosen : undefined,
           audio: request.audioRequested && supportsSystemAudioLoopback() ? 'loopback' : undefined
         })
       } catch {
         callback({})
       }
     },
-    // macOS system picker bypasses this handler and often omits loopback audio.
-    { useSystemPicker: IS_MAC ? false : true }
+    // Desktop uses an in-app source picker before getDisplayMedia; web uses the browser picker.
+    { useSystemPicker: false }
   )
 }
 
@@ -738,8 +763,22 @@ ipcMain.handle('verxio:audio:captureSupport', () => ({
   platform: process.platform,
   systemAudio: supportsSystemAudioLoopback(),
   loopbackAudio: supportsSystemAudioLoopback(),
-  systemPicker: IS_MAC
+  systemPicker: false
 }))
+
+ipcMain.handle('verxio:audio:listCaptureSources', async () => {
+  try {
+    return await listDesktopCaptureSources()
+  } catch {
+    return []
+  }
+})
+
+ipcMain.handle('verxio:audio:prepareCaptureSource', (_event, sourceId) => {
+  pendingCaptureSourceId = typeof sourceId === 'string' && sourceId.trim() ? sourceId.trim() : null
+
+  return { ok: Boolean(pendingCaptureSourceId) }
+})
 
 ipcMain.handle('verxio:readFileDataUrl', async (_event, filePath) => {
   const resolved = assertPathAllowed(filePath)

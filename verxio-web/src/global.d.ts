@@ -32,6 +32,8 @@ declare global {
       notify: (payload: HermesNotification) => Promise<boolean>
       audio?: {
         captureSupport: () => Promise<DesktopAudioCaptureSupport>
+        listCaptureSources?: () => Promise<DesktopCaptureSource[]>
+        prepareCaptureSource?: (sourceId: string) => Promise<{ ok: boolean }>
       }
       requestMicrophoneAccess: () => Promise<boolean>
       readFileDataUrl: (filePath: string) => Promise<string>
@@ -359,6 +361,12 @@ export interface DesktopAudioCaptureSupport {
   systemAudio: boolean
   loopbackAudio: boolean
   systemPicker: boolean
+}
+
+export interface DesktopCaptureSource {
+  id: string
+  name: string
+  type: 'screen' | 'window'
 }
 
 export interface HermesPreviewTarget {
