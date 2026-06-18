@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 type BrowserAudioContext = typeof AudioContext
 
 export interface MicRecorderOptions {
+  audioBitsPerSecond?: number
   onLevel?: (level: number) => void
   onError?: (error: Error) => void
   onSilence?: () => void
@@ -199,7 +200,17 @@ export function useMicRecorder(copy: MicRecorderErrorCopy): {
     let recorder: MediaRecorder
 
     try {
-      recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+      const recorderOptions: MediaRecorderOptions = {}
+
+      if (mimeType) {
+        recorderOptions.mimeType = mimeType
+      }
+
+      if (options.audioBitsPerSecond) {
+        recorderOptions.audioBitsPerSecond = options.audioBitsPerSecond
+      }
+
+      recorder = new MediaRecorder(stream, recorderOptions)
     } catch (error) {
       stream.getTracks().forEach(track => track.stop())
       throw micError(error, copy)

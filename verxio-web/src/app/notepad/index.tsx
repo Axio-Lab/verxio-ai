@@ -16,7 +16,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Tip } from '@/components/ui/tooltip'
 import { VerxioWordmark } from '@/components/verxio-wordmark'
-import { transcribeAudioBlob } from '@/lib/audio'
+import { NOTEPAD_RECORDING_BITS_PER_SECOND, transcribeAudioBlob } from '@/lib/audio'
 import { cn } from '@/lib/utils'
 import {
   createNotepadFolder,
@@ -514,7 +514,10 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
         MediaRecorder.isTypeSupported(type)
       ) ?? ''
 
-    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+    const recorder = new MediaRecorder(stream, {
+      ...(mimeType ? { mimeType } : {}),
+      audioBitsPerSecond: NOTEPAD_RECORDING_BITS_PER_SECOND
+    })
 
     systemChunksRef.current = []
     systemStreamRef.current = stream
@@ -620,7 +623,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     }
 
     try {
-      await micRecorder.start()
+      await micRecorder.start({ audioBitsPerSecond: NOTEPAD_RECORDING_BITS_PER_SECOND })
       setRecordingMode('mic')
     } catch (error) {
       notifyError(error, 'Could not start microphone recording')

@@ -583,7 +583,7 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     token = _runtime_dashboard_token(runtime.id)
     target = f"{runtime.dashboard_url.rstrip('/')}/{path}"
     body = await request.body()
-    async with httpx.AsyncClient(timeout=60, follow_redirects=False) as client:
+    async with httpx.AsyncClient(timeout=300, follow_redirects=False) as client:
         upstream = await client.request(
             request.method,
             target,
