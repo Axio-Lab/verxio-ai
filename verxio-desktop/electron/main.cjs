@@ -390,6 +390,10 @@ function createWindow() {
   mainWindow.loadURL(rendererUrl())
 }
 
+function supportsSystemAudioLoopback() {
+  return IS_WINDOWS || IS_MAC
+}
+
 function configureDisplayMediaCapture() {
   session.defaultSession.setDisplayMediaRequestHandler(
     async (request, callback) => {
@@ -409,13 +413,14 @@ function configureDisplayMediaCapture() {
 
         callback({
           video: request.videoRequested ? screen : undefined,
-          audio: request.audioRequested && IS_WINDOWS ? 'loopback' : undefined
+          audio: request.audioRequested && supportsSystemAudioLoopback() ? 'loopback' : undefined
         })
       } catch {
         callback({})
       }
     },
-    { useSystemPicker: true }
+    // macOS system picker bypasses this handler and often omits loopback audio.
+    { useSystemPicker: IS_MAC ? false : true }
   )
 }
 
@@ -731,8 +736,8 @@ ipcMain.handle('verxio:requestMicrophoneAccess', async () => {
 
 ipcMain.handle('verxio:audio:captureSupport', () => ({
   platform: process.platform,
-  systemAudio: true,
-  loopbackAudio: IS_WINDOWS,
+  systemAudio: supportsSystemAudioLoopback(),
+  loopbackAudio: supportsSystemAudioLoopback(),
   systemPicker: IS_MAC
 }))
 

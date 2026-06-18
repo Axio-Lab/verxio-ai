@@ -55,6 +55,7 @@
         "CFBundleDisplayName": "Verxio",
         "CFBundleName": "Verxio",
         "NSAudioCaptureUsageDescription": "Verxio uses system audio capture for bot-free meeting notes.",
+        "NSScreenCaptureUsageDescription": "Verxio captures your screen briefly to attach system audio for meeting notes.",
         "NSDesktopFolderUsageDescription": "Verxio reads folders you choose for local agent context.",
         "NSDocumentsFolderUsageDescription": "Verxio reads documents you choose for local agent context.",
         "NSDownloadsFolderUsageDescription": "Verxio saves exported artifacts and images to Downloads when requested.",
