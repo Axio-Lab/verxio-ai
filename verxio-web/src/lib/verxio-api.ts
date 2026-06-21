@@ -224,45 +224,66 @@ export function verxioApiUrl(path: string): string {
   return `${base}${normalized}`
 }
 
-export async function verxioFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(verxioApiUrl(path), {
-    ...init,
-    credentials: 'include',
-    headers: {
-      ...(init.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
-      ...(init.headers ?? {})
-    }
-  })
+export async function verxioFetch<T>(path: string, init: RequestInit & { timeoutMs?: number } = {}): Promise<T> {
+  const controller = new AbortController()
+  const { timeoutMs, ...requestInit } = init
+  let timeoutId: number | undefined
 
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '')
+  if (timeoutMs && timeoutMs > 0) {
+    timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
+  }
 
-    if (detail) {
-      try {
-        const parsed = JSON.parse(detail) as { detail?: unknown; message?: unknown }
+  try {
+    const response = await fetch(verxioApiUrl(path), {
+      ...requestInit,
+      credentials: 'include',
+      signal: controller.signal,
+      headers: {
+        ...(requestInit.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+        ...(requestInit.headers ?? {})
+      }
+    })
 
-        if (typeof parsed.detail === 'string' && parsed.detail.trim()) {
-          throw new Error(parsed.detail.trim())
-        }
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '')
 
-        if (typeof parsed.message === 'string' && parsed.message.trim()) {
-          throw new Error(parsed.message.trim())
-        }
-      } catch (error) {
-        if (error instanceof Error && error.message !== detail) {
-          throw error
+      if (detail) {
+        try {
+          const parsed = JSON.parse(detail) as { detail?: unknown; message?: unknown }
+
+          if (typeof parsed.detail === 'string' && parsed.detail.trim()) {
+            throw new Error(parsed.detail.trim())
+          }
+
+          if (typeof parsed.message === 'string' && parsed.message.trim()) {
+            throw new Error(parsed.message.trim())
+          }
+        } catch (error) {
+          if (error instanceof Error && error.message !== detail) {
+            throw error
+          }
         }
       }
+
+      throw new Error(detail || `${response.status} ${response.statusText}`)
     }
 
-    throw new Error(detail || `${response.status} ${response.statusText}`)
-  }
+    if (response.status === 204) {
+      return undefined as T
+    }
 
-  if (response.status === 204) {
-    return undefined as T
-  }
+    return (await response.json()) as T
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('Request timed out. Try a shorter recording and transcribe again.')
+    }
 
-  return (await response.json()) as T
+    throw error
+  } finally {
+    if (timeoutId !== undefined) {
+      window.clearTimeout(timeoutId)
+    }
+  }
 }
 
 export interface VerxioRuntimeControlResponse {

@@ -32,6 +32,8 @@ declare global {
       notify: (payload: HermesNotification) => Promise<boolean>
       audio?: {
         captureSupport: () => Promise<DesktopAudioCaptureSupport>
+        listCaptureSources?: () => Promise<DesktopCaptureSource[]>
+        prepareCaptureSource?: (sourceId: string) => Promise<{ ok: boolean }>
       }
       requestMicrophoneAccess: () => Promise<boolean>
       readFileDataUrl: (filePath: string) => Promise<string>
@@ -48,6 +50,8 @@ declare global {
       setTitleBarTheme?: (payload: HermesTitleBarTheme) => void
       setPreviewShortcutActive?: (active: boolean) => void
       openExternal: (url: string) => Promise<void>
+      openComposioOAuth?: (authUrl: string, callbackUrl: string) => Promise<{ error?: string; ok: boolean }>
+      onComposioOAuthComplete?: (callback: (href: string) => void) => () => void
       fetchLinkTitle: (url: string) => Promise<string>
       settings: {
         getDefaultProjectDir: () => Promise<{ defaultLabel: string; dir: null | string }>
@@ -359,6 +363,12 @@ export interface DesktopAudioCaptureSupport {
   systemAudio: boolean
   loopbackAudio: boolean
   systemPicker: boolean
+}
+
+export interface DesktopCaptureSource {
+  id: string
+  name: string
+  type: 'screen' | 'window'
 }
 
 export interface HermesPreviewTarget {

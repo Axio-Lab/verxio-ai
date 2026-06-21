@@ -1,6 +1,9 @@
+import { useState } from 'react'
+
 import { StatusRow } from '@/components/chat/status-row'
 import { StatusSection } from '@/components/chat/status-section'
 import { Button } from '@/components/ui/button'
+import { DisclosureCaret } from '@/components/ui/disclosure-caret'
 import { type Translations, useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 import type { QueuedPromptEntry } from '@/store/composer-queue'
@@ -17,6 +20,44 @@ interface QueuePanelProps {
 const entryPreview = (entry: QueuedPromptEntry, c: Translations['composer']) =>
   entry.text.trim() || (entry.attachments.length > 0 ? c.attachmentOnly : c.emptyTurn)
 
+function isLongPrompt(text: string): boolean {
+  return text.length > 100 || text.includes('\n')
+}
+
+function QueuedPromptText({ preview, text }: { preview: string; text: string }) {
+  const { t } = useI18n()
+  const c = t.composer
+  const [expanded, setExpanded] = useState(false)
+  const long = isLongPrompt(text)
+
+  if (!long) {
+    return <p className="truncate text-[0.73rem] leading-4 text-foreground/92">{preview}</p>
+  }
+
+  return (
+    <div className="min-w-0 flex-1">
+      {expanded ? (
+        <div className="max-h-32 overflow-y-auto overscroll-y-contain whitespace-pre-wrap break-words text-[0.73rem] leading-4 text-foreground/92">
+          {text}
+        </div>
+      ) : (
+        <p className="truncate text-[0.73rem] leading-4 text-foreground/92">{preview}</p>
+      )}
+      <button
+        className="mt-0.5 flex items-center gap-0.5 text-[0.64rem] text-muted-foreground/75 hover:text-foreground/90"
+        onClick={event => {
+          event.stopPropagation()
+          setExpanded(open => !open)
+        }}
+        type="button"
+      >
+        <DisclosureCaret open={expanded} size="0.75em" />
+        {expanded ? c.queueShowLess : c.queueShowFull}
+      </button>
+    </div>
+  )
+}
+
 export function QueuePanel({ busy, editingId, entries, onDelete, onEdit, onSendNow }: QueuePanelProps) {
   const { t } = useI18n()
   const c = t.composer
@@ -30,6 +71,8 @@ export function QueuePanel({ busy, editingId, entries, onDelete, onEdit, onSendN
       {entries.map(entry => {
         const isEditing = editingId === entry.id
         const attachmentsCount = entry.attachments.length
+        const preview = entryPreview(entry, c)
+        const fullText = entry.text.trim()
 
         return (
           <StatusRow
@@ -69,7 +112,7 @@ export function QueuePanel({ busy, editingId, entries, onDelete, onEdit, onSendN
             trailingVisible={isEditing}
           >
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[0.73rem] leading-4 text-foreground/92">{entryPreview(entry, c)}</p>
+              <QueuedPromptText preview={preview} text={fullText || preview} />
               {(attachmentsCount > 0 || isEditing) && (
                 <div className="mt-0.5 flex items-center gap-1.5 text-[0.64rem] text-muted-foreground/75">
                   {attachmentsCount > 0 && <span>{c.attachments(attachmentsCount)}</span>}

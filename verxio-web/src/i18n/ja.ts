@@ -1295,6 +1295,8 @@ export const ja = defineLocale({
     queueSendNext: '次へ',
     queueSend: '送信',
     queueDelete: '削除',
+    queueShowFull: 'プロンプト全文を表示',
+    queueShowLess: '折りたたむ',
     previewUnavailable: 'プレビューは利用できません',
     previewLabel: label => `${label} のプレビュー`,
     couldNotPreview: label => `${label} をプレビューできませんでした`,

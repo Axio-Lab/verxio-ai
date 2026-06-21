@@ -75,6 +75,7 @@ app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 
 let mainWindow = null
+let composioOAuthWindow = null
 const terminalSessions = new Map()
 const fileWatches = new Map()
 
@@ -390,32 +391,62 @@ function createWindow() {
   mainWindow.loadURL(rendererUrl())
 }
 
+function supportsSystemAudioLoopback() {
+  return IS_WINDOWS || IS_MAC
+}
+
+let pendingCaptureSourceId = null
+
+async function listDesktopCaptureSources() {
+  const sources = await desktopCapturer.getSources({
+    fetchWindowIcons: false,
+    thumbnailSize: { height: 1, width: 1 },
+    types: ['screen', 'window']
+  })
+
+  return sources.map(source => ({
+    id: source.id,
+    name: source.name,
+    type: source.id.startsWith('screen:') ? 'screen' : 'window'
+  }))
+}
+
 function configureDisplayMediaCapture() {
   session.defaultSession.setDisplayMediaRequestHandler(
     async (request, callback) => {
+      const sourceId = pendingCaptureSourceId
+      pendingCaptureSourceId = null
+
       try {
+        if (!sourceId) {
+          callback({})
+
+          return
+        }
+
         const sources = await desktopCapturer.getSources({
           fetchWindowIcons: false,
           thumbnailSize: { height: 1, width: 1 },
           types: ['screen', 'window']
         })
-        const screen = sources.find(source => /screen|entire/i.test(source.name)) || sources[0]
+        const chosen = sources.find(source => source.id === sourceId)
 
-        if (!screen) {
+        if (!chosen) {
           callback({})
 
           return
         }
 
         callback({
-          video: request.videoRequested ? screen : undefined,
-          audio: request.audioRequested && IS_WINDOWS ? 'loopback' : undefined
+          video: request.videoRequested ? chosen : undefined,
+          audio: request.audioRequested && supportsSystemAudioLoopback() ? 'loopback' : undefined
         })
       } catch {
         callback({})
       }
     },
-    { useSystemPicker: true }
+    // Desktop uses an in-app source picker before getDisplayMedia; web uses the browser picker.
+    { useSystemPicker: false }
   )
 }
 
@@ -731,10 +762,24 @@ ipcMain.handle('verxio:requestMicrophoneAccess', async () => {
 
 ipcMain.handle('verxio:audio:captureSupport', () => ({
   platform: process.platform,
-  systemAudio: true,
-  loopbackAudio: IS_WINDOWS,
-  systemPicker: IS_MAC
+  systemAudio: supportsSystemAudioLoopback(),
+  loopbackAudio: supportsSystemAudioLoopback(),
+  systemPicker: false
 }))
+
+ipcMain.handle('verxio:audio:listCaptureSources', async () => {
+  try {
+    return await listDesktopCaptureSources()
+  } catch {
+    return []
+  }
+})
+
+ipcMain.handle('verxio:audio:prepareCaptureSource', (_event, sourceId) => {
+  pendingCaptureSourceId = typeof sourceId === 'string' && sourceId.trim() ? sourceId.trim() : null
+
+  return { ok: Boolean(pendingCaptureSourceId) }
+})
 
 ipcMain.handle('verxio:readFileDataUrl', async (_event, filePath) => {
   const resolved = assertPathAllowed(filePath)
@@ -883,6 +928,130 @@ ipcMain.on('verxio:previewShortcutActive', () => {
 
 ipcMain.handle('verxio:openExternal', async (_event, url) => {
   await shell.openExternal(String(url || ''))
+})
+
+function parseComposioOAuthResult(targetUrl) {
+  try {
+    const url = new URL(String(targetUrl || ''))
+    const searchParams = url.searchParams
+    const hash = url.hash || ''
+    const hashQuery = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : ''
+    const hashParams = new URLSearchParams(hashQuery)
+    const status = searchParams.get('status') || hashParams.get('status')
+
+    if (!status) {
+      return null
+    }
+
+    return {
+      connectedAccountId:
+        searchParams.get('connected_account_id') ||
+        searchParams.get('connectedAccountId') ||
+        hashParams.get('connected_account_id') ||
+        hashParams.get('connectedAccountId') ||
+        undefined,
+      status
+    }
+  } catch {
+    return null
+  }
+}
+
+function composioOAuthCallbackMatches(targetUrl, callbackUrl) {
+  const result = parseComposioOAuthResult(targetUrl)
+
+  if (!result) {
+    return false
+  }
+
+  try {
+    const target = new URL(String(targetUrl || ''))
+    const callback = new URL(String(callbackUrl || ''))
+
+    return target.origin === callback.origin
+  } catch {
+    return false
+  }
+}
+
+function finishComposioOAuth(targetUrl) {
+  if (composioOAuthWindow && !composioOAuthWindow.isDestroyed()) {
+    composioOAuthWindow.close()
+  }
+
+  composioOAuthWindow = null
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show()
+    mainWindow.focus()
+    mainWindow.webContents.send('verxio:composio-oauth-complete', String(targetUrl || ''))
+  }
+}
+
+function attachComposioOAuthListeners(contents, callbackUrl) {
+  const maybeFinish = (targetUrl, preventDefault) => {
+    if (!composioOAuthCallbackMatches(targetUrl, callbackUrl)) {
+      return false
+    }
+
+    if (typeof preventDefault === 'function') {
+      preventDefault()
+    }
+
+    finishComposioOAuth(targetUrl)
+
+    return true
+  }
+
+  contents.on('will-navigate', (event, url) => {
+    maybeFinish(url, () => event.preventDefault())
+  })
+  contents.on('will-redirect', (event, url) => {
+    maybeFinish(url, () => event.preventDefault())
+  })
+  contents.on('did-navigate', (_event, url) => {
+    maybeFinish(url)
+  })
+  contents.on('did-navigate-in-page', (_event, url) => {
+    maybeFinish(url)
+  })
+}
+
+ipcMain.handle('verxio:composio:openOAuth', (_event, authUrl, callbackUrl) => {
+  const normalizedAuthUrl = String(authUrl || '').trim()
+  const normalizedCallbackUrl = String(callbackUrl || '').trim()
+
+  if (!normalizedAuthUrl || !normalizedCallbackUrl) {
+    return { ok: false, error: 'Missing OAuth URL or callback URL.' }
+  }
+
+  if (composioOAuthWindow && !composioOAuthWindow.isDestroyed()) {
+    composioOAuthWindow.close()
+  }
+
+  composioOAuthWindow = new BrowserWindow({
+    autoHideMenuBar: true,
+    height: 720,
+    modal: Boolean(mainWindow),
+    parent: mainWindow ?? undefined,
+    title: 'Connect integration',
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    },
+    width: 520
+  })
+
+  attachComposioOAuthListeners(composioOAuthWindow.webContents, normalizedCallbackUrl)
+
+  composioOAuthWindow.on('closed', () => {
+    composioOAuthWindow = null
+  })
+
+  void composioOAuthWindow.loadURL(normalizedAuthUrl)
+
+  return { ok: true }
 })
 
 ipcMain.handle('verxio:workspace:ensure', () => ensureDesktopWorkspace())

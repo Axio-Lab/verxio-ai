@@ -1251,6 +1251,8 @@ export const zhHant = defineLocale({
     queueSendNext: '下一個',
     queueSend: '傳送',
     queueDelete: '刪除',
+    queueShowFull: '顯示完整提示詞',
+    queueShowLess: '收合',
     previewUnavailable: '預覽不可用',
     previewLabel: label => `預覽 ${label}`,
     couldNotPreview: label => `無法預覽 ${label}`,

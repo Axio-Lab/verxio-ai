@@ -16,7 +16,9 @@ import {
 import { Input } from '@/components/ui/input'
 import { Tip } from '@/components/ui/tooltip'
 import { VerxioWordmark } from '@/components/verxio-wordmark'
-import { transcribeAudioBlob } from '@/lib/audio'
+import type { DesktopCaptureSource } from '@/global'
+import { NOTEPAD_RECORDING_BITS_PER_SECOND, transcribeAudioBlob } from '@/lib/audio'
+import { isVerxioDesktop } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import {
   createNotepadFolder,
@@ -160,7 +162,24 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
   const [recordingMode, setRecordingMode] = useState<RecordingMode>('idle')
   const [recordingSeconds, setRecordingSeconds] = useState(0)
-  const [systemAudioSupported, setSystemAudioSupported] = useState(Boolean(window.hermesDesktop))
+
+  const [systemAudioSupported, setSystemAudioSupported] = useState(
+    () =>
+      typeof navigator !== 'undefined' &&
+      Boolean(navigator.mediaDevices?.getDisplayMedia) &&
+      (!isVerxioDesktop() || Boolean(window.hermesDesktop?.audio?.listCaptureSources))
+  )
+
+  const [capturePickerOpen, setCapturePickerOpen] = useState(false)
+  const [captureSources, setCaptureSources] = useState<DesktopCaptureSource[]>([])
+  const [selectedCaptureSourceId, setSelectedCaptureSourceId] = useState<string | null>(null)
+  const [capturePickerLoading, setCapturePickerLoading] = useState(false)
+
+  const selectedCaptureSource = useMemo(
+    () => captureSources.find(source => source.id === selectedCaptureSourceId) ?? null,
+    [captureSources, selectedCaptureSourceId]
+  )
+
   const { handle: micRecorder, level: micLevel } = useMicRecorder(NOTEPAD_MIC_COPY)
   const systemRecorderRef = useRef<MediaRecorder | null>(null)
   const systemStreamRef = useRef<MediaStream | null>(null)
@@ -503,7 +522,11 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
 
     if (!audioTracks.length) {
       capture.getTracks().forEach(track => track.stop())
-      throw new Error('No device audio track was provided. Use microphone recording for this meeting.')
+      throw new Error(
+        isVerxioDesktop()
+          ? 'No system audio track was available for the selected source. Try another screen or window, or use microphone recording.'
+          : 'No audio was shared. Select a screen or window and enable audio sharing in the browser dialog, or use microphone recording.'
+      )
     }
 
     capture.getVideoTracks().forEach(track => track.stop())
@@ -514,7 +537,10 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
         MediaRecorder.isTypeSupported(type)
       ) ?? ''
 
-    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+    const recorder = new MediaRecorder(stream, {
+      ...(mimeType ? { mimeType } : {}),
+      audioBitsPerSecond: NOTEPAD_RECORDING_BITS_PER_SECOND
+    })
 
     systemChunksRef.current = []
     systemStreamRef.current = stream
@@ -526,7 +552,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       }
     }
 
-    recorder.start()
+    recorder.start(1000)
     setRecordingMode('system')
   }
 
@@ -578,7 +604,8 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   }
 
   async function transcribeRecording(audio: Blob | null, source: 'desktop-audio' | 'microphone') {
-    if (!audio) {
+    if (!audio || audio.size === 0) {
+      notify({ kind: 'warning', message: 'Recording was empty. Try again and speak or play audio before stopping.' })
       setRecordingMode('idle')
 
       return
@@ -606,11 +633,68 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       return
     }
 
+    if (isVerxioDesktop()) {
+      setCapturePickerLoading(true)
+      setCapturePickerOpen(true)
+      setSelectedCaptureSourceId(null)
+
+      try {
+        const sources = (await window.hermesDesktop?.audio?.listCaptureSources?.()) ?? []
+        setCaptureSources(sources)
+
+        if (!sources.length) {
+          setCapturePickerOpen(false)
+          notifyError(
+            new Error('No screens or windows are available to record.'),
+            'Could not start device audio recording'
+          )
+        }
+      } catch (error) {
+        setCapturePickerOpen(false)
+        notifyError(error, 'Could not start device audio recording')
+      } finally {
+        setCapturePickerLoading(false)
+      }
+
+      return
+    }
+
     try {
       await startSystemRecording()
     } catch (error) {
       notifyError(error, 'Could not start device audio recording')
       setRecordingMode('idle')
+    }
+  }
+
+  async function handleConfirmCaptureSource() {
+    if (!selectedCaptureSourceId) {
+      return
+    }
+
+    setCapturePickerOpen(false)
+
+    try {
+      const prepared = await window.hermesDesktop?.audio?.prepareCaptureSource?.(selectedCaptureSourceId)
+
+      if (!prepared?.ok) {
+        throw new Error('Could not prepare the selected capture source.')
+      }
+
+      await startSystemRecording()
+    } catch (error) {
+      notifyError(error, 'Could not start device audio recording')
+      setRecordingMode('idle')
+    }
+  }
+
+  function handleCapturePickerOpenChange(open: boolean) {
+    setCapturePickerOpen(open)
+
+    if (!open) {
+      setCaptureSources([])
+      setSelectedCaptureSourceId(null)
+      setCapturePickerLoading(false)
     }
   }
 
@@ -620,7 +704,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     }
 
     try {
-      await micRecorder.start()
+      await micRecorder.start({ audioBitsPerSecond: NOTEPAD_RECORDING_BITS_PER_SECOND })
       setRecordingMode('mic')
     } catch (error) {
       notifyError(error, 'Could not start microphone recording')
@@ -950,10 +1034,12 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                 {recordingMode === 'idle' ? (
                   <>
                     {systemAudioSupported && (
-                      <Button onClick={handleStartSystemRecording} size="sm" type="button" variant="secondary">
-                        <Codicon name="record" />
-                        Device
-                      </Button>
+                      <Tip label="Record device audio from a screen or window">
+                        <Button onClick={handleStartSystemRecording} size="sm" type="button" variant="default">
+                          <Codicon name="record" />
+                          Device
+                        </Button>
+                      </Tip>
                     )}
                     <Tip label="Record microphone">
                       <Button
@@ -1200,6 +1286,81 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
             <Button disabled={pendingDeleteBusy} onClick={handleConfirmDelete} type="button" variant="destructive">
               {pendingDeleteBusy ? <Codicon name="loading" spinning /> : <Codicon name="trash" />}
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog onOpenChange={handleCapturePickerOpenChange} open={capturePickerOpen}>
+        <DialogContent className="max-w-md" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Choose what to record</DialogTitle>
+            <DialogDescription>
+              {selectedCaptureSource
+                ? `Selected: ${selectedCaptureSource.name}. Verxio records system audio while your meeting plays.`
+                : 'Pick a screen or window to capture device audio from your meeting.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div aria-label="Available screens and windows" className="max-h-64 space-y-2 overflow-y-auto" role="listbox">
+            {capturePickerLoading ? (
+              <div className="text-dt-muted flex items-center gap-2 px-1 py-2 text-sm">
+                <Codicon name="loading" spinning />
+                Loading screens and windows…
+              </div>
+            ) : captureSources.length ? (
+              captureSources.map(source => {
+                const selected = selectedCaptureSourceId === source.id
+
+                return (
+                  <button
+                    aria-selected={selected}
+                    className={cn(
+                      'flex w-full items-center gap-3 rounded-md border px-3 py-2.5 text-left text-sm transition-all outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                      selected
+                        ? 'border-primary bg-primary/12 text-foreground ring-2 ring-primary/30 shadow-sm'
+                        : 'border-(--ui-stroke-secondary) text-(--ui-text-secondary) hover:border-(--ui-stroke-primary) hover:bg-(--ui-control-hover-background) hover:text-foreground'
+                    )}
+                    key={source.id}
+                    onClick={() => setSelectedCaptureSourceId(source.id)}
+                    role="option"
+                    type="button"
+                  >
+                    <span
+                      className={cn(
+                        'grid size-8 shrink-0 place-items-center rounded-md',
+                        selected ? 'bg-primary/15 text-primary' : 'bg-(--ui-bg-quaternary) text-(--ui-text-tertiary)'
+                      )}
+                    >
+                      <Codicon name={source.type === 'screen' ? 'device-desktop' : 'window'} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className={cn('block truncate', selected && 'font-medium')}>{source.name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {source.type === 'screen' ? 'Screen' : 'Window'}
+                      </span>
+                    </span>
+                    {selected ? <Codicon className="shrink-0 text-primary" name="check" /> : null}
+                  </button>
+                )
+              })
+            ) : (
+              <p className="text-dt-muted px-1 py-2 text-sm">No screens or windows are available.</p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button onClick={() => handleCapturePickerOpenChange(false)} type="button" variant="ghost">
+              Cancel
+            </Button>
+            <Button
+              disabled={!selectedCaptureSourceId || capturePickerLoading}
+              onClick={() => void handleConfirmCaptureSource()}
+              type="button"
+              variant={selectedCaptureSourceId ? 'default' : 'secondary'}
+            >
+              <Codicon name="record" />
+              Start recording
             </Button>
           </DialogFooter>
         </DialogContent>

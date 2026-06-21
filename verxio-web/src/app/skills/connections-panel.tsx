@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { PaginationControl } from '@/components/ui/pagination'
 import { SearchField } from '@/components/ui/search-field'
 import { AlertTriangle, ExternalLink, Loader2, PlugOff } from '@/lib/icons'
+import { isVerxioDesktop } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import {
   completeComposioConnection,
@@ -208,29 +209,46 @@ function authBadgeLabel(app: ComposioApp): string | null {
 }
 
 function composioCallbackUrl(): string {
-  return `${window.location.origin}${window.location.pathname}#/skills?tab=connections`
+  const hashRoute = '#/skills?tab=connections'
+
+  if (isVerxioDesktop() && window.location.protocol === 'file:') {
+    const base = import.meta.env.VITE_VERXIO_PUBLIC_WEB_URL?.replace(/\/$/, '') || 'http://127.0.0.1:8080'
+
+    return `${base}${hashRoute}`
+  }
+
+  return `${window.location.origin}${window.location.pathname}${hashRoute}`
+}
+
+function parseComposioCallbackFromHref(href: string): { status: string; connectedAccountId?: string } | null {
+  try {
+    const url = new URL(href)
+    const searchParams = url.searchParams
+    const hash = url.hash
+    const hashQuery = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : ''
+    const hashParams = new URLSearchParams(hashQuery)
+    const status = searchParams.get('status') || hashParams.get('status')
+
+    if (!status) {
+      return null
+    }
+
+    return {
+      connectedAccountId:
+        searchParams.get('connected_account_id') ||
+        searchParams.get('connectedAccountId') ||
+        hashParams.get('connected_account_id') ||
+        hashParams.get('connectedAccountId') ||
+        undefined,
+      status
+    }
+  } catch {
+    return null
+  }
 }
 
 function parseComposioCallbackParams(): { status: string; connectedAccountId?: string } | null {
-  const searchParams = new URLSearchParams(window.location.search)
-  const hash = window.location.hash
-  const hashQuery = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : ''
-  const hashParams = new URLSearchParams(hashQuery)
-  const status = searchParams.get('status') || hashParams.get('status')
-
-  if (!status) {
-    return null
-  }
-
-  return {
-    connectedAccountId:
-      searchParams.get('connected_account_id') ||
-      searchParams.get('connectedAccountId') ||
-      hashParams.get('connected_account_id') ||
-      hashParams.get('connectedAccountId') ||
-      undefined,
-    status
-  }
+  return parseComposioCallbackFromHref(window.location.href)
 }
 
 function clearComposioCallbackParams(): void {
@@ -317,6 +335,35 @@ export function ConnectionsPanel({
     void refreshConnections()
   }, [refreshConnections])
 
+  const handleComposioOAuthResult = useCallback(
+    (callback: { status: string; connectedAccountId?: string }, options?: { clearUrl?: boolean }) => {
+      if (options?.clearUrl !== false) {
+        clearComposioCallbackParams()
+      }
+
+      if (callback.status === 'success') {
+        void refreshConnections().then(() => {
+          notify({
+            kind: 'success',
+            message: callback.connectedAccountId
+              ? `Connection ${callback.connectedAccountId} is ready for the agent.`
+              : 'Your connection is ready for the agent.',
+            title: 'Connection ready'
+          })
+        })
+
+        return
+      }
+
+      notify({
+        kind: 'warning',
+        message: 'Composio could not finish the connection. Try again or use the inline form when available.',
+        title: 'Connection incomplete'
+      })
+    },
+    [refreshConnections]
+  )
+
   useEffect(() => {
     const callback = parseComposioCallbackParams()
 
@@ -324,28 +371,24 @@ export function ConnectionsPanel({
       return
     }
 
-    clearComposioCallbackParams()
+    handleComposioOAuthResult(callback)
+  }, [handleComposioOAuthResult])
 
-    if (callback.status === 'success') {
-      void refreshConnections().then(() => {
-        notify({
-          kind: 'success',
-          message: callback.connectedAccountId
-            ? `Connection ${callback.connectedAccountId} is ready for the agent.`
-            : 'Your connection is ready for the agent.',
-          title: 'Connection ready'
-        })
-      })
-
+  useEffect(() => {
+    if (!isVerxioDesktop() || !window.hermesDesktop?.onComposioOAuthComplete) {
       return
     }
 
-    notify({
-      kind: 'warning',
-      message: 'Composio could not finish the connection. Try again or use the inline form when available.',
-      title: 'Connection incomplete'
+    return window.hermesDesktop.onComposioOAuthComplete(href => {
+      const callback = parseComposioCallbackFromHref(href)
+
+      if (!callback) {
+        return
+      }
+
+      handleComposioOAuthResult(callback, { clearUrl: false })
     })
-  }, [refreshConnections])
+  }, [handleComposioOAuthResult])
 
   useEffect(() => {
     if (!connectDialogApp) {
@@ -508,12 +551,26 @@ export function ConnectionsPanel({
         throw new Error('Composio did not return a redirect URL.')
       }
 
-      window.open(result.redirectUrl, '_blank', 'noopener,noreferrer')
-      notify({
-        kind: 'info',
-        message: 'Finish authorization in the new tab. You will return here automatically when it completes.',
-        title: `${app.name} authorization`
-      })
+      if (isVerxioDesktop() && window.hermesDesktop?.openComposioOAuth) {
+        const opened = await window.hermesDesktop.openComposioOAuth(result.redirectUrl, composioCallbackUrl())
+
+        if (!opened.ok) {
+          throw new Error(opened.error || 'Could not open the authorization window.')
+        }
+
+        notify({
+          kind: 'info',
+          message: 'Finish authorization in the window. Verxio will update your connections when it completes.',
+          title: `${app.name} authorization`
+        })
+      } else {
+        window.open(result.redirectUrl, '_blank', 'noopener,noreferrer')
+        notify({
+          kind: 'info',
+          message: 'Finish authorization in the new tab. You will return here automatically when it completes.',
+          title: `${app.name} authorization`
+        })
+      }
     } catch (err) {
       notifyError(err, `Could not connect ${app.name}`)
     } finally {

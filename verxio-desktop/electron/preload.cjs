@@ -351,7 +351,9 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
     }),
   notify: payload => ipcRenderer.invoke('verxio:notify', payload),
   audio: {
-    captureSupport: () => ipcRenderer.invoke('verxio:audio:captureSupport')
+    captureSupport: () => ipcRenderer.invoke('verxio:audio:captureSupport'),
+    listCaptureSources: () => ipcRenderer.invoke('verxio:audio:listCaptureSources'),
+    prepareCaptureSource: sourceId => ipcRenderer.invoke('verxio:audio:prepareCaptureSource', sourceId)
   },
   requestMicrophoneAccess: async () => {
     const nativeAllowed = await ipcRenderer.invoke('verxio:requestMicrophoneAccess')
@@ -389,6 +391,13 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
   setTitleBarTheme: payload => ipcRenderer.send('verxio:titlebar-theme', payload),
   setPreviewShortcutActive: active => ipcRenderer.send('verxio:previewShortcutActive', Boolean(active)),
   openExternal: url => ipcRenderer.invoke('verxio:openExternal', url),
+  openComposioOAuth: (authUrl, callbackUrl) => ipcRenderer.invoke('verxio:composio:openOAuth', authUrl, callbackUrl),
+  onComposioOAuthComplete: callback => {
+    const listener = (_event, href) => callback(String(href || ''))
+    ipcRenderer.on('verxio:composio-oauth-complete', listener)
+
+    return () => ipcRenderer.removeListener('verxio:composio-oauth-complete', listener)
+  },
   fetchLinkTitle: async url => {
     try {
       const response = await fetch(url, { signal: AbortSignal.timeout(5000) })

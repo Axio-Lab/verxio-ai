@@ -221,7 +221,7 @@ function ClarifyToolPending({ args }: ToolCallMessagePartProps) {
       {(typing || !hasChoices) && (
         <form className="grid gap-2" onSubmit={handleSubmitFreeform}>
           <Textarea
-            className="min-h-20 resize-y rounded-lg border-transparent bg-accent/40 text-sm focus-visible:bg-background/60"
+            className="max-h-40 min-h-20 resize-y overflow-y-auto rounded-lg border-transparent bg-accent/40 text-sm focus-visible:bg-background/60"
             disabled={submitting}
             onChange={event => setDraft(event.target.value)}
             onKeyDown={handleTextareaKey}
