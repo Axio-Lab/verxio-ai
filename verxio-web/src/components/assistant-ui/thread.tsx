@@ -59,8 +59,7 @@ import { UserMessageText } from '@/components/assistant-ui/user-message-text'
 import { useElapsedSeconds } from '@/components/chat/activity-timer'
 import { ActivityTimerText } from '@/components/chat/activity-timer-text'
 import { DisclosureRow } from '@/components/chat/disclosure-row'
-import { GeneratedImageProvider, useGeneratedImageContext } from '@/components/chat/generated-image-context'
-import { ImageGenerationPlaceholder } from '@/components/chat/image-generation-placeholder'
+import { GeneratedImage } from '@/components/chat/generated-image-result'
 import { Intro, type IntroProps } from '@/components/chat/intro'
 import { PreviewAttachment } from '@/components/chat/preview-attachment'
 import { Codicon } from '@/components/ui/codicon'
@@ -84,6 +83,7 @@ import { extractPreviewTargets } from '@/lib/preview-targets'
 import { useEnterAnimation } from '@/lib/use-enter-animation'
 import { cn } from '@/lib/utils'
 import { playSpeechText, stopVoicePlayback } from '@/lib/voice-playback'
+import { $compactionActive } from '@/store/compaction'
 import { notifyError } from '@/store/notifications'
 import { notifyThreadEditClose, notifyThreadEditOpen } from '@/store/thread-scroll'
 import { $voicePlayback } from '@/store/voice-playback'
@@ -163,19 +163,17 @@ export const Thread: FC<{
   ) : undefined
 
   return (
-    <GeneratedImageProvider>
-      <div className="relative grid h-full min-h-0 max-w-full grid-rows-[minmax(0,1fr)] overflow-hidden bg-transparent contain-[layout_paint]">
-        <VirtualizedThread
-          clampToComposer={clampToComposer}
-          components={messageComponents}
-          emptyPlaceholder={emptyPlaceholder}
-          loadingIndicator={loading === 'response' ? <ResponseLoadingIndicator /> : null}
-          sessionKey={sessionKey}
-        />
-        <ThreadTimeline />
-        {loading === 'session' && <CenteredThreadSpinner />}
-      </div>
-    </GeneratedImageProvider>
+    <div className="relative grid h-full min-h-0 max-w-full grid-rows-[minmax(0,1fr)] overflow-hidden bg-transparent contain-[layout_paint]">
+      <VirtualizedThread
+        clampToComposer={clampToComposer}
+        components={messageComponents}
+        emptyPlaceholder={emptyPlaceholder}
+        loadingIndicator={loading === 'response' ? <ResponseLoadingIndicator /> : null}
+        sessionKey={sessionKey}
+      />
+      <ThreadTimeline />
+      {loading === 'session' && <CenteredThreadSpinner />}
+    </div>
   )
 }
 
@@ -244,7 +242,7 @@ const AssistantMessage: FC<{ onBranchInNewChat?: (messageId: string) => void }> 
         data-slot="aui_assistant-message-content"
       >
         <MessagePrimitive.Parts components={MESSAGE_PARTS_COMPONENTS} />
-        {messageStatus === 'running' && <StreamStallIndicator activity={`${content.length}:${messageText.length}`} />}
+        {messageStatus === 'running' && <StreamStallIndicator />}
         {previewTargets.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2">
             {previewTargets.map(target => (
@@ -285,13 +283,24 @@ const StatusRow: FC<{ children: ReactNode; label: string } & React.ComponentProp
   </div>
 )
 
+const CompactionHint: FC = () => {
+  const { t } = useI18n()
+
+  return <span className="shimmer min-w-0 truncate text-muted-foreground/55">{t.assistant.thread.summarizing}</span>
+}
+
 const ResponseLoadingIndicator: FC = () => {
   const { t } = useI18n()
   const elapsed = useElapsedSeconds()
+  const compacting = useStore($compactionActive)
 
   return (
-    <StatusRow data-slot="aui_response-loading" label={t.assistant.thread.loadingResponse}>
+    <StatusRow
+      data-slot="aui_response-loading"
+      label={compacting ? t.assistant.thread.summarizing : t.assistant.thread.loadingResponse}
+    >
       <span aria-hidden="true" className="dither inline-block size-3 rounded-[2px] text-midground/80 animate-pulse" />
+      {compacting && <CompactionHint />}
       <ActivityTimerText seconds={elapsed} />
     </StatusRow>
   )
@@ -306,8 +315,25 @@ const STREAM_STALL_S = 2
 // provider stall) nothing signals that work continues. Watch a per-render
 // activity signal; when it hasn't changed for STREAM_STALL_S, re-show the
 // dither + a timer counting from the last activity.
-const StreamStallIndicator: FC<{ activity: string }> = ({ activity }) => {
+const StreamStallIndicator: FC = () => {
+  const { t } = useI18n()
+
+  const activity = useAuiState(s => {
+    let textLength = 0
+
+    for (const part of s.message.content) {
+      const text = (part as { text?: unknown }).text
+
+      if (typeof text === 'string') {
+        textLength += text.length
+      }
+    }
+
+    return `${s.message.content.length}:${textLength}`
+  })
+
   const [stalled, setStalled] = useState(false)
+  const compacting = useStore($compactionActive)
 
   useEffect(() => {
     setStalled(false)
@@ -316,35 +342,32 @@ const StreamStallIndicator: FC<{ activity: string }> = ({ activity }) => {
     return () => window.clearTimeout(id)
   }, [activity])
 
-  const elapsed = useElapsedSeconds(stalled)
+  const active = stalled || compacting
+  const elapsed = useElapsedSeconds(active)
 
-  if (!stalled) {
+  if (!active) {
     return null
   }
 
   return (
-    <StatusRow className="mt-1.5" data-slot="aui_stream-stall" label="Verxio is thinking">
+    <StatusRow
+      className="mt-1.5"
+      data-slot="aui_stream-stall"
+      label={compacting ? t.assistant.thread.summarizing : t.assistant.thread.thinking}
+    >
       <span aria-hidden="true" className="dither inline-block size-3 rounded-[2px] text-midground/80 animate-pulse" />
+      {compacting && <CompactionHint />}
       <ActivityTimerText seconds={elapsed} />
     </StatusRow>
   )
 }
 
-const ImageGenerateTool: FC<ToolCallMessagePartProps> = ({ result }) => {
-  const generatedImage = useGeneratedImageContext()
-  const running = result === undefined
-
-  useEffect(() => {
-    generatedImage?.setPending(running)
-  }, [generatedImage, running])
-
-  if (!running) {
-    return null
-  }
+const ImageGenerateTool: FC<ToolCallMessagePartProps> = ({ args, result }) => {
+  const aspectRatio = typeof args?.aspect_ratio === 'string' ? args.aspect_ratio : undefined
 
   return (
     <div className="mt-1.5">
-      <ImageGenerationPlaceholder />
+      <GeneratedImage aspectRatio={aspectRatio} result={result} />
     </div>
   )
 }

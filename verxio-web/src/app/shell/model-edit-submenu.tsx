@@ -12,13 +12,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Switch } from '@/components/ui/switch'
 import { useI18n } from '@/i18n'
+import { setModelPreset } from '@/store/model-presets'
 import { notifyError } from '@/store/notifications'
-import {
-  $activeSessionId,
-  $currentReasoningEffort,
-  setCurrentFastMode,
-  setCurrentReasoningEffort
-} from '@/store/session'
+import { $activeSessionId, setCurrentFastMode, setCurrentReasoningEffort } from '@/store/session'
 
 // Verxio real reasoning levels (see VALID_REASONING_EFFORTS); `none` is owned
 // by the Thinking toggle, not the radio.
@@ -54,8 +50,6 @@ export function resolveFastControl(
   if (/-fast$/i.test(model)) {
     const baseId = model.replace(/-fast$/i, '')
 
-    // Only a toggle if there's a base to switch back to; otherwise it's a
-    // standalone fast model with no "off" state.
     return providerModels.includes(baseId) ? { kind: 'variant', baseId, fastId: model, on: true } : { kind: 'none' }
   }
 
@@ -65,9 +59,6 @@ export function resolveFastControl(
     return { kind: 'variant', baseId: model, fastId, on: false }
   }
 
-  // Fast isn't natively offered here, but if the session still has the speed
-  // param on (carried over from a previous model), expose the toggle so it can
-  // be turned off rather than stranded.
   if (currentFastMode) {
     return { kind: 'param', on: true }
   }
@@ -76,96 +67,88 @@ export function resolveFastControl(
 }
 
 interface ModelEditSubmenuProps {
-  /** How fast mode is offered for this model (param toggle vs. variant swap). */
+  effort: string
   fastControl: FastControl
-  /** Whether this row's model is the active one. */
   isActive: boolean
-  /** Switch to this model (resolves false on failure). Awaited before applying
-   *  edits when not active so a failed switch doesn't write to the old model. */
-  onActivate: () => Promise<boolean> | void
-  /** Switch to a specific model id (used to swap base ⇄ -fast variant). */
+  model: string
   onSelectModel: (model: string) => Promise<boolean> | void
-  /** Whether this model supports reasoning effort. */
+  provider: string
   reasoning: boolean
   requestGateway: <T>(method: string, params?: Record<string, unknown>) => Promise<T>
 }
 
 export function ModelEditSubmenu({
+  effort,
   fastControl,
   isActive,
-  onActivate,
+  model,
   onSelectModel,
+  provider,
   reasoning,
   requestGateway
 }: ModelEditSubmenuProps) {
   const { t } = useI18n()
   const copy = t.shell.modelOptions
-  // Reactive session state comes straight from the stores rather than being
-  // drilled through the panel, so editing it re-renders only this submenu.
   const activeSessionId = useStore($activeSessionId)
-  const currentReasoningEffort = useStore($currentReasoningEffort)
 
-  const effort = normalizeEffort(currentReasoningEffort)
-  const thinkingOn = isThinkingEnabled(currentReasoningEffort)
+  const effortValue = normalizeEffort(effort)
+  const thinkingOn = isThinkingEnabled(effort)
 
-  // Reasoning/fast are session-scoped (they apply to the active model), so
-  // editing a non-active model first switches to it. Returns false if the
-  // switch failed, so callers skip applying to the wrong (previous) model.
-  const ensureActive = async (): Promise<boolean> => {
-    if (isActive) {
-      return true
+  const patchReasoning = async (next: string) => {
+    setModelPreset(provider, model, { effort: next })
+
+    if (!isActive) {
+      return
     }
 
-    return (await onActivate()) !== false
-  }
-
-  const patchReasoning = async (next: string, rollback: string) => {
     setCurrentReasoningEffort(next)
 
+    if (!activeSessionId) {
+      return
+    }
+
     try {
-      if (!(await ensureActive())) {
-        setCurrentReasoningEffort(rollback)
-
-        return
-      }
-
-      await requestGateway('config.set', {
-        key: 'reasoning',
-        session_id: activeSessionId ?? '',
-        value: next
-      })
+      await requestGateway('config.set', { key: 'reasoning', session_id: activeSessionId, value: next })
     } catch (err) {
-      setCurrentReasoningEffort(rollback)
+      setCurrentReasoningEffort(effort)
+      setModelPreset(provider, model, { effort })
       notifyError(err, copy.updateFailed)
     }
   }
 
   const toggleFast = (enabled: boolean) => {
     if (fastControl.kind === 'variant') {
-      // Fast is a separate model id — swap to it (or back to the base).
-      void onSelectModel(enabled ? fastControl.fastId : fastControl.baseId)
+      setModelPreset(provider, fastControl.baseId, { fast: enabled })
+
+      if (isActive) {
+        void onSelectModel(enabled ? fastControl.fastId : fastControl.baseId)
+      }
 
       return
     }
 
     if (fastControl.kind === 'param') {
+      setModelPreset(provider, model, { fast: enabled })
+
+      if (!isActive) {
+        return
+      }
+
       setCurrentFastMode(enabled)
 
+      if (!activeSessionId) {
+        return
+      }
       void (async () => {
         try {
-          if (!(await ensureActive())) {
-            setCurrentFastMode(!enabled)
-
-            return
-          }
-
           await requestGateway('config.set', {
             key: 'fast',
-            session_id: activeSessionId ?? '',
+            session_id: activeSessionId,
             value: enabled ? 'fast' : 'normal'
           })
         } catch (err) {
           setCurrentFastMode(!enabled)
+          setModelPreset(provider, model, { fast: !enabled })
           notifyError(err, copy.fastFailed)
         }
       })()
@@ -188,9 +171,7 @@ export function ModelEditSubmenu({
               <Switch
                 checked={thinkingOn}
                 className="ml-auto"
-                onCheckedChange={checked =>
-                  void patchReasoning(checked ? effort || 'medium' : 'none', currentReasoningEffort)
-                }
+                onCheckedChange={checked => void patchReasoning(checked ? effortValue || 'medium' : 'none')}
                 size="xs"
               />
             </DropdownMenuItem>
@@ -205,10 +186,7 @@ export function ModelEditSubmenu({
             <>
               <DropdownMenuSeparator className="mx-0" />
               <DropdownMenuLabel className={dropdownMenuSectionLabel}>{copy.effort}</DropdownMenuLabel>
-              <DropdownMenuRadioGroup
-                onValueChange={value => void patchReasoning(value, currentReasoningEffort)}
-                value={effort}
-              >
+              <DropdownMenuRadioGroup onValueChange={value => void patchReasoning(value)} value={effortValue}>
                 {EFFORT_OPTIONS.map(option => (
                   <DropdownMenuRadioItem
                     className={dropdownMenuRow}
@@ -229,14 +207,12 @@ export function ModelEditSubmenu({
 }
 
 function isThinkingEnabled(effort: string): boolean {
-  // Empty = Verxio default (medium) = on; only an explicit "none" is off.
   return (effort || 'medium').trim().toLowerCase() !== 'none'
 }
 
 function normalizeEffort(effort: string): string {
   const value = (effort || 'medium').trim().toLowerCase()
 
-  // Thinking off → no effort selected in the radio group.
   if (value === 'none') {
     return ''
   }

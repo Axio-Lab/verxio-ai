@@ -15,10 +15,12 @@ import {
 } from '@/lib/chat-messages'
 import { coerceGatewayText, coerceThinkingText, normalizePersonalityValue } from '@/lib/chat-runtime'
 import { gatewayEventRequiresSessionId } from '@/lib/gateway-events'
+import { dedupeGeneratedImageEchoesInParts } from '@/lib/generated-images'
 import { triggerHaptic } from '@/lib/haptics'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
 import { parseTodos } from '@/lib/todos'
 import { setClarifyRequest } from '@/store/clarify'
+import { setSessionCompacting } from '@/store/compaction'
 import { refreshBackgroundProcesses } from '@/store/composer-status'
 import { notify } from '@/store/notifications'
 import { requestDesktopOnboarding } from '@/store/onboarding'
@@ -270,6 +272,7 @@ export function useMessageStream({
   const flushHandleRef = useRef<number | null>(null)
   const lastFlushAtRef = useRef<number>(0)
   const nativeSubagentSessionsRef = useRef<Set<string>>(new Set())
+  const compactedTurnRef = useRef<Set<string>>(new Set())
 
   const flushQueuedDeltas = useCallback(
     (sessionId?: string) => {
@@ -288,7 +291,7 @@ export function useMessageStream({
         if (queued.assistant) {
           mutateStream(
             id,
-            parts => appendAssistantTextPart(parts, queued.assistant),
+            parts => dedupeGeneratedImageEchoesInParts(appendAssistantTextPart(parts, queued.assistant)),
             () => [assistantTextPart(queued.assistant)]
           )
         }
@@ -452,7 +455,7 @@ export function useMessageStream({
 
       mutateStream(
         sessionId,
-        parts => upsertToolPart(parts, payload, phase),
+        parts => dedupeGeneratedImageEchoesInParts(upsertToolPart(parts, payload, phase)),
         () => upsertToolPart([], payload, phase),
         { pending: m => phase !== 'complete' || (m.pending ?? false) }
       )
@@ -571,6 +574,10 @@ export function useMessageStream({
       })
 
       void refreshSessions().catch(() => undefined)
+
+      if (compactedTurnRef.current.delete(sessionId)) {
+        shouldHydrate = false
+      }
 
       if (shouldHydrate) {
         void hydrateFromStoredSession(3, completedState.storedSessionId, sessionId)
@@ -768,6 +775,8 @@ export function useMessageStream({
 
         flushQueuedDeltas(sessionId)
         clearSessionSubagents(sessionId)
+        setSessionCompacting(sessionId, false)
+        compactedTurnRef.current.delete(sessionId)
         nativeSubagentSessionsRef.current.delete(sessionId)
 
         if (isActiveEvent) {
@@ -812,6 +821,7 @@ export function useMessageStream({
         // session so a background turn finishing can't wipe the active chat's
         // prompt, and vice versa.
         clearAllPrompts(sessionId)
+        setSessionCompacting(sessionId, false)
 
         flushQueuedDeltas(sessionId)
 
@@ -949,9 +959,12 @@ export function useMessageStream({
           }
         }
       } else if (event.type === 'status.update') {
-        // The gateway's notification poller announces background process
-        // completions / watch matches here — re-sync the status stack.
-        if (sessionId && payload?.kind === 'process') {
+        if (sessionId && payload?.kind === 'compacting') {
+          setSessionCompacting(sessionId, true)
+          compactedTurnRef.current.add(sessionId)
+        } else if (sessionId && payload?.kind === 'process') {
+          // The gateway's notification poller announces background process
+          // completions / watch matches here — re-sync the status stack.
           void refreshBackgroundProcesses(sessionId)
         }
       } else if (event.type === 'error') {
@@ -963,6 +976,8 @@ export function useMessageStream({
         // the failed turn (same intent as the message.complete clear).
         if (sessionId) {
           clearAllPrompts(sessionId)
+          setSessionCompacting(sessionId, false)
+          compactedTurnRef.current.delete(sessionId)
         }
 
         if (looksLikeProviderSetup) {

@@ -735,6 +735,10 @@ export interface Translations {
     emptyTitleSearch: string
     last: string
     next: string
+    noRuns: string
+    manage: string
+    showRuns: string
+    hideRuns: string
     actionsFor: (title: string) => string
     actionsTitle: string
     resume: string
@@ -821,6 +825,7 @@ export interface Translations {
     results: string
     pinned: string
     sessions: string
+    cronJobs: string
     groupAriaGrouped: string
     groupAriaUngrouped: string
     groupTitleGrouped: string
@@ -1299,6 +1304,7 @@ export interface Translations {
     thread: {
       loadingSession: string
       loadingResponse: string
+      summarizing: string
       thinking: string
       today: (time: string) => string
       yesterday: (time: string) => string

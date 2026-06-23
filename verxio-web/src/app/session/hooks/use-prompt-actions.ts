@@ -10,6 +10,7 @@ import {
   parseCommandDispatch,
   parseSlashCommand,
   pathLabel,
+  sessionTitle,
   SLASH_COMMAND_RE
 } from '@/lib/chat-runtime'
 import {
@@ -41,11 +42,13 @@ import {
   $busy,
   $currentCwd,
   $messages,
+  $sessions,
   $yoloActive,
   setAwaitingResponse,
   setBusy,
   setMessages,
   setModelPickerOpen,
+  setSessionPickerOpen,
   setSessions,
   setYoloActive
 } from '@/store/session'
@@ -89,6 +92,12 @@ function isSessionBusyError(error: unknown): boolean {
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
+function isSessionIdCandidate(value: string): boolean {
+  const trimmed = value.trim()
+
+  return /^\d{8}_\d{6}_[A-Fa-f0-9]{6}$/.test(trimmed) || /^[A-Fa-f0-9]{32}$/.test(trimmed)
+}
+
 interface PromptActionsOptions {
   activeSessionId: string | null
   activeSessionIdRef: MutableRefObject<string | null>
@@ -98,6 +107,7 @@ interface PromptActionsOptions {
   handleSkinCommand: (arg: string) => string
   refreshSessions: () => Promise<void>
   requestGateway: <T>(method: string, params?: Record<string, unknown>) => Promise<T>
+  resumeStoredSession: (storedSessionId: string) => Promise<void> | void
   selectedStoredSessionIdRef: MutableRefObject<string | null>
   startFreshSessionDraft: () => void
   sttEnabled: boolean
@@ -163,6 +173,7 @@ export function usePromptActions({
   handleSkinCommand,
   refreshSessions,
   requestGateway,
+  resumeStoredSession,
   selectedStoredSessionIdRef,
   startFreshSessionDraft,
   sttEnabled,
@@ -482,6 +493,40 @@ export function usePromptActions({
         // instead of the headless prompt_toolkit modal the slash worker can't
         // render. With explicit args (`/model <name> [--provider ...]`) run the
         // switch directly through slash.exec so power users can still type it.
+        if (['resume', 'sessions', 'switch'].includes(normalizedName)) {
+          const query = arg.trim()
+
+          if (!query) {
+            setSessionPickerOpen(true)
+
+            return
+          }
+
+          const sessions = $sessions.get()
+          const lower = query.toLowerCase()
+
+          const match =
+            sessions.find(session => session.id === query) ||
+            sessions.find(session => sessionTitle(session).toLowerCase().includes(lower)) ||
+            sessions.find(session => (session.preview ?? '').toLowerCase().includes(lower))
+
+          if (!match) {
+            if (isSessionIdCandidate(query)) {
+              await resumeStoredSession(query)
+
+              return
+            }
+
+            notify({ kind: 'error', message: copy.resumeFailed })
+
+            return
+          }
+
+          await resumeStoredSession(match.id)
+
+          return
+        }
+
         if (isModelPickerCommand(`/${normalizedName}`)) {
           if (!arg.trim()) {
             setModelPickerOpen(true)
@@ -726,6 +771,7 @@ export function usePromptActions({
       handleSkinCommand,
       refreshSessions,
       requestGateway,
+      resumeStoredSession,
       startFreshSessionDraft,
       submitPromptText
     ]

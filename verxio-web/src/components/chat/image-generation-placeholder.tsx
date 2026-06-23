@@ -224,7 +224,7 @@ const drawAsciiDiffusion = (ctx: CanvasRenderingContext2D, width: number, height
   ctx.fillRect(0, 0, width, height)
 }
 
-const DiffusionCanvas: FC = () => {
+export const DiffusionCanvas: FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const sizeRef = useRef({ width: 0, height: 0 })
 

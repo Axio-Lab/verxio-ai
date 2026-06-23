@@ -51,9 +51,23 @@ export interface ZoomableImageProps extends ComponentProps<'img'> {
   slot?: string
 }
 
-interface ImageActionCopy {
+export interface ImageActionCopy {
   downloadImage: string
   savingImage: string
+}
+
+export async function downloadImageFromSrc(src: string, copy: ImageActionCopy): Promise<void> {
+  if (window.hermesDesktop?.saveImageFromUrl) {
+    const saved = await window.hermesDesktop.saveImageFromUrl(src)
+
+    if (saved) {
+      notify({ kind: 'success', title: copy.downloadImage, message: imageFilename(src) })
+    }
+
+    return
+  }
+
+  await startBrowserDownload(src)
 }
 
 export function ZoomableImage({ className, containerClassName, src, alt, slot, ...props }: ZoomableImageProps) {
@@ -71,17 +85,7 @@ export function ZoomableImage({ className, containerClassName, src, alt, slot, .
     setSaving(true)
 
     try {
-      if (window.hermesDesktop?.saveImageFromUrl) {
-        const saved = await window.hermesDesktop.saveImageFromUrl(src)
-
-        if (saved) {
-          notify({ kind: 'success', title: copy.imageSaved, message: imageFilename(src) })
-        }
-
-        return
-      }
-
-      await startBrowserDownload(src)
+      await downloadImageFromSrc(src, copy)
     } catch (error) {
       if (isMissingIpcHandler(error)) {
         try {
@@ -104,25 +108,6 @@ export function ZoomableImage({ className, containerClassName, src, alt, slot, .
     }
   }
 
-  const lightbox = src ? (
-    <Dialog onOpenChange={setLightboxOpen} open={lightboxOpen}>
-      <DialogContent
-        className="block w-auto max-h-[calc(100vh-12rem)] max-w-[calc(100vw-12rem)] overflow-visible border-0 bg-transparent p-0 shadow-none"
-        showCloseButton={false}
-      >
-        <div className="group/lightbox relative inline-block">
-          <img
-            alt={alt ?? ''}
-            className="block max-h-[calc(100vh-12rem)] max-w-[calc(100vw-12rem)] cursor-zoom-out select-auto rounded-lg object-contain shadow-2xl"
-            onClick={() => setLightboxOpen(false)}
-            src={src}
-          />
-          <ImageActionButton copy={copy} onClick={handleDownload} saving={saving} variant="lightbox" />
-        </div>
-      </DialogContent>
-    </Dialog>
-  ) : null
-
   return (
     <>
       <span
@@ -138,30 +123,89 @@ export function ZoomableImage({ className, containerClassName, src, alt, slot, .
         >
           <img alt={alt ?? ''} className={className} src={src} {...props} />
         </button>
-        {src && <ImageActionButton copy={copy} onClick={handleDownload} saving={saving} variant="inline" />}
+        {src && (
+          <ImageActionButton
+            className="group-hover/image:opacity-100"
+            copy={copy}
+            onClick={handleDownload}
+            saving={saving}
+          />
+        )}
       </span>
-      {lightbox}
+      {src && (
+        <ImageLightbox
+          alt={alt}
+          copy={copy}
+          onClick={handleDownload}
+          onOpenChange={setLightboxOpen}
+          open={lightboxOpen}
+          saving={saving}
+          src={src}
+        />
+      )}
     </>
   )
 }
 
-function ImageActionButton({
+export function ImageLightbox({
+  alt,
   copy,
   onClick,
+  onOpenChange,
+  open,
   saving,
-  variant
+  src
 }: {
+  alt?: string
+  copy: ImageActionCopy
+  onClick: () => void
+  onOpenChange: (open: boolean) => void
+  open: boolean
+  saving: boolean
+  src: string
+}) {
+  return (
+    <Dialog onOpenChange={onOpenChange} open={open}>
+      <DialogContent
+        className="block w-auto max-h-[calc(100vh-12rem)] max-w-[calc(100vw-12rem)] overflow-visible border-0 bg-transparent p-0 shadow-none"
+        showCloseButton={false}
+      >
+        <div className="group/lightbox relative inline-block">
+          <img
+            alt={alt ?? ''}
+            className="block max-h-[calc(100vh-12rem)] max-w-[calc(100vw-12rem)] cursor-zoom-out select-auto rounded-lg object-contain shadow-2xl"
+            onClick={() => onOpenChange(false)}
+            src={src}
+          />
+          <ImageActionButton
+            className="group-hover/lightbox:opacity-100"
+            copy={copy}
+            onClick={onClick}
+            saving={saving}
+          />
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+export function ImageActionButton({
+  className,
+  copy,
+  onClick,
+  saving
+}: {
+  className?: string
   copy: ImageActionCopy
   onClick: () => void
   saving: boolean
-  variant: 'inline' | 'lightbox'
 }) {
   return (
     <button
       aria-label={saving ? copy.savingImage : copy.downloadImage}
       className={cn(
         'absolute right-2 top-2 grid size-8 place-items-center rounded-full border border-border/70 bg-background/80 text-muted-foreground opacity-0 shadow-sm backdrop-blur transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 disabled:opacity-50',
-        variant === 'inline' ? 'group-hover/image:opacity-100' : 'group-hover/lightbox:opacity-100'
+        className
       )}
       disabled={saving}
       onClick={event => {

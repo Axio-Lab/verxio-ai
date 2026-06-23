@@ -11,8 +11,9 @@ import { Pane, PaneMain } from '@/components/pane-shell'
 import { useSkinCommand } from '@/themes/use-skin-command'
 
 import { formatRefValue } from '../components/assistant-ui/directive-text'
-import { getSessionMessages, listAllProfileSessions, type SessionInfo } from '../hermes'
+import { getCronJobs, getSessionMessages, listAllProfileSessions, type SessionInfo, triggerCronJob } from '../hermes'
 import { preserveLocalAssistantErrors, toChatMessages } from '../lib/chat-messages'
+import { setCronFocusJobId, setCronJobs } from '../store/cron'
 import {
   $panesFlipped,
   $pinnedSessionIds,
@@ -78,7 +79,8 @@ import { ModelVisibilityOverlay } from './model-visibility-overlay'
 import { RightSidebarPane } from './right-sidebar'
 import { $terminalTakeover } from './right-sidebar/store'
 import { PersistentTerminal, TerminalSlot } from './right-sidebar/terminal/persistent'
-import { NEW_CHAT_ROUTE, routeSessionId, sessionRoute, SETTINGS_ROUTE, SKILLS_ROUTE } from './routes'
+import { CRON_ROUTE, NEW_CHAT_ROUTE, routeSessionId, sessionRoute, SETTINGS_ROUTE, SKILLS_ROUTE } from './routes'
+import { SessionPickerOverlay } from './session-picker-overlay'
 import { useContextSuggestions } from './session/hooks/use-context-suggestions'
 import { useCwdActions } from './session/hooks/use-cwd-actions'
 import { useHermesConfig } from './session/hooks/use-hermes-config'
@@ -230,6 +232,16 @@ export function DesktopController() {
     }
   }, [])
 
+  const refreshCronJobs = useCallback(async () => {
+    try {
+      const jobs = await getCronJobs()
+
+      setCronJobs(jobs)
+    } catch {
+      // Non-fatal: the cron section keeps its last-known jobs.
+    }
+  }, [])
+
   const refreshSessions = useCallback(async () => {
     const requestId = refreshSessionsRequestRef.current + 1
     refreshSessionsRequestRef.current = requestId
@@ -237,12 +249,6 @@ export function DesktopController() {
 
     try {
       const limit = $sessionsLimit.get()
-      // Require at least one message so abandoned/empty "Untitled" drafts (one
-      // was created per TUI/desktop launch before the lazy-create fix) don't
-      // clutter the sidebar.
-      // Unified cross-profile list (served read-only off each profile's
-      // state.db; no per-profile backend is spawned). Single-profile users get
-      // the same rows tagged profile="default".
       const result = await listAllProfileSessions(limit, 1)
 
       if (refreshSessionsRequestRef.current === requestId) {
@@ -255,7 +261,9 @@ export function DesktopController() {
         setSessionsLoading(false)
       }
     }
-  }, [])
+
+    void refreshCronJobs()
+  }, [refreshCronJobs])
 
   const loadMoreSessions = useCallback(() => {
     bumpSessionsLimit()
@@ -543,6 +551,7 @@ export function DesktopController() {
     handleSkinCommand,
     refreshSessions,
     requestGateway,
+    resumeStoredSession: resumeSession,
     selectedStoredSessionIdRef,
     startFreshSessionDraft,
     sttEnabled,
@@ -569,8 +578,9 @@ export function DesktopController() {
       void refreshCurrentModel()
       void refreshActiveProfile()
       void refreshSessions().catch(() => undefined)
+      void refreshCronJobs()
     }
-  }, [gatewayState, refreshCurrentModel, refreshSessions])
+  }, [gatewayState, refreshCronJobs, refreshCurrentModel, refreshSessions])
 
   useRouteResume({
     activeSessionId,
@@ -605,9 +615,18 @@ export function DesktopController() {
       onDeleteSession={sessionId => void removeSession(sessionId)}
       onLoadMoreProfileSessions={loadMoreSessionsForProfile}
       onLoadMoreSessions={loadMoreSessions}
+      onManageCronJob={jobId => {
+        setCronFocusJobId(jobId)
+        navigate(CRON_ROUTE)
+      }}
       onNavigate={selectSidebarItem}
       onNewSessionInWorkspace={startSessionInWorkspace}
       onResumeSession={sessionId => navigate(sessionRoute(sessionId))}
+      onTriggerCronJob={jobId => {
+        void triggerCronJob(jobId)
+          .then(() => refreshCronJobs())
+          .catch(() => undefined)
+      }}
     />
   )
 
@@ -626,6 +645,7 @@ export function DesktopController() {
         requestGateway={requestGateway}
       />
       <ModelPickerOverlay gateway={gatewayRef.current || undefined} onSelect={selectModel} />
+      <SessionPickerOverlay onResume={resumeSession} />
       <ModelVisibilityOverlay gateway={gatewayRef.current || undefined} onOpenProviders={openProviderSettings} />
       <UpdatesOverlay />
       <GatewayConnectingOverlay />
@@ -690,6 +710,7 @@ export function DesktopController() {
     <ChatView
       gateway={gatewayRef.current}
       maxVoiceRecordingSeconds={voiceMaxRecordingSeconds}
+      modelMenuContent={modelMenuContent}
       onAddContextRef={composer.addContextRefAttachment}
       onAddUrl={url => composer.addContextRefAttachment(`@url:${formatRefValue(url)}`, url)}
       onAttachDroppedItems={composer.attachDroppedItems}
