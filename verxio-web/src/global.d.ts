@@ -30,6 +30,10 @@ declare global {
       }
       api: <T>(request: HermesApiRequest) => Promise<T>
       notify: (payload: HermesNotification) => Promise<boolean>
+      setTranslucency?: (payload: { intensity: number }) => void
+      getRemoteDisplayReason?: () => Promise<string | null>
+      onFocusSession?: (callback: (sessionId: string) => void) => () => void
+      onNotificationAction?: (callback: (payload: { actionId: string; sessionId?: string }) => void) => () => void
       audio?: {
         captureSupport: () => Promise<DesktopAudioCaptureSupport>
         listCaptureSources?: () => Promise<DesktopCaptureSource[]>
@@ -356,6 +360,9 @@ export interface HermesNotification {
   title?: string
   body?: string
   silent?: boolean
+  sessionId?: string
+  kind?: string
+  actions?: Array<{ id: string; text: string }>
 }
 
 export interface DesktopAudioCaptureSupport {

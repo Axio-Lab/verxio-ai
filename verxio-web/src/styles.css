@@ -1097,6 +1097,38 @@ canvas {
   ) !important;
 }
 
+[data-slot='composer-root'][data-popped-out] {
+  width: var(--composer-popout-width, 24rem);
+  max-width: calc(100vw - 1.5rem);
+  padding: 5px;
+}
+
+:root {
+  --dock-glow-scale: 0.55;
+}
+
+.dark {
+  --dock-glow-scale: 1;
+}
+
+[data-slot='composer-drag-region'] {
+  border-radius: 0.4rem;
+  opacity: 0;
+  transition: opacity 150ms ease;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--ui-text-tertiary) 38%, transparent) 0,
+    color-mix(in srgb, var(--ui-text-tertiary) 38%, transparent) 1px,
+    transparent 1px,
+    transparent 3.5px
+  );
+}
+
+[data-slot='composer-drag-region']:hover,
+[data-slot='composer-drag-region'][data-dragging] {
+  opacity: 0.33;
+}
+
 [data-slot='composer-surface'] {
   border-color: var(--ui-stroke-secondary) !important;
 }

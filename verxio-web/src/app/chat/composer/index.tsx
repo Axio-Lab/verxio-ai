@@ -23,6 +23,7 @@ import { SLASH_COMMAND_RE } from '@/lib/chat-runtime'
 import { desktopSlashCommandTakesArgs } from '@/lib/desktop-slash-commands'
 import { DATA_IMAGE_URL_RE } from '@/lib/embedded-images'
 import { triggerHaptic } from '@/lib/haptics'
+import { isVerxioDesktop } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import { $composerAttachments, clearComposerAttachments, type ComposerAttachment } from '@/store/composer'
 import {
@@ -32,6 +33,13 @@ import {
   isBrowsingHistory,
   resetBrowseState
 } from '@/store/composer-input-history'
+import {
+  $composerPopoutPosition,
+  $composerPoppedOut,
+  POPOUT_WIDTH_REM,
+  setComposerPopoutPosition,
+  setComposerPoppedOut
+} from '@/store/composer-popout'
 import {
   $queuedPromptsBySession,
   enqueueQueuedPrompt,
@@ -61,6 +69,7 @@ import {
 } from './focus'
 import { HelpHint } from './help-hint'
 import { useAtCompletions } from './hooks/use-at-completions'
+import { useComposerPopoutGestures } from './hooks/use-popout-drag'
 import { useSlashCompletions } from './hooks/use-slash-completions'
 import { useVoiceConversation } from './hooks/use-voice-conversation'
 import { useVoiceRecorder } from './hooks/use-voice-recorder'
@@ -155,6 +164,9 @@ export function ChatBar({
   const statusItemsBySession = useStore($statusItemsBySession)
   const scrolledUp = useStore($threadScrolledUp)
   const sessionMessages = useStore($messages)
+  const popoutAllowed = isVerxioDesktop()
+  const poppedOut = useStore($composerPoppedOut) && popoutAllowed
+  const popoutPosition = useStore($composerPopoutPosition)
   const activeQueueSessionKey = queueSessionKey || sessionId || null
 
   const queuedPrompts = useMemo(
@@ -176,6 +188,33 @@ export function ChatBar({
   const composerRef = useRef<HTMLFormElement | null>(null)
   const composerSurfaceRef = useRef<HTMLDivElement | null>(null)
   const editorRef = useRef<HTMLDivElement | null>(null)
+
+  const handleComposerPopOut = useCallback(() => {
+    triggerHaptic('open')
+    setComposerPoppedOut(true)
+  }, [])
+
+  const handleComposerDock = useCallback(() => {
+    triggerHaptic('success')
+    setComposerPoppedOut(false)
+  }, [])
+
+  const handleComposerToggle = useCallback(() => {
+    poppedOut ? handleComposerDock() : handleComposerPopOut()
+  }, [handleComposerDock, handleComposerPopOut, poppedOut])
+
+  const {
+    dockProximity,
+    dragging,
+    onPointerDown: onComposerGesturePointerDown
+  } = useComposerPopoutGestures({
+    composerRef,
+    onDock: handleComposerDock,
+    onPopOut: handleComposerPopOut,
+    poppedOut,
+    position: popoutPosition
+  })
+
   const draftRef = useRef(draft)
   const previousBusyRef = useRef(busy)
   const drainingQueueRef = useRef(false)
@@ -385,6 +424,16 @@ export function ChatBar({
       return
     }
 
+    if ($composerPoppedOut.get() && popoutAllowed) {
+      const root = document.documentElement
+      lastBucketedHeightRef.current = 0
+      lastBucketedSurfaceHeightRef.current = 0
+      root.style.setProperty('--composer-measured-height', '0px')
+      root.style.setProperty('--composer-surface-measured-height', '0px')
+
+      return
+    }
+
     const { height, width } = composer.getBoundingClientRect()
     const surfaceHeight = composerSurfaceRef.current?.getBoundingClientRect().height
     const root = document.documentElement
@@ -427,9 +476,23 @@ export function ChatBar({
         root.style.setProperty('--composer-surface-measured-height', `${bucket}px`)
       }
     }
-  }, [])
+  }, [popoutAllowed])
 
   useResizeObserver(syncComposerMetrics, composerRef, composerSurfaceRef, editorRef)
+
+  useEffect(() => {
+    if (!popoutAllowed && $composerPoppedOut.get()) {
+      setComposerPoppedOut(false)
+    }
+  }, [popoutAllowed])
+
+  useEffect(() => {
+    if (!poppedOut) {
+      return
+    }
+
+    setComposerPopoutPosition(popoutPosition, { persist: false })
+  }, [poppedOut, popoutPosition])
 
   useEffect(() => {
     return () => {
@@ -1394,6 +1457,7 @@ export function ChatBar({
       busyAction={busyAction}
       canSteer={canSteer}
       canSubmit={canSubmit}
+      compactModelPill={poppedOut}
       conversation={{
         active: voiceConversationActive,
         level: conversation.level,
@@ -1489,10 +1553,28 @@ export function ChatBar({
 
   return (
     <>
+      {dragging && poppedOut && (
+        <div
+          aria-hidden
+          className="pointer-events-none fixed inset-x-0 bottom-0 z-20 h-32"
+          style={{
+            background:
+              'radial-gradient(64% 130% at 50% 100%, color-mix(in srgb, var(--color-primary) 26%, transparent) 0%, transparent 70%)',
+            opacity: `calc(${0.1 + dockProximity * 0.57} * var(--dock-glow-scale, 1))`
+          }}
+        />
+      )}
       <ComposerPrimitive.Unstable_TriggerPopoverRoot>
         <ComposerPrimitive.Root
-          className="group/composer absolute bottom-0 left-1/2 z-30 w-[min(var(--composer-width),calc(100%-2rem))] max-w-full -translate-x-1/2 rounded-2xl pt-2 pb-[var(--composer-shell-pad-block-end)]"
+          className={cn(
+            'group/composer z-30 overflow-visible rounded-2xl',
+            poppedOut
+              ? 'fixed w-[var(--composer-popout-width)] max-w-[calc(100vw-1.5rem)] bg-transparent p-[5px]'
+              : 'absolute bottom-0 left-1/2 w-[min(var(--composer-width),calc(100%-2rem))] max-w-full -translate-x-1/2 pt-2 pb-[var(--composer-shell-pad-block-end)]',
+            dragging && 'cursor-grabbing select-none touch-none'
+          )}
           data-drag-active={dragActive ? '' : undefined}
+          data-popped-out={poppedOut ? '' : undefined}
           data-slot="composer-root"
           data-status-stack={statusStackVisible ? '' : undefined}
           data-thread-scrolled-up={scrolledUp ? '' : undefined}
@@ -1500,6 +1582,7 @@ export function ChatBar({
           onDragLeave={handleDragLeave}
           onDragOver={handleDragOver}
           onDrop={handleDrop}
+          onPointerDown={popoutAllowed ? onComposerGesturePointerDown : undefined}
           onSubmit={e => {
             e.preventDefault()
 
@@ -1510,6 +1593,15 @@ export function ChatBar({
             submitDraft()
           }}
           ref={composerRef}
+          style={
+            poppedOut
+              ? {
+                  bottom: `${popoutPosition.bottom}px`,
+                  right: `${popoutPosition.right}px`,
+                  ['--composer-popout-width' as string]: `${POPOUT_WIDTH_REM}rem`
+                }
+              : undefined
+          }
         >
           {showHelpHint && <HelpHint />}
           {trigger && (
@@ -1547,10 +1639,21 @@ export function ChatBar({
             }
             sessionId={statusSessionId}
           />
-          <div
-            className="pointer-events-none absolute inset-0 rounded-[inherit]"
-            style={{ background: COMPOSER_FADE_BACKGROUND }}
-          />
+          {!poppedOut && (
+            <div
+              className="pointer-events-none absolute inset-0 rounded-[inherit]"
+              style={{ background: COMPOSER_FADE_BACKGROUND }}
+            />
+          )}
+          {popoutAllowed && (
+            <div
+              aria-hidden
+              className={cn('pointer-events-auto absolute inset-0', dragging ? 'cursor-grabbing' : 'cursor-grab')}
+              data-dragging={dragging ? '' : undefined}
+              data-slot="composer-drag-region"
+              onDoubleClick={handleComposerToggle}
+            />
+          )}
           <div className="relative w-full rounded-[inherit]">
             <div
               className={cn(

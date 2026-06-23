@@ -350,6 +350,20 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
       timeoutMs: request.timeoutMs
     }),
   notify: payload => ipcRenderer.invoke('verxio:notify', payload),
+  setTranslucency: payload => ipcRenderer.send('verxio:set-translucency', payload),
+  getRemoteDisplayReason: () => ipcRenderer.invoke('verxio:get-remote-display-reason'),
+  onFocusSession: callback => {
+    const listener = (_event, sessionId) => callback(sessionId)
+    ipcRenderer.on('verxio:focus-session', listener)
+
+    return () => ipcRenderer.removeListener('verxio:focus-session', listener)
+  },
+  onNotificationAction: callback => {
+    const listener = (_event, payload) => callback(payload)
+    ipcRenderer.on('verxio:notification-action', listener)
+
+    return () => ipcRenderer.removeListener('verxio:notification-action', listener)
+  },
   audio: {
     captureSupport: () => ipcRenderer.invoke('verxio:audio:captureSupport'),
     listCaptureSources: () => ipcRenderer.invoke('verxio:audio:listCaptureSources'),
