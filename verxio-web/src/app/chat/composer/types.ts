@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+
 import type { HermesGateway } from '@/hermes'
 import type { ComposerAttachment } from '@/store/composer'
 
@@ -21,6 +23,7 @@ export interface ChatBarState {
     provider: string
     canSwitch: boolean
     loading?: boolean
+    modelMenuContent?: ReactNode
     quickModels?: QuickModelOption[]
   }
   tools: { enabled: boolean; label: string; suggestions?: ContextSuggestion[] }

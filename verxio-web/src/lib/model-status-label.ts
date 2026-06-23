@@ -17,6 +17,17 @@ export function reasoningEffortLabel(effort: string): string {
   return REASONING_LABELS[key] ?? effort
 }
 
+export function currentPickerSelection(
+  hasSession: boolean,
+  store: { model: string; provider: string },
+  options?: { model?: string; provider?: string }
+): { model: string; provider: string } {
+  return {
+    model: String((hasSession && options?.model) || store.model || options?.model || ''),
+    provider: String((hasSession && options?.provider) || store.provider || options?.provider || '')
+  }
+}
+
 /** Strip provider prefix and normalize for display. */
 export function modelBaseId(model: string): string {
   const trimmed = model.trim()

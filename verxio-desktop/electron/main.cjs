@@ -64,10 +64,112 @@ const IS_WINDOWS = process.platform === 'win32'
 const APP_ROOT = app.getAppPath()
 const USER_DATA_OVERRIDE = process.env.VERXIO_DESKTOP_USER_DATA_DIR
 
+const GPU_OVERRIDE_ON = new Set(['1', 'true', 'yes', 'on'])
+const GPU_OVERRIDE_OFF = new Set(['0', 'false', 'no', 'off'])
+
+function detectRemoteDisplay(options = {}) {
+  const env = options.env ?? process.env
+  const platform = options.platform ?? process.platform
+
+  const override = String(env.VERXIO_DESKTOP_DISABLE_GPU || env.HERMES_DESKTOP_DISABLE_GPU || '')
+    .trim()
+    .toLowerCase()
+  if (GPU_OVERRIDE_ON.has(override)) return 'override (VERXIO_DESKTOP_DISABLE_GPU)'
+  if (GPU_OVERRIDE_OFF.has(override)) return null
+
+  if (env.SSH_CONNECTION || env.SSH_CLIENT || env.SSH_TTY) return 'ssh-session'
+
+  if (platform === 'linux') {
+    const display = String(env.DISPLAY || '')
+    if (display.includes(':') && display.split(':')[0]) {
+      return `x11-forwarding (DISPLAY=${display})`
+    }
+  }
+
+  if (platform === 'win32') {
+    const sessionName = String(env.SESSIONNAME || '')
+    if (/^rdp-/i.test(sessionName)) return `rdp (SESSIONNAME=${sessionName})`
+  }
+
+  return null
+}
+
+const REMOTE_DISPLAY_REASON = detectRemoteDisplay()
+if (REMOTE_DISPLAY_REASON) {
+  app.disableHardwareAcceleration()
+  app.commandLine.appendSwitch('disable-gpu-compositing')
+  console.log(
+    `[verxio] remote display detected (${REMOTE_DISPLAY_REASON}); disabling GPU hardware acceleration to prevent flicker`
+  )
+}
+
 if (USER_DATA_OVERRIDE) {
   const resolvedUserData = path.resolve(USER_DATA_OVERRIDE)
   fs.mkdirSync(resolvedUserData, { recursive: true })
   app.setPath('userData', resolvedUserData)
+}
+
+function translucencyConfigPath() {
+  return path.join(app.getPath('userData'), 'translucency.json')
+}
+
+function clampIntensity(value) {
+  const n = Math.round(Number(value))
+
+  return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 0
+}
+
+function readPersistedTranslucency() {
+  try {
+    return clampIntensity(JSON.parse(fs.readFileSync(translucencyConfigPath(), 'utf8')).intensity)
+  } catch {
+    return 0
+  }
+}
+
+function writePersistedTranslucency(intensity) {
+  const filePath = translucencyConfigPath()
+
+  try {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true })
+    fs.writeFileSync(filePath, JSON.stringify({ intensity }, null, 2), 'utf8')
+  } catch (error) {
+    console.warn(`[verxio] translucency write failed: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+let translucencyIntensity = readPersistedTranslucency()
+
+function windowOpacity() {
+  return 1 - (translucencyIntensity / 100) * 0.7
+}
+
+function applyWindowTranslucency(win) {
+  if (!win || win.isDestroyed() || typeof win.setOpacity !== 'function') {
+    return
+  }
+
+  try {
+    win.setOpacity(windowOpacity())
+  } catch (error) {
+    console.warn(`[verxio] translucency apply failed: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+function focusWindow(win) {
+  if (!win || win.isDestroyed()) {
+    return
+  }
+
+  if (win.isMinimized()) {
+    win.restore()
+  }
+
+  if (!win.isVisible()) {
+    win.show()
+  }
+
+  win.focus()
 }
 
 app.commandLine.appendSwitch('disable-renderer-backgrounding')
@@ -356,6 +458,7 @@ function createWindow() {
     height: 900,
     minHeight: 640,
     minWidth: 960,
+    opacity: windowOpacity(),
     show: false,
     title: 'Verxio',
     titleBarOverlay: IS_MAC
@@ -378,6 +481,7 @@ function createWindow() {
   })
 
   mainWindow.once('ready-to-show', () => {
+    applyWindowTranslucency(mainWindow)
     mainWindow?.show()
     sendWindowState()
   })
@@ -731,6 +835,8 @@ powerMonitor.on('resume', () => {
   mainWindow?.webContents.send('verxio:power-resume')
 })
 
+ipcMain.handle('verxio:get-remote-display-reason', () => REMOTE_DISPLAY_REASON)
+
 ipcMain.handle('verxio:window:nativeOverlayWidth', () => nativeOverlayWidth())
 ipcMain.handle('verxio:window:buttonPosition', () => windowButtonPosition())
 
@@ -739,13 +845,59 @@ ipcMain.handle('verxio:notify', (_event, payload = {}) => {
     return false
   }
 
-  new Notification({
+  const actions = Array.isArray(payload?.actions) ? payload.actions : []
+  const notification = new Notification({
     body: payload.body || '',
     silent: Boolean(payload.silent),
-    title: payload.title || 'Verxio'
-  }).show()
+    title: payload.title || 'Verxio',
+    actions: actions.map(action => ({ type: 'button', text: String(action?.text || '') }))
+  })
+
+  notification.on('click', () => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return
+    }
+
+    focusWindow(mainWindow)
+
+    if (payload?.sessionId) {
+      mainWindow.webContents.send('verxio:focus-session', payload.sessionId)
+    }
+  })
+
+  notification.on('action', (_actionEvent, index) => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return
+    }
+
+    const action = actions[index]
+
+    if (action?.id) {
+      mainWindow.webContents.send('verxio:notification-action', {
+        actionId: action.id,
+        sessionId: payload?.sessionId
+      })
+    }
+  })
+
+  notification.show()
 
   return true
+})
+
+ipcMain.on('verxio:set-translucency', (_event, payload = {}) => {
+  const next = clampIntensity(payload?.intensity)
+
+  if (next === translucencyIntensity) {
+    return
+  }
+
+  translucencyIntensity = next
+  writePersistedTranslucency(next)
+
+  for (const win of BrowserWindow.getAllWindows()) {
+    applyWindowTranslucency(win)
+  }
 })
 
 ipcMain.handle('verxio:requestMicrophoneAccess', async () => {

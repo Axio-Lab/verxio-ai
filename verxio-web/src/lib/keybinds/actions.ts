@@ -37,6 +37,14 @@ const PROFILE_SWITCH_ACTIONS: KeybindActionMeta[] = Array.from({ length: PROFILE
   defaults: [comboForSlot(i + 1)]
 }))
 
+export const SESSION_SLOT_COUNT = 9
+
+const SESSION_SLOT_ACTIONS: KeybindActionMeta[] = Array.from({ length: SESSION_SLOT_COUNT }, (_, i) => ({
+  id: `session.slot.${i + 1}`,
+  category: 'session' as const,
+  defaults: [`ctrl+${i + 1}`]
+}))
+
 export const KEYBIND_ACTIONS: readonly KeybindActionMeta[] = [
   // ── Composer ─────────────────────────────────────────────────────────────
   { id: 'composer.focus', category: 'composer', defaults: [] },
@@ -54,6 +62,7 @@ export const KEYBIND_ACTIONS: readonly KeybindActionMeta[] = [
   { id: 'session.new', category: 'session', defaults: ['mod+n', 'shift+n'] },
   { id: 'session.next', category: 'session', defaults: [] },
   { id: 'session.prev', category: 'session', defaults: [] },
+  ...SESSION_SLOT_ACTIONS,
   { id: 'session.focusSearch', category: 'session', defaults: ['mod+shift+f'] },
   { id: 'session.togglePin', category: 'session', defaults: [] },
 

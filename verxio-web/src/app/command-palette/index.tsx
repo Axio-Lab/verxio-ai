@@ -11,6 +11,7 @@ import { sessionTitle } from '@/lib/chat-runtime'
 import {
   Archive,
   BarChart3,
+  Bell,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -26,6 +27,7 @@ import {
   Package,
   Palette,
   Plus,
+  RefreshCw,
   Settings,
   Settings2,
   Sun,
@@ -35,6 +37,7 @@ import {
 } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { $commandPaletteOpen, closeCommandPalette, setCommandPaletteOpen } from '@/store/command-palette'
+import { runGatewayRestart } from '@/store/system-actions'
 import { type ThemeMode, useTheme } from '@/themes/context'
 
 import {
@@ -102,6 +105,7 @@ type NonConfigSettingsLabel =
   | 'mcp'
   | 'providerAccounts'
   | 'providerApiKeys'
+  | 'notifications'
 
 const NON_CONFIG_SETTINGS: ReadonlyArray<{
   icon: IconComponent
@@ -135,6 +139,7 @@ const NON_CONFIG_SETTINGS: ReadonlyArray<{
     tab: 'keys&kview=settings'
   },
   { icon: Wrench, keywords: ['servers', 'tools'], labelKey: 'mcp', tab: 'mcp' },
+  { icon: Bell, keywords: ['notifications', 'alerts', 'sound'], labelKey: 'notifications', tab: 'notifications' },
   { icon: Archive, keywords: ['history', 'archived'], labelKey: 'archivedChats', tab: 'sessions' },
   { icon: Info, keywords: ['version', 'about'], labelKey: 'about', tab: 'about' }
 ]
@@ -259,6 +264,13 @@ export function CommandPalette() {
             keywords: ['command center', 'usage', 'tokens', 'cost'],
             label: cc.sections.usage,
             run: go(`${COMMAND_CENTER_ROUTE}?section=usage`)
+          },
+          {
+            icon: RefreshCw,
+            id: 'cc-restart-gateway',
+            keywords: ['gateway', 'restart', 'messaging', 'reconnect', 'system'],
+            label: cc.restartGateway,
+            run: () => void runGatewayRestart()
           }
         ]
       },

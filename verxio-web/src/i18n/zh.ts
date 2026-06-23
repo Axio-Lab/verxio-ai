@@ -127,7 +127,24 @@ export const zh: Translations = {
       transcriptionUnavailable: '语音转写暂不可用。',
       tryRecordingAgain: '请再录一次。',
       unavailable: '语音不可用'
+    },
+    native: {
+      approvalTitle: '需要批准',
+      approveAction: '批准',
+      rejectAction: '拒绝',
+      inputTitle: '需要输入',
+      inputBody: 'Verxio 正在等待你的回应。',
+      turnDoneTitle: 'Verxio 已完成',
+      turnDoneBody: '回复已就绪。',
+      turnErrorTitle: '本轮失败',
+      backgroundDoneTitle: '后台任务已完成',
+      backgroundFailedTitle: '后台任务失败'
     }
+  },
+
+  remoteDisplayBanner: {
+    message: reason => `已启用软件渲染 — 检测到远程显示（${reason}）。已禁用 GPU 加速以防止闪烁。`,
+    dismiss: '关闭'
   },
 
   titlebar: {
@@ -176,6 +193,15 @@ export const zh: Translations = {
       'session.new': '新建会话',
       'session.next': '下一个会话',
       'session.prev': '上一个会话',
+      'session.slot.1': '切换到最近会话 1',
+      'session.slot.2': '切换到最近会话 2',
+      'session.slot.3': '切换到最近会话 3',
+      'session.slot.4': '切换到最近会话 4',
+      'session.slot.5': '切换到最近会话 5',
+      'session.slot.6': '切换到最近会话 6',
+      'session.slot.7': '切换到最近会话 7',
+      'session.slot.8': '切换到最近会话 8',
+      'session.slot.9': '切换到最近会话 9',
       'session.focusSearch': '搜索会话',
       'session.togglePin': '固定/取消固定当前会话',
       'composer.focus': '聚焦输入框',
@@ -251,7 +277,45 @@ export const zh: Translations = {
       keysSettings: '设置',
       mcp: 'MCP',
       archivedChats: '已归档对话',
-      about: '关于'
+      about: '关于',
+      notifications: '通知'
+    },
+    notifications: {
+      title: '通知',
+      intro: '原生桌面通知，区别于应用内提示。设置按设备保存，每台电脑各自独立。',
+      enableAll: '启用通知',
+      enableAllDesc: '总开关。关闭后将静音下方所有通知。',
+      focusedHint: '完成提醒仅在 Verxio 处于后台时触发。',
+      kinds: {
+        approval: {
+          label: '需要批准',
+          description: '有命令正在等待你批准或拒绝。'
+        },
+        input: {
+          label: '需要输入',
+          description: 'Verxio 提出了问题，或需要密码或密钥。'
+        },
+        turnDone: {
+          label: '回复就绪',
+          description: 'Verxio 在后台时完成了一轮对话。'
+        },
+        turnError: {
+          label: '本轮失败',
+          description: '本轮以错误结束。'
+        },
+        backgroundDone: {
+          label: '后台任务完成',
+          description: '后台终端命令已完成。'
+        }
+      },
+      test: '发送测试通知',
+      testTitle: 'Verxio',
+      testBody: '通知工作正常。',
+      testSent: '测试已发送。如果没有出现，请检查系统通知权限和专注模式／勿扰模式。',
+      testUnsupported: '此系统不支持原生通知。',
+      completionSoundTitle: '完成提示音',
+      completionSoundDesc: '智能体回合结束时播放。可在此选择预设并预览。',
+      completionSoundPreview: '预览'
     },
     sections: {
       model: '模型',
@@ -281,6 +345,8 @@ export const zh: Translations = {
       intro: '这些是仅桌面端的显示偏好。模式控制明暗；主题控制强调色与对话界面样式。',
       colorMode: '颜色模式',
       colorModeDesc: '选择固定模式，或让 Verxio 跟随系统设置。',
+      translucencyTitle: '窗口透明度',
+      translucencyDesc: '让整个窗口呈现半透明效果，可看到桌面。仅 macOS 和 Windows 支持。',
       toolViewTitle: '工具调用显示',
       toolViewDesc: '产品模式隐藏原始工具数据；技术模式显示完整输入/输出。',
       product: '产品',
@@ -824,6 +890,8 @@ export const zh: Translations = {
     gatewayStopped: '消息网关已停止',
     hermesActiveSessions: (version, count) => `Verxio ${version} · 活跃会话 ${count}`,
     restartMessaging: '重启消息服务',
+    restartGateway: '重启网关',
+    gatewayRestartFailed: '网关重启失败。',
     updateHermes: '更新 Verxio',
     actionRunning: '运行中',
     actionDone: '完成',
@@ -1120,6 +1188,10 @@ export const zh: Translations = {
     emptyTitleSearch: '无匹配项',
     last: '上次：',
     next: '下次：',
+    noRuns: '尚无运行记录',
+    manage: '管理',
+    showRuns: '显示运行记录',
+    hideRuns: '隐藏运行记录',
     actionsFor: title => `${title} 的操作`,
     actionsTitle: '定时任务操作',
     resume: '恢复定时任务',
@@ -1212,6 +1284,7 @@ export const zh: Translations = {
     results: '结果',
     pinned: '已置顶',
     sessions: '会话',
+    cronJobs: '定时任务',
     groupAriaGrouped: '以单一列表显示会话',
     groupAriaUngrouped: '按工作区分组会话',
     groupTitleGrouped: '取消分组',
@@ -1624,6 +1697,7 @@ export const zh: Translations = {
       gatewayConnecting: '连接中',
       gatewayOffline: '离线',
       gatewayTitle: 'Verxio 网关状态',
+      gatewayRestarting: '重启中…',
       agents: '代理',
       closeAgents: '关闭代理',
       openAgents: '打开代理',
@@ -1696,6 +1770,7 @@ export const zh: Translations = {
     opening: '正在打开...',
     hide: '隐藏',
     openPreview: '打开预览',
+    openInBrowser: '在浏览器中打开',
     sourceLineTitle: '点击选择 · shift 点击扩展 · 拖到输入框',
     source: '源码',
     renderedPreview: '预览',
@@ -1769,6 +1844,7 @@ export const zh: Translations = {
     thread: {
       loadingSession: '正在加载会话',
       loadingResponse: 'Verxio 正在加载回复',
+      summarizing: '正在总结对话',
       thinking: '思考中',
       today: time => `今天，${time}`,
       yesterday: time => `昨天，${time}`,
@@ -1792,7 +1868,8 @@ export const zh: Translations = {
       restoreNext: '恢复下一个检查点',
       goForward: '前进',
       sendEdited: '发送编辑后的消息',
-      processNotificationOutput: '输出'
+      processNotificationOutput: '输出',
+      scrollToBottom: '滚动到底部'
     },
     approval: {
       gatewayDisconnected: 'Verxio 网关未连接',
@@ -1805,7 +1882,8 @@ export const zh: Translations = {
       alwaysTitle: '始终允许此命令？',
       alwaysDescription: pattern =>
         `这会将“${pattern}”模式加入永久允许列表 (~/.hermes/config.yaml)。Verxio 对类似命令将不再询问，包括当前会话和未来会话。`,
-      alwaysAllow: '始终允许'
+      alwaysAllow: '始终允许',
+      jumpToApproval: '需要批准'
     },
     clarify: {
       notReady: '澄清请求尚未就绪',

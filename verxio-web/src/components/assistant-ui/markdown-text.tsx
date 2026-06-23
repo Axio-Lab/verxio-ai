@@ -2,6 +2,7 @@
 
 import { TextMessagePartProvider, useMessagePartText } from '@assistant-ui/react'
 import {
+  parseMarkdownIntoBlocks,
   type StreamdownTextComponents,
   StreamdownTextPrimitive,
   type SyntaxHighlighterProps
@@ -19,8 +20,9 @@ import {
   useState
 } from 'react'
 
+import { ExpandableBlock } from '@/components/chat/expandable-block'
 import { PreviewAttachment } from '@/components/chat/preview-attachment'
-import { SyntaxHighlighter } from '@/components/chat/shiki-highlighter'
+import { chunkByLines, SyntaxHighlighter } from '@/components/chat/shiki-highlighter'
 import { ZoomableImage } from '@/components/chat/zoomable-image'
 import { resolvePathForDesktopPreview } from '@/lib/desktop-workspace'
 import { ExternalLink, normalizeExternalUrl, openExternalLink, PrettyLink } from '@/lib/external-link'
@@ -37,6 +39,7 @@ import {
   mediaStreamUrl
 } from '@/lib/media'
 import { previewTargetFromMarkdownHref } from '@/lib/preview-targets'
+import { tailBoundedRemend } from '@/lib/remend-tail'
 import { cn } from '@/lib/utils'
 import { notifyError } from '@/store/notifications'
 import { setCurrentSessionPreviewTarget } from '@/store/preview'
@@ -55,6 +58,46 @@ import { $currentCwd } from '@/store/session'
 // `singleDollarTextMath: true` enables `$x^2$` for inline math (de-facto
 // LLM convention). The default false-setting only accepts `$$...$$`.
 const mathPlugin = createMemoizedMathPlugin({ singleDollarTextMath: true })
+
+function preprocessWithTailRepair(text: string): string {
+  try {
+    return tailBoundedRemend(preprocessMarkdown(text))
+  } catch {
+    return text
+  }
+}
+
+const BLOCK_CACHE_MAX = 64
+const BLOCK_CACHE_MIN_LENGTH = 1024
+const blockCache = new Map<string, string[]>()
+
+function parseMarkdownIntoBlocksCached(markdown: string): string[] {
+  if (markdown.length < BLOCK_CACHE_MIN_LENGTH) {
+    return parseMarkdownIntoBlocks(markdown)
+  }
+
+  const hit = blockCache.get(markdown)
+
+  if (hit) {
+    blockCache.delete(markdown)
+    blockCache.set(markdown, hit)
+
+    return hit
+  }
+
+  const blocks = parseMarkdownIntoBlocks(markdown)
+  blockCache.set(markdown, blocks)
+
+  if (blockCache.size > BLOCK_CACHE_MAX) {
+    const oldest = blockCache.keys().next().value
+
+    if (oldest) {
+      blockCache.delete(oldest)
+    }
+  }
+
+  return blocks
+}
 
 async function mediaSrc(path: string): Promise<string> {
   if (/^(?:https?|data):/i.test(path)) {
@@ -423,8 +466,35 @@ const MARKDOWN_CONTAINER_CLASS_NAME = cn(
   '[&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>*+*]:mt-(--paragraph-gap)'
 )
 
+const MAX_MARKDOWN_CHARS = 200_000
+
+function HugeTextFallback({ containerClassName, text }: { containerClassName?: string; text: string }) {
+  const chunks = useMemo(() => chunkByLines(text, 200), [text])
+
+  return (
+    <div
+      className={cn(
+        'aui-md w-full max-w-none overflow-hidden rounded-[0.625rem] border border-border font-mono text-[0.7rem] leading-relaxed text-foreground/90',
+        containerClassName
+      )}
+    >
+      <ExpandableBlock className="p-2">
+        {chunks.map((chunk, index) => (
+          <div
+            className="[content-visibility:auto]"
+            key={index}
+            style={{ containIntrinsicSize: `auto ${chunk.lines * 16}px` }}
+          >
+            {chunk.text}
+          </div>
+        ))}
+      </ExpandableBlock>
+    </div>
+  )
+}
+
 function MarkdownTextSurface({ containerClassName, containerProps }: MarkdownTextSurfaceProps) {
-  const { status } = useMessagePartText()
+  const { status, text } = useMessagePartText()
   const isStreaming = status.type === 'running'
 
   // Keep code parsing enabled while streaming so incomplete fenced blocks still
@@ -454,19 +524,23 @@ function MarkdownTextSurface({ containerClassName, containerProps }: MarkdownTex
           <p className={cn('wrap-anywhere leading-(--dt-line-height)', className)} {...props} />
         ),
         a: MarkdownLink,
+        inlineCode: ({ className, ...props }: ComponentProps<'code'>) => (
+          <code className={className} dir="ltr" {...props} />
+        ),
         // `---` as quiet spacing, not a heavy full-width rule.
         hr: (_props: ComponentProps<'hr'>) => <div aria-hidden className="my-3" />,
         blockquote: ({ className, ...props }: ComponentProps<'blockquote'>) => (
           <blockquote
-            className={cn('border-l-2 border-border pl-3 text-muted-foreground italic', className)}
+            className={cn('border-s-2 border-border ps-3 text-muted-foreground italic', className)}
+            dir="auto"
             {...props}
           />
         ),
         ul: ({ className, ...props }: ComponentProps<'ul'>) => (
-          <ul className={cn('my-1 gap-0', className)} {...props} />
+          <ul className={cn('my-1 gap-0', className)} dir="auto" {...props} />
         ),
         ol: ({ className, ...props }: ComponentProps<'ol'>) => (
-          <ol className={cn('my-1 gap-0', className)} {...props} />
+          <ol className={cn('my-1 gap-0', className)} dir="auto" {...props} />
         ),
         li: ({ className, ...props }: ComponentProps<'li'>) => (
           <li className={cn('leading-(--dt-line-height)', className)} {...props} />
@@ -503,6 +577,10 @@ function MarkdownTextSurface({ containerClassName, containerProps }: MarkdownTex
     [isStreaming]
   )
 
+  if (text.length > MAX_MARKDOWN_CHARS) {
+    return <HugeTextFallback containerClassName={containerClassName} text={text} />
+  }
+
   return (
     <StreamdownTextPrimitive
       components={components}
@@ -518,9 +596,10 @@ function MarkdownTextSurface({ containerClassName, containerProps }: MarkdownTex
       // arrives. Shiki is independently deferred via `defer={isStreaming}`
       // on the SyntaxHighlighter component, so we don't pay code-block
       // tokenization on every token even with this set.
-      parseIncompleteMarkdown
+      parseIncompleteMarkdown={false}
+      parseMarkdownIntoBlocksFn={parseMarkdownIntoBlocksCached}
       plugins={plugins}
-      preprocess={preprocessMarkdown}
+      preprocess={preprocessWithTailRepair}
     />
   )
 }

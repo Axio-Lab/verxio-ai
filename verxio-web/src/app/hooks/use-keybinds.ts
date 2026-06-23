@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { setRightSidebarTab } from '@/app/right-sidebar/store'
-import { PROFILE_SLOT_COUNT } from '@/lib/keybinds/actions'
+import { PROFILE_SLOT_COUNT, SESSION_SLOT_COUNT } from '@/lib/keybinds/actions'
 import { comboAllowedInInput, comboFromEvent, isEditableTarget } from '@/lib/keybinds/combo'
 import { toggleCommandPalette } from '@/store/command-palette'
 import { $capture, $comboIndex, endCapture, setBinding, toggleKeybindPanel } from '@/store/keybinds'
@@ -21,6 +21,7 @@ import {
   toggleShowAllProfiles
 } from '@/store/profile'
 import { $activeSessionId, $sessions, setModelPickerOpen } from '@/store/session'
+import { closeSwitcher, slotSessionId } from '@/store/session-switcher'
 import { useTheme } from '@/themes/context'
 
 import { requestComposerFocus } from '../chat/composer/focus'
@@ -60,6 +61,21 @@ export function useKeybinds(deps: KeybindRuntimeDeps): void {
 
   for (let slot = 1; slot <= PROFILE_SLOT_COUNT; slot += 1) {
     profileSwitchHandlers[`profile.switch.${slot}`] = () => switchProfileToSlot(slot)
+  }
+
+  const goToSession = (sessionId: null | string) => {
+    if (sessionId) {
+      navigate(sessionRoute(sessionId))
+    }
+  }
+
+  const sessionSlotHandlers: HandlerMap = {}
+
+  for (let slot = 1; slot <= SESSION_SLOT_COUNT; slot += 1) {
+    sessionSlotHandlers[`session.slot.${slot}`] = () => {
+      closeSwitcher()
+      goToSession(slotSessionId(slot))
+    }
   }
 
   // Move to the adjacent session in recency order, wrapping at the ends.
@@ -106,6 +122,7 @@ export function useKeybinds(deps: KeybindRuntimeDeps): void {
     },
     'session.next': () => cycleSession(1),
     'session.prev': () => cycleSession(-1),
+    ...sessionSlotHandlers,
     'session.focusSearch': requestSessionSearchFocus,
     'session.togglePin': deps.toggleSelectedPin,
 

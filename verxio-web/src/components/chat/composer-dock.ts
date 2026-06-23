@@ -29,3 +29,6 @@ export const composerDockCard = (edge: 'bottom' | 'top' = 'top') =>
 /** Fused docked card — completion drawers. Shares `--composer-fill` with the
  *  composer surface, which goes opaque while a drawer is open. */
 export const composerFusedDockCard = (edge: 'bottom' | 'top' = 'top') => cn(composerDockEdge(edge), composerFill)
+
+/** Popover / panel card that shares the composer fill without dock edge chrome. */
+export const composerPanelCard = cn('rounded-2xl border border-border/65', composerFill, composerSurfaceGlass)

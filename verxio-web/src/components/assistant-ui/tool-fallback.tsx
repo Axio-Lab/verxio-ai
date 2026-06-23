@@ -2,7 +2,7 @@
 
 import { type ToolCallMessagePartProps, useAuiState } from '@assistant-ui/react'
 import { useStore } from '@nanostores/react'
-import { createContext, type FC, type PropsWithChildren, type ReactNode, useContext, useMemo } from 'react'
+import { createContext, type FC, type PropsWithChildren, type ReactNode, useContext, useEffect, useMemo } from 'react'
 
 import { AnsiText } from '@/components/assistant-ui/ansi-text'
 import { useElapsedSeconds } from '@/components/chat/activity-timer'
@@ -10,18 +10,23 @@ import { ActivityTimerText } from '@/components/chat/activity-timer-text'
 import { CompactMarkdown } from '@/components/chat/compact-markdown'
 import { DiffLines } from '@/components/chat/diff-lines'
 import { DisclosureRow } from '@/components/chat/disclosure-row'
-import { PreviewAttachment } from '@/components/chat/preview-attachment'
 import { ZoomableImage } from '@/components/chat/zoomable-image'
+import { Button } from '@/components/ui/button'
+import { Codicon } from '@/components/ui/codicon'
 import { CopyButton } from '@/components/ui/copy-button'
 import { FadeText } from '@/components/ui/fade-text'
 import { GlyphSpinner } from '@/components/ui/glyph-spinner'
 import { ToolIcon } from '@/components/ui/tool-icon'
+import { Tip } from '@/components/ui/tooltip'
 import { useI18n } from '@/i18n'
 import { PrettyLink, LinkifiedText as SharedLinkifiedText, urlSlugTitleLabel } from '@/lib/external-link'
 import { AlertCircle, CheckCircle2 } from '@/lib/icons'
 import { useEnterAnimation } from '@/lib/use-enter-animation'
 import { cn } from '@/lib/utils'
+import { recordPreviewArtifact } from '@/store/preview-status'
+import { $activeSessionId, $currentCwd } from '@/store/session'
 import { $toolInlineDiffs } from '@/store/tool-diffs'
+import { $toolRowDismissed, dismissToolRow } from '@/store/tool-dismiss'
 import { $toolDisclosureOpen, $toolViewMode, setToolDisclosureOpen } from '@/store/tool-view'
 
 import { PendingToolApproval } from './tool-approval'
@@ -193,13 +198,16 @@ function useDisclosureOpen(disclosureId: string, fallbackOpen = false): boolean 
 function ToolEntry({ part }: ToolEntryProps) {
   const { t } = useI18n()
   const copy = t.assistant.tool
+  const statusCopy = t.statusStack
   const messageId = useAuiState(s => s.message.id)
   const messageRunning = useAuiState(selectMessageRunning)
   const embedded = useContext(ToolEmbedContext)
   const toolViewMode = useStore($toolViewMode)
   const disclosureId = `tool-entry:${messageId}:${toolPartDisclosureId(part)}`
+  const dismissed = useStore($toolRowDismissed(disclosureId))
   const open = useDisclosureOpen(disclosureId)
   const isPending = messageRunning && part.result === undefined
+  const canDismiss = !isPending && !embedded
   // Only animate entries that mount while their message is actively
   // streaming — historical sessions mount with `messageRunning === false`,
   // so they paint statically without a settle cascade. The wrapping group
@@ -217,6 +225,18 @@ function ToolEntry({ part }: ToolEntryProps) {
 
     return buildToolView(p, inlineDiff)
   }, [inlineDiff, isPending, part])
+
+  const activeSessionId = useStore($activeSessionId)
+  const currentCwd = useStore($currentCwd)
+  const previewTarget = view.previewTarget
+
+  useEffect(() => {
+    if (isPending || !activeSessionId || !previewTarget || !isPreviewableTarget(previewTarget)) {
+      return
+    }
+
+    recordPreviewArtifact(activeSessionId, previewTarget, currentCwd || '')
+  }, [activeSessionId, currentCwd, isPending, previewTarget])
 
   const detailSections = useMemo(() => {
     if (!view.detail) {
@@ -266,12 +286,7 @@ function ToolEntry({ part }: ToolEntryProps) {
     Boolean(view.rawResult.trim())
 
   const hasExpandableContent = Boolean(
-    (view.previewTarget && isPreviewableTarget(view.previewTarget)) ||
-    view.imageUrl ||
-    view.inlineDiff ||
-    showDetail ||
-    hasSearchHits ||
-    toolViewMode === 'technical'
+    view.imageUrl || view.inlineDiff || showDetail || hasSearchHits || toolViewMode === 'technical'
   )
 
   const copyAction = useMemo(() => toolCopyPayload(part, view), [part, view])
@@ -284,6 +299,33 @@ function ToolEntry({ part }: ToolEntryProps) {
   const trailing =
     isPending && !embedded ? <ActivityTimerText className={TOOL_HEADER_DURATION_CLASS} seconds={elapsed} /> : undefined
 
+  const dismissAction = canDismiss ? (
+    <Tip label={statusCopy.dismiss}>
+      <Button
+        aria-label={statusCopy.dismiss}
+        className={cn(
+          'size-5 rounded-md text-(--ui-text-tertiary) transition-opacity hover:text-(--ui-text-primary) hover:opacity-100',
+          open
+            ? 'opacity-80'
+            : 'opacity-0 group-hover/disclosure-row:opacity-80 group-focus-within/disclosure-row:opacity-80'
+        )}
+        onClick={event => {
+          event.stopPropagation()
+          dismissToolRow(disclosureId)
+        }}
+        size="icon-xs"
+        type="button"
+        variant="ghost"
+      >
+        <Codicon name="close" size="0.75rem" />
+      </Button>
+    </Tip>
+  ) : undefined
+
+  if (dismissed) {
+    return null
+  }
+
   return (
     <div
       className={cn(
@@ -295,6 +337,7 @@ function ToolEntry({ part }: ToolEntryProps) {
     >
       <div className={cn(open && 'border-b border-(--ui-stroke-tertiary) px-2 py-1.5')}>
         <DisclosureRow
+          action={dismissAction}
           onToggle={hasExpandableContent ? () => setToolDisclosureOpen(disclosureId, !open) : undefined}
           open={open}
           trailing={trailing}
@@ -331,9 +374,6 @@ function ToolEntry({ part }: ToolEntryProps) {
               stopPropagation
               text={copyAction.text}
             />
-          )}
-          {!embedded && view.previewTarget && isPreviewableTarget(view.previewTarget) && (
-            <PreviewAttachment source="tool-result" target={view.previewTarget} />
           )}
           {view.imageUrl && (
             <div className="max-w-72 overflow-hidden rounded-[0.25rem] border border-(--ui-stroke-tertiary)">

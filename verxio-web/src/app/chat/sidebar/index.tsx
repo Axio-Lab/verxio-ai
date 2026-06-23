@@ -39,10 +39,12 @@ import { useI18n } from '@/i18n'
 import { profileColor } from '@/lib/profile-color'
 import { sessionMatchesSearch } from '@/lib/session-search'
 import { cn } from '@/lib/utils'
+import { $cronJobs } from '@/store/cron'
 import {
   $panesFlipped,
   $pinnedSessionIds,
   $sidebarAgentsGrouped,
+  $sidebarCronOpen,
   $sidebarOpen,
   $sidebarPinsOpen,
   $sidebarRecentsOpen,
@@ -50,6 +52,7 @@ import {
   reorderPinnedSession,
   SESSION_SEARCH_FOCUS_EVENT,
   setSidebarAgentsGrouped,
+  setSidebarCronOpen,
   setSidebarPinsOpen,
   setSidebarRecentsOpen,
   SIDEBAR_SESSIONS_PAGE_SIZE,
@@ -77,9 +80,11 @@ import { type AppView, ARTIFACTS_ROUTE, MESSAGING_ROUTE, NOTEPAD_ROUTE, SKILLS_R
 import { SidebarPanelLabel } from '../../shell/sidebar-label'
 import type { SidebarNavItem } from '../../types'
 
+import { SidebarCronJobsSection } from './cron-jobs-section'
 import { ProfileRail } from './profile-switcher'
 import { SidebarSessionRow } from './session-row'
 import { VirtualSessionList } from './virtual-session-list'
+import { type SidebarSessionGroup, workspaceTreeFor } from './workspace-groups'
 
 const VIRTUALIZE_THRESHOLD = 25
 
@@ -139,16 +144,6 @@ function orderByIds<T>(items: T[], getId: (item: T) => string, orderIds: string[
   return out
 }
 
-const baseName = (path: string) =>
-  path
-    .replace(/[/\\]+$/, '')
-    .split(/[/\\]/)
-    .filter(Boolean)
-    .pop()
-
-// FTS results cover sessions that aren't in the loaded page; synthesize a
-// minimal SessionInfo so they render in the same row component (resume works
-// by id; the snippet stands in for the preview).
 function searchResultToSession(result: SessionSearchResult): SessionInfo {
   const ts = result.session_started ?? Date.now() / 1000
 
@@ -172,30 +167,6 @@ function searchResultToSession(result: SessionSearchResult): SessionInfo {
   }
 }
 
-function workspaceGroupsFor(sessions: SessionInfo[], noWorkspaceLabel: string): SidebarSessionGroup[] {
-  const groups = new Map<string, SidebarSessionGroup>()
-
-  for (const session of sessions) {
-    const path = session.cwd?.trim() || ''
-    const id = path || '__no_workspace__'
-    const label = baseName(path) || path || noWorkspaceLabel
-
-    const group = groups.get(id) ?? { id, label, path: path || null, sessions: [] }
-    group.sessions.push(session)
-    groups.set(id, group)
-  }
-
-  // Groups keep recency order (Map insertion = first-seen in the recency-sorted
-  // input, so an active project floats up), but rows *within* a group sort by
-  // creation time so they don't reshuffle every time a message lands — keeps
-  // muscle memory intact.
-  for (const group of groups.values()) {
-    group.sessions.sort((a, b) => b.started_at - a.started_at)
-  }
-
-  return [...groups.values()]
-}
-
 function useSortableBindings(id: string) {
   const { attributes, isDragging, listeners, setNodeRef, transform, transition } = useSortable({ id })
 
@@ -217,6 +188,8 @@ interface ChatSidebarProps extends React.ComponentProps<typeof Sidebar> {
   onDeleteSession: (sessionId: string) => void
   onArchiveSession: (sessionId: string) => void
   onNewSessionInWorkspace: (path: null | string) => void
+  onManageCronJob: (jobId: string) => void
+  onTriggerCronJob: (jobId: string) => void
 }
 
 export function ChatSidebar({
@@ -227,13 +200,17 @@ export function ChatSidebar({
   onResumeSession,
   onDeleteSession,
   onArchiveSession,
-  onNewSessionInWorkspace
+  onNewSessionInWorkspace,
+  onManageCronJob,
+  onTriggerCronJob
 }: ChatSidebarProps) {
   const { t } = useI18n()
   const s = t.sidebar
   const sidebarOpen = useStore($sidebarOpen)
   const panesFlipped = useStore($panesFlipped)
   const agentsGrouped = useStore($sidebarAgentsGrouped)
+  const cronOpen = useStore($sidebarCronOpen)
+  const cronJobs = useStore($cronJobs)
   const pinnedSessionIds = useStore($pinnedSessionIds)
   const pinsOpen = useStore($sidebarPinsOpen)
   const agentsOpen = useStore($sidebarRecentsOpen)
@@ -389,10 +366,12 @@ export function ChatSidebar({
     [unpinnedAgentSessions, agentOrderIds]
   )
 
-  const agentGroups = useMemo(
-    () => orderByIds(workspaceGroupsFor(agentSessions, s.noWorkspace), g => g.id, workspaceOrderIds),
-    [agentSessions, s.noWorkspace, workspaceOrderIds]
-  )
+  const agentGroups = useMemo(() => {
+    const tree = workspaceTreeFor(agentSessions, s.noWorkspace)
+    const groups = tree.flatMap(parent => parent.groups)
+
+    return orderByIds(groups, g => g.id, workspaceOrderIds)
+  }, [agentSessions, s.noWorkspace, workspaceOrderIds])
 
   const loadMoreForProfileGroup = useCallback(
     (profile: string) => {
@@ -723,6 +702,18 @@ export function ChatSidebar({
           />
         )}
 
+        {sidebarOpen && !trimmedQuery && cronJobs.length > 0 && (
+          <SidebarCronJobsSection
+            jobs={cronJobs}
+            label={s.cronJobs}
+            onManageJob={onManageCronJob}
+            onOpenRun={onResumeSession}
+            onToggle={() => setSidebarCronOpen(!cronOpen)}
+            onTriggerJob={onTriggerCronJob}
+            open={cronOpen}
+          />
+        )}
+
         {sidebarOpen && !showSessionSections && <div className="min-h-0 flex-1" />}
 
         {sidebarOpen && (
@@ -797,19 +788,6 @@ function SidebarPinnedEmptyState() {
       <span>{t.sidebar.shiftClickHint}</span>
     </div>
   )
-}
-
-interface SidebarSessionGroup {
-  id: string
-  label: string
-  path: null | string
-  sessions: SessionInfo[]
-  // Profile color for the ALL-profiles view; absent for workspace groups.
-  color?: null | string
-  loadingMore?: boolean
-  mode?: 'profile' | 'workspace'
-  onLoadMore?: () => void
-  totalCount?: number
 }
 
 interface SidebarSessionsSectionProps {

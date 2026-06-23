@@ -36,6 +36,7 @@ import { PageSearchShell } from '../page-search-shell'
 import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 
 import { CronJobActionsMenu, CronJobActionsTrigger } from './cron-job-actions-menu'
+import { jobState } from './job-state'
 
 const DEFAULT_DELIVER = 'local'
 
@@ -108,10 +109,6 @@ function jobScheduleDisplay(job: CronJob): string {
 
 function jobScheduleExpr(job: CronJob): string {
   return asText(job.schedule?.expr) || asText(job.schedule_display) || ''
-}
-
-function jobState(job: CronJob): string {
-  return asText(job.state) || (job.enabled === false ? 'disabled' : 'scheduled')
 }
 
 function jobDeliver(job: CronJob): string {

@@ -53,11 +53,13 @@ import { droppedFileInlineRef, type SessionDragPayload, sessionInlineRef } from 
 import type { ChatBarState } from './composer/types'
 import type { DroppedFile } from './hooks/use-composer-actions'
 import { useFileDropZone } from './hooks/use-file-drop-zone'
+import { ScrollToBottomButton } from './scroll-to-bottom-button'
 import { SessionActionsMenu } from './sidebar/session-actions-menu'
 import { lastVisibleMessageIsUser, threadLoadingState } from './thread-loading'
 
 interface ChatViewProps extends Omit<React.ComponentProps<'div'>, 'onSubmit'> {
   gateway: HermesGateway | null
+  modelMenuContent?: React.ReactNode
   onToggleSelectedPin: () => void
   onDeleteSelectedSession: () => void
   onCancel: () => Promise<void> | void
@@ -152,6 +154,7 @@ function ChatHeader({
 export function ChatView({
   className,
   gateway,
+  modelMenuContent,
   onToggleSelectedPin,
   onDeleteSelectedSession,
   onCancel,
@@ -234,6 +237,7 @@ export function ChatView({
         provider: currentProvider,
         canSwitch: gatewayOpen,
         loading: !gatewayOpen || (!currentModel && !currentProvider),
+        modelMenuContent,
         quickModels
       },
       tools: {
@@ -246,7 +250,7 @@ export function ChatView({
         active: false
       }
     }),
-    [contextSuggestions, currentModel, currentProvider, gatewayOpen, quickModels]
+    [contextSuggestions, currentModel, currentProvider, gatewayOpen, modelMenuContent, quickModels]
   )
 
   const runtimeMessageRepository = useMemo(() => {
@@ -341,6 +345,7 @@ export function ChatView({
 
       <div
         className="relative min-h-0 max-w-full flex-1 overflow-hidden bg-(--ui-chat-surface-background) contain-[layout_paint]"
+        data-slot="composer-bounds"
         {...dropHandlers}
       >
         <AssistantRuntimeProvider runtime={runtime}>
@@ -384,6 +389,7 @@ export function ChatView({
               />
             </Suspense>
           )}
+          {showChatBar && <ScrollToBottomButton />}
         </AssistantRuntimeProvider>
         <ChatDropOverlay kind={dragKind} />
         <ChatSwapOverlay profile={gatewaySwapTarget} />

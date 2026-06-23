@@ -1079,6 +1079,10 @@ export const ja = defineLocale({
     emptyTitleSearch: '一致なし',
     last: '前回',
     next: '次回',
+    noRuns: '実行履歴なし',
+    manage: '管理',
+    showRuns: '実行履歴を表示',
+    hideRuns: '実行履歴を非表示',
     actionsFor: title => `${title} のアクション`,
     actionsTitle: 'Cron ジョブのアクション',
     resume: '再開',
@@ -1172,6 +1176,7 @@ export const ja = defineLocale({
     results: '結果',
     pinned: 'ピン留め',
     sessions: 'セッション',
+    cronJobs: 'Cron ジョブ',
     groupAriaGrouped: 'セッションを単一リストとして表示',
     groupAriaUngrouped: 'ワークスペースごとにセッションをグループ化',
     groupTitleGrouped: 'セッションのグループ化を解除',
@@ -1663,6 +1668,7 @@ export const ja = defineLocale({
     opening: '開いています...',
     hide: '非表示',
     openPreview: 'プレビューを開く',
+    openInBrowser: 'ブラウザで開く',
     sourceLineTitle: 'クリックして選択 · Shift クリックで拡張 · コンポーザーにドラッグ',
     source: 'ソース',
     renderedPreview: 'プレビュー',
@@ -1738,6 +1744,7 @@ export const ja = defineLocale({
     thread: {
       loadingSession: 'セッションを読み込み中',
       loadingResponse: 'Verxio が応答を読み込み中',
+      summarizing: 'スレッドを要約中',
       thinking: '考え中',
       today: time => `今日 ${time}`,
       yesterday: time => `昨日 ${time}`,
@@ -1761,7 +1768,8 @@ export const ja = defineLocale({
       restoreNext: '次のチェックポイントに戻す',
       goForward: '進む',
       sendEdited: '編集済みメッセージを送信',
-      processNotificationOutput: '出力'
+      processNotificationOutput: '出力',
+      scrollToBottom: '下までスクロール'
     },
     approval: {
       gatewayDisconnected: 'Verxio ゲートウェイが接続されていません',
@@ -1774,7 +1782,8 @@ export const ja = defineLocale({
       alwaysTitle: 'このコマンドを常に許可しますか？',
       alwaysDescription: pattern =>
         `これにより "${pattern}" パターンが永続的な許可リスト (~/.hermes/config.yaml) に追加されます。Verxio はこのセッションや将来のセッションで、このようなコマンドについて再度尋ねません。`,
-      alwaysAllow: '常に許可'
+      alwaysAllow: '常に許可',
+      jumpToApproval: '承認が必要です'
     },
     clarify: {
       notReady: '明確化リクエストはまだ準備できていません',
