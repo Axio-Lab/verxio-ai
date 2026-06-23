@@ -1,6 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query'
 import { type MutableRefObject, useCallback, useEffect, useRef } from 'react'
 
+import { translateNow } from '@/i18n'
 import {
   appendAssistantTextPart,
   appendReasoningPart,
@@ -14,6 +15,7 @@ import {
   upsertToolPart
 } from '@/lib/chat-messages'
 import { coerceGatewayText, coerceThinkingText, normalizePersonalityValue } from '@/lib/chat-runtime'
+import { playCompletionSound } from '@/lib/completion-sound'
 import { gatewayEventRequiresSessionId } from '@/lib/gateway-events'
 import { dedupeGeneratedImageEchoesInParts } from '@/lib/generated-images'
 import { triggerHaptic } from '@/lib/haptics'
@@ -22,6 +24,7 @@ import { parseTodos } from '@/lib/todos'
 import { setClarifyRequest } from '@/store/clarify'
 import { setSessionCompacting } from '@/store/compaction'
 import { refreshBackgroundProcesses } from '@/store/composer-status'
+import { dispatchNativeNotification } from '@/store/native-notifications'
 import { notify } from '@/store/notifications'
 import { requestDesktopOnboarding } from '@/store/onboarding'
 import { clearAllPrompts, setApprovalRequest, setSecretRequest, setSudoRequest } from '@/store/prompts'
@@ -38,6 +41,7 @@ import {
   setTurnStartedAt,
   setYoloActive
 } from '@/store/session'
+import { broadcastSessionsChanged } from '@/store/session-sync'
 import { clearSessionSubagents, pruneDelegateFallbackSubagents, upsertSubagent } from '@/store/subagents'
 import { setSessionTodos } from '@/store/todos'
 import { recordToolDiff } from '@/store/tool-diffs'
@@ -574,6 +578,7 @@ export function useMessageStream({
       })
 
       void refreshSessions().catch(() => undefined)
+      broadcastSessionsChanged()
 
       if (compactedTurnRef.current.delete(sessionId)) {
         shouldHydrate = false
@@ -583,14 +588,14 @@ export function useMessageStream({
         void hydrateFromStoredSession(3, completedState.storedSessionId, sessionId)
       }
 
-      if (document.hidden && sessionId === activeSessionIdRef.current) {
-        void window.hermesDesktop?.notify({
-          title: 'Verxio finished',
-          body: text.slice(0, 140) || 'The response is ready.'
-        })
-      }
+      dispatchNativeNotification({
+        body: text.slice(0, 140) || translateNow('notifications.native.turnDoneBody'),
+        kind: 'turnDone',
+        sessionId,
+        title: translateNow('notifications.native.turnDoneTitle')
+      })
     },
-    [activeSessionIdRef, hydrateFromStoredSession, refreshSessions, updateSessionState]
+    [hydrateFromStoredSession, refreshSessions, updateSessionState]
   )
 
   const failAssistantMessage = useCallback(
@@ -829,6 +834,8 @@ export function useMessageStream({
           triggerHaptic('streamDone')
         }
 
+        playCompletionSound()
+
         const finalText = coerceGatewayText(payload?.text) || coerceGatewayText(payload?.rendered)
         completeAssistantMessage(sessionId, finalText)
 
@@ -910,6 +917,13 @@ export function useMessageStream({
           if (sessionId) {
             updateSessionState(sessionId, state => ({ ...state, needsInput: true }))
           }
+
+          dispatchNativeNotification({
+            body: question,
+            kind: 'input',
+            sessionId,
+            title: translateNow('notifications.native.inputTitle')
+          })
         }
       } else if (event.type === 'approval.request') {
         // Dangerous-command / execute_code approval. The Python side is blocked
@@ -929,6 +943,19 @@ export function useMessageStream({
         if (sessionId) {
           updateSessionState(sessionId, state => ({ ...state, needsInput: true }))
         }
+
+        dispatchNativeNotification({
+          actions: [
+            { id: 'approve', text: translateNow('notifications.native.approveAction') },
+            { id: 'reject', text: translateNow('notifications.native.rejectAction') }
+          ],
+          body:
+            (typeof payload?.command === 'string' ? payload.command : '') ||
+            (typeof payload?.description === 'string' ? payload.description : 'dangerous command'),
+          kind: 'approval',
+          sessionId,
+          title: translateNow('notifications.native.approvalTitle')
+        })
       } else if (event.type === 'sudo.request') {
         // Sudo password capture (tools/terminal_tool.py). Blocked on
         // sudo.respond {request_id, password}.
@@ -940,6 +967,13 @@ export function useMessageStream({
           if (sessionId) {
             updateSessionState(sessionId, state => ({ ...state, needsInput: true }))
           }
+
+          dispatchNativeNotification({
+            body: translateNow('notifications.native.inputBody'),
+            kind: 'input',
+            sessionId,
+            title: translateNow('notifications.native.inputTitle')
+          })
         }
       } else if (event.type === 'secret.request') {
         // Skill credential capture (tools/skills_tool.py). Blocked on
@@ -957,6 +991,16 @@ export function useMessageStream({
           if (sessionId) {
             updateSessionState(sessionId, state => ({ ...state, needsInput: true }))
           }
+
+          dispatchNativeNotification({
+            body:
+              (typeof payload?.prompt === 'string' ? payload.prompt : '') ||
+              (typeof payload?.env_var === 'string' ? payload.env_var : '') ||
+              translateNow('notifications.native.inputBody'),
+            kind: 'input',
+            sessionId,
+            title: translateNow('notifications.native.inputTitle')
+          })
         }
       } else if (event.type === 'status.update') {
         if (sessionId && payload?.kind === 'compacting') {
@@ -979,6 +1023,13 @@ export function useMessageStream({
           setSessionCompacting(sessionId, false)
           compactedTurnRef.current.delete(sessionId)
         }
+
+        dispatchNativeNotification({
+          body: errorMessage,
+          kind: 'turnError',
+          sessionId,
+          title: translateNow('notifications.native.turnErrorTitle')
+        })
 
         if (looksLikeProviderSetup) {
           requestDesktopOnboarding(errorMessage)

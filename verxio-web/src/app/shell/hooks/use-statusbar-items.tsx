@@ -2,9 +2,12 @@ import { useStore } from '@nanostores/react'
 import type { ReactNode } from 'react'
 import { useMemo } from 'react'
 
+import { GatewayMenuPanel } from '@/app/shell/gateway-menu-panel'
+import { GlyphSpinner } from '@/components/ui/glyph-spinner'
 import { useI18n } from '@/i18n'
-import { AlertCircle, ChevronDown, Clock, Hash, Loader2, MonitorPlay, Plug, PlugOff, Sparkles } from '@/lib/icons'
+import { Activity, AlertCircle, ChevronDown, Clock, Hash, Loader2, MonitorPlay, Sparkles } from '@/lib/icons'
 import { formatModelStatusLabel } from '@/lib/model-status-label'
+import type { RuntimeReadinessResult } from '@/lib/runtime-readiness'
 import { contextBarLabel, LiveDuration, usageContextLabel } from '@/lib/statusbar'
 import { cn } from '@/lib/utils'
 import { $desktopActionTasks } from '@/store/activity'
@@ -23,7 +26,9 @@ import {
   setModelPickerOpen
 } from '@/store/session'
 import { $subagentsBySession, activeSubagentCount } from '@/store/subagents'
+import { $gatewayRestarting } from '@/store/system-actions'
 import { $desktopVersion, $updateApply, $updateStatus, setUpdateOverlayOpen } from '@/store/updates'
+import type { StatusResponse } from '@/types/hermes'
 
 import { CRON_ROUTE } from '../../routes'
 import type { StatusbarItem } from '../statusbar-controls'
@@ -33,8 +38,12 @@ interface StatusbarItemsOptions {
   commandCenterOpen: boolean
   extraLeftItems: readonly StatusbarItem[]
   extraRightItems: readonly StatusbarItem[]
+  gatewayLogLines: readonly string[]
+  inferenceStatus: RuntimeReadinessResult | null
   modelMenuContent?: ReactNode
+  onOpenGatewaySystem: () => void
   openAgents: () => void
+  statusSnapshot: StatusResponse | null
   toggleCommandCenter: () => void
 }
 
@@ -43,8 +52,12 @@ export function useStatusbarItems({
   commandCenterOpen,
   extraLeftItems,
   extraRightItems,
+  gatewayLogLines,
+  inferenceStatus,
   modelMenuContent,
+  onOpenGatewaySystem,
   openAgents,
+  statusSnapshot,
   toggleCommandCenter
 }: StatusbarItemsOptions) {
   const { t } = useI18n()
@@ -57,6 +70,7 @@ export function useStatusbarItems({
   const currentReasoningEffort = useStore($currentReasoningEffort)
   const currentUsage = useStore($currentUsage)
   const desktopActionTasks = useStore($desktopActionTasks)
+  const gatewayRestarting = useStore($gatewayRestarting)
   const previewServerRestartStatus = useStore($previewServerRestartStatus)
   const sessionStartedAt = useStore($sessionStartedAt)
   const turnStartedAt = useStore($turnStartedAt)
@@ -69,10 +83,23 @@ export function useStatusbarItems({
   const contextUsage = useMemo(() => usageContextLabel(currentUsage), [currentUsage])
   const contextBar = useMemo(() => contextBarLabel(currentUsage), [currentUsage])
 
+  const gatewayMenuContent = useMemo(
+    () => (
+      <GatewayMenuPanel
+        gatewayState={gatewayState}
+        inferenceStatus={inferenceStatus}
+        logLines={gatewayLogLines}
+        onOpenSystem={onOpenGatewaySystem}
+        statusSnapshot={statusSnapshot}
+      />
+    ),
+    [gatewayLogLines, gatewayState, inferenceStatus, onOpenGatewaySystem, statusSnapshot]
+  )
+
   const { bgFailed, bgRunning, subagentsRunning } = useMemo(() => {
     const actions = Object.values(desktopActionTasks)
-    const running = actions.filter(t => t.status.running).length
-    const failed = actions.filter(t => !t.status.running && (t.status.exit_code ?? 0) !== 0).length
+    const running = actions.filter(task => task.status.running).length
+    const failed = actions.filter(task => !task.status.running && (task.status.exit_code ?? 0) !== 0).length
     const previewRunning = previewServerRestartStatus === 'running' ? 1 : 0
     const previewFailed = previewServerRestartStatus === 'error' ? 1 : 0
 
@@ -88,8 +115,26 @@ export function useStatusbarItems({
     }
   }, [desktopActionTasks, previewServerRestartStatus, subagentsBySession, workingSessionIds])
 
-  const serverConnected = gatewayState === 'open'
-  const serverConnecting = gatewayState === 'connecting'
+  const gatewayOpen = gatewayState === 'open'
+  const gatewayConnecting = gatewayState === 'connecting'
+  const inferenceReady = gatewayOpen && inferenceStatus?.ready === true
+  const gatewayDegraded = gatewayOpen || gatewayConnecting
+
+  const gatewayDetail = gatewayOpen
+    ? inferenceStatus?.ready
+      ? copy.gatewayReady
+      : inferenceStatus
+        ? copy.gatewayNeedsSetup
+        : copy.gatewayChecking
+    : gatewayConnecting
+      ? copy.gatewayConnecting
+      : copy.gatewayOffline
+
+  const gatewayClassName = inferenceReady
+    ? undefined
+    : gatewayDegraded
+      ? 'text-amber-600 hover:text-amber-600'
+      : 'text-destructive hover:text-destructive'
 
   const hideVersionBadge = desktopVersion?.platform === 'web'
 
@@ -151,20 +196,21 @@ export function useStatusbarItems({
         variant: 'action'
       },
       {
-        className: serverConnected
-          ? 'text-emerald-500'
-          : serverConnecting
-            ? 'text-amber-500'
-            : 'text-muted-foreground/45',
-        icon: serverConnected ? <Plug className="size-3.5" /> : <PlugOff className="size-3.5" />,
-        id: 'connection-status',
-        label: copy.status,
-        title: serverConnected
-          ? copy.statusConnected
-          : serverConnecting
-            ? copy.statusConnecting
-            : copy.statusDisconnected,
-        variant: 'text'
+        className: gatewayRestarting ? undefined : gatewayClassName,
+        detail: gatewayRestarting ? copy.gatewayRestarting : gatewayDetail,
+        icon: gatewayRestarting ? (
+          <GlyphSpinner ariaLabel={copy.gatewayRestarting} className="size-3" />
+        ) : inferenceReady ? (
+          <Activity className="size-3" />
+        ) : (
+          <AlertCircle className="size-3" />
+        ),
+        id: 'gateway-health',
+        label: copy.gateway,
+        menuClassName: 'w-72',
+        menuContent: gatewayMenuContent,
+        title: inferenceStatus?.reason || copy.gatewayTitle,
+        variant: 'menu'
       },
       {
         className: cn(
@@ -208,9 +254,13 @@ export function useStatusbarItems({
       bgRunning,
       commandCenterOpen,
       copy,
+      gatewayClassName,
+      gatewayDetail,
+      gatewayMenuContent,
+      gatewayRestarting,
+      inferenceReady,
+      inferenceStatus?.reason,
       openAgents,
-      serverConnected,
-      serverConnecting,
       subagentsRunning,
       toggleCommandCenter
     ]

@@ -8,11 +8,13 @@ import { DesktopOnboardingOverlay } from '@/components/desktop-onboarding-overla
 import { FolderAccessDialog } from '@/components/folder-access-dialog'
 import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overlay'
 import { Pane, PaneMain } from '@/components/pane-shell'
+import { RemoteDisplayBanner } from '@/components/remote-display-banner'
 import { useSkinCommand } from '@/themes/use-skin-command'
 
 import { formatRefValue } from '../components/assistant-ui/directive-text'
 import { getCronJobs, getSessionMessages, listAllProfileSessions, type SessionInfo, triggerCronJob } from '../hermes'
 import { preserveLocalAssistantErrors, toChatMessages } from '../lib/chat-messages'
+import { storedSessionIdForNotification } from '../lib/session-ids'
 import { setCronFocusJobId, setCronJobs } from '../store/cron'
 import {
   $panesFlipped,
@@ -28,6 +30,7 @@ import {
   SIDEBAR_SESSIONS_PAGE_SIZE,
   unpinSession
 } from '../store/layout'
+import { respondToApprovalAction } from '../store/native-notifications'
 import { $filePreviewTarget, $previewTarget, closeActiveRightRailTab } from '../store/preview'
 import {
   $activeGatewayProfile,
@@ -57,6 +60,7 @@ import {
   setSessionsLoading,
   setSessionsTotal
 } from '../store/session'
+import { onSessionsChanged } from '../store/session-sync'
 import { openUpdatesWindow, startUpdatePoller, stopUpdatePoller } from '../store/updates'
 
 import { ChatView } from './chat'
@@ -93,6 +97,7 @@ import { useSessionActions } from './session/hooks/use-session-actions'
 import { useSessionStateCache } from './session/hooks/use-session-state-cache'
 import { AppShell } from './shell/app-shell'
 import { useOverlayRouting } from './shell/hooks/use-overlay-routing'
+import { useStatusSnapshot } from './shell/hooks/use-status-snapshot'
 import { useStatusbarItems } from './shell/hooks/use-statusbar-items'
 import { ModelMenuPanel } from './shell/model-menu-panel'
 import type { StatusbarItem } from './shell/statusbar-controls'
@@ -194,6 +199,7 @@ export function DesktopController() {
   })
 
   const { connectionRef, gatewayRef, requestGateway } = useGatewayRequest()
+  const { gatewayLogLines, inferenceStatus, statusSnapshot } = useStatusSnapshot(gatewayState, requestGateway)
 
   useEffect(() => {
     window.hermesDesktop?.setPreviewShortcutActive?.(Boolean(chatOpen && (filePreviewTarget || previewTarget)))
@@ -207,6 +213,29 @@ export function DesktopController() {
       unsubscribe?.()
       stopUpdatePoller()
     }
+  }, [])
+
+  // Notification click: the main process already focused the window; jump to its
+  // session. Notifications are tagged with the gateway *runtime* session id, but
+  // the chat route is keyed by the *stored* id — translate runtime -> stored
+  // before navigating.
+  useEffect(() => {
+    const unsubscribe = window.hermesDesktop?.onFocusSession?.(sessionId => {
+      if (sessionId) {
+        navigate(sessionRoute(storedSessionIdForNotification(sessionId, runtimeIdByStoredSessionIdRef.current)))
+      }
+    })
+
+    return () => unsubscribe?.()
+  }, [navigate, runtimeIdByStoredSessionIdRef])
+
+  // Notification action button (Approve/Reject) — resolve in place, no navigation.
+  useEffect(() => {
+    const unsubscribe = window.hermesDesktop?.onNotificationAction?.(({ actionId, sessionId }) => {
+      void respondToApprovalAction(sessionId ?? null, actionId)
+    })
+
+    return () => unsubscribe?.()
   }, [])
 
   useEffect(() => {
@@ -268,6 +297,11 @@ export function DesktopController() {
   const loadMoreSessions = useCallback(() => {
     bumpSessionsLimit()
     void refreshSessions()
+  }, [refreshSessions])
+
+  // Another tab mutated the shared session list — re-pull so the sidebar reflects it.
+  useEffect(() => {
+    return onSessionsChanged(() => void refreshSessions().catch(() => undefined))
   }, [refreshSessions])
 
   // ALL-profiles view pages one profile at a time: fetch that profile's next
@@ -603,8 +637,12 @@ export function DesktopController() {
     commandCenterOpen,
     extraLeftItems: statusbarItemGroups.flat.left,
     extraRightItems: statusbarItemGroups.flat.right,
+    gatewayLogLines,
+    inferenceStatus,
     modelMenuContent,
+    onOpenGatewaySystem: () => navigate(`${SETTINGS_ROUTE}?tab=gateway`),
     openAgents,
+    statusSnapshot,
     toggleCommandCenter
   })
 
@@ -862,6 +900,7 @@ export function DesktopController() {
       */}
       {panesFlipped ? fileBrowserPane : previewPane}
       {panesFlipped ? previewPane : fileBrowserPane}
+      <RemoteDisplayBanner />
     </AppShell>
   )
 }

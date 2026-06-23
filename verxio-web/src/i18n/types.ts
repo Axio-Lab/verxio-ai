@@ -143,6 +143,23 @@ export interface Translations {
       tryRecordingAgain: string
       unavailable: string
     }
+    native: {
+      approvalTitle: string
+      approveAction: string
+      rejectAction: string
+      inputTitle: string
+      inputBody: string
+      turnDoneTitle: string
+      turnDoneBody: string
+      turnErrorTitle: string
+      backgroundDoneTitle: string
+      backgroundFailedTitle: string
+    }
+  }
+
+  remoteDisplayBanner: {
+    message: (reason: string) => string
+    dismiss: string
   }
 
   titlebar: {
@@ -203,6 +220,26 @@ export interface Translations {
       mcp: string
       archivedChats: string
       about: string
+      notifications: string
+    }
+    notifications: {
+      title: string
+      intro: string
+      enableAll: string
+      enableAllDesc: string
+      focusedHint: string
+      kinds: Record<
+        'approval' | 'backgroundDone' | 'input' | 'turnDone' | 'turnError',
+        { label: string; description: string }
+      >
+      test: string
+      testTitle: string
+      testBody: string
+      testSent: string
+      testUnsupported: string
+      completionSoundTitle: string
+      completionSoundDesc: string
+      completionSoundPreview: string
     }
     sections: Record<string, string>
     searchPlaceholder: Record<'about' | 'config' | 'gateway' | 'keys' | 'mcp' | 'sessions', string>
@@ -212,6 +249,8 @@ export interface Translations {
       intro: string
       colorMode: string
       colorModeDesc: string
+      translucencyTitle: string
+      translucencyDesc: string
       toolViewTitle: string
       toolViewDesc: string
       product: string
@@ -566,6 +605,8 @@ export interface Translations {
     gatewayStopped: string
     hermesActiveSessions: (version: string, count: number) => string
     restartMessaging: string
+    restartGateway: string
+    gatewayRestartFailed: string
     updateHermes: string
     actionRunning: string
     actionDone: string
@@ -1159,6 +1200,7 @@ export interface Translations {
       gatewayConnecting: string
       gatewayOffline: string
       gatewayTitle: string
+      gatewayRestarting: string
       agents: string
       closeAgents: string
       openAgents: string
