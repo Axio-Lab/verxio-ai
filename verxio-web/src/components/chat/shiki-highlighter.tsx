@@ -13,40 +13,69 @@ import {
   CodeCardSubtitle,
   CodeCardTitle
 } from '@/components/chat/code-card'
+import { ExpandableBlock } from '@/components/chat/expandable-block'
 import { CopyButton } from '@/components/ui/copy-button'
 import { useI18n } from '@/i18n'
 import { codiconForLanguage, isLikelyProseCodeBlock, sanitizeLanguageTag } from '@/lib/markdown-code'
 import { isVerxioDesktop } from '@/lib/platform'
 
-/**
- * Streamdown's code adapter renders header + body as inline siblings, so we
- * own the wrapping `<CodeCard>` here and neutralize the upstream
- * `data-streamdown="code-block"` chrome from styles.css. Anything that wants
- * a card-shaped code surface should compose `CodeCard*` directly.
- *
- * `react-shiki` full bundle so all `bundledLanguages` work; theme switches
- * follow the document `color-scheme` via `defaultColor="light-dark()"`.
- */
 interface HermesSyntaxHighlighterProps extends SyntaxHighlighterProps {
   defer?: boolean
 }
 
 const SHIKI_THEME = { dark: 'github-dark-default', light: 'github-light-default' } as const
 
-/**
- * `github-light-default` colors comments `#6e7781` (~4.2:1 against the code
- * card background) — borderline unreadable at our 11px code size, and worst of
- * all for shell snippets where a single `#` turns the rest of the line into one
- * long comment span. Remap light-mode comments to GitHub's darker muted gray
- * (`#57606a`, ~6.4:1). Dark mode (`#8b949e`, ~6.1:1) already reads fine, so we
- * leave it untouched. Keyed per theme name so the bump only applies in light.
- */
 const SHIKI_COLOR_REPLACEMENTS: Record<string, Record<string, string>> = {
   'github-light-default': { '#6e7781': '#57606a' }
 }
 
-/** Oniguruma WASM can fail in Electron; JS RegExp engine keeps colored tokens working. */
 const DESKTOP_SHIKI_ENGINE = createJavaScriptRegexEngine({ forgiving: true })
+
+const MAX_HIGHLIGHT_CHARS = 150_000
+const MAX_HIGHLIGHT_LINES = 3_000
+const CHUNK_LINES = 200
+const EST_LINE_PX = 16
+
+export function exceedsHighlightBudget(code: string): boolean {
+  if (code.length > MAX_HIGHLIGHT_CHARS) {
+    return true
+  }
+
+  let lines = 1
+  let idx = code.indexOf('\n')
+
+  while (idx !== -1) {
+    if ((lines += 1) > MAX_HIGHLIGHT_LINES) {
+      return true
+    }
+
+    idx = code.indexOf('\n', idx + 1)
+  }
+
+  return false
+}
+
+interface CodeChunk {
+  text: string
+  lines: number
+}
+
+export function chunkByLines(code: string, perChunk: number): CodeChunk[] {
+  const lines = code.split('\n')
+
+  if (lines.length <= perChunk) {
+    return [{ text: code, lines: lines.length }]
+  }
+
+  const chunks: CodeChunk[] = []
+
+  for (let i = 0; i < lines.length; i += perChunk) {
+    const slice = lines.slice(i, i + perChunk)
+    chunks.push({ text: slice.join('\n'), lines: slice.length })
+  }
+
+  return chunks
+}
 
 class ShikiRenderBoundary extends Component<
   { children: ReactNode; code: string; fallback: ReactNode },
@@ -73,6 +102,32 @@ class ShikiRenderBoundary extends Component<
   }
 }
 
+const PlainCode: FC<{ code: string }> = ({ code }) => {
+  const chunks = useMemo(() => chunkByLines(code, CHUNK_LINES), [code])
+
+  if (chunks.length === 1) {
+    return (
+      <code className="block whitespace-pre-wrap wrap-anywhere font-mono text-[0.8125rem] leading-relaxed text-foreground">
+        {code}
+      </code>
+    )
+  }
+
+  return (
+    <>
+      {chunks.map((chunk, index) => (
+        <code
+          className="block whitespace-pre-wrap wrap-anywhere font-mono text-[0.8125rem] leading-relaxed text-foreground [content-visibility:auto]"
+          key={index}
+          style={{ containIntrinsicSize: `auto ${chunk.lines * EST_LINE_PX}px` }}
+        >
+          {chunk.text}
+        </code>
+      ))}
+    </>
+  )
+}
+
 export const SyntaxHighlighter: FC<HermesSyntaxHighlighterProps> = ({
   components: { Pre },
   language,
@@ -83,8 +138,6 @@ export const SyntaxHighlighter: FC<HermesSyntaxHighlighterProps> = ({
   const shikiEngine = useMemo(() => (isVerxioDesktop() ? DESKTOP_SHIKI_ENGINE : undefined), [])
   const trimmed = (code ?? '').replace(/^\n+/, '').trimEnd()
 
-  // Streaming may hand us empty/incomplete fences — render nothing rather
-  // than a transient empty card.
   if (!trimmed.trim()) {
     return null
   }
@@ -95,12 +148,9 @@ export const SyntaxHighlighter: FC<HermesSyntaxHighlighterProps> = ({
 
   const cleanLanguage = sanitizeLanguageTag(language || '')
   const label = cleanLanguage && cleanLanguage !== 'unknown' ? cleanLanguage : ''
+  const plain = defer || exceedsHighlightBudget(trimmed)
 
-  const plainCode = (
-    <code className="block whitespace-pre-wrap wrap-anywhere font-mono text-[0.8125rem] leading-relaxed text-foreground">
-      {trimmed}
-    </code>
-  )
+  const plainCode = <PlainCode code={trimmed} />
 
   return (
     <CodeCard data-streaming={defer ? 'true' : undefined}>
@@ -120,33 +170,35 @@ export const SyntaxHighlighter: FC<HermesSyntaxHighlighterProps> = ({
         />
       </CodeCardHeader>
       <CodeCardBody>
-        <Pre className="aui-shiki m-0 overflow-x-auto bg-transparent p-0">
-          {defer ? (
-            plainCode
-          ) : (
-            <div className="grid [&>*]:col-start-1 [&>*]:row-start-1">
-              <div aria-hidden className="invisible">
-                {plainCode}
+        <ExpandableBlock>
+          <Pre className="aui-shiki m-0 overflow-hidden bg-transparent p-0">
+            {plain ? (
+              plainCode
+            ) : (
+              <div className="grid [&>*]:col-start-1 [&>*]:row-start-1">
+                <div aria-hidden className="invisible">
+                  {plainCode}
+                </div>
+                <ShikiRenderBoundary code={trimmed} fallback={plainCode}>
+                  <ShikiHighlighter
+                    addDefaultStyles={false}
+                    as="div"
+                    className="min-w-0 bg-transparent font-mono text-[0.8125rem] leading-relaxed [&_code]:whitespace-pre-wrap [&_code]:wrap-anywhere"
+                    colorReplacements={SHIKI_COLOR_REPLACEMENTS}
+                    defaultColor="light-dark()"
+                    delay={0}
+                    engine={shikiEngine}
+                    language={language || 'text'}
+                    showLanguage={false}
+                    theme={SHIKI_THEME}
+                  >
+                    {trimmed}
+                  </ShikiHighlighter>
+                </ShikiRenderBoundary>
               </div>
-              <ShikiRenderBoundary code={trimmed} fallback={plainCode}>
-                <ShikiHighlighter
-                  addDefaultStyles={false}
-                  as="div"
-                  className="min-w-0 bg-transparent font-mono text-[0.8125rem] leading-relaxed [&_code]:whitespace-pre-wrap [&_code]:wrap-anywhere"
-                  colorReplacements={SHIKI_COLOR_REPLACEMENTS}
-                  defaultColor="light-dark()"
-                  delay={0}
-                  engine={shikiEngine}
-                  language={language || 'text'}
-                  showLanguage={false}
-                  theme={SHIKI_THEME}
-                >
-                  {trimmed}
-                </ShikiHighlighter>
-              </ShikiRenderBoundary>
-            </div>
-          )}
-        </Pre>
+            )}
+          </Pre>
+        </ExpandableBlock>
       </CodeCardBody>
     </CodeCard>
   )

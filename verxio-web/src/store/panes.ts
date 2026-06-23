@@ -81,6 +81,8 @@ export const $paneStates = atom<Record<string, PaneStateSnapshot>>(load())
 
 $paneStates.subscribe(persist)
 
+export const $paneHoverRevealSuppressed = atom(false)
+
 // Cached per-pane derived atoms keep useStore subscriptions referentially stable.
 function memoized<T>(
   cache: Map<string, ReadableAtom<T>>,
@@ -181,3 +183,5 @@ export function setPaneWidthOverride(id: string, width: number | undefined) {
 
 export const clearPaneWidthOverride = (id: string) => setPaneWidthOverride(id, undefined)
 export const getPaneStateSnapshot = (id: string) => $paneStates.get()[id]
+
+export const setPaneHoverRevealSuppressed = (suppressed: boolean) => $paneHoverRevealSuppressed.set(suppressed)

@@ -19,8 +19,10 @@ import {
   type StatusGroup,
   stopBackgroundProcess
 } from '@/store/composer-status'
+import { $previewStatusBySession, dismissPreviewArtifact } from '@/store/preview-status'
 import { $threadScrolledUp } from '@/store/thread-scroll'
 
+import { PreviewStatusRow } from './preview-row'
 import { StatusItemRow } from './status-row'
 
 // Slow safety-net poll for silent exits (processes without notify_on_complete
@@ -51,12 +53,15 @@ export function ComposerStatusStack({ queue, sessionId }: ComposerStatusStackPro
   const { t } = useI18n()
   const navigate = useNavigate()
   const itemsBySession = useStore($statusItemsBySession)
+  const previewsBySession = useStore($previewStatusBySession)
   const scrolledUp = useStore($threadScrolledUp)
 
   const groups = useMemo(
     () => groupStatusItems(sessionId ? (itemsBySession[sessionId] ?? []) : []),
     [itemsBySession, sessionId]
   )
+
+  const previews = sessionId ? (previewsBySession[sessionId] ?? []) : []
 
   // Seed from the registry on session open; event-driven refreshes (terminal /
   // process tool completions) live in use-message-stream.
@@ -120,6 +125,19 @@ export function ComposerStatusStack({ queue, sessionId }: ComposerStatusStackPro
       </StatusSection>
     )
   }))
+
+  if (previews.length > 0 && sessionId) {
+    sections.push({
+      key: 'preview',
+      node: (
+        <div className="px-1 py-0.5">
+          {previews.map(item => (
+            <PreviewStatusRow item={item} key={item.id} onDismiss={id => dismissPreviewArtifact(sessionId, id)} />
+          ))}
+        </div>
+      )
+    })
+  }
 
   if (queue) {
     sections.push({ key: 'queue', node: queue })

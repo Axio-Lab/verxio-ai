@@ -35,6 +35,7 @@ import {
 } from '@/store/composer'
 import { clearNotifications, notify, notifyError } from '@/store/notifications'
 import { requestDesktopOnboarding } from '@/store/onboarding'
+import { clearPreviewArtifacts } from '@/store/preview-status'
 import { $activeGatewayProfile, $newChatProfile, ensureGatewayProfile, normalizeProfileKey } from '@/store/profile'
 import {
   $busy,
@@ -1006,6 +1007,8 @@ export function usePromptActions({
       const wasRunning = $busy.get()
       const truncateBeforeUserOrdinal = visibleUserOrdinal(messages, sourceIndex)
 
+      clearPreviewArtifacts(sessionId)
+
       clearNotifications()
       setMutableRef(busyRef, true)
       setBusy(true)
@@ -1061,6 +1064,8 @@ export function usePromptActions({
       const nextMessage = messages[sourceIndex + 1]
       const isFailedTurn = nextMessage?.role === 'assistant' && Boolean(nextMessage.error)
       const editedMessage: ChatMessage = { ...source, parts: [textPart(text)] }
+
+      clearPreviewArtifacts(sessionId)
 
       clearNotifications()
       setMutableRef(busyRef, true)

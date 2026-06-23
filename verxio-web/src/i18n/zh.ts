@@ -1696,6 +1696,7 @@ export const zh: Translations = {
     opening: '正在打开...',
     hide: '隐藏',
     openPreview: '打开预览',
+    openInBrowser: '在浏览器中打开',
     sourceLineTitle: '点击选择 · shift 点击扩展 · 拖到输入框',
     source: '源码',
     renderedPreview: '预览',
@@ -1792,7 +1793,8 @@ export const zh: Translations = {
       restoreNext: '恢复下一个检查点',
       goForward: '前进',
       sendEdited: '发送编辑后的消息',
-      processNotificationOutput: '输出'
+      processNotificationOutput: '输出',
+      scrollToBottom: '滚动到底部'
     },
     approval: {
       gatewayDisconnected: 'Verxio 网关未连接',
@@ -1805,7 +1807,8 @@ export const zh: Translations = {
       alwaysTitle: '始终允许此命令？',
       alwaysDescription: pattern =>
         `这会将“${pattern}”模式加入永久允许列表 (~/.hermes/config.yaml)。Verxio 对类似命令将不再询问，包括当前会话和未来会话。`,
-      alwaysAllow: '始终允许'
+      alwaysAllow: '始终允许',
+      jumpToApproval: '需要批准'
     },
     clarify: {
       notReady: '澄清请求尚未就绪',

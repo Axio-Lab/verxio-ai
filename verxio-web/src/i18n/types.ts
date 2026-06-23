@@ -1226,6 +1226,7 @@ export interface Translations {
     opening: string
     hide: string
     openPreview: string
+    openInBrowser: string
     sourceLineTitle: string
     source: string
     renderedPreview: string
@@ -1322,6 +1323,7 @@ export interface Translations {
       goForward: string
       sendEdited: string
       processNotificationOutput: string
+      scrollToBottom: string
     }
     approval: {
       gatewayDisconnected: string
@@ -1334,6 +1336,7 @@ export interface Translations {
       alwaysTitle: string
       alwaysDescription: (pattern: string) => string
       alwaysAllow: string
+      jumpToApproval: string
     }
     clarify: {
       notReady: string

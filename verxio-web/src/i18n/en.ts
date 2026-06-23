@@ -1556,6 +1556,7 @@ export const en: Translations = {
     opening: 'Opening...',
     hide: 'Hide',
     openPreview: 'Open preview',
+    openInBrowser: 'Open in browser',
     sourceLineTitle: 'Click to select · shift-click to extend · drag to composer',
     source: 'SOURCE',
     renderedPreview: 'PREVIEW',
@@ -1654,7 +1655,8 @@ export const en: Translations = {
       restoreNext: 'Restore next checkpoint',
       goForward: 'Go forward',
       sendEdited: 'Send edited message',
-      processNotificationOutput: 'output'
+      processNotificationOutput: 'output',
+      scrollToBottom: 'Scroll to bottom'
     },
     approval: {
       gatewayDisconnected: 'Verxio gateway is not connected',
@@ -1667,7 +1669,8 @@ export const en: Translations = {
       alwaysTitle: 'Always allow this command?',
       alwaysDescription: pattern =>
         `This adds the “${pattern}” pattern to your permanent allowlist (~/.hermes/config.yaml). Verxio won’t ask again for commands like this — in this session or any future one.`,
-      alwaysAllow: 'Always allow'
+      alwaysAllow: 'Always allow',
+      jumpToApproval: 'Approval needed'
     },
     clarify: {
       notReady: 'Clarify request is not ready yet',

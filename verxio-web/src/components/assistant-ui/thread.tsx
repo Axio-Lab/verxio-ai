@@ -51,6 +51,7 @@ import { extractDroppedFiles, HERMES_PATHS_MIME } from '@/app/chat/hooks/use-com
 import { ClarifyTool } from '@/components/assistant-ui/clarify-tool'
 import { DirectiveContent, hermesDirectiveFormatter } from '@/components/assistant-ui/directive-text'
 import { MarkdownText, MarkdownTextContent } from '@/components/assistant-ui/markdown-text'
+import { ThreadTimeline } from '@/components/assistant-ui/thread-timeline'
 import { VirtualizedThread } from '@/components/assistant-ui/thread-virtualizer'
 import { ToolFallback, ToolGroupSlot } from '@/components/assistant-ui/tool-fallback'
 import { TooltipIconButton } from '@/components/assistant-ui/tooltip-icon-button'
@@ -84,6 +85,7 @@ import { useEnterAnimation } from '@/lib/use-enter-animation'
 import { cn } from '@/lib/utils'
 import { playSpeechText, stopVoicePlayback } from '@/lib/voice-playback'
 import { notifyError } from '@/store/notifications'
+import { notifyThreadEditClose, notifyThreadEditOpen } from '@/store/thread-scroll'
 import { $voicePlayback } from '@/store/voice-playback'
 
 type ThreadLoadingState = 'response' | 'session'
@@ -170,6 +172,7 @@ export const Thread: FC<{
           loadingIndicator={loading === 'response' ? <ResponseLoadingIndicator /> : null}
           sessionKey={sessionKey}
         />
+        <ThreadTimeline />
         {loading === 'session' && <CenteredThreadSpinner />}
       </div>
     </GeneratedImageProvider>
@@ -697,10 +700,11 @@ function messageAttachmentRefs(value: unknown): string[] {
   return value.every(ref => typeof ref === 'string') ? value : EMPTY_ATTACHMENT_REFS
 }
 
-function StickyHumanMessageContainer({ children }: { children: ReactNode }) {
+function StickyHumanMessageContainer({ children, messageId }: { children: ReactNode; messageId?: string }) {
   return (
     <div
       className="group/user-message sticky z-40 -mx-4 flex w-[calc(100%+2rem)] min-w-0 max-w-none flex-col items-stretch gap-0 self-end overflow-visible bg-(--ui-chat-surface-background) px-4 pb-(--conversation-turn-gap) pt-2"
+      data-message-id={messageId}
       data-role="user"
       data-slot="aui_user-message-root"
     >
@@ -862,7 +866,7 @@ const UserMessage: FC<{
 
   return (
     <MessagePrimitive.Root asChild>
-      <StickyHumanMessageContainer>
+      <StickyHumanMessageContainer messageId={messageId}>
         <ActionBarPrimitive.Root className="relative w-full max-w-full" data-slot="aui_user-bubble-actions">
           <div className="human-message-with-todos-wrapper flex w-full flex-col gap-0">
             <div className="relative w-full">
@@ -873,6 +877,7 @@ const UserMessage: FC<{
                   aria-label={copy.editMessage}
                   className={bubbleClassName}
                   onClick={() => triggerHaptic('selection')}
+                  onPointerDown={() => notifyThreadEditOpen()}
                   title={copy.editMessage}
                   type="button"
                 >
@@ -1037,6 +1042,8 @@ const UserEditComposer: FC<UserEditComposerProps> = ({ cwd, gateway, sessionId }
   const canSubmit = draft.trim().length > 0
   const at = useAtCompletions({ cwd, gateway, sessionId })
   const slash = useSlashCompletions({ gateway })
+
+  useEffect(() => () => notifyThreadEditClose(), [])
 
   const focusEditor = useCallback(() => {
     const editor = editorRef.current

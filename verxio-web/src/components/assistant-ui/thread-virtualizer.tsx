@@ -14,7 +14,13 @@ import {
 
 import { setMutableRef } from '@/lib/mutable-ref'
 import { cn } from '@/lib/utils'
-import { setThreadScrolledUp } from '@/store/thread-scroll'
+import {
+  onScrollToBottomRequest,
+  onThreadEditClose,
+  onThreadEditOpen,
+  resetThreadScroll,
+  setThreadAtBottom
+} from '@/store/thread-scroll'
 
 import { MessageRenderBoundary } from './message-render-boundary'
 
@@ -309,7 +315,29 @@ function useThreadScrollAnchor({
     })
   }, [groupCount, pinToBottom, stickyBottomRef, virtualizer])
 
-  useEffect(() => () => setThreadScrolledUp(false), [])
+  useEffect(() => onScrollToBottomRequest(jumpToBottom), [jumpToBottom])
+
+  const endEditHold = useCallback(() => {
+    scrollerRef.current?.removeAttribute('data-editing')
+  }, [scrollerRef])
+
+  const beginEditHold = useCallback(() => {
+    const el = scrollerRef.current
+
+    if (!el) {
+      return
+    }
+
+    endEditHold()
+    setMutableRef(stickyBottomRef, false)
+    el.setAttribute('data-editing', 'true')
+  }, [endEditHold, scrollerRef, stickyBottomRef])
+
+  useEffect(() => onThreadEditOpen(beginEditHold), [beginEditHold])
+  useEffect(() => onThreadEditClose(endEditHold), [endEditHold])
+  useEffect(() => () => endEditHold(), [endEditHold])
+
+  useEffect(() => () => resetThreadScroll(), [])
 
   // Track at-bottom state, dim composer when scrolled up, disarm on user
   // scroll/wheel/touch.
@@ -343,7 +371,7 @@ function useThreadScrollAnchor({
         // Always re-arm — sticky-bottom should hold through clamp races.
         setMutableRef(stickyBottomRef, true)
         const atBottom = el.scrollHeight - (top + el.clientHeight) <= AT_BOTTOM_THRESHOLD
-        setThreadScrolledUp(!atBottom)
+        setThreadAtBottom(atBottom)
 
         return
       }
@@ -371,7 +399,7 @@ function useThreadScrollAnchor({
         setMutableRef(stickyBottomRef, true)
       }
 
-      setThreadScrolledUp(!atBottom)
+      setThreadAtBottom(atBottom)
     }
 
     const onWheel = (event: WheelEvent) => {

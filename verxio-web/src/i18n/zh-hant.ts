@@ -1610,6 +1610,7 @@ export const zhHant = defineLocale({
     opening: '開啟中...',
     hide: '隱藏',
     openPreview: '開啟預覽',
+    openInBrowser: '在瀏覽器中開啟',
     sourceLineTitle: '點擊選取 · shift 點擊擴展 · 拖曳至輸入框',
     source: '原始碼',
     renderedPreview: '預覽',
@@ -1706,7 +1707,8 @@ export const zhHant = defineLocale({
       restoreNext: '還原至下一個檢查點',
       goForward: '前進',
       sendEdited: '傳送編輯後的訊息',
-      processNotificationOutput: '輸出'
+      processNotificationOutput: '輸出',
+      scrollToBottom: '捲動到底部'
     },
     approval: {
       gatewayDisconnected: 'Verxio 閘道未連線',
@@ -1719,7 +1721,8 @@ export const zhHant = defineLocale({
       alwaysTitle: '一律允許此指令？',
       alwaysDescription: pattern =>
         `這會將「${pattern}」模式加入永久允許清單（~/.hermes/config.yaml）。Verxio 對類似指令將不再詢問，包括目前工作階段和未來工作階段。`,
-      alwaysAllow: '一律允許'
+      alwaysAllow: '一律允許',
+      jumpToApproval: '需要核准'
     },
     clarify: {
       notReady: '澄清請求尚未就緒',
