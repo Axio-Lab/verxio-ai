@@ -1,16 +1,11 @@
 from __future__ import annotations
 
-import os
 from typing import Any
 
 import httpx
 from fastapi import HTTPException
 
-from app.pulse import channel_credentials
-
-
-def _graph_version() -> str:
-    return os.getenv("META_GRAPH_VERSION", "v20.0").strip() or "v20.0"
+from app.pulse import META_GRAPH_VERSION, channel_credentials
 
 
 async def send_channel_message(
@@ -49,7 +44,7 @@ async def _send_meta_message(
         "messaging_type": "RESPONSE",
         "access_token": access_token,
     }
-    url = f"https://graph.facebook.com/{_graph_version()}/{sender_id}/messages"
+    url = f"https://graph.facebook.com/{META_GRAPH_VERSION}/{sender_id}/messages"
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(url, json=payload)
     if response.status_code >= 400:
@@ -70,7 +65,7 @@ async def _send_whatsapp_message(channel_row: dict[str, Any], recipient_id: str,
         "type": "text",
         "text": {"preview_url": False, "body": body},
     }
-    url = f"https://graph.facebook.com/{_graph_version()}/{phone_number_id}/messages"
+    url = f"https://graph.facebook.com/{META_GRAPH_VERSION}/{phone_number_id}/messages"
     async with httpx.AsyncClient(timeout=30) as client:
         response = await client.post(url, json=payload, headers={"Authorization": f"Bearer {access_token}"})
     if response.status_code >= 400:

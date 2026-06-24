@@ -41,6 +41,7 @@ services:
       META_APP_ID: ${META_APP_ID:-}
       META_APP_SECRET: ${META_APP_SECRET:-}
       META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN:-}
+      META_GRAPH_VERSION: ${META_GRAPH_VERSION:-v20.0}
       VERXIO_PULSE_SECRET: ${VERXIO_PULSE_SECRET:-}
     volumes:
       - ./.verxio:/app/.verxio
