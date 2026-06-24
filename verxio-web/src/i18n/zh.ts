@@ -870,6 +870,7 @@ export const zh: Translations = {
       settings: { title: '设置', detail: '配置 Verxio 桌面端' },
       skills: { title: '技能与工具', detail: '启用技能、工具集与提供方' },
       messaging: { title: '消息平台', detail: '配置 Telegram、Slack、Discord 等' },
+      pulse: { title: 'Pulse', detail: '用流程和 AI 自动化社交私信' },
       artifacts: { title: '产物', detail: '浏览生成的输出' }
     },
     sectionEntries: {
@@ -1047,6 +1048,67 @@ export const zh: Translations = {
       api_server:
         '把 Verxio 暴露为兼容 OpenAI 的 API。设置一个鉴权密钥，然后把 Open WebUI / LobeChat 等指向 host:port。',
       webhook: '运行一个 HTTP 服务器，供其他工具 (GitHub、GitLab、自定义应用)POST。用 secret 验证签名。'
+    }
+  },
+
+  pulse: {
+    title: 'Pulse',
+    subtitle: '通过可视化流程和 Hermes AI 节点提升销售、互动和受众增长。',
+    search: '搜索 Pulse',
+    loading: '正在加载 Pulse…',
+    loadFailed: 'Pulse 加载失败。',
+    tabs: {
+      overview: '概览',
+      inbox: '收件箱',
+      automations: '自动化',
+      builder: '构建器',
+      channels: '渠道',
+      settings: '设置'
+    },
+    stats: {
+      channels: '渠道',
+      contacts: '联系人',
+      conversations: '会话',
+      automations: '自动化'
+    },
+    empty: {
+      title: '暂无 Pulse 活动',
+      description: '连接 Instagram、Messenger 或 WhatsApp，让社交对话进入自动化流程。',
+      action: '连接渠道'
+    },
+    channels: {
+      title: '渠道',
+      connect: '连接',
+      connected: '已连接',
+      gated: '受限',
+      docs: '文档'
+    },
+    inbox: {
+      title: '统一收件箱',
+      noConversation: '未选择会话',
+      takeover: '人工接管',
+      resume: '恢复自动化',
+      messagePlaceholder: '以人工身份回复…'
+    },
+    automations: {
+      title: '自动化',
+      newAutomation: '新建自动化',
+      enabled: '已启用',
+      disabled: '已禁用',
+      simulate: '模拟',
+      generate: '生成'
+    },
+    builder: {
+      title: 'AI 流程构建器',
+      promptPlaceholder: '描述你想让 Pulse 构建的私信自动化…',
+      generate: '生成流程',
+      simulator: '模拟器'
+    },
+    settings: {
+      title: 'Pulse 设置',
+      businessProfile: '业务资料',
+      brandVoice: '品牌语气',
+      guardrails: '规则边界'
     }
   },
 
@@ -1274,6 +1336,7 @@ export const zh: Translations = {
       'new-session': '新建会话',
       skills: '技能与工具',
       messaging: '消息平台',
+      pulse: 'Pulse',
       artifacts: '产物',
       notepad: 'Notepad'
     },

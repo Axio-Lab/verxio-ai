@@ -76,7 +76,7 @@ import {
   sessionPinId
 } from '@/store/session'
 
-import { type AppView, ARTIFACTS_ROUTE, MESSAGING_ROUTE, NOTEPAD_ROUTE, SKILLS_ROUTE } from '../../routes'
+import { type AppView, ARTIFACTS_ROUTE, MESSAGING_ROUTE, NOTEPAD_ROUTE, PULSE_ROUTE, SKILLS_ROUTE } from '../../routes'
 import { SidebarPanelLabel } from '../../shell/sidebar-label'
 import type { SidebarNavItem } from '../../types'
 
@@ -102,6 +102,7 @@ const SIDEBAR_NAV: SidebarNavItem[] = [
     route: SKILLS_ROUTE
   },
   { id: 'messaging', label: '', icon: props => <Codicon name="comment" {...props} />, route: MESSAGING_ROUTE },
+  { id: 'pulse', label: '', icon: props => <Codicon name="megaphone" {...props} />, route: PULSE_ROUTE },
   { id: 'artifacts', label: '', icon: props => <Codicon name="files" {...props} />, route: ARTIFACTS_ROUTE },
   { id: 'notepad', label: '', icon: props => <Codicon name="notebook" {...props} />, route: NOTEPAD_ROUTE }
 ]

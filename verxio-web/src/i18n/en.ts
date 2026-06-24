@@ -719,6 +719,7 @@ export const en: Translations = {
       settings: { title: 'Settings', detail: 'Configure Verxio desktop' },
       skills: { title: 'Skills & Tools', detail: 'Enable skills, toolsets, and providers' },
       messaging: { title: 'Messaging', detail: 'Set up Telegram, Slack, Discord, and more' },
+      pulse: { title: 'Pulse', detail: 'Automate social DMs with flows and AI' },
       artifacts: { title: 'Artifacts', detail: 'Browse generated outputs' }
     },
     sectionEntries: {
@@ -900,6 +901,67 @@ export const en: Translations = {
       }
     },
     platformIntro: {}
+  },
+
+  pulse: {
+    title: 'Pulse',
+    subtitle: 'Sell more, engage better, and grow your audience with visual flows and Hermes AI nodes.',
+    search: 'Search Pulse',
+    loading: 'Loading Pulse…',
+    loadFailed: 'Could not load Pulse.',
+    tabs: {
+      overview: 'Overview',
+      inbox: 'Inbox',
+      automations: 'Automations',
+      builder: 'Builder',
+      channels: 'Channels',
+      settings: 'Settings'
+    },
+    stats: {
+      channels: 'Channels',
+      contacts: 'Contacts',
+      conversations: 'Conversations',
+      automations: 'Automations'
+    },
+    empty: {
+      title: 'No Pulse activity yet',
+      description: 'Connect Instagram, Messenger, or WhatsApp to start routing social conversations through flows.',
+      action: 'Connect a channel'
+    },
+    channels: {
+      title: 'Channels',
+      connect: 'Connect',
+      connected: 'Connected',
+      gated: 'Gated',
+      docs: 'Docs'
+    },
+    inbox: {
+      title: 'Unified inbox',
+      noConversation: 'No conversation selected',
+      takeover: 'Take over',
+      resume: 'Resume automation',
+      messagePlaceholder: 'Reply as a human…'
+    },
+    automations: {
+      title: 'Automations',
+      newAutomation: 'New automation',
+      enabled: 'Enabled',
+      disabled: 'Disabled',
+      simulate: 'Simulate',
+      generate: 'Generate'
+    },
+    builder: {
+      title: 'AI flow builder',
+      promptPlaceholder: 'Describe the DM automation you want Pulse to build…',
+      generate: 'Generate flow',
+      simulator: 'Simulator'
+    },
+    settings: {
+      title: 'Pulse settings',
+      businessProfile: 'Business profile',
+      brandVoice: 'Brand voice',
+      guardrails: 'Guardrails'
+    }
   },
 
   profiles: {
@@ -1127,6 +1189,7 @@ export const en: Translations = {
       'new-session': 'New session',
       skills: 'Skills & Tools',
       messaging: 'Messaging',
+      pulse: 'Pulse',
       artifacts: 'Artifacts',
       notepad: 'Notepad'
     },

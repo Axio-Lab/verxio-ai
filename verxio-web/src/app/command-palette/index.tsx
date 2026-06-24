@@ -48,6 +48,7 @@ import {
   MESSAGING_ROUTE,
   NEW_CHAT_ROUTE,
   PROFILES_ROUTE,
+  PULSE_ROUTE,
   sessionRoute,
   SETTINGS_ROUTE,
   SKILLS_ROUTE
@@ -236,6 +237,7 @@ export function CommandPalette() {
             run: go(SKILLS_ROUTE)
           },
           { icon: MessageCircle, id: 'nav-messaging', label: cc.nav.messaging.title, run: go(MESSAGING_ROUTE) },
+          { icon: Zap, id: 'nav-pulse', label: cc.nav.pulse.title, run: go(PULSE_ROUTE) },
           { icon: Package, id: 'nav-artifacts', label: cc.nav.artifacts.title, run: go(ARTIFACTS_ROUTE) },
           {
             icon: Clock,

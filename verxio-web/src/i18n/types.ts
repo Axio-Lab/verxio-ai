@@ -589,7 +589,10 @@ export interface Translations {
     archivedChats: string
     sections: Record<'sessions' | 'usage', string>
     sectionDescriptions: Record<'sessions' | 'usage', string>
-    nav: Record<'newChat' | 'settings' | 'skills' | 'messaging' | 'artifacts', { title: string; detail: string }>
+    nav: Record<
+      'newChat' | 'settings' | 'skills' | 'messaging' | 'pulse' | 'artifacts',
+      { title: string; detail: string }
+    >
     sectionEntries: Record<'sessions' | 'usage', { title: string; detail: string }>
     providerNavigate: string
     providerSessions: string
@@ -675,6 +678,55 @@ export interface Translations {
     failedClear: (key: string) => string
     fieldCopy: Record<string, { label?: string; help?: string; placeholder?: string }>
     platformIntro: Record<string, string>
+  }
+
+  pulse: {
+    title: string
+    subtitle: string
+    search: string
+    loading: string
+    loadFailed: string
+    tabs: Record<'overview' | 'inbox' | 'automations' | 'builder' | 'channels' | 'settings', string>
+    stats: Record<'channels' | 'contacts' | 'conversations' | 'automations', string>
+    empty: {
+      title: string
+      description: string
+      action: string
+    }
+    channels: {
+      title: string
+      connect: string
+      connected: string
+      gated: string
+      docs: string
+    }
+    inbox: {
+      title: string
+      noConversation: string
+      takeover: string
+      resume: string
+      messagePlaceholder: string
+    }
+    automations: {
+      title: string
+      newAutomation: string
+      enabled: string
+      disabled: string
+      simulate: string
+      generate: string
+    }
+    builder: {
+      title: string
+      promptPlaceholder: string
+      generate: string
+      simulator: string
+    }
+    settings: {
+      title: string
+      businessProfile: string
+      brandVoice: string
+      guardrails: string
+    }
   }
 
   profiles: {
