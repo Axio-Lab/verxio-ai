@@ -73,6 +73,7 @@ export type SidebarNavId =
   | 'messaging'
   | 'new-session'
   | 'notepad'
+  | 'pulse'
   | 'settings'
   | 'skills'
 

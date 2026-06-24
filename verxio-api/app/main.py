@@ -6,7 +6,7 @@ from urllib.parse import parse_qsl, urlencode
 
 import httpx
 import websockets
-from fastapi import FastAPI, HTTPException, Request, Response, WebSocket
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -67,6 +67,30 @@ from app.models import (
     NotepadNoteUpdateRequest,
     NotepadShareResponse,
     PasswordResetRequest,
+    PulseAnalyticsResponse,
+    PulseAutomationCreateRequest,
+    PulseAutomationGenerateRequest,
+    PulseAutomationListResponse,
+    PulseAutomationRecord,
+    PulseAutomationSimulateRequest,
+    PulseAutomationSimulateResponse,
+    PulseAutomationToggleRequest,
+    PulseAutomationUpdateRequest,
+    PulseChannelConnectRequest,
+    PulseChannelConnectResponse,
+    PulseChannelCreateRequest,
+    PulseChannelRecord,
+    PulseChannelsResponse,
+    PulseConversationDetailResponse,
+    PulseConversationRecord,
+    PulseConversationStateRequest,
+    PulseConversationsResponse,
+    PulseMetaOAuthCompleteRequest,
+    PulseMetaOAuthCompleteResponse,
+    PulseMessageRecord,
+    PulseSendMessageRequest,
+    PulseTagsResponse,
+    PulseWebhookIngestResponse,
     PublicNotepadShareResponse,
     RunRecord,
     RunRequest,
@@ -87,6 +111,29 @@ from app.notepad import (
     update_folder,
     update_note,
 )
+from app.pulse import (
+    analytics as pulse_analytics,
+    channel_capability_matrix,
+    complete_meta_oauth,
+    connect_channel,
+    create_automation as create_pulse_automation,
+    create_channel as create_pulse_channel,
+    delete_automation as delete_pulse_automation,
+    delete_channel as delete_pulse_channel,
+    generated_flow_from_prompt,
+    get_conversation_detail as get_pulse_conversation_detail,
+    list_automations as list_pulse_automations,
+    list_channels as list_pulse_channels,
+    list_conversations as list_pulse_conversations,
+    list_tags as list_pulse_tags,
+    send_human_message as send_pulse_human_message,
+    simulate_automation as simulate_pulse_automation,
+    toggle_automation as toggle_pulse_automation,
+    update_automation as update_pulse_automation,
+    update_conversation_state as update_pulse_conversation_state,
+)
+from app.pulse_engine import tick_due_runs as tick_pulse_due_runs
+from app.pulse_webhooks import ingest_meta_webhook, ingest_whatsapp_webhook, verify_challenge
 from app.runtime import HermesRuntimeAdapter
 from app.runtime_manager import (
     artifact_file,
@@ -414,6 +461,216 @@ async def revoke_notepad_share_route(note_id: str, request: Request) -> dict[str
 @app.get("/api/public/notepad/{token}", response_model=PublicNotepadShareResponse)
 async def public_notepad_share_route(token: str) -> PublicNotepadShareResponse:
     return public_share(token)
+
+
+@app.get("/api/pulse/webhooks/meta", include_in_schema=False)
+async def verify_meta_pulse_webhook(request: Request) -> Response:
+    return verify_challenge(request)
+
+
+@app.post("/api/pulse/webhooks/meta", response_model=PulseWebhookIngestResponse)
+async def ingest_meta_pulse_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> PulseWebhookIngestResponse:
+    return await ingest_meta_webhook(request, background_tasks)
+
+
+@app.get("/api/pulse/webhooks/whatsapp", include_in_schema=False)
+async def verify_whatsapp_pulse_webhook(request: Request) -> Response:
+    return verify_challenge(request)
+
+
+@app.post("/api/pulse/webhooks/whatsapp", response_model=PulseWebhookIngestResponse)
+async def ingest_whatsapp_pulse_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> PulseWebhookIngestResponse:
+    return await ingest_whatsapp_webhook(request, background_tasks)
+
+
+@app.post("/api/pulse/webhooks/tiktok", response_model=PulseWebhookIngestResponse)
+async def ingest_tiktok_pulse_webhook() -> PulseWebhookIngestResponse:
+    raise HTTPException(status_code=409, detail="TikTok Business Messaging is partner-gated.")
+
+
+@app.post("/api/pulse/webhooks/linkedin", response_model=PulseWebhookIngestResponse)
+async def ingest_linkedin_pulse_webhook() -> PulseWebhookIngestResponse:
+    raise HTTPException(status_code=409, detail="LinkedIn messaging APIs are partner-gated.")
+
+
+@app.get("/api/pulse/channels", response_model=PulseChannelsResponse)
+async def list_pulse_channels_route(request: Request) -> PulseChannelsResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return list_pulse_channels(workspace, profile)
+
+
+@app.post("/api/pulse/channels", response_model=PulseChannelRecord)
+async def create_pulse_channel_route(
+    payload: PulseChannelCreateRequest,
+    request: Request,
+) -> PulseChannelRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return create_pulse_channel(workspace, profile, payload)
+
+
+@app.post("/api/pulse/channels/connect", response_model=PulseChannelConnectResponse)
+async def connect_pulse_channel_route(
+    payload: PulseChannelConnectRequest,
+    request: Request,
+) -> PulseChannelConnectResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return connect_channel(workspace, profile, payload)
+
+
+@app.post("/api/pulse/channels/meta/complete", response_model=PulseMetaOAuthCompleteResponse)
+async def complete_pulse_meta_oauth_route(
+    payload: PulseMetaOAuthCompleteRequest,
+    request: Request,
+) -> PulseMetaOAuthCompleteResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return await complete_meta_oauth(workspace, profile, payload)
+
+
+@app.get("/api/pulse/channels/capabilities")
+async def get_pulse_channel_capabilities_route(request: Request):
+    require_user(request)
+    return {"capabilityMatrix": channel_capability_matrix()}
+
+
+@app.delete("/api/pulse/channels/{channel_id}")
+async def delete_pulse_channel_route(channel_id: str, request: Request) -> dict[str, bool]:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return delete_pulse_channel(workspace, profile, channel_id)
+
+
+@app.get("/api/pulse/conversations", response_model=PulseConversationsResponse)
+async def list_pulse_conversations_route(request: Request) -> PulseConversationsResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return list_pulse_conversations(workspace, profile)
+
+
+@app.get("/api/pulse/conversations/{conversation_id}", response_model=PulseConversationDetailResponse)
+async def get_pulse_conversation_route(
+    conversation_id: str,
+    request: Request,
+) -> PulseConversationDetailResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return get_pulse_conversation_detail(workspace, profile, conversation_id)
+
+
+@app.post("/api/pulse/conversations/{conversation_id}/messages", response_model=PulseMessageRecord)
+async def send_pulse_message_route(
+    conversation_id: str,
+    payload: PulseSendMessageRequest,
+    request: Request,
+) -> PulseMessageRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return send_pulse_human_message(workspace, profile, conversation_id, payload)
+
+
+@app.post("/api/pulse/conversations/{conversation_id}/state", response_model=PulseConversationRecord)
+async def update_pulse_conversation_state_route(
+    conversation_id: str,
+    payload: PulseConversationStateRequest,
+    request: Request,
+) -> PulseConversationRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return update_pulse_conversation_state(workspace, profile, conversation_id, payload)
+
+
+@app.get("/api/pulse/automations", response_model=PulseAutomationListResponse)
+async def list_pulse_automations_route(request: Request) -> PulseAutomationListResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return list_pulse_automations(workspace, profile)
+
+
+@app.post("/api/pulse/automations", response_model=PulseAutomationRecord)
+async def create_pulse_automation_route(
+    payload: PulseAutomationCreateRequest,
+    request: Request,
+) -> PulseAutomationRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return create_pulse_automation(workspace, profile, payload)
+
+
+@app.put("/api/pulse/automations/{automation_id}", response_model=PulseAutomationRecord)
+async def update_pulse_automation_route(
+    automation_id: str,
+    payload: PulseAutomationUpdateRequest,
+    request: Request,
+) -> PulseAutomationRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return update_pulse_automation(workspace, profile, automation_id, payload)
+
+
+@app.delete("/api/pulse/automations/{automation_id}")
+async def delete_pulse_automation_route(automation_id: str, request: Request) -> dict[str, bool]:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return delete_pulse_automation(workspace, profile, automation_id)
+
+
+@app.post("/api/pulse/automations/{automation_id}/enable", response_model=PulseAutomationRecord)
+async def enable_pulse_automation_route(
+    automation_id: str,
+    payload: PulseAutomationToggleRequest,
+    request: Request,
+) -> PulseAutomationRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return toggle_pulse_automation(workspace, profile, automation_id, payload)
+
+
+@app.post("/api/pulse/automations/generate", response_model=PulseAutomationRecord)
+async def generate_pulse_automation_route(
+    payload: PulseAutomationGenerateRequest,
+    request: Request,
+) -> PulseAutomationRecord:
+    require_user(request)
+    return generated_flow_from_prompt(payload)
+
+
+@app.post("/api/pulse/automations/simulate", response_model=PulseAutomationSimulateResponse)
+async def simulate_pulse_automation_route(
+    payload: PulseAutomationSimulateRequest,
+    request: Request,
+) -> PulseAutomationSimulateResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return simulate_pulse_automation(workspace, profile, payload)
+
+
+@app.get("/api/pulse/tags", response_model=PulseTagsResponse)
+async def list_pulse_tags_route(request: Request) -> PulseTagsResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return list_pulse_tags(workspace, profile)
+
+
+@app.get("/api/pulse/analytics", response_model=PulseAnalyticsResponse)
+async def get_pulse_analytics_route(request: Request) -> PulseAnalyticsResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return pulse_analytics(workspace, profile)
+
+
+@app.post("/api/pulse/internal/tick")
+async def tick_pulse_route(request: Request) -> dict[str, int]:
+    require_user(request)
+    return tick_pulse_due_runs()
 
 
 async def _sync_composio_bridge_for_user(user: dict, *, refresh_running: bool = False):

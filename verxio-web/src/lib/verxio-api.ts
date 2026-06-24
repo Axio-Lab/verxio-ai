@@ -198,6 +198,160 @@ export interface ComposioCompleteConnectionResponse {
   status: string
 }
 
+export type PulseChannelType = 'instagram' | 'messenger' | 'whatsapp' | 'tiktok' | 'linkedin'
+export type PulseConversationState = 'automated' | 'human' | 'paused'
+
+export interface PulseChannelCapability {
+  key: string
+  label: string
+  supported: boolean
+  description?: string
+  gated?: boolean
+}
+
+export interface PulseChannelCapabilityMatrixItem {
+  channel_type: PulseChannelType
+  name: string
+  tier: 'first_class' | 'limited' | 'partner_gated'
+  description: string
+  docsUrl: string
+  capabilities: PulseChannelCapability[]
+}
+
+export interface PulseChannel {
+  id: string
+  channel_type: PulseChannelType
+  external_id: string
+  display_name: string
+  status: string
+  capabilities: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface PulseChannelsResponse {
+  channels: PulseChannel[]
+  capabilityMatrix: PulseChannelCapabilityMatrixItem[]
+}
+
+export interface PulseChannelConnectResponse {
+  channel?: PulseChannel | null
+  redirectUrl?: string | null
+  message: string
+}
+
+export interface PulseMetaOAuthCompleteResponse {
+  channels: PulseChannel[]
+  message: string
+}
+
+export interface PulseConversation {
+  id: string
+  channel_id: string
+  contact_id: string
+  channel_type: PulseChannelType
+  channel_name: string
+  contact_name: string
+  state: PulseConversationState
+  window_expires_at?: string | null
+  last_inbound_at?: string | null
+  last_outbound_at?: string | null
+  last_message?: string | null
+  unread: number
+  created_at: string
+  updated_at: string
+}
+
+export interface PulseContact {
+  id: string
+  external_user_id: string
+  username?: string | null
+  display_name: string
+  fields: Record<string, unknown>
+  consent_state: string
+  tags: string[]
+  created_at: string
+  updated_at: string
+}
+
+export interface PulseMessage {
+  id: string
+  conversation_id: string
+  direction: 'inbound' | 'outbound' | 'system'
+  body: string
+  media: Array<Record<string, unknown>>
+  provider_message_id?: string | null
+  status: string
+  created_at: string
+  updated_at: string
+}
+
+export interface PulseConversationsResponse {
+  conversations: PulseConversation[]
+}
+
+export interface PulseConversationDetailResponse {
+  conversation: PulseConversation
+  contact: PulseContact
+  messages: PulseMessage[]
+}
+
+export interface PulseFlowNode {
+  id: string
+  kind:
+    | 'trigger'
+    | 'send_message'
+    | 'ask_question'
+    | 'wait'
+    | 'condition'
+    | 'set_tag'
+    | 'set_field'
+    | 'ai_reply'
+    | 'composio_action'
+    | 'handoff'
+    | 'end'
+  label: string
+  config: Record<string, unknown>
+}
+
+export interface PulseFlowEdge {
+  id: string
+  source: string
+  target: string
+  condition?: string | null
+}
+
+export interface PulseFlowDefinition {
+  nodes: PulseFlowNode[]
+  edges: PulseFlowEdge[]
+}
+
+export interface PulseAutomation {
+  id: string
+  name: string
+  channel_type: PulseChannelType
+  enabled: boolean
+  flow: PulseFlowDefinition
+  version: number
+  created_at: string
+  updated_at: string
+}
+
+export interface PulseAutomationListResponse {
+  automations: PulseAutomation[]
+}
+
+export interface PulseAnalyticsResponse {
+  totals: Record<string, number>
+  channelBreakdown: Array<Record<string, unknown>>
+  recentRuns: Array<Record<string, unknown>>
+}
+
+export interface PulseAutomationSimulateResponse {
+  transcript: PulseMessage[]
+  context: Record<string, unknown>
+}
+
 export function verxioApiBaseUrl(): string {
   return import.meta.env.VITE_VERXIO_API_URL?.replace(/\/$/, '') ?? ''
 }
@@ -484,4 +638,123 @@ export function disconnectComposioAccount(accountId: string): Promise<{ message?
   return verxioFetch<{ message?: string }>(`/api/composio/connections/${encodeURIComponent(accountId)}`, {
     method: 'DELETE'
   })
+}
+
+export function listPulseChannels(): Promise<PulseChannelsResponse> {
+  return verxioFetch<PulseChannelsResponse>('/api/pulse/channels')
+}
+
+export function connectPulseChannel(
+  channelType: PulseChannelType,
+  input: {
+    callbackUrl?: string
+    credentials?: Record<string, string>
+    display_name?: string
+    external_id?: string
+  } = {}
+): Promise<PulseChannelConnectResponse> {
+  return verxioFetch<PulseChannelConnectResponse>('/api/pulse/channels/connect', {
+    body: JSON.stringify({ channel_type: channelType, ...input }),
+    method: 'POST'
+  })
+}
+
+export function completePulseMetaOAuth(
+  code: string,
+  redirectUri: string,
+  channelType: PulseChannelType
+): Promise<PulseMetaOAuthCompleteResponse> {
+  return verxioFetch<PulseMetaOAuthCompleteResponse>('/api/pulse/channels/meta/complete', {
+    body: JSON.stringify({ channel_type: channelType, code, redirectUri }),
+    method: 'POST'
+  })
+}
+
+export function deletePulseChannel(channelId: string): Promise<{ ok: boolean }> {
+  return verxioFetch<{ ok: boolean }>(`/api/pulse/channels/${encodeURIComponent(channelId)}`, {
+    method: 'DELETE'
+  })
+}
+
+export function listPulseConversations(): Promise<PulseConversationsResponse> {
+  return verxioFetch<PulseConversationsResponse>('/api/pulse/conversations')
+}
+
+export function getPulseConversation(conversationId: string): Promise<PulseConversationDetailResponse> {
+  return verxioFetch<PulseConversationDetailResponse>(`/api/pulse/conversations/${encodeURIComponent(conversationId)}`)
+}
+
+export function sendPulseMessage(conversationId: string, body: string): Promise<PulseMessage> {
+  return verxioFetch<PulseMessage>(`/api/pulse/conversations/${encodeURIComponent(conversationId)}/messages`, {
+    body: JSON.stringify({ body }),
+    method: 'POST'
+  })
+}
+
+export function updatePulseConversationState(
+  conversationId: string,
+  state: PulseConversationState
+): Promise<PulseConversation> {
+  return verxioFetch<PulseConversation>(`/api/pulse/conversations/${encodeURIComponent(conversationId)}/state`, {
+    body: JSON.stringify({ state }),
+    method: 'POST'
+  })
+}
+
+export function listPulseAutomations(): Promise<PulseAutomationListResponse> {
+  return verxioFetch<PulseAutomationListResponse>('/api/pulse/automations')
+}
+
+export function createPulseAutomation(input: {
+  channel_type: PulseChannelType
+  enabled?: boolean
+  flow?: PulseFlowDefinition
+  name: string
+}): Promise<PulseAutomation> {
+  return verxioFetch<PulseAutomation>('/api/pulse/automations', {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
+}
+
+export function updatePulseAutomation(automationId: string, input: Partial<PulseAutomation>): Promise<PulseAutomation> {
+  return verxioFetch<PulseAutomation>(`/api/pulse/automations/${encodeURIComponent(automationId)}`, {
+    body: JSON.stringify(input),
+    method: 'PUT'
+  })
+}
+
+export function togglePulseAutomation(automationId: string, enabled: boolean): Promise<PulseAutomation> {
+  return verxioFetch<PulseAutomation>(`/api/pulse/automations/${encodeURIComponent(automationId)}/enable`, {
+    body: JSON.stringify({ enabled }),
+    method: 'POST'
+  })
+}
+
+export function deletePulseAutomation(automationId: string): Promise<{ ok: boolean }> {
+  return verxioFetch<{ ok: boolean }>(`/api/pulse/automations/${encodeURIComponent(automationId)}`, {
+    method: 'DELETE'
+  })
+}
+
+export function generatePulseAutomation(prompt: string, channelType: PulseChannelType): Promise<PulseAutomation> {
+  return verxioFetch<PulseAutomation>('/api/pulse/automations/generate', {
+    body: JSON.stringify({ channel_type: channelType, prompt }),
+    method: 'POST'
+  })
+}
+
+export function simulatePulseAutomation(input: {
+  automation_id?: string
+  flow?: PulseFlowDefinition
+  message?: string
+}): Promise<PulseAutomationSimulateResponse> {
+  return verxioFetch<PulseAutomationSimulateResponse>('/api/pulse/automations/simulate', {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
+}
+
+export function getPulseAnalytics(): Promise<PulseAnalyticsResponse> {
+  return verxioFetch<PulseAnalyticsResponse>('/api/pulse/analytics')
 }

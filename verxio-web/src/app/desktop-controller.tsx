@@ -97,7 +97,6 @@ import { useSessionActions } from './session/hooks/use-session-actions'
 import { useSessionStateCache } from './session/hooks/use-session-state-cache'
 import { AppShell } from './shell/app-shell'
 import { useOverlayRouting } from './shell/hooks/use-overlay-routing'
-import { useStatusSnapshot } from './shell/hooks/use-status-snapshot'
 import { useStatusbarItems } from './shell/hooks/use-statusbar-items'
 import { ModelMenuPanel } from './shell/model-menu-panel'
 import type { StatusbarItem } from './shell/statusbar-controls'
@@ -111,6 +110,7 @@ const CommandCenterView = lazy(async () => ({ default: (await import('./command-
 const CronView = lazy(async () => ({ default: (await import('./cron')).CronView }))
 const MessagingView = lazy(async () => ({ default: (await import('./messaging')).MessagingView }))
 const NotepadView = lazy(async () => ({ default: (await import('./notepad')).NotepadView }))
+const PulseView = lazy(async () => ({ default: (await import('./pulse')).PulseView }))
 const ProfilesView = lazy(async () => ({ default: (await import('./profiles')).ProfilesView }))
 const SettingsView = lazy(async () => ({ default: (await import('./settings')).SettingsView }))
 const SkillsView = lazy(async () => ({ default: (await import('./skills')).SkillsView }))
@@ -199,8 +199,6 @@ export function DesktopController() {
   })
 
   const { connectionRef, gatewayRef, requestGateway } = useGatewayRequest()
-  const { gatewayLogLines, inferenceStatus, statusSnapshot } = useStatusSnapshot(gatewayState, requestGateway)
-
   useEffect(() => {
     window.hermesDesktop?.setPreviewShortcutActive?.(Boolean(chatOpen && (filePreviewTarget || previewTarget)))
   }, [chatOpen, filePreviewTarget, previewTarget])
@@ -637,12 +635,8 @@ export function DesktopController() {
     commandCenterOpen,
     extraLeftItems: statusbarItemGroups.flat.left,
     extraRightItems: statusbarItemGroups.flat.right,
-    gatewayLogLines,
-    inferenceStatus,
     modelMenuContent,
-    onOpenGatewaySystem: () => navigate(`${SETTINGS_ROUTE}?tab=gateway`),
     openAgents,
-    statusSnapshot,
     toggleCommandCenter
   })
 
@@ -863,6 +857,14 @@ export function DesktopController() {
               </Suspense>
             }
             path="messaging"
+          />
+          <Route
+            element={
+              <Suspense fallback={null}>
+                <PulseView setStatusbarItemGroup={setStatusbarItemGroup} />
+              </Suspense>
+            }
+            path="pulse"
           />
           <Route
             element={

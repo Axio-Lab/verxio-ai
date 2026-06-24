@@ -9,6 +9,7 @@ export const SKILLS_ROUTE = '/skills'
 export const TOOLSET_ROUTE = '/toolset'
 export const TOOLSETS_ROUTE = '/toolsets'
 export const MESSAGING_ROUTE = '/messaging'
+export const PULSE_ROUTE = '/pulse'
 export const ARTIFACTS_ROUTE = '/artifacts'
 export const NOTEPAD_ROUTE = '/notepad'
 export const CRON_ROUTE = '/cron'
@@ -23,6 +24,7 @@ export type AppView =
   | 'cron'
   | 'messaging'
   | 'notepad'
+  | 'pulse'
   | 'profiles'
   | 'settings'
   | 'skills'
@@ -35,6 +37,7 @@ export type AppRouteId =
   | 'messaging'
   | 'notepad'
   | 'new'
+  | 'pulse'
   | 'profiles'
   | 'settings'
   | 'skills'
@@ -51,6 +54,7 @@ export const APP_ROUTES = [
   { id: 'command-center', path: COMMAND_CENTER_ROUTE, view: 'command-center' },
   { id: 'skills', path: SKILLS_ROUTE, view: 'skills' },
   { id: 'messaging', path: MESSAGING_ROUTE, view: 'messaging' },
+  { id: 'pulse', path: PULSE_ROUTE, view: 'pulse' },
   { id: 'artifacts', path: ARTIFACTS_ROUTE, view: 'artifacts' },
   { id: 'notepad', path: NOTEPAD_ROUTE, view: 'notepad' },
   { id: 'cron', path: CRON_ROUTE, view: 'cron' },

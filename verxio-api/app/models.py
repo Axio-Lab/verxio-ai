@@ -220,6 +220,257 @@ class PublicNotepadShareResponse(BaseModel):
     workspace_name: str
 
 
+PulseChannelType = Literal["instagram", "messenger", "whatsapp", "tiktok", "linkedin"]
+PulseChannelStatus = Literal["draft", "connected", "needs_review", "limited", "disabled", "error"]
+PulseConversationState = Literal["automated", "human", "paused"]
+PulseMessageDirection = Literal["inbound", "outbound", "system"]
+PulseRunStatus = Literal["queued", "running", "waiting", "completed", "failed", "handoff"]
+
+
+class PulseChannelCapability(BaseModel):
+    key: str
+    label: str
+    supported: bool
+    description: str = ""
+    gated: bool = False
+
+
+class PulseChannelRecord(BaseModel):
+    id: str
+    tenant_id: str
+    workspace_id: str
+    agent_id: str
+    channel_type: PulseChannelType
+    external_id: str
+    display_name: str
+    status: PulseChannelStatus = "draft"
+    capabilities: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+    updated_at: str
+
+
+class PulseChannelCreateRequest(BaseModel):
+    channel_type: PulseChannelType
+    external_id: str = Field(min_length=1, max_length=240)
+    display_name: str = Field(min_length=1, max_length=180)
+    credentials: dict[str, str] = Field(default_factory=dict)
+
+
+class PulseChannelConnectRequest(BaseModel):
+    channel_type: PulseChannelType
+    callbackUrl: str | None = None
+    external_id: str | None = Field(default=None, max_length=240)
+    display_name: str | None = Field(default=None, max_length=180)
+    credentials: dict[str, str] = Field(default_factory=dict)
+
+
+class PulseChannelConnectResponse(BaseModel):
+    channel: PulseChannelRecord | None = None
+    redirectUrl: str | None = None
+    message: str
+
+
+class PulseMetaOAuthCompleteRequest(BaseModel):
+    code: str = Field(min_length=1, max_length=2000)
+    redirectUri: str = Field(min_length=1, max_length=2000)
+    channel_type: PulseChannelType = "instagram"
+
+
+class PulseMetaOAuthCompleteResponse(BaseModel):
+    channels: list[PulseChannelRecord]
+    message: str
+
+
+class PulseChannelCapabilityMatrixItem(BaseModel):
+    channel_type: PulseChannelType
+    name: str
+    tier: Literal["first_class", "limited", "partner_gated"]
+    description: str
+    docsUrl: str
+    capabilities: list[PulseChannelCapability]
+
+
+class PulseChannelsResponse(BaseModel):
+    channels: list[PulseChannelRecord]
+    capabilityMatrix: list[PulseChannelCapabilityMatrixItem]
+
+
+class PulseContactRecord(BaseModel):
+    id: str
+    tenant_id: str
+    workspace_id: str
+    agent_id: str
+    channel_id: str
+    external_user_id: str
+    username: str | None = None
+    display_name: str
+    fields: dict[str, Any] = Field(default_factory=dict)
+    consent_state: str = "unknown"
+    tags: list[str] = Field(default_factory=list)
+    created_at: str
+    updated_at: str
+
+
+class PulseConversationRecord(BaseModel):
+    id: str
+    tenant_id: str
+    workspace_id: str
+    agent_id: str
+    channel_id: str
+    contact_id: str
+    channel_type: PulseChannelType
+    channel_name: str
+    contact_name: str
+    state: PulseConversationState = "automated"
+    window_expires_at: str | None = None
+    last_inbound_at: str | None = None
+    last_outbound_at: str | None = None
+    last_message: str | None = None
+    unread: int = 0
+    created_at: str
+    updated_at: str
+
+
+class PulseMessageRecord(BaseModel):
+    id: str
+    tenant_id: str
+    workspace_id: str
+    agent_id: str
+    conversation_id: str
+    direction: PulseMessageDirection
+    body: str = ""
+    media: list[dict[str, Any]] = Field(default_factory=list)
+    provider_message_id: str | None = None
+    status: str = "received"
+    created_at: str
+    updated_at: str
+
+
+class PulseConversationDetailResponse(BaseModel):
+    conversation: PulseConversationRecord
+    contact: PulseContactRecord
+    messages: list[PulseMessageRecord]
+
+
+class PulseConversationsResponse(BaseModel):
+    conversations: list[PulseConversationRecord]
+
+
+class PulseSendMessageRequest(BaseModel):
+    body: str = Field(min_length=1, max_length=4000)
+
+
+class PulseConversationStateRequest(BaseModel):
+    state: PulseConversationState
+
+
+class PulseFlowNode(BaseModel):
+    id: str
+    kind: Literal[
+        "trigger",
+        "send_message",
+        "ask_question",
+        "wait",
+        "condition",
+        "set_tag",
+        "set_field",
+        "ai_reply",
+        "composio_action",
+        "handoff",
+        "end",
+    ]
+    label: str = ""
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class PulseFlowEdge(BaseModel):
+    id: str
+    source: str
+    target: str
+    condition: str | None = None
+
+
+class PulseFlowDefinition(BaseModel):
+    nodes: list[PulseFlowNode] = Field(default_factory=list)
+    edges: list[PulseFlowEdge] = Field(default_factory=list)
+
+
+class PulseAutomationRecord(BaseModel):
+    id: str
+    tenant_id: str
+    workspace_id: str
+    agent_id: str
+    name: str
+    channel_type: PulseChannelType
+    enabled: bool = False
+    flow: PulseFlowDefinition = Field(default_factory=PulseFlowDefinition)
+    version: int = 1
+    created_at: str
+    updated_at: str
+
+
+class PulseAutomationCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=180)
+    channel_type: PulseChannelType
+    flow: PulseFlowDefinition = Field(default_factory=PulseFlowDefinition)
+    enabled: bool = False
+
+
+class PulseAutomationUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=180)
+    channel_type: PulseChannelType | None = None
+    flow: PulseFlowDefinition | None = None
+    enabled: bool | None = None
+
+
+class PulseAutomationToggleRequest(BaseModel):
+    enabled: bool
+
+
+class PulseAutomationListResponse(BaseModel):
+    automations: list[PulseAutomationRecord]
+
+
+class PulseAutomationGenerateRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=4000)
+    channel_type: PulseChannelType = "instagram"
+
+
+class PulseAutomationSimulateRequest(BaseModel):
+    automation_id: str | None = None
+    flow: PulseFlowDefinition | None = None
+    message: str = Field(default="I want to learn more", max_length=4000)
+
+
+class PulseAutomationSimulateResponse(BaseModel):
+    transcript: list[PulseMessageRecord]
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
+class PulseTagRecord(BaseModel):
+    id: str
+    name: str
+    color: str = "primary"
+    created_at: str
+    updated_at: str
+
+
+class PulseTagsResponse(BaseModel):
+    tags: list[PulseTagRecord]
+
+
+class PulseAnalyticsResponse(BaseModel):
+    totals: dict[str, int] = Field(default_factory=dict)
+    channelBreakdown: list[dict[str, Any]] = Field(default_factory=list)
+    recentRuns: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class PulseWebhookIngestResponse(BaseModel):
+    ok: bool = True
+    eventId: str | None = None
+    processed: bool = False
+
+
 class ComposioConnectedAccount(BaseModel):
     id: str
     appSlug: str
