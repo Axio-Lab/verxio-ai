@@ -5,7 +5,6 @@ import {
   type ThreadMessage
 } from '@assistant-ui/react'
 import { useStore } from '@nanostores/react'
-import { useQuery } from '@tanstack/react-query'
 import type * as React from 'react'
 import { Suspense, useCallback, useMemo, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
@@ -15,9 +14,9 @@ import { Backdrop } from '@/components/Backdrop'
 import { PromptOverlays } from '@/components/prompt-overlays'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
-import { getGlobalModelOptions, type HermesGateway } from '@/hermes'
+import type { HermesGateway } from '@/hermes'
 import type { ChatMessage } from '@/lib/chat-messages'
-import { quickModelOptions, sessionTitle, toRuntimeMessage } from '@/lib/chat-runtime'
+import { sessionTitle, toRuntimeMessage } from '@/lib/chat-runtime'
 import { useIncrementalExternalStoreRuntime } from '@/lib/incremental-external-store-runtime'
 import { cn } from '@/lib/utils'
 import type { ComposerAttachment } from '@/store/composer'
@@ -29,8 +28,6 @@ import {
   $busy,
   $contextSuggestions,
   $currentCwd,
-  $currentModel,
-  $currentProvider,
   $freshDraftReady,
   $gatewayState,
   $introPersonality,
@@ -40,7 +37,6 @@ import {
   $sessions,
   sessionPinId
 } from '@/store/session'
-import type { ModelOptionsResponse } from '@/types/hermes'
 
 import { routeSessionId } from '../routes'
 import { titlebarHeaderBaseClass, titlebarHeaderShadowClass } from '../shell/titlebar'
@@ -59,7 +55,6 @@ import { lastVisibleMessageIsUser, threadLoadingState } from './thread-loading'
 
 interface ChatViewProps extends Omit<React.ComponentProps<'div'>, 'onSubmit'> {
   gateway: HermesGateway | null
-  modelMenuContent?: React.ReactNode
   onToggleSelectedPin: () => void
   onDeleteSelectedSession: () => void
   onCancel: () => Promise<void> | void
@@ -154,7 +149,6 @@ function ChatHeader({
 export function ChatView({
   className,
   gateway,
-  modelMenuContent,
   onToggleSelectedPin,
   onDeleteSelectedSession,
   onCancel,
@@ -183,8 +177,6 @@ export function ChatView({
   const busy = useStore($busy)
   const contextSuggestions = useStore($contextSuggestions)
   const currentCwd = useStore($currentCwd)
-  const currentModel = useStore($currentModel)
-  const currentProvider = useStore($currentProvider)
   const freshDraftReady = useStore($freshDraftReady)
   const gatewayState = useStore($gatewayState)
   const gatewaySwapTarget = useStore($gatewaySwapTarget)
@@ -209,37 +201,8 @@ export function ChatView({
   const showChatBar = !loadingSession
   const threadKey = selectedSessionId || activeSessionId || (isRoutedSessionView ? location.pathname : 'new')
 
-  const modelOptionsQuery = useQuery<ModelOptionsResponse>({
-    queryKey: ['model-options', activeSessionId || 'global'],
-    queryFn: () => {
-      if (!activeSessionId) {
-        return getGlobalModelOptions()
-      }
-
-      if (!gateway) {
-        throw new Error('Verxio gateway unavailable')
-      }
-
-      return gateway.request<ModelOptionsResponse>('model.options', { session_id: activeSessionId })
-    },
-    enabled: gatewayOpen
-  })
-
-  const quickModels = useMemo(
-    () => quickModelOptions(modelOptionsQuery.data, currentProvider, currentModel),
-    [currentModel, currentProvider, modelOptionsQuery.data]
-  )
-
   const chatBarState = useMemo<ChatBarState>(
     () => ({
-      model: {
-        model: currentModel,
-        provider: currentProvider,
-        canSwitch: gatewayOpen,
-        loading: !gatewayOpen || (!currentModel && !currentProvider),
-        modelMenuContent,
-        quickModels
-      },
       tools: {
         enabled: true,
         label: 'Add context',
@@ -250,7 +213,7 @@ export function ChatView({
         active: false
       }
     }),
-    [contextSuggestions, currentModel, currentProvider, gatewayOpen, modelMenuContent, quickModels]
+    [contextSuggestions]
   )
 
   const runtimeMessageRepository = useMemo(() => {

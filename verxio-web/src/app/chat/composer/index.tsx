@@ -1457,7 +1457,6 @@ export function ChatBar({
       busyAction={busyAction}
       canSteer={canSteer}
       canSubmit={canSubmit}
-      compactModelPill={poppedOut}
       conversation={{
         active: voiceConversationActive,
         level: conversation.level,
