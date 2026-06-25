@@ -303,6 +303,38 @@ function MarkdownLink({ children, className, href, ...props }: ComponentProps<'a
   )
 }
 
+// Inline-code spans frequently carry the very thing users want to click: a
+// file path (`/workspace/artifacts/report.md`) or a URL. Plain `<code>` leaves
+// them dead. Linkify those two cases — file paths through MarkdownPathLink
+// (which resolves /workspace -> the local desktop folder on click) and URLs
+// through PrettyLink — while non-path code stays inert.
+function InlineCode({ children, className, ...props }: ComponentProps<'code'>) {
+  const cwd = useStore($currentCwd)
+  const raw = childrenToText(children)
+
+  if (raw && !/\s/.test(raw)) {
+    const url = normalizeExternalUrl(raw)
+
+    if (/^https?:\/\//i.test(url)) {
+      return <PrettyLink className={cn('font-mono', className)} href={url} label={raw} />
+    }
+
+    if (looksLikeFilePath(raw)) {
+      // Display the path the way it physically exists for this surface:
+      // /workspace/... on web, the local desktop folder on desktop.
+      const display = resolvePathForDesktopPreview(raw, cwd || undefined)
+
+      return (
+        <MarkdownPathLink className={cn('font-mono font-normal', className)} href={raw}>
+          {display}
+        </MarkdownPathLink>
+      )
+    }
+  }
+
+  return <code className={className} dir="ltr" {...props} />
+}
+
 function MarkdownImage({ className, src, alt, ...props }: ComponentProps<'img'>) {
   return (
     <ZoomableImage
@@ -524,9 +556,7 @@ function MarkdownTextSurface({ containerClassName, containerProps }: MarkdownTex
           <p className={cn('wrap-anywhere leading-(--dt-line-height)', className)} {...props} />
         ),
         a: MarkdownLink,
-        inlineCode: ({ className, ...props }: ComponentProps<'code'>) => (
-          <code className={className} dir="ltr" {...props} />
-        ),
+        inlineCode: InlineCode,
         // `---` as quiet spacing, not a heavy full-width rule.
         hr: (_props: ComponentProps<'hr'>) => <div aria-hidden className="my-3" />,
         blockquote: ({ className, ...props }: ComponentProps<'blockquote'>) => (

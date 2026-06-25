@@ -42,8 +42,10 @@ describe('desktop-workspace', () => {
 
     setDesktopWorkspaceRoot(null)
 
+    // Before the local root resolves, the raw /workspace path is preserved so
+    // it stays a single clickable token and resolves locally once root lands.
     expect(rewriteRuntimePathsInText('Use /workspace/artifacts for output.')).toBe(
-      'Use your project folder/artifacts for output.'
+      'Use /workspace/artifacts for output.'
     )
   })
 })

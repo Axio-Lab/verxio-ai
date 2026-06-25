@@ -15,7 +15,7 @@ services:
       TURSO_AUTH_TOKEN: ${TURSO_AUTH_TOKEN:-}
       VERXIO_RUNTIME_MANAGER: local-docker
       VERXIO_RUNTIME_ROOT: /app/.verxio/runtimes
-      VERXIO_RUNTIME_DOCKER_ROOT: ${PWD}/.verxio/runtimes
+      VERXIO_RUNTIME_DOCKER_ROOT: ${VERXIO_RUNTIME_DOCKER_ROOT:-${VERXIO_STATE_DIR:-${PWD}/.verxio}/runtimes}
       VERXIO_HERMES_IMAGE: ${VERXIO_HERMES_IMAGE:-verxio-hermes-runtime:local}
       VERXIO_RUNTIME_CONNECT_HOST: ${VERXIO_RUNTIME_CONNECT_HOST:-host.docker.internal}
       VERXIO_RUNTIME_PUBLISH_HOST: ${VERXIO_RUNTIME_PUBLISH_HOST:-127.0.0.1}
@@ -44,7 +44,7 @@ services:
       META_GRAPH_VERSION: ${META_GRAPH_VERSION:-v20.0}
       VERXIO_PULSE_SECRET: ${VERXIO_PULSE_SECRET:-}
     volumes:
-      - ./.verxio:/app/.verxio
+      - ${VERXIO_STATE_DIR:-./.verxio}:/app/.verxio
       - /var/run/docker.sock:/var/run/docker.sock
 
   verxio-web:

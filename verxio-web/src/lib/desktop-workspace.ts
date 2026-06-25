@@ -56,17 +56,14 @@ export function rewriteRuntimePathsInText(text: string): string {
   return text.replace(RUNTIME_PATH_IN_TEXT_RE, match => {
     const localRoot = getDesktopWorkspaceRoot()
 
-    if (localRoot) {
-      return resolveDesktopWorkspaceCwd(match, localRoot) ?? match
+    // Until the local workspace root resolves (brief window on desktop boot),
+    // keep the raw /workspace path: it stays a single token so autolinking
+    // still fires, and clicks resolve to the local folder once the root lands.
+    if (!localRoot) {
+      return match
     }
 
-    if (match === RUNTIME_WORKSPACE_ROOT) {
-      return 'your project folder'
-    }
-
-    const relative = match.slice(RUNTIME_WORKSPACE_ROOT.length + 1)
-
-    return relative ? `your project folder/${relative}` : 'your project folder'
+    return resolveDesktopWorkspaceCwd(match, localRoot) ?? match
   })
 }
 
