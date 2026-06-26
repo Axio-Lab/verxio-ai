@@ -129,9 +129,3 @@ runtime already backing Verxio.
 6. Hermes writes generated files to `/workspace/artifacts`.
 7. Verxio indexes artifact metadata in Turso and serves preview/download URLs.
 
-## Verification
-
-```bash
-npm run ci
-npm run desktop:pack
-```
