@@ -55,20 +55,6 @@ http://127.0.0.1:8080
 
 Signup creates a user, personal workspace, default Verxio agent, runtime registry row, isolated Hermes home, workspace, and artifact directory.
 
-## Local Dev Without Docker Compose
-
-```bash
-cd verxio-api
-VERXIO_DATABASE_MODE=sqlite uv run uvicorn app.main:app --reload --port 8787
-```
-
-```bash
-cd verxio-web
-VITE_VERXIO_API_ENABLED=true VITE_VERXIO_API_URL=http://127.0.0.1:8787 npm run dev
-```
-
-Open `http://127.0.0.1:5180`.
-
 ## Verxio Desktop
 
 The desktop shell uses the same Verxio Web renderer, but provides a native
@@ -118,14 +104,3 @@ recording: Verxio requests device audio where Electron exposes it and falls back
 to microphone recording when system audio is unavailable. Transcription uses the
 existing Hermes audio transcription route, and AI summaries use the Hermes
 runtime already backing Verxio.
-
-## Runtime Flow
-
-1. User logs into Verxio.
-2. Verxio resolves their active workspace agent.
-3. Verxio API starts the Hermes runtime container on demand.
-4. Verxio Web talks to `/api/runtime/dashboard/*`.
-5. Verxio API proxies REST and WebSocket traffic to the correct runtime dashboard.
-6. Hermes writes generated files to `/workspace/artifacts`.
-7. Verxio indexes artifact metadata in Turso and serves preview/download URLs.
-
