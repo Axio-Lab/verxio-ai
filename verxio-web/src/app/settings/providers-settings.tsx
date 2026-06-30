@@ -21,8 +21,8 @@ import { DEFAULT_LIST_PAGE_SIZE, usePaginatedList } from '../hooks/use-paginated
 
 import { isKeyVar, ProviderKeyRows } from './credential-key-ui'
 import { SettingsCategoryHeading, useEnvCredentials } from './env-credentials'
-import { InferenceProviderSettings } from './inference-provider-settings'
 import { providerGroup, providerMeta, providerPriority } from './helpers'
+import { InferenceProviderSettings } from './inference-provider-settings'
 import { LoadingState, SettingsContent } from './primitives'
 
 // Sub-views surfaced as a sidebar subnav: account sign-in vs raw API keys.

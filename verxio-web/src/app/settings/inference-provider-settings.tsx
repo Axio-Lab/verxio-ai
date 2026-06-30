@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { KeyRound, Loader2, Sparkles } from '@/lib/icons'
+import { cn } from '@/lib/utils'
 import {
   getInferenceCatalog,
   getInferenceUsage,
@@ -12,7 +13,6 @@ import {
   type VerxioInferenceModel,
   type VerxioInferenceUsageResponse
 } from '@/lib/verxio-api'
-import { cn } from '@/lib/utils'
 
 import { CONTROL_TEXT } from './constants'
 import { ListRow, Pill, SectionHeading } from './primitives'
@@ -39,6 +39,7 @@ export function InferenceProviderSettings({ onOpenProviderKeys }: InferenceProvi
   const refresh = useCallback(async () => {
     if (!verxioApiEnabled()) {
       setLoading(false)
+
       return
     }
 
@@ -62,6 +63,7 @@ export function InferenceProviderSettings({ onOpenProviderKeys }: InferenceProvi
 
   const hostedModels = catalog?.models ?? []
   const settings = usage?.settings
+
   const selectedHostedModel = useMemo<VerxioInferenceModel | null>(() => {
     const modelId = settings?.defaultModelId || catalog?.defaultModelId
 
