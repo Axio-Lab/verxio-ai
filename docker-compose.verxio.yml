@@ -2,7 +2,6 @@ name: verxio-ai
 
 services:
   verxio-api:
-    platform: linux/amd64
     build:
       context: ./verxio-api
     image: verxio-api:local

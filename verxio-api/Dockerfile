@@ -7,17 +7,22 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# libsql ships prebuilt wheels for linux/amd64 but not linux/arm64.
-# On ARM, uv builds from source (maturin/Rust + cmake for libsql-ffi/SQLite).
-# Prefer `platform: linux/amd64` in compose on Apple Silicon for a fast local build.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential cmake pkg-config \
-    && rm -rf /var/lib/apt/lists/*
-
 RUN pip install --no-cache-dir uv
 
+# Core dependencies are pure-Python or ship arm64 wheels, so the default build
+# is native-fast on Apple Silicon (no Rosetta emulation, no source compiles).
+# Turso support (the libsql client) has no linux/arm64 wheel; opt in with
+# `--build-arg INSTALL_TURSO=1` (best built under linux/amd64 where wheels exist).
+ARG INSTALL_TURSO=
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+RUN if [ -n "$INSTALL_TURSO" ]; then \
+        apt-get update \
+        && apt-get install -y --no-install-recommends build-essential cmake pkg-config \
+        && rm -rf /var/lib/apt/lists/* \
+        && uv sync --frozen --no-dev --extra turso; \
+    else \
+        uv sync --frozen --no-dev; \
+    fi
 
 FROM python:3.11-slim
 

@@ -901,14 +901,23 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     token = _runtime_dashboard_token(runtime.id)
     target = f"{runtime.dashboard_url.rstrip('/')}/{path}"
     body = await request.body()
-    async with httpx.AsyncClient(timeout=300, follow_redirects=False) as client:
-        upstream = await client.request(
-            request.method,
-            target,
-            params=request.query_params,
-            content=body,
-            headers=_proxy_headers(request, token),
-        )
+    try:
+        async with httpx.AsyncClient(timeout=300, follow_redirects=False) as client:
+            upstream = await client.request(
+                request.method,
+                target,
+                params=request.query_params,
+                content=body,
+                headers=_proxy_headers(request, token),
+            )
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.RemoteProtocolError, httpx.ReadError) as exc:
+        # The runtime container is still booting (or restarting): the dashboard
+        # socket isn't accepting yet. Return 503 so the web client keeps polling
+        # readiness cleanly instead of surfacing a 500 stack trace.
+        raise HTTPException(
+            status_code=503,
+            detail="Runtime dashboard is starting. Retry shortly.",
+        ) from exc
 
     response_headers = {
         key: value
