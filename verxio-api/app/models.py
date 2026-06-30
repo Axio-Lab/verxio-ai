@@ -128,6 +128,81 @@ class RuntimeWorkspaceSyncRequest(BaseModel):
     workspace_path: str = Field(min_length=1)
 
 
+InferenceMode = Literal["hosted", "byok"]
+
+
+class InferenceModelCapability(BaseModel):
+    key: str
+    label: str
+
+
+class InferenceModelPricing(BaseModel):
+    inputPerMillion: float
+    outputPerMillion: float
+    currency: str = "USD"
+
+
+class InferenceModelCatalogItem(BaseModel):
+    id: str
+    displayName: str
+    description: str
+    providerSlug: str
+    upstreamModelId: str
+    requiredEnvVars: list[str]
+    hostedAvailable: bool
+    byokAvailable: bool
+    tier: str
+    capabilities: list[InferenceModelCapability] = Field(default_factory=list)
+    pricing: InferenceModelPricing
+    default: bool = False
+
+
+class InferenceCatalogResponse(BaseModel):
+    models: list[InferenceModelCatalogItem]
+    defaultModelId: str
+
+
+class InferenceSettings(BaseModel):
+    mode: InferenceMode = "hosted"
+    defaultModelId: str = "verxio-gpt"
+    monthlyCreditUsd: float = 0
+    overageEnabled: bool = False
+    spendingLimitUsd: float | None = None
+
+
+class InferenceSettingsUpdate(BaseModel):
+    mode: InferenceMode | None = None
+    defaultModelId: str | None = Field(default=None, min_length=1, max_length=80)
+    overageEnabled: bool | None = None
+    spendingLimitUsd: float | None = Field(default=None, ge=0)
+
+
+class InferenceUsageSummary(BaseModel):
+    periodStart: str | None = None
+    periodEnd: str | None = None
+    monthlyCreditUsd: float = 0
+    usedUsd: float = 0
+    remainingUsd: float = 0
+    events: int = 0
+
+
+class InferenceUsageResponse(BaseModel):
+    settings: InferenceSettings
+    usage: InferenceUsageSummary
+
+
+class InferenceRuntimeBridgeStatus(BaseModel):
+    configured: bool
+    enabled: bool
+    changed: bool = False
+    mode: InferenceMode = "hosted"
+    defaultModelId: str = "verxio-gpt"
+    providerSlug: str = "openai-api"
+    upstreamModelId: str = ""
+    missingEnvVars: list[str] = Field(default_factory=list)
+    message: str | None = None
+
+
 class ArtifactRecord(BaseModel):
     id: str
     tenant_id: str

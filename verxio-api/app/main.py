@@ -40,6 +40,14 @@ from app.composio_catalog import (
     sync_composio_runtime_bridge,
 )
 from app.control_plane import ensure_runtime_directories, get_context_for_user, get_runtime_for_user
+from app.inference import (
+    inference_usage,
+    list_inference_catalog,
+    runtime_env_for_user,
+    sync_inference_runtime_bridge,
+    update_inference_settings,
+    ensure_inference_settings,
+)
 from app.leash_agent import clear_leash_agent, read_leash_agent, write_leash_agent
 from app.models import (
     ArtifactListResponse,
@@ -57,6 +65,10 @@ from app.models import (
     ComposioInitiateRequest,
     ComposioInitiateResponse,
     EmailRequest,
+    InferenceCatalogResponse,
+    InferenceSettings,
+    InferenceSettingsUpdate,
+    InferenceUsageResponse,
     LoginRequest,
     NotepadFolderCreateRequest,
     NotepadFolderRecord,
@@ -292,7 +304,8 @@ async def get_runtime(request: Request) -> RuntimeControlResponse:
 async def start_runtime_route(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
     _accounts, _bridge = await _sync_composio_bridge_for_user(user, refresh_running=True)
-    runtime = await start_runtime(get_runtime_for_user(user))
+    _inference_bridge = await _sync_inference_bridge_for_user(user, refresh_running=True)
+    runtime = await start_runtime(get_runtime_for_user(user), extra_env=runtime_env_for_user(str(user["id"])))
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
 
@@ -308,7 +321,9 @@ async def stop_runtime_route(request: Request) -> RuntimeControlResponse:
 @app.post("/api/runtime/restart", response_model=RuntimeControlResponse)
 async def restart_runtime_route(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
-    runtime = await restart_runtime(get_runtime_for_user(user))
+    await _sync_composio_bridge_for_user(user, refresh_running=True)
+    await _sync_inference_bridge_for_user(user, refresh_running=True)
+    runtime = await restart_runtime(get_runtime_for_user(user), extra_env=runtime_env_for_user(str(user["id"])))
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
 
@@ -325,6 +340,34 @@ async def sync_runtime_workspace_route(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
+
+
+@app.get("/api/inference/catalog", response_model=InferenceCatalogResponse)
+async def get_inference_catalog_route(request: Request) -> InferenceCatalogResponse:
+    require_user(request)
+    return list_inference_catalog()
+
+
+@app.get("/api/inference/settings", response_model=InferenceSettings)
+async def get_inference_settings_route(request: Request) -> InferenceSettings:
+    user = require_user(request)
+    return ensure_inference_settings(str(user["id"]))
+
+
+@app.put("/api/inference/settings", response_model=InferenceSettings)
+async def put_inference_settings_route(
+    payload: InferenceSettingsUpdate, request: Request
+) -> InferenceSettings:
+    user = require_user(request)
+    settings = update_inference_settings(str(user["id"]), payload)
+    await _sync_inference_bridge_for_user(user, refresh_running=True)
+    return settings
+
+
+@app.get("/api/inference/usage", response_model=InferenceUsageResponse)
+async def get_inference_usage_route(request: Request) -> InferenceUsageResponse:
+    user = require_user(request)
+    return inference_usage(str(user["id"]))
 
 
 @app.get("/api/artifacts", response_model=ArtifactListResponse)
@@ -694,6 +737,22 @@ async def _sync_composio_bridge_for_user(user: dict, *, refresh_running: bool = 
     return accounts, bridge
 
 
+async def _sync_inference_bridge_for_user(user: dict, *, refresh_running: bool = False):
+    runtime = get_runtime_for_user(user)
+    bridge = sync_inference_runtime_bridge(runtime, str(user["id"]))
+    runtime_env = runtime_env_for_user(str(user["id"]))
+    runtime_env_changed = (
+        bridge.enabled
+        and runtime.status == "running"
+        and any(not runtime_container_env_matches(runtime, key, value) for key, value in runtime_env.items())
+    )
+
+    if runtime.status == "running" and (runtime_env_changed or (refresh_running and bridge.changed)):
+        await restart_runtime(runtime, extra_env=runtime_env)
+
+    return bridge
+
+
 @app.get("/api/composio/connections", response_model=ComposioConnectionsResponse)
 async def list_composio_connections_route(request: Request) -> ComposioConnectionsResponse:
     user = require_user(request)
@@ -833,7 +892,8 @@ def _proxy_headers(request: Request, token: str) -> dict[str, str]:
 async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     user = require_user(request)
     await _sync_composio_bridge_for_user(user)
-    runtime = await start_runtime(get_runtime_for_user(user))
+    await _sync_inference_bridge_for_user(user)
+    runtime = await start_runtime(get_runtime_for_user(user), extra_env=runtime_env_for_user(str(user["id"])))
     if not runtime.dashboard_url:
         raise HTTPException(status_code=503, detail="Runtime dashboard is not ready.")
 
@@ -873,7 +933,8 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
         return
 
     await _sync_composio_bridge_for_user(user)
-    runtime = await start_runtime(get_runtime_for_user(user))
+    await _sync_inference_bridge_for_user(user)
+    runtime = await start_runtime(get_runtime_for_user(user), extra_env=runtime_env_for_user(str(user["id"])))
     if not runtime.dashboard_url:
         await websocket.close(code=1011)
         return

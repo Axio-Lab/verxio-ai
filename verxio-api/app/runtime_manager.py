@@ -127,7 +127,7 @@ async def runtime_health(runtime: RuntimeInstance) -> tuple[bool, str]:
         return False, f"Hermes dashboard is not reachable: {exc}"
 
 
-async def start_runtime(runtime: RuntimeInstance) -> RuntimeInstance:
+async def start_runtime(runtime: RuntimeInstance, extra_env: dict[str, str] | None = None) -> RuntimeInstance:
     ensure_runtime_directories(runtime)
 
     current = _run_docker(["inspect", "-f", "{{.State.Running}}", _container_name(runtime)])
@@ -186,6 +186,9 @@ async def start_runtime(runtime: RuntimeInstance) -> RuntimeInstance:
     composio_api_key = os.getenv("COMPOSIO_API_KEY", "").strip()
     if composio_api_key:
         cmd.extend(["-e", f"COMPOSIO_API_KEY={composio_api_key}"])
+    for key, value in sorted((extra_env or {}).items()):
+        if key and value:
+            cmd.extend(["-e", f"{key}={value}"])
 
     cmd.extend([image, "gateway", "run"])
 
@@ -222,9 +225,9 @@ def stop_runtime(runtime: RuntimeInstance) -> RuntimeInstance:
     return save_runtime(runtime, status="stopped", last_error=None)
 
 
-async def restart_runtime(runtime: RuntimeInstance) -> RuntimeInstance:
+async def restart_runtime(runtime: RuntimeInstance, extra_env: dict[str, str] | None = None) -> RuntimeInstance:
     stopped = stop_runtime(runtime)
-    return await start_runtime(stopped)
+    return await start_runtime(stopped, extra_env=extra_env)
 
 
 def _merge_workspace_tree(source: Path, destination: Path) -> None:

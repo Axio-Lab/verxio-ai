@@ -6,7 +6,7 @@ from subprocess import CompletedProcess
 import pytest
 from fastapi.testclient import TestClient
 
-from app import composio_catalog, control_plane, db, emailer, main
+from app import composio_catalog, control_plane, db, emailer, inference, main
 from app.auth import SESSION_COOKIE
 from app.main import app
 from app.models import ComposioConnectedAccount, ComposioToolBridgeStatus
@@ -135,6 +135,83 @@ def test_protected_composio_endpoint_rejects_anonymous_users(client):
     response = client.get("/api/composio/connections/apps")
 
     assert response.status_code == 401
+
+
+def test_inference_catalog_defaults_to_verxio_gpt(client):
+    _payload, token = signup(client, "inference-catalog@example.com")
+
+    response = client.get("/api/inference/catalog", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["defaultModelId"] == "verxio-gpt"
+    default_model = next(model for model in body["models"] if model["id"] == "verxio-gpt")
+    assert default_model["default"] is True
+    assert default_model["providerSlug"] == "openai-api"
+    assert default_model["displayName"] == "Verxio GPT"
+    assert "OPENAI_API_KEY" in default_model["requiredEnvVars"]
+
+
+def test_inference_settings_are_hosted_verxio_gpt_by_default(client):
+    _payload, token = signup(client, "inference-settings@example.com")
+
+    response = client.get("/api/inference/settings", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+
+    assert response.status_code == 200
+    assert response.json()["mode"] == "hosted"
+    assert response.json()["defaultModelId"] == "verxio-gpt"
+
+
+def test_inference_bridge_writes_hosted_verxio_gpt_model_config(client, monkeypatch):
+    monkeypatch.setenv("VERXIO_HOSTED_OPENAI_API_KEY", "verxio-openai-key")
+    monkeypatch.setenv("VERXIO_HOSTED_GPT_MODEL", "gpt-5.5")
+    payload, _token = signup(client, "inference-bridge@example.com")
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    runtime = control_plane.runtime_from_row(runtime_row)
+
+    status = inference.sync_inference_runtime_bridge(runtime, payload["user"]["id"])
+
+    assert status.configured is True
+    assert status.enabled is True
+    assert status.changed is True
+    assert status.defaultModelId == "verxio-gpt"
+    config = (Path(runtime.hermes_home_path) / "config.yaml").read_text(encoding="utf-8")
+    assert "provider: openai-api" in config
+    assert "default: gpt-5.5" in config
+    state = Path(runtime.hermes_home_path) / ".verxio" / "inference-runtime-bridge.json"
+    assert state.is_file()
+    assert "verxio-openai-key" not in state.read_text(encoding="utf-8")
+
+
+def test_inference_bridge_byok_preserves_hermes_provider_settings(client, monkeypatch):
+    monkeypatch.setenv("VERXIO_HOSTED_OPENAI_API_KEY", "verxio-openai-key")
+    payload, token = signup(client, "inference-byok@example.com")
+    response = client.put(
+        "/api/inference/settings",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"mode": "byok"},
+    )
+    assert response.status_code == 200
+
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    runtime = control_plane.runtime_from_row(runtime_row)
+    before = (Path(runtime.hermes_home_path) / "config.yaml").read_text(encoding="utf-8")
+
+    status = inference.sync_inference_runtime_bridge(runtime, payload["user"]["id"])
+
+    assert status.enabled is False
+    assert status.message == "BYOK mode uses Hermes provider settings."
+    after = (Path(runtime.hermes_home_path) / "config.yaml").read_text(encoding="utf-8")
+    assert after == before
+    assert inference.runtime_env_for_user(payload["user"]["id"]) == {}
 
 
 def test_signup_creates_user_workspace_agent_and_runtime(client):
