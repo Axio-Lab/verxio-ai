@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import mimetypes
 import os
 import secrets
@@ -36,6 +37,10 @@ def _run_docker(args: list[str]) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
     )
+
+
+async def _run_docker_async(args: list[str]) -> subprocess.CompletedProcess[str]:
+    return await asyncio.to_thread(_run_docker, args)
 
 
 def _container_name(runtime: RuntimeInstance) -> str:
@@ -130,7 +135,7 @@ async def runtime_health(runtime: RuntimeInstance) -> tuple[bool, str]:
 async def start_runtime(runtime: RuntimeInstance, extra_env: dict[str, str] | None = None) -> RuntimeInstance:
     ensure_runtime_directories(runtime)
 
-    current = _run_docker(["inspect", "-f", "{{.State.Running}}", _container_name(runtime)])
+    current = await _run_docker_async(["inspect", "-f", "{{.State.Running}}", _container_name(runtime)])
     if current.returncode == 0 and current.stdout.strip() == "true":
         connected, detail = await runtime_health(runtime)
         return save_runtime(
@@ -141,7 +146,7 @@ async def start_runtime(runtime: RuntimeInstance, extra_env: dict[str, str] | No
         )
 
     if current.returncode == 0:
-        _run_docker(["rm", _container_name(runtime)])
+        await _run_docker_async(["rm", _container_name(runtime)])
 
     port = _dashboard_port(runtime)
     token_row = db.fetch_one("SELECT dashboard_token FROM runtime_instances WHERE id = ?", (runtime.id,))
@@ -192,7 +197,7 @@ async def start_runtime(runtime: RuntimeInstance, extra_env: dict[str, str] | No
 
     cmd.extend([image, "gateway", "run"])
 
-    result = _run_docker(cmd)
+    result = await _run_docker_async(cmd)
     if result.returncode != 0:
         return save_runtime(
             runtime,

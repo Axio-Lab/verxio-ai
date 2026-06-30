@@ -149,6 +149,20 @@ MODEL_CATALOG: tuple[HostedModelDefinition, ...] = (
         output_per_million=2.5,
         capabilities=(("coding", "Coding"), ("reasoning", "Reasoning"), ("tools", "Tool use")),
     ),
+    HostedModelDefinition(
+        id="verxio-qwen",
+        display_name="Verxio Qwen",
+        description="Hosted Qwen Cloud through Alibaba DashScope for fast coding and long-context agent work.",
+        provider_slug="alibaba",
+        upstream_model_id=_env_override("VERXIO_HOSTED_QWEN_MODEL", "qwen3.6-plus"),
+        hosted_secret_env=("VERXIO_HOSTED_QWEN_API_KEY", "VERXIO_DASHSCOPE_API_KEY"),
+        runtime_env_var="DASHSCOPE_API_KEY",
+        byok_env_vars=("DASHSCOPE_API_KEY",),
+        tier="balanced",
+        input_per_million=0.8,
+        output_per_million=2.4,
+        capabilities=(("coding", "Coding"), ("long_context", "Long context"), ("tools", "Tool use")),
+    ),
 )
 
 

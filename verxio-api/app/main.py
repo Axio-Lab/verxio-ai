@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode
@@ -925,26 +926,47 @@ def _ws_target_url(runtime_url: str, path: str, query: str, token: str) -> str:
     return f"{scheme}://{parsed.host}:{parsed.port or 80}/{path}?{urlencode(params)}"
 
 
+logger = logging.getLogger(__name__)
+
+
+async def _safe_websocket_close(websocket: WebSocket, code: int) -> None:
+    try:
+        await websocket.close(code=code)
+    except RuntimeError:
+        # Starlette rejects a second close after the socket is already gone.
+        pass
+
+
 @app.websocket("/api/runtime/dashboard/ws/{path:path}")
 async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
     user = get_current_user(websocket)  # type: ignore[arg-type]
     if not user:
-        await websocket.close(code=4401)
+        await _safe_websocket_close(websocket, 4401)
         return
 
-    await _sync_composio_bridge_for_user(user)
-    await _sync_inference_bridge_for_user(user)
-    runtime = await start_runtime(get_runtime_for_user(user), extra_env=runtime_env_for_user(str(user["id"])))
-    if not runtime.dashboard_url:
-        await websocket.close(code=1011)
-        return
-
-    token = _runtime_dashboard_token(runtime.id)
-    target = _ws_target_url(runtime.dashboard_url, path, websocket.url.query, token)
+    # Finish the browser handshake before docker/runtime prep — nginx and the
+    # renderer both time out if accept() waits on start_runtime + bridge sync.
     await websocket.accept()
 
     try:
-        async with websockets.connect(target, additional_headers={"X-Hermes-Session-Token": token}) as upstream:
+        await _sync_composio_bridge_for_user(user)
+        await _sync_inference_bridge_for_user(user)
+        runtime = await start_runtime(
+            get_runtime_for_user(user),
+            extra_env=runtime_env_for_user(str(user["id"])),
+        )
+        if not runtime.dashboard_url:
+            await _safe_websocket_close(websocket, 1011)
+            return
+
+        token = _runtime_dashboard_token(runtime.id)
+        target = _ws_target_url(runtime.dashboard_url, path, websocket.url.query, token)
+
+        async with websockets.connect(
+            target,
+            additional_headers={"X-Hermes-Session-Token": token},
+            open_timeout=15,
+        ) as upstream:
             async def client_to_runtime() -> None:
                 while True:
                     message = await websocket.receive()
@@ -967,7 +989,8 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
 
             await asyncio.gather(client_to_runtime(), runtime_to_client())
     except Exception:
-        await websocket.close(code=1011)
+        logger.exception("Runtime dashboard websocket proxy failed for path=%s", path)
+        await _safe_websocket_close(websocket, 1011)
 
 
 def _find_run(run_id: str) -> RunRecord:

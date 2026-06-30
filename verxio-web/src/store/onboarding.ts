@@ -14,6 +14,7 @@ import {
 } from '@/hermes'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
 import { evaluateRuntimeReadiness, type RuntimeReadinessResult } from '@/lib/runtime-readiness'
+import { verxioApiEnabled } from '@/lib/verxio-api'
 import { notify, notifyError } from '@/store/notifications'
 import type { ModelOptionProvider, OAuthProvider, OAuthStartResponse } from '@/types/hermes'
 
@@ -499,6 +500,13 @@ export async function refreshOnboarding(ctx: OnboardingContext) {
     await refreshProviders()
 
     return false
+  }
+
+  if (verxioApiEnabled()) {
+    completeDesktopOnboarding()
+    ctx.onCompleted?.()
+
+    return true
   }
 
   const runtime = await checkRuntime(ctx)

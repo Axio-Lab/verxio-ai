@@ -21,6 +21,7 @@ import { DEFAULT_LIST_PAGE_SIZE, usePaginatedList } from '../hooks/use-paginated
 
 import { isKeyVar, ProviderKeyRows } from './credential-key-ui'
 import { SettingsCategoryHeading, useEnvCredentials } from './env-credentials'
+import { InferenceProviderSettings } from './inference-provider-settings'
 import { providerGroup, providerMeta, providerPriority } from './helpers'
 import { LoadingState, SettingsContent } from './primitives'
 
@@ -114,7 +115,7 @@ function OAuthPicker({ onWantApiKey, providers }: { onWantApiKey: () => void; pr
       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
         <SettingsCategoryHeading icon={KeyRound} title={p.connectAccount} />
         <Button
-          className="text-[length:var(--conversation-caption-font-size)]"
+          className="text-(length:--conversation-caption-font-size)"
           onClick={onWantApiKey}
           size="inline"
           type="button"
@@ -123,13 +124,13 @@ function OAuthPicker({ onWantApiKey, providers }: { onWantApiKey: () => void; pr
           {p.haveApiKey}
         </Button>
       </div>
-      <p className="-mt-2 mb-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
+      <p className="-mt-2 mb-1 text-(length:--conversation-caption-font-size) leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
         {p.intro}
       </p>
       {featured && <FeaturedProviderRow onSelect={select} provider={featured} />}
       {connected.length > 0 && (
         <>
-          <p className="mt-1 px-0.5 text-[length:var(--conversation-caption-font-size)] font-medium text-(--ui-text-tertiary)">
+          <p className="mt-1 px-0.5 text-(length:--conversation-caption-font-size) font-medium text-(--ui-text-tertiary)">
             {p.connected}
           </p>
           {connected.map(p => (
@@ -147,7 +148,7 @@ function OAuthPicker({ onWantApiKey, providers }: { onWantApiKey: () => void; pr
       )}
       {collapsible && (
         <Button
-          className="py-1 text-[length:var(--conversation-caption-font-size)]"
+          className="py-1 text-(length:--conversation-caption-font-size)"
           onClick={() => setShowAll(v => !v)}
           size="inline"
           type="button"
@@ -165,7 +166,7 @@ function NoProviderKeys() {
   const { t } = useI18n()
 
   return (
-    <div className="grid min-h-32 place-items-center px-4 py-8 text-center text-[length:var(--conversation-caption-font-size)] text-muted-foreground">
+    <div className="grid min-h-32 place-items-center px-4 py-8 text-center text-(length:--conversation-caption-font-size) text-muted-foreground">
       {t.settings.providers.noProviderKeys}
     </div>
   )
@@ -255,6 +256,7 @@ export function ProvidersSettings({ onViewChange, view }: ProvidersSettingsProps
 
   return (
     <SettingsContent>
+      <InferenceProviderSettings onOpenProviderKeys={() => onViewChange('keys')} />
       <OAuthPicker onWantApiKey={() => onViewChange('keys')} providers={oauthProviders} />
     </SettingsContent>
   )

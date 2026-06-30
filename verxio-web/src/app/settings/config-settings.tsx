@@ -26,6 +26,16 @@ import { ModelSettings } from './model-settings'
 import { EmptyState, ListRow, LoadingState, SettingsContent } from './primitives'
 import { ProviderConfigPanel } from './provider-config-panel'
 
+function isAbortError(err: unknown): boolean {
+  if (err instanceof DOMException && err.name === 'AbortError') {
+    return true
+  }
+
+  const message = err instanceof Error ? err.message : String(err)
+
+  return /aborted|aborterror/i.test(message)
+}
+
 function ConfigField({
   schemaKey,
   schema,
@@ -225,7 +235,11 @@ export function ConfigSettings({
         setDefaults(d)
         setSchema(s.fields)
       })
-      .catch(err => notifyError(err, c.failedLoad))
+      .catch(err => {
+        if (!cancelled && !isAbortError(err)) {
+          notifyError(err, c.failedLoad)
+        }
+      })
 
     return () => void (cancelled = true)
   }, [c.failedLoad])

@@ -150,6 +150,10 @@ def test_inference_catalog_defaults_to_verxio_gpt(client):
     assert default_model["providerSlug"] == "openai-api"
     assert default_model["displayName"] == "Verxio GPT"
     assert "OPENAI_API_KEY" in default_model["requiredEnvVars"]
+    qwen_model = next(model for model in body["models"] if model["id"] == "verxio-qwen")
+    assert qwen_model["providerSlug"] == "alibaba"
+    assert qwen_model["upstreamModelId"] == "qwen3.6-plus"
+    assert "DASHSCOPE_API_KEY" in qwen_model["requiredEnvVars"]
 
 
 def test_inference_settings_are_hosted_verxio_gpt_by_default(client):
@@ -185,6 +189,36 @@ def test_inference_bridge_writes_hosted_verxio_gpt_model_config(client, monkeypa
     state = Path(runtime.hermes_home_path) / ".verxio" / "inference-runtime-bridge.json"
     assert state.is_file()
     assert "verxio-openai-key" not in state.read_text(encoding="utf-8")
+
+
+def test_inference_bridge_writes_hosted_verxio_qwen_model_config(client, monkeypatch):
+    monkeypatch.setenv("VERXIO_HOSTED_QWEN_API_KEY", "verxio-qwen-key")
+    payload, token = signup(client, "inference-qwen@example.com")
+    response = client.put(
+        "/api/inference/settings",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"mode": "hosted", "defaultModelId": "verxio-qwen"},
+    )
+    assert response.status_code == 200
+
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    runtime = control_plane.runtime_from_row(runtime_row)
+
+    status = inference.sync_inference_runtime_bridge(runtime, payload["user"]["id"])
+
+    assert status.configured is True
+    assert status.enabled is True
+    assert status.defaultModelId == "verxio-qwen"
+    assert inference.runtime_env_for_user(payload["user"]["id"]) == {"DASHSCOPE_API_KEY": "verxio-qwen-key"}
+    config = (Path(runtime.hermes_home_path) / "config.yaml").read_text(encoding="utf-8")
+    assert "provider: alibaba" in config
+    assert "default: qwen3.6-plus" in config
+    state = Path(runtime.hermes_home_path) / ".verxio" / "inference-runtime-bridge.json"
+    assert "verxio-qwen-key" not in state.read_text(encoding="utf-8")
 
 
 def test_inference_bridge_byok_preserves_hermes_provider_settings(client, monkeypatch):

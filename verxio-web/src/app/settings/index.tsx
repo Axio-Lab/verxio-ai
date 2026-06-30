@@ -1,5 +1,6 @@
 import { IconDownload, IconRefresh, IconUpload } from '@tabler/icons-react'
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 import { Tip } from '@/components/ui/tooltip'
 import { getHermesConfigDefaults, getHermesConfigRecord, saveHermesConfig } from '@/hermes'
@@ -38,11 +39,22 @@ const SETTINGS_VIEWS: readonly SettingsViewId[] = [
 
 export function SettingsView({ gateway, onClose, onConfigSaved, onMainModelChanged }: SettingsPageProps) {
   const { t } = useI18n()
+  const { hash, pathname, search } = useLocation()
+  const navigate = useNavigate()
   const [activeView, setActiveView] = useRouteEnumParam('tab', SETTINGS_VIEWS, 'config:model' as SettingsViewId)
   // Providers subnav (Accounts vs API keys) lives in its own param so each
   // sub-view is deep-linkable and survives a refresh.
   const [providerView, setProviderView] = useRouteEnumParam<ProviderView>('pview', PROVIDER_VIEWS, 'accounts')
   const [keysView, setKeysView] = useRouteEnumParam<KeysView>('kview', KEYS_VIEWS, 'tools')
+
+  useEffect(() => {
+    const params = new URLSearchParams(search)
+
+    if (!params.has('tab') && params.has('pview')) {
+      params.set('tab', 'providers')
+      navigate({ hash, pathname, search: `?${params.toString()}` }, { replace: true })
+    }
+  }, [hash, navigate, pathname, search])
 
   const openProviderView = (view: ProviderView) => {
     setActiveView('providers')
