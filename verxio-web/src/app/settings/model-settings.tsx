@@ -14,8 +14,17 @@ import {
 } from '@/hermes'
 import type { AuxiliaryModelsResponse, ModelOptionProvider, StaleAuxAssignment } from '@/hermes'
 import { useI18n } from '@/i18n'
-import { AlertTriangle, Cpu, Loader2 } from '@/lib/icons'
+import { AlertTriangle, Cpu, KeyRound, Loader2, Sparkles } from '@/lib/icons'
 import { cn } from '@/lib/utils'
+import {
+  getInferenceCatalog,
+  getInferenceUsage,
+  updateInferenceSettings,
+  verxioApiEnabled,
+  type VerxioInferenceCatalogResponse,
+  type VerxioInferenceModel,
+  type VerxioInferenceUsageResponse
+} from '@/lib/verxio-api'
 import { startManualLocalEndpoint, startManualProviderOAuth } from '@/store/onboarding'
 
 import { CONTROL_TEXT } from './constants'
@@ -48,6 +57,14 @@ const AUX_TASKS: readonly AuxTaskMeta[] = [
 ]
 
 const NO_PROVIDERS: readonly ModelOptionProvider[] = [{ name: '—', slug: '', models: [] }]
+
+function formatUsd(value: number): string {
+  return new Intl.NumberFormat(undefined, {
+    currency: 'USD',
+    maximumFractionDigits: value >= 10 ? 0 : 2,
+    style: 'currency'
+  }).format(value)
+}
 
 interface StaleAuxWarningProps {
   applying: boolean
@@ -108,16 +125,22 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
   // place — mirrors the onboarding ApiKeyForm but scoped to the model picker.
   const [apiKeyDraft, setApiKeyDraft] = useState('')
   const [activating, setActivating] = useState(false)
+  const [inferenceCatalog, setInferenceCatalog] = useState<VerxioInferenceCatalogResponse | null>(null)
+  const [inferenceUsage, setInferenceUsage] = useState<VerxioInferenceUsageResponse | null>(null)
+  const [inferenceApplying, setInferenceApplying] = useState(false)
+  const [inferenceError, setInferenceError] = useState('')
 
   const refresh = useCallback(async () => {
     setLoading(true)
     setError('')
 
     try {
-      const [modelInfo, modelOptions, auxiliaryModels] = await Promise.all([
+      const [modelInfo, modelOptions, auxiliaryModels, catalog, usage] = await Promise.all([
         getGlobalModelInfo(),
         getGlobalModelOptions(),
-        getAuxiliaryModels()
+        getAuxiliaryModels(),
+        verxioApiEnabled() ? getInferenceCatalog().catch(() => null) : Promise.resolve(null),
+        verxioApiEnabled() ? getInferenceUsage().catch(() => null) : Promise.resolve(null)
       ])
 
       setMainModel({ model: modelInfo.model, provider: modelInfo.provider })
@@ -125,6 +148,8 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
       setSelectedProvider(prev => prev || modelInfo.provider)
       setSelectedModel(prev => prev || modelInfo.model)
       setAuxiliary(auxiliaryModels)
+      setInferenceCatalog(catalog)
+      setInferenceUsage(usage)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -144,6 +169,13 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
   )
 
   const selectedProviderModels = selectedProviderRow?.models ?? []
+  const hostedModels = inferenceCatalog?.models ?? []
+  const inferenceSettings = inferenceUsage?.settings
+  const selectedHostedModel = useMemo<VerxioInferenceModel | null>(() => {
+    const modelId = inferenceSettings?.defaultModelId || inferenceCatalog?.defaultModelId
+
+    return hostedModels.find(model => model.id === modelId) ?? hostedModels[0] ?? null
+  }, [hostedModels, inferenceCatalog?.defaultModelId, inferenceSettings?.defaultModelId])
 
   // An unconfigured provider was picked: no credentials yet, so there are no
   // models to choose. `api_key` providers can be activated inline (paste key);
@@ -259,6 +291,31 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
     }
   }, [selectedProviderRow])
 
+  const applyInferenceMode = useCallback(
+    async (mode: 'hosted' | 'byok', defaultModelId = inferenceSettings?.defaultModelId) => {
+      setInferenceApplying(true)
+      setInferenceError('')
+
+      try {
+        const settings = await updateInferenceSettings({ defaultModelId, mode })
+        const usage = await getInferenceUsage()
+        setInferenceUsage({ ...usage, settings })
+        if (mode === 'hosted') {
+          const model = hostedModels.find(item => item.id === settings.defaultModelId)
+          if (model) {
+            setSelectedProvider(model.providerSlug)
+            setSelectedModel(model.upstreamModelId)
+          }
+        }
+      } catch (err) {
+        setInferenceError(err instanceof Error ? err.message : String(err))
+      } finally {
+        setInferenceApplying(false)
+      }
+    },
+    [hostedModels, inferenceSettings?.defaultModelId]
+  )
+
   const applyMainModel = useCallback(async () => {
     if (!selectedProvider || !selectedModel) {
       return
@@ -369,6 +426,108 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
 
   return (
     <div className="grid gap-6">
+      {inferenceCatalog && inferenceUsage && (
+        <section>
+          <div className="mb-2.5 flex items-center justify-between gap-3">
+            <SectionHeading
+              icon={Sparkles}
+              meta={inferenceSettings?.mode === 'hosted' ? 'Hosted' : 'BYOK'}
+              title="Verxio model provider"
+            />
+            <div className="flex items-center gap-1 rounded-md border border-border/60 p-1">
+              <Button
+                aria-pressed={inferenceSettings?.mode === 'hosted'}
+                disabled={inferenceApplying}
+                onClick={() => void applyInferenceMode('hosted')}
+                size="sm"
+                type="button"
+                variant={inferenceSettings?.mode === 'hosted' ? 'default' : 'ghost'}
+              >
+                Verxio Hosted
+              </Button>
+              <Button
+                aria-pressed={inferenceSettings?.mode === 'byok'}
+                disabled={inferenceApplying}
+                onClick={() => void applyInferenceMode('byok')}
+                size="sm"
+                type="button"
+                variant={inferenceSettings?.mode === 'byok' ? 'default' : 'ghost'}
+              >
+                Bring Your Own Key
+              </Button>
+            </div>
+          </div>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Verxio Hosted uses Verxio-managed provider access and monthly hosted credit. BYOK keeps using Hermes
+            provider API keys from the Providers settings.
+          </p>
+          <div className="grid gap-1">
+            <ListRow
+              action={
+                <Select
+                  disabled={inferenceApplying || inferenceSettings?.mode !== 'hosted'}
+                  onValueChange={value => void applyInferenceMode('hosted', value)}
+                  value={selectedHostedModel?.id ?? inferenceCatalog.defaultModelId}
+                >
+                  <SelectTrigger className={cn('min-w-56', CONTROL_TEXT)}>
+                    <SelectValue placeholder="Hosted model" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {hostedModels.map(model => (
+                      <SelectItem disabled={!model.hostedAvailable} key={model.id} value={model.id}>
+                        {model.displayName}
+                        {!model.hostedAvailable ? ' · unavailable' : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              }
+              description={
+                selectedHostedModel
+                  ? `${selectedHostedModel.description} Routes through Hermes provider ${selectedHostedModel.providerSlug}.`
+                  : 'Verxio GPT is the default hosted model for new users and runtimes.'
+              }
+              title={
+                <span className="flex flex-wrap items-baseline gap-2">
+                  {selectedHostedModel?.displayName ?? 'Verxio GPT'}
+                  <Pill tone="primary">Default hosted</Pill>
+                  {selectedHostedModel && <Pill>{selectedHostedModel.tier}</Pill>}
+                </span>
+              }
+            />
+            <ListRow
+              action={
+                <div className="text-right text-xs">
+                  <div className="font-medium text-foreground">
+                    {formatUsd(inferenceUsage.usage.remainingUsd)} remaining
+                  </div>
+                  <div className="text-muted-foreground">
+                    {formatUsd(inferenceUsage.usage.usedUsd)} used of {formatUsd(inferenceUsage.usage.monthlyCreditUsd)}
+                  </div>
+                </div>
+              }
+              description="Hosted usage is tracked by Verxio. BYOK calls are paid directly to the provider and do not deduct hosted credit."
+              title="Monthly hosted credit"
+            />
+            <ListRow
+              action={
+                <Button onClick={startProviderSetup} size="sm" type="button" variant="textStrong">
+                  Open provider setup
+                </Button>
+              }
+              description="Paste Anthropic, OpenAI, Gemini, GLM, or Kimi keys in Hermes provider settings. Verxio does not copy those keys into its database."
+              title={
+                <span className="flex items-baseline gap-2">
+                  Bring Your Own Key
+                  <KeyRound className="size-3.5 text-muted-foreground" />
+                </span>
+              }
+            />
+          </div>
+          {inferenceError && <div className="mt-2 text-xs text-destructive">{inferenceError}</div>}
+        </section>
+      )}
+
       <section>
         <p className="mb-3 text-xs text-muted-foreground">{m.appliesDesc}</p>
         <div className="flex flex-wrap items-center gap-2">

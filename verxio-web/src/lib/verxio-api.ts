@@ -198,6 +198,61 @@ export interface ComposioCompleteConnectionResponse {
   status: string
 }
 
+export type VerxioInferenceMode = 'hosted' | 'byok'
+
+export interface VerxioInferenceCapability {
+  key: string
+  label: string
+}
+
+export interface VerxioInferencePricing {
+  inputPerMillion: number
+  outputPerMillion: number
+  currency: string
+}
+
+export interface VerxioInferenceModel {
+  id: string
+  displayName: string
+  description: string
+  providerSlug: string
+  upstreamModelId: string
+  requiredEnvVars: string[]
+  hostedAvailable: boolean
+  byokAvailable: boolean
+  tier: string
+  capabilities: VerxioInferenceCapability[]
+  pricing: VerxioInferencePricing
+  default: boolean
+}
+
+export interface VerxioInferenceCatalogResponse {
+  models: VerxioInferenceModel[]
+  defaultModelId: string
+}
+
+export interface VerxioInferenceSettings {
+  mode: VerxioInferenceMode
+  defaultModelId: string
+  monthlyCreditUsd: number
+  overageEnabled: boolean
+  spendingLimitUsd: number | null
+}
+
+export interface VerxioInferenceUsageSummary {
+  periodStart: string | null
+  periodEnd: string | null
+  monthlyCreditUsd: number
+  usedUsd: number
+  remainingUsd: number
+  events: number
+}
+
+export interface VerxioInferenceUsageResponse {
+  settings: VerxioInferenceSettings
+  usage: VerxioInferenceUsageSummary
+}
+
 export type PulseChannelType = 'instagram' | 'messenger' | 'whatsapp' | 'tiktok' | 'linkedin'
 export type PulseConversationState = 'automated' | 'human' | 'paused'
 
@@ -638,6 +693,30 @@ export function disconnectComposioAccount(accountId: string): Promise<{ message?
   return verxioFetch<{ message?: string }>(`/api/composio/connections/${encodeURIComponent(accountId)}`, {
     method: 'DELETE'
   })
+}
+
+export function getInferenceCatalog(): Promise<VerxioInferenceCatalogResponse> {
+  return verxioFetch<VerxioInferenceCatalogResponse>('/api/inference/catalog')
+}
+
+export function getInferenceSettings(): Promise<VerxioInferenceSettings> {
+  return verxioFetch<VerxioInferenceSettings>('/api/inference/settings')
+}
+
+export function updateInferenceSettings(input: {
+  defaultModelId?: string
+  mode?: VerxioInferenceMode
+  overageEnabled?: boolean
+  spendingLimitUsd?: number | null
+}): Promise<VerxioInferenceSettings> {
+  return verxioFetch<VerxioInferenceSettings>('/api/inference/settings', {
+    body: JSON.stringify(input),
+    method: 'PUT'
+  })
+}
+
+export function getInferenceUsage(): Promise<VerxioInferenceUsageResponse> {
+  return verxioFetch<VerxioInferenceUsageResponse>('/api/inference/usage')
 }
 
 export function listPulseChannels(): Promise<PulseChannelsResponse> {
