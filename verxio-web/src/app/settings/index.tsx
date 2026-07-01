@@ -37,7 +37,13 @@ const SETTINGS_VIEWS: readonly SettingsViewId[] = [
   'about'
 ]
 
-export function SettingsView({ gateway, onClose, onConfigSaved, onMainModelChanged }: SettingsPageProps) {
+export function SettingsView({
+  gateway,
+  onClose,
+  onConfigSaved,
+  onMainModelChanged,
+  requestGateway
+}: SettingsPageProps) {
   const { t } = useI18n()
   const { hash, pathname, search } = useLocation()
   const navigate = useNavigate()
@@ -240,7 +246,7 @@ export function SettingsView({ gateway, onClose, onConfigSaved, onMainModelChang
               onMainModelChanged={onMainModelChanged}
             />
           ) : activeView === 'providers' ? (
-            <ProvidersSettings onViewChange={setProviderView} view={providerView} />
+            <ProvidersSettings onViewChange={setProviderView} requestGateway={requestGateway} view={providerView} />
           ) : activeView === 'keys' ? (
             <KeysSettings view={keysView} />
           ) : activeView === 'mcp' ? (

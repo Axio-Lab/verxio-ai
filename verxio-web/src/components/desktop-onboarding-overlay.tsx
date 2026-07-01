@@ -298,7 +298,9 @@ export function DesktopOnboardingOverlay({ enabled, onCompleted, requestGateway 
   // check (configured === false) before showing the picker.
   const ready = onboarding.manual || (enabled && onboarding.configured === false)
   const pendingHandoff = Boolean(peekPendingProviderOAuth()) && flow.status === 'idle'
-  const showPicker = !pendingHandoff && (flow.status === 'idle' || flow.status === 'success')
+  // Never flash the full picker during an in-flight or just-finished sign-in —
+  // `success` must stay on FlowPanel ("Connecting…") until manual mode closes.
+  const showPicker = !pendingHandoff && flow.status === 'idle'
   // The final "you're in" screen drops the card chrome and floats centered on
   // the surface — same bare, cinematic treatment as the connecting overlay.
   const bare = ready && !showPicker && flow.status === 'confirming_model'

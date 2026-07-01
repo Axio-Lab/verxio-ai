@@ -748,6 +748,27 @@ export async function copyExternalCommand() {
   await copyAndFlash(flow.provider.cli_command, f => f.status === 'external_pending' && f.provider.id === id)
 }
 
+// Settings → Providers detail page: verify an external/CLI provider after the
+// user ran its command locally, without opening the onboarding overlay.
+export async function verifyExternalProviderFromSettings(
+  provider: OAuthProvider,
+  ctx: OnboardingContext
+): Promise<{ ok: true } | { message: string; ok: false }> {
+  await ctx.requestGateway('reload.env').catch(() => undefined)
+  const runtime = await checkRuntime(ctx)
+
+  if (!runtime.ready) {
+    return {
+      ok: false,
+      message:
+        runtime.reason?.trim() ||
+        `Verxio still cannot reach ${provider.name}. Run \`${provider.cli_command}\` in a terminal first.`
+    }
+  }
+
+  return { ok: true }
+}
+
 export async function recheckExternalSignin(ctx: OnboardingContext) {
   const { flow } = $desktopOnboarding.get()
 

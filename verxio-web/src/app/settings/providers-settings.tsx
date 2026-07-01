@@ -16,9 +16,11 @@ import { ChevronDown, KeyRound } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { oauthProvidersForProduct, usesVerxioConnectAccountPicker } from '@/lib/verxio-oauth-providers'
 import { $desktopOnboarding } from '@/store/onboarding'
+import type { OnboardingContext } from '@/store/onboarding'
 import type { EnvVarInfo, OAuthProvider } from '@/types/hermes'
 
 import { DEFAULT_LIST_PAGE_SIZE, usePaginatedList } from '../hooks/use-paginated-list'
+import { useRouteStringParam } from '../hooks/use-route-string-param'
 
 import { isKeyVar, ProviderKeyRows } from './credential-key-ui'
 import { SettingsCategoryHeading, useEnvCredentials } from './env-credentials'
@@ -184,11 +186,11 @@ function NoProviderKeys() {
   )
 }
 
-export function ProvidersSettings({ onViewChange, view }: ProvidersSettingsProps) {
+export function ProvidersSettings({ onViewChange, requestGateway, view }: ProvidersSettingsProps) {
   const { t } = useI18n()
   const { rowProps, vars } = useEnvCredentials()
   const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([])
-  const [activeProviderId, setActiveProviderId] = useState<null | string>(null)
+  const [activeProviderId, setActiveProviderId] = useRouteStringParam('paccount')
   const [openProvider, setOpenProvider] = useState<null | string>(null)
   // The onboarding overlay owns the OAuth flow. Watch its `manual` flag so we
   // re-read connection state when the user finishes (or dismisses) a sign-in
@@ -283,6 +285,7 @@ export function ProvidersSettings({ onViewChange, view }: ProvidersSettingsProps
           onBack={() => setActiveProviderId(null)}
           onUpdated={refreshOAuthProviders}
           provider={activeProvider}
+          requestGateway={requestGateway}
         />
       ) : (
         <>
@@ -310,5 +313,6 @@ interface ProviderKeyGroup {
 
 interface ProvidersSettingsProps {
   onViewChange: (view: ProviderView) => void
+  requestGateway: OnboardingContext['requestGateway']
   view: ProviderView
 }

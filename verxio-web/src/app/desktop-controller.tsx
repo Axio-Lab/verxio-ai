@@ -702,6 +702,7 @@ export function DesktopController() {
               void refreshCurrentModel()
               void queryClient.invalidateQueries({ queryKey: ['model-options'] })
             }}
+            requestGateway={requestGateway}
           />
         </Suspense>
       )}

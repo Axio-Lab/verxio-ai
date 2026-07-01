@@ -2,6 +2,7 @@ import type { Dispatch, SetStateAction } from 'react'
 
 import type { HermesGateway } from '@/hermes'
 import type { IconComponent } from '@/lib/icons'
+import type { OnboardingContext } from '@/store/onboarding'
 import type { EnvVarInfo } from '@/types/hermes'
 
 export type SettingsView =
@@ -20,6 +21,7 @@ export interface SettingsPageProps {
   onClose: () => void
   onConfigSaved?: () => void
   onMainModelChanged?: (provider: string, model: string) => void
+  requestGateway: OnboardingContext['requestGateway']
 }
 
 export interface ProviderGroup {
