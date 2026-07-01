@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { cn } from '@/lib/utils'
 import { $desktopBoot } from '@/store/boot'
+import { $desktopOnboarding } from '@/store/onboarding'
 import { $gatewayState } from '@/store/session'
 
 // Static, always-legible prefix; only TAIL ever scrambles. Splitting them at
@@ -48,11 +49,16 @@ function scrambledTail(resolvedCount: number): string {
 export function GatewayConnectingOverlay() {
   const gatewayState = useStore($gatewayState)
   const boot = useStore($desktopBoot)
+  const onboarding = useStore($desktopOnboarding)
   const [previewing] = useState(forcedPreview)
   const [tail, setTail] = useState(TAIL)
   const [phase, setPhase] = useState<Phase>('live')
 
   const connecting = gatewayState !== 'open' && !boot.error
+  // Settings → Providers launches manual OAuth on top of the app. Don't
+  // flash the full-screen gateway reconnect overlay over that flow — it reads
+  // like the sign-in failed and the user lands back on the provider page.
+  const manualOAuthActive = onboarding.manual && onboarding.requested
   // Latches once we've actually shown the overlay, so the brief frame where
   // gatewayState flips to "open" (connecting -> false) before the exit phase
   // kicks in doesn't unmount us and cause a flash.
@@ -140,6 +146,10 @@ export function GatewayConnectingOverlay() {
 
   // Boot failed — BootFailureOverlay owns the screen; don't linger behind it.
   if (boot.error && !previewing) {
+    return null
+  }
+
+  if (manualOAuthActive && !previewing) {
     return null
   }
 

@@ -80,6 +80,7 @@ export type OAuthStartResponse =
       auth_url: string
       expires_in: number
       flow: 'loopback'
+      manual_paste?: boolean
       session_id: string
     }
 

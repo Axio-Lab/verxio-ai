@@ -1496,7 +1496,10 @@ export const ja = defineLocale({
     openedBrowser: provider => `${provider} をブラウザーで開きました。`,
     authorizeThere: 'そこで Verxio を承認してください。',
     copyAuthCode: '認証コードをコピーして以下に貼り付けてください。',
+    copyCallbackUrl:
+      'サインイン後、ブラウザのアドレスバーからコールバック URL 全体をコピーして以下に貼り付けてください。',
     pasteAuthCode: '認証コードを貼り付け',
+    pasteCallbackUrl: 'コールバック URL を貼り付け（http://127.0.0.1:56121/callback?...）',
     reopenAuthPage: '認証ページを再度開く',
     autoBrowser: provider =>
       `${provider} をブラウザーで開きました。Verxio をそこで承認すれば自動接続されます。コピーや貼り付けは不要です。`,

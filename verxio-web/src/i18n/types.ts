@@ -1154,7 +1154,9 @@ export interface Translations {
     openedBrowser: (provider: string) => string
     authorizeThere: string
     copyAuthCode: string
+    copyCallbackUrl: string
     pasteAuthCode: string
+    pasteCallbackUrl: string
     reopenAuthPage: string
     autoBrowser: (provider: string) => string
     reopenSignInPage: string

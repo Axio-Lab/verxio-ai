@@ -375,9 +375,12 @@ def sync_inference_runtime_bridge(runtime: RuntimeInstance, user_id: str) -> Inf
         )
 
     config = _read_runtime_config(runtime)
-    model_config = config.get("model")
-    if not isinstance(model_config, dict):
-        model_config = {}
+    raw_model = config.get("model")
+    model_invalid = (
+        not isinstance(raw_model, dict)
+        or not str(raw_model.get("default") or "").strip()
+    )
+    model_config = raw_model if isinstance(raw_model, dict) else {}
     model_config["provider"] = model.provider_slug
     model_config["default"] = upstream_model_id
     config["model"] = model_config
@@ -402,8 +405,8 @@ def sync_inference_runtime_bridge(runtime: RuntimeInstance, user_id: str) -> Inf
             previous_signature = ""
 
     config_changed = previous_signature != signature
-    changed = config_changed or legacy_credentials_cleaned
-    if config_changed:
+    changed = config_changed or legacy_credentials_cleaned or model_invalid
+    if config_changed or model_invalid:
         _write_runtime_config(runtime, config)
         state_path.parent.mkdir(parents=True, exist_ok=True)
         state_path.write_text(

@@ -95,7 +95,12 @@ export function ProviderAccountSetup({ onBack, onUpdated, provider, requestGatew
     setDisconnecting(true)
 
     try {
-      await disconnectOAuthProvider(provider.id)
+      const result = await disconnectOAuthProvider(provider.id)
+
+      if (!result.ok) {
+        throw new Error(copy.failedRemove(title))
+      }
+
       notify({
         durationMs: 3_000,
         kind: 'success',

@@ -1522,7 +1522,9 @@ export const en: Translations = {
     openedBrowser: provider => `We opened ${provider} in your browser.`,
     authorizeThere: 'Authorize Verxio there.',
     copyAuthCode: 'Copy the authorization code and paste it below.',
+    copyCallbackUrl: 'After sign-in, copy the full callback URL from your browser and paste it below.',
     pasteAuthCode: 'Paste authorization code',
+    pasteCallbackUrl: 'Paste callback URL (http://127.0.0.1:56121/callback?...)',
     reopenAuthPage: 'Re-open authorization page',
     autoBrowser: provider =>
       `We opened ${provider} in your browser. Authorize Verxio there and you'll be connected automatically — nothing to copy or paste.`,

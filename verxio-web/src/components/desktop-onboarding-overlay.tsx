@@ -868,18 +868,20 @@ function FlowPanel({
   }
 
   if (flow.status === 'awaiting_user') {
+    const pasteCallback = flow.provider.id === 'xai-oauth'
+
     return (
       <Step title={t.onboarding.signInWith(title)}>
         <ol className="list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
           <li>{t.onboarding.openedBrowser(title)}</li>
           <li>{t.onboarding.authorizeThere}</li>
-          <li>{t.onboarding.copyAuthCode}</li>
+          <li>{pasteCallback ? t.onboarding.copyCallbackUrl : t.onboarding.copyAuthCode}</li>
         </ol>
         <Input
           autoFocus
           onChange={e => setOnboardingCode(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && void submitOnboardingCode(ctx)}
-          placeholder={t.onboarding.pasteAuthCode}
+          placeholder={pasteCallback ? t.onboarding.pasteCallbackUrl : t.onboarding.pasteAuthCode}
           value={flow.code}
         />
         <FlowFooter left={<DocsLink href={flow.start.auth_url}>{t.onboarding.reopenAuthPage}</DocsLink>}>

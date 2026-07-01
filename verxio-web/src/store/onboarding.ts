@@ -318,11 +318,18 @@ async function completeWithModelConfirm(
   // where we intentionally don't validate the key (it blocked too many users).
   ignoreRuntimeGate = false
 ) {
-  await ctx.requestGateway('reload.env').catch(() => undefined)
-  const runtime = await checkRuntime(ctx)
   const isManual = $desktopOnboarding.get().manual
 
-  if (!runtime.ready && !ignoreRuntimeGate) {
+  if (!isManual) {
+    await ctx.requestGateway('reload.env').catch(() => undefined)
+  }
+
+  const runtime =
+    isManual || ignoreRuntimeGate
+      ? ({ checksDisagree: false, ready: true, reason: null, source: 'fallback' } satisfies RuntimeReadinessResult)
+      : await checkRuntime(ctx)
+
+  if (!runtime.ready && !ignoreRuntimeGate && !isManual) {
     onFail(runtime.reason)
 
     return
@@ -337,14 +344,18 @@ async function completeWithModelConfirm(
   }
 
   if (isManual) {
-    try {
-      await setModelAssignment({
-        scope: 'main',
-        provider: defaults.providerSlug,
-        model: defaults.defaultModel
-      })
-    } catch {
-      // Non-fatal for settings-driven connect flows.
+    // Verxio Hosted keeps Qwen as the main inference route. Connecting a
+    // BYOK OAuth account from Settings must not switch (or wipe) the main model.
+    if (!verxioApiEnabled()) {
+      try {
+        await setModelAssignment({
+          scope: 'main',
+          provider: defaults.providerSlug,
+          model: defaults.defaultModel
+        })
+      } catch {
+        // Non-fatal for settings-driven connect flows.
+      }
     }
 
     finishProviderConnection(ctx, providerLabel)
@@ -606,6 +617,22 @@ export async function startProviderOAuth(provider: OAuthProvider, ctx: Onboardin
     }
 
     if (start.flow === 'loopback') {
+      if (start.manual_paste) {
+        setFlow({
+          status: 'awaiting_user',
+          provider,
+          start: {
+            auth_url: start.auth_url,
+            expires_in: start.expires_in,
+            flow: 'pkce',
+            session_id: start.session_id
+          },
+          code: ''
+        })
+
+        return
+      }
+
       // No code to paste: the redirect lands on the backend's loopback
       // listener. Just wait and poll the session until the worker finishes.
       setFlow({ status: 'awaiting_browser', provider, start })
