@@ -295,6 +295,19 @@ async function fetchProviderDefaultModel(
 // onFail receives the runtime-readiness `reason` from checkRuntime so
 // the caller can fold it into a user-facing error — same contract as
 // reloadAndConnect used to have (which this replaces).
+function finishProviderConnection(ctx: OnboardingContext, providerLabel: string) {
+  if ($desktopOnboarding.get().manual) {
+    notifyReady(providerLabel)
+    closeManualOnboarding()
+    ctx.onCompleted?.()
+
+    return
+  }
+
+  completeDesktopOnboarding()
+  ctx.onCompleted?.()
+}
+
 async function completeWithModelConfirm(
   ctx: OnboardingContext,
   providerLabel: string,
@@ -307,6 +320,7 @@ async function completeWithModelConfirm(
 ) {
   await ctx.requestGateway('reload.env').catch(() => undefined)
   const runtime = await checkRuntime(ctx)
+  const isManual = $desktopOnboarding.get().manual
 
   if (!runtime.ready && !ignoreRuntimeGate) {
     onFail(runtime.reason)
@@ -317,10 +331,23 @@ async function completeWithModelConfirm(
   const defaults = await fetchProviderDefaultModel(preferredSlugs)
 
   if (!defaults) {
-    // Couldn't get a sensible default — proceed without confirm step.
-    notifyReady(providerLabel)
-    completeDesktopOnboarding()
-    ctx.onCompleted?.()
+    finishProviderConnection(ctx, providerLabel)
+
+    return
+  }
+
+  if (isManual) {
+    try {
+      await setModelAssignment({
+        scope: 'main',
+        provider: defaults.providerSlug,
+        model: defaults.defaultModel
+      })
+    } catch {
+      // Non-fatal for settings-driven connect flows.
+    }
+
+    finishProviderConnection(ctx, providerLabel)
 
     return
   }
@@ -905,9 +932,5 @@ export function confirmOnboardingModel(ctx: OnboardingContext) {
     return
   }
 
-  // No success toast here: the confirm-model screen already showed "<provider>
-  // connected." notifyReady is reserved for completion paths that SKIP this
-  // screen (no-default fallthrough, local endpoint) so feedback isn't lost.
-  completeDesktopOnboarding()
-  ctx.onCompleted?.()
+  finishProviderConnection(ctx, flow.label)
 }

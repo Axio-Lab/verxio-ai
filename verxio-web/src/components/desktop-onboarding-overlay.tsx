@@ -173,7 +173,7 @@ const PROVIDER_DISPLAY: Record<string, { order: number; title: string }> = {
 
 const assetPath = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`
 
-const providerTitle = (p: OAuthProvider) => PROVIDER_DISPLAY[p.id]?.title ?? p.name
+export const providerTitle = (p: OAuthProvider) => PROVIDER_DISPLAY[p.id]?.title ?? p.name
 const orderOf = (p: OAuthProvider) => PROVIDER_DISPLAY[p.id]?.order ?? 99
 
 export const sortProviders = (providers: OAuthProvider[]) =>
@@ -297,7 +297,8 @@ export function DesktopOnboardingOverlay({ enabled, onCompleted, requestGateway 
   // immediately — no runtime gate needed. Otherwise wait for the readiness
   // check (configured === false) before showing the picker.
   const ready = onboarding.manual || (enabled && onboarding.configured === false)
-  const showPicker = flow.status === 'idle' || flow.status === 'success'
+  const pendingHandoff = Boolean(peekPendingProviderOAuth()) && flow.status === 'idle'
+  const showPicker = !pendingHandoff && (flow.status === 'idle' || flow.status === 'success')
   // The final "you're in" screen drops the card chrome and floats centered on
   // the surface — same bare, cinematic treatment as the connecting overlay.
   const bare = ready && !showPicker && flow.status === 'confirming_model'
@@ -325,7 +326,7 @@ export function DesktopOnboardingOverlay({ enabled, onCompleted, requestGateway 
             : 'translate-y-0 scale-100 opacity-100 blur-0'
         )}
       >
-        {showPicker || !ready ? <Header /> : null}
+        {(showPicker || !ready) && !pendingHandoff ? <Header /> : null}
         {onboarding.manual ? (
           <Button
             aria-label={t.common.close}
@@ -340,7 +341,9 @@ export function DesktopOnboardingOverlay({ enabled, onCompleted, requestGateway 
         <div className="grid gap-3 p-5">
           {reason ? <ReasonNotice reason={reason} /> : null}
           {ready ? (
-            showPicker ? (
+            pendingHandoff ? (
+              <Status>{t.onboarding.lookingUpProviders}</Status>
+            ) : showPicker ? (
               <Picker ctx={ctx} />
             ) : (
               <FlowPanel ctx={ctx} flow={flow} leaving={leaving} onBegin={finalizeOnboarding} />
@@ -591,7 +594,7 @@ export function FeaturedProviderRow({
   )
 }
 
-function ConnectedTag() {
+export function ConnectedTag() {
   const { t } = useI18n()
 
   return (

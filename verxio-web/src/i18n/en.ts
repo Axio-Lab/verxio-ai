@@ -562,7 +562,15 @@ export const en: Translations = {
       connectAnother: 'Connect another provider',
       otherProviders: 'Other providers',
       noProviderKeys: 'No provider API keys available.',
-      loading: 'Loading providers...'
+      loading: 'Loading providers...',
+      accountLabel: 'Account',
+      disconnect: 'Disconnect',
+      reconnect: 'Reconnect',
+      removeConfirm: provider => `Remove ${provider}?`,
+      removeExternalGeneric: provider => `${provider} is managed by its own CLI — connect it there.`,
+      removedTitle: 'Account removed',
+      removedMessage: provider => `${provider} was removed.`,
+      failedRemove: provider => `Could not remove ${provider}`
     },
     sessions: {
       loading: 'Loading archived sessions…',

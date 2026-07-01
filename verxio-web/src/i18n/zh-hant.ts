@@ -572,7 +572,15 @@ export const zhHant = defineLocale({
       connectAnother: '連結其他提供方',
       otherProviders: '其他提供方',
       noProviderKeys: '沒有可用的提供方 API 金鑰。',
-      loading: '正在載入提供方...'
+      loading: '正在載入提供方...',
+      accountLabel: '帳戶',
+      disconnect: '中斷連線',
+      reconnect: '重新連線',
+      removeConfirm: provider => `移除 ${provider}？`,
+      removeExternalGeneric: provider => `${provider} 由其 CLI 管理 — 請在那裡連線。`,
+      removedTitle: '帳戶已移除',
+      removedMessage: provider => `${provider} 已移除。`,
+      failedRemove: provider => `無法移除 ${provider}`
     },
     sessions: {
       loading: '正在載入已封存工作階段…',

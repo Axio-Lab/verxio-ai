@@ -444,6 +444,14 @@ export interface Translations {
       otherProviders: string
       noProviderKeys: string
       loading: string
+      accountLabel: string
+      disconnect: string
+      reconnect: string
+      removeConfirm: (provider: string) => string
+      removeExternalGeneric: (provider: string) => string
+      removedTitle: string
+      removedMessage: (provider: string) => string
+      failedRemove: (provider: string) => string
     }
     sessions: {
       loading: string

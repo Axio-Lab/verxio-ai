@@ -15,7 +15,7 @@ import { useI18n } from '@/i18n'
 import { ChevronDown, KeyRound } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { oauthProvidersForProduct, usesVerxioConnectAccountPicker } from '@/lib/verxio-oauth-providers'
-import { $desktopOnboarding, startManualProviderOAuth } from '@/store/onboarding'
+import { $desktopOnboarding } from '@/store/onboarding'
 import type { EnvVarInfo, OAuthProvider } from '@/types/hermes'
 
 import { DEFAULT_LIST_PAGE_SIZE, usePaginatedList } from '../hooks/use-paginated-list'
@@ -25,6 +25,7 @@ import { SettingsCategoryHeading, useEnvCredentials } from './env-credentials'
 import { providerGroup, providerMeta, providerPriority } from './helpers'
 import { InferenceProviderSettings } from './inference-provider-settings'
 import { LoadingState, SettingsContent } from './primitives'
+import { ProviderAccountSetup } from './provider-account-setup'
 
 // Sub-views surfaced as a sidebar subnav: account sign-in vs raw API keys.
 export const PROVIDER_VIEWS = ['accounts', 'keys'] as const
@@ -90,7 +91,15 @@ function buildProviderKeyGroups(vars: Record<string, EnvVarInfo>): ProviderKeyGr
 // Selecting a provider hands off to the shared onboarding overlay, which runs
 // that provider's real sign-in flow; the key affordances open the API-key
 // catalog below.
-function OAuthPicker({ onWantApiKey, providers }: { onWantApiKey: () => void; providers: OAuthProvider[] }) {
+function OAuthPicker({
+  onSelectProvider,
+  onWantApiKey,
+  providers
+}: {
+  onSelectProvider: (provider: OAuthProvider) => void
+  onWantApiKey: () => void
+  providers: OAuthProvider[]
+}) {
   const { t } = useI18n()
   const p = t.settings.providers
   const [showAll, setShowAll] = useState(false)
@@ -101,7 +110,7 @@ function OAuthPicker({ onWantApiKey, providers }: { onWantApiKey: () => void; pr
     return null
   }
 
-  const select = (provider: OAuthProvider) => startManualProviderOAuth(provider.id)
+  const select = (provider: OAuthProvider) => onSelectProvider(provider)
 
   const featured = verxioConnectPicker ? null : (ordered.find(item => item.id === 'nous') ?? null)
   const rest = featured ? ordered.filter(item => item.id !== featured.id) : ordered
@@ -179,11 +188,21 @@ export function ProvidersSettings({ onViewChange, view }: ProvidersSettingsProps
   const { t } = useI18n()
   const { rowProps, vars } = useEnvCredentials()
   const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([])
+  const [activeProviderId, setActiveProviderId] = useState<null | string>(null)
   const [openProvider, setOpenProvider] = useState<null | string>(null)
   // The onboarding overlay owns the OAuth flow. Watch its `manual` flag so we
   // re-read connection state when the user finishes (or dismisses) a sign-in
   // they launched from this page — otherwise the cards keep their stale status.
   const onboardingActive = useStore($desktopOnboarding).manual
+
+  const refreshOAuthProviders = async () => {
+    try {
+      const { providers } = await listOAuthProviders()
+      setOauthProviders(providers)
+    } catch {
+      // Ignore — the OAuth panel just won't render.
+    }
+  }
 
   useEffect(() => {
     if (onboardingActive) {
@@ -192,7 +211,6 @@ export function ProvidersSettings({ onViewChange, view }: ProvidersSettingsProps
 
     let cancelled = false
 
-    // OAuth providers are best-effort — a failure here just hides the panel.
     void (async () => {
       try {
         const { providers } = await listOAuthProviders()
@@ -222,6 +240,7 @@ export function ProvidersSettings({ onViewChange, view }: ProvidersSettingsProps
   }
 
   const hasOauth = oauthProviders.length > 0
+  const activeProvider = oauthProviders.find(provider => provider.id === activeProviderId) ?? null
   // The sidebar subnav owns the Accounts/API-keys split now; with no OAuth
   // providers there's nothing for the "Accounts" view to show, so fall to keys.
   const showApiKeys = view === 'keys' || !hasOauth
@@ -259,8 +278,22 @@ export function ProvidersSettings({ onViewChange, view }: ProvidersSettingsProps
 
   return (
     <SettingsContent>
-      <InferenceProviderSettings onOpenProviderKeys={() => onViewChange('keys')} />
-      <OAuthPicker onWantApiKey={() => onViewChange('keys')} providers={oauthProviders} />
+      {activeProvider ? (
+        <ProviderAccountSetup
+          onBack={() => setActiveProviderId(null)}
+          onUpdated={refreshOAuthProviders}
+          provider={activeProvider}
+        />
+      ) : (
+        <>
+          <InferenceProviderSettings onOpenProviderKeys={() => onViewChange('keys')} />
+          <OAuthPicker
+            onSelectProvider={provider => setActiveProviderId(provider.id)}
+            onWantApiKey={() => onViewChange('keys')}
+            providers={oauthProviders}
+          />
+        </>
+      )}
     </SettingsContent>
   )
 }

@@ -592,7 +592,15 @@ export const ja = defineLocale({
       connectAnother: '別のプロバイダーを接続',
       otherProviders: 'その他のプロバイダー',
       noProviderKeys: '利用可能なプロバイダー API キーがありません。',
-      loading: 'プロバイダーを読み込み中...'
+      loading: 'プロバイダーを読み込み中...',
+      accountLabel: 'アカウント',
+      disconnect: '切断',
+      reconnect: '再接続',
+      removeConfirm: provider => `${provider} を削除しますか？`,
+      removeExternalGeneric: provider => `${provider} は専用 CLI で管理されます — そちらで接続してください。`,
+      removedTitle: 'アカウントを削除しました',
+      removedMessage: provider => `${provider} を削除しました。`,
+      failedRemove: provider => `${provider} を削除できませんでした`
     },
     sessions: {
       loading: 'アーカイブ済みセッションを読み込み中…',

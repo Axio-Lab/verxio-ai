@@ -716,7 +716,15 @@ export const zh: Translations = {
       connectAnother: '连接其他提供方',
       otherProviders: '其他提供方',
       noProviderKeys: '没有可用的提供方 API 密钥。',
-      loading: '正在加载提供方...'
+      loading: '正在加载提供方...',
+      accountLabel: '账户',
+      disconnect: '断开连接',
+      reconnect: '重新连接',
+      removeConfirm: provider => `移除 ${provider}？`,
+      removeExternalGeneric: provider => `${provider} 由其 CLI 管理 — 请在那里连接。`,
+      removedTitle: '账户已移除',
+      removedMessage: provider => `${provider} 已移除。`,
+      failedRemove: provider => `无法移除 ${provider}`
     },
     sessions: {
       loading: '正在加载已归档会话…',
