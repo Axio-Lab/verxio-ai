@@ -197,7 +197,7 @@ class InferenceRuntimeBridgeStatus(BaseModel):
     changed: bool = False
     mode: InferenceMode = "hosted"
     defaultModelId: str = "verxio-qwen"
-    providerSlug: str = "openai-api"
+    providerSlug: str = "alibaba"
     upstreamModelId: str = ""
     missingEnvVars: list[str] = Field(default_factory=list)
     message: str | None = None

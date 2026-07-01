@@ -72,6 +72,7 @@ export function InferenceProviderSettings({ onOpenProviderKeys }: InferenceProvi
           defaultModelId: hostedModel?.id ?? catalog?.defaultModelId,
           mode
         })
+
         const nextUsage = await getInferenceUsage()
         setUsage({ ...nextUsage, settings: nextSettings })
       } catch (err) {
@@ -141,7 +142,7 @@ export function InferenceProviderSettings({ onOpenProviderKeys }: InferenceProvi
           <ListRow
             description={
               hostedModel
-                ? `${hostedModel.description} Routes through Hermes provider ${hostedModel.providerSlug}.`
+                ? `${hostedModel.description}.`
                 : 'Verxio Qwen is the Verxio Hosted model for all users and runtimes.'
             }
             title={

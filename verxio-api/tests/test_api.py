@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from subprocess import CompletedProcess
 
@@ -218,6 +219,77 @@ def test_inference_bridge_writes_hosted_verxio_qwen_after_explicit_settings(clie
     assert "default: qwen3.6-plus" in config
     state = Path(runtime.hermes_home_path) / ".verxio" / "inference-runtime-bridge.json"
     assert "verxio-qwen-key" not in state.read_text(encoding="utf-8")
+
+
+def test_inference_bridge_strips_legacy_openai_credentials(client, monkeypatch):
+    monkeypatch.setenv("VERXIO_HOSTED_QWEN_API_KEY", "verxio-qwen-key")
+    payload, _token = signup(client, "inference-legacy@example.com")
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    runtime = control_plane.runtime_from_row(runtime_row)
+    hermes_home = Path(runtime.hermes_home_path)
+    hermes_home.mkdir(parents=True, exist_ok=True)
+    (hermes_home / ".env").write_text("OPENAI_API_KEY=legacy-verxio-gpt-key\nDASHSCOPE_API_KEY=keep\n", encoding="utf-8")
+    (hermes_home / "auth.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "providers": {},
+                "active_provider": "openai-api",
+                "credential_pool": {
+                    "openai-api": [
+                        {
+                            "id": "legacy",
+                            "label": "OPENAI_API_KEY",
+                            "auth_type": "api_key",
+                            "source": "env:OPENAI_API_KEY",
+                        }
+                    ],
+                    "openai-codex": [
+                        {
+                            "id": "keep",
+                            "label": "device_code",
+                            "auth_type": "oauth",
+                            "source": "device_code",
+                        }
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status = inference.sync_inference_runtime_bridge(runtime, payload["user"]["id"])
+
+    assert status.enabled is True
+    assert status.changed is True
+    assert "OPENAI_API_KEY" not in (hermes_home / ".env").read_text(encoding="utf-8")
+    auth = json.loads((hermes_home / "auth.json").read_text(encoding="utf-8"))
+    assert "openai-api" not in auth.get("credential_pool", {})
+    assert auth.get("active_provider") == ""
+    assert "openai-codex" in auth.get("credential_pool", {})
+
+
+def test_inference_bridge_honors_verxio_hosted_qwen_model_env(client, monkeypatch):
+    monkeypatch.setenv("VERXIO_HOSTED_QWEN_API_KEY", "verxio-qwen-key")
+    monkeypatch.setenv("VERXIO_HOSTED_QWEN_MODEL", "qwen3.7-max")
+    payload, _token = signup(client, "inference-qwen-model-env@example.com")
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    runtime = control_plane.runtime_from_row(runtime_row)
+
+    status = inference.sync_inference_runtime_bridge(runtime, payload["user"]["id"])
+
+    assert status.enabled is True
+    assert status.upstreamModelId == "qwen3.7-max"
+    config = (Path(runtime.hermes_home_path) / "config.yaml").read_text(encoding="utf-8")
+    assert "default: qwen3.7-max" in config
 
 
 def test_inference_bridge_byok_preserves_hermes_provider_settings(client, monkeypatch):

@@ -26,8 +26,15 @@ from app.models import (
 
 
 DEFAULT_MODEL_ID = "verxio-qwen"
+DEFAULT_QWEN_UPSTREAM_MODEL = "qwen3.6-plus"
+HOSTED_QWEN_MODEL_ENV = "VERXIO_HOSTED_QWEN_MODEL"
 CATALOG_VERSION = "2026-07-01"
 BRIDGE_STATE_FILE = "inference-runtime-bridge.json"
+
+# Verxio GPT hosted injected these into runtime containers. Strip them when Qwen
+# hosted is active so the model picker does not keep showing OpenAI API.
+LEGACY_HOSTED_RUNTIME_ENV_VARS = ("OPENAI_API_KEY",)
+LEGACY_HOSTED_PROVIDER_SLUGS = ("openai-api",)
 
 
 @dataclass(frozen=True)
@@ -36,7 +43,8 @@ class HostedModelDefinition:
     display_name: str
     description: str
     provider_slug: str
-    upstream_model_id: str
+    upstream_model_default: str
+    upstream_model_env: str | None
     hosted_secret_env: tuple[str, ...]
     runtime_env_var: str
     byok_env_vars: tuple[str, ...]
@@ -50,13 +58,20 @@ def _env_override(name: str, default: str) -> str:
     return os.getenv(name, default).strip() or default
 
 
+def _upstream_model_id(model: HostedModelDefinition) -> str:
+    if model.upstream_model_env:
+        return _env_override(model.upstream_model_env, model.upstream_model_default)
+    return model.upstream_model_default
+
+
 MODEL_CATALOG: tuple[HostedModelDefinition, ...] = (
     HostedModelDefinition(
         id="verxio-qwen",
         display_name="Verxio Qwen",
         description="Hosted Qwen Cloud through Alibaba DashScope for fast coding and long-context agent work.",
         provider_slug="alibaba",
-        upstream_model_id=_env_override("VERXIO_HOSTED_QWEN_MODEL", "qwen3.6-plus"),
+        upstream_model_default=DEFAULT_QWEN_UPSTREAM_MODEL,
+        upstream_model_env=HOSTED_QWEN_MODEL_ENV,
         hosted_secret_env=("VERXIO_HOSTED_QWEN_API_KEY", "VERXIO_DASHSCOPE_API_KEY"),
         runtime_env_var="DASHSCOPE_API_KEY",
         byok_env_vars=("DASHSCOPE_API_KEY",),
@@ -91,7 +106,7 @@ def _catalog_item(model: HostedModelDefinition) -> InferenceModelCatalogItem:
         displayName=model.display_name,
         description=model.description,
         providerSlug=model.provider_slug,
-        upstreamModelId=model.upstream_model_id,
+        upstreamModelId=_upstream_model_id(model),
         requiredEnvVars=list(model.byok_env_vars),
         hostedAvailable=bool(secret_value),
         byokAvailable=True,
@@ -231,12 +246,106 @@ def _hashed_secret(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def _runtime_env_path(runtime: RuntimeInstance) -> Path:
+    return Path(runtime.hermes_home_path) / ".env"
+
+
+def _runtime_auth_path(runtime: RuntimeInstance) -> Path:
+    return Path(runtime.hermes_home_path) / "auth.json"
+
+
+def _strip_legacy_env_vars_from_dotenv(env_path: Path) -> bool:
+    if not env_path.is_file():
+        return False
+
+    legacy_prefixes = tuple(f"{name}=" for name in LEGACY_HOSTED_RUNTIME_ENV_VARS)
+    original = env_path.read_text(encoding="utf-8")
+    kept: list[str] = []
+    removed = False
+
+    for line in original.splitlines():
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and stripped.startswith(legacy_prefixes):
+            removed = True
+            continue
+        kept.append(line)
+
+    if not removed:
+        return False
+
+    body = "\n".join(kept)
+    if body and not body.endswith("\n"):
+        body += "\n"
+    env_path.write_text(body, encoding="utf-8")
+    return True
+
+
+def _strip_legacy_providers_from_auth(auth_path: Path) -> bool:
+    if not auth_path.is_file():
+        return False
+
+    try:
+        payload = json.loads(auth_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+
+    if not isinstance(payload, dict):
+        return False
+
+    changed = False
+    legacy_env_sources = {f"env:{name}" for name in LEGACY_HOSTED_RUNTIME_ENV_VARS}
+    pool = payload.get("credential_pool")
+    if isinstance(pool, dict):
+        for slug in LEGACY_HOSTED_PROVIDER_SLUGS:
+            entries = pool.get(slug)
+            if not isinstance(entries, list):
+                continue
+            filtered = [
+                entry
+                for entry in entries
+                if not (
+                    isinstance(entry, dict)
+                    and str(entry.get("source") or "") in legacy_env_sources
+                )
+            ]
+            if len(filtered) != len(entries):
+                changed = True
+                if filtered:
+                    pool[slug] = filtered
+                else:
+                    pool.pop(slug, None)
+
+    active_provider = str(payload.get("active_provider") or "")
+    if active_provider in LEGACY_HOSTED_PROVIDER_SLUGS:
+        pool = payload.get("credential_pool")
+        if not isinstance(pool, dict) or active_provider not in pool:
+            payload["active_provider"] = ""
+            changed = True
+
+    if not changed:
+        return False
+
+    payload["updated_at"] = now_iso()
+    auth_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return True
+
+
+def cleanup_legacy_hosted_credentials(runtime: RuntimeInstance) -> bool:
+    """Remove Verxio-GPT-era hosted OpenAI credentials from a runtime Hermes home."""
+    ensure_runtime_directories(runtime)
+    changed = _strip_legacy_env_vars_from_dotenv(_runtime_env_path(runtime))
+    changed = _strip_legacy_providers_from_auth(_runtime_auth_path(runtime)) or changed
+    return changed
+
+
 def sync_inference_runtime_bridge(runtime: RuntimeInstance, user_id: str) -> InferenceRuntimeBridgeStatus:
     ensure_runtime_directories(runtime)
     settings = ensure_inference_settings(user_id)
     model = _model_by_id(settings.defaultModelId)
     secret_name, secret_value = _hosted_secret(model)
     missing = [] if secret_value else list(model.hosted_secret_env)
+
+    upstream_model_id = _upstream_model_id(model)
 
     if settings.mode != "hosted":
         return InferenceRuntimeBridgeStatus(
@@ -246,19 +355,21 @@ def sync_inference_runtime_bridge(runtime: RuntimeInstance, user_id: str) -> Inf
             mode=settings.mode,
             defaultModelId=settings.defaultModelId,
             providerSlug=model.provider_slug,
-            upstreamModelId=model.upstream_model_id,
+            upstreamModelId=upstream_model_id,
             message="BYOK mode uses Hermes provider settings.",
         )
+
+    legacy_credentials_cleaned = cleanup_legacy_hosted_credentials(runtime)
 
     if not secret_value:
         return InferenceRuntimeBridgeStatus(
             configured=False,
             enabled=False,
-            changed=False,
+            changed=legacy_credentials_cleaned,
             mode=settings.mode,
             defaultModelId=model.id,
             providerSlug=model.provider_slug,
-            upstreamModelId=model.upstream_model_id,
+            upstreamModelId=upstream_model_id,
             missingEnvVars=missing,
             message=f"{model.display_name} needs a hosted provider key.",
         )
@@ -268,7 +379,7 @@ def sync_inference_runtime_bridge(runtime: RuntimeInstance, user_id: str) -> Inf
     if not isinstance(model_config, dict):
         model_config = {}
     model_config["provider"] = model.provider_slug
-    model_config["default"] = model.upstream_model_id
+    model_config["default"] = upstream_model_id
     config["model"] = model_config
 
     signature_payload = {
@@ -276,7 +387,7 @@ def sync_inference_runtime_bridge(runtime: RuntimeInstance, user_id: str) -> Inf
         "mode": settings.mode,
         "default_model_id": model.id,
         "provider_slug": model.provider_slug,
-        "upstream_model_id": model.upstream_model_id,
+        "upstream_model_id": upstream_model_id,
         "runtime_env_var": model.runtime_env_var,
         "hosted_secret_env": secret_name,
         "hosted_secret_hash": _hashed_secret(secret_value),
@@ -290,8 +401,9 @@ def sync_inference_runtime_bridge(runtime: RuntimeInstance, user_id: str) -> Inf
         except Exception:
             previous_signature = ""
 
-    changed = previous_signature != signature
-    if changed:
+    config_changed = previous_signature != signature
+    changed = config_changed or legacy_credentials_cleaned
+    if config_changed:
         _write_runtime_config(runtime, config)
         state_path.parent.mkdir(parents=True, exist_ok=True)
         state_path.write_text(
@@ -314,5 +426,5 @@ def sync_inference_runtime_bridge(runtime: RuntimeInstance, user_id: str) -> Inf
         mode=settings.mode,
         defaultModelId=model.id,
         providerSlug=model.provider_slug,
-        upstreamModelId=model.upstream_model_id,
+        upstreamModelId=upstream_model_id,
     )
