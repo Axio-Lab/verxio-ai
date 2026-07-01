@@ -178,7 +178,7 @@ export function CredentialKeyCard({
       role={expandable ? 'button' : undefined}
       tabIndex={expandable ? 0 : undefined}
     >
-      <div className="grid gap-3 py-2 sm:grid-cols-[minmax(0,1fr)_minmax(15rem,22rem)] sm:items-center">
+      <div className="grid gap-3 py-2 xl:grid-cols-[minmax(0,1fr)_minmax(15rem,22rem)] xl:items-center">
         <div className="flex min-w-0 items-center gap-2">
           <span
             className={cn('size-2 shrink-0 rounded-full', info.is_set ? 'bg-primary' : 'bg-(--ui-stroke-secondary)')}
@@ -255,7 +255,7 @@ export function ProviderKeyRows({ expanded, group, onExpand, onToggle, rowProps 
       role={expandable ? 'button' : undefined}
       tabIndex={expandable ? 0 : undefined}
     >
-      <div className="grid gap-3 py-2 sm:grid-cols-[minmax(0,1fr)_minmax(15rem,22rem)] sm:items-center">
+      <div className="grid gap-3 py-2 xl:grid-cols-[minmax(0,1fr)_minmax(15rem,22rem)] xl:items-center">
         <div className="flex min-w-0 items-center gap-2">
           <span
             className={cn(

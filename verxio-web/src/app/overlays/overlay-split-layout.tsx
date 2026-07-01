@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import type { IconComponent } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 
-import { PAGE_INSET_X } from '../layout-constants'
+import { OVERLAY_NAV_ITEM_STACK, OVERLAY_SIDEBAR_STACK, OVERLAY_SPLIT_STACK, PAGE_INSET_X } from '../layout-constants'
 
 interface OverlaySplitLayoutProps {
   children: ReactNode
@@ -35,7 +35,8 @@ export function OverlaySplitLayout({ children, className }: OverlaySplitLayoutPr
   return (
     <div
       className={cn(
-        'grid h-full min-h-0 flex-1 grid-cols-[13rem_minmax(0,1fr)] overflow-hidden bg-transparent max-[47.5rem]:grid-cols-1',
+        'grid h-full min-h-0 flex-1 grid-cols-[13rem_minmax(0,1fr)] overflow-hidden bg-transparent',
+        OVERLAY_SPLIT_STACK,
         className
       )}
     >
@@ -51,6 +52,7 @@ export function OverlaySidebar({ children, className }: OverlaySidebarProps) {
         // pt clears the floating titlebar/header; the bg itself fills from the
         // card's top edge so there's no surface-colored gap above the sidebar.
         'flex min-h-0 flex-col gap-0.5 overflow-y-auto bg-(--ui-sidebar-surface-background) px-2.5 pb-3 pt-[calc(var(--titlebar-height)+1rem)]',
+        OVERLAY_SIDEBAR_STACK,
         className
       )}
     >
@@ -78,6 +80,7 @@ export function OverlayNavItem({ active, icon: Icon, label, nested, onClick, tra
     <button
       className={cn(
         'flex h-7 w-full items-center justify-start gap-2 rounded-md border px-2 text-left text-[length:var(--conversation-text-font-size)] font-normal transition-colors',
+        OVERLAY_NAV_ITEM_STACK,
         nested
           ? active
             ? 'border-transparent bg-(--chrome-action-hover) font-medium text-foreground'

@@ -121,7 +121,7 @@ export function SettingsView({
               />
             )
           })}
-          <div className="my-2 h-px bg-border/30" />
+          <div className="my-2 h-px bg-border/30 max-xl:hidden" />
           <OverlayNavItem
             active={activeView === 'providers'}
             icon={Zap}
@@ -129,7 +129,7 @@ export function SettingsView({
             onClick={() => setActiveView('providers')}
           />
           {activeView === 'providers' && (
-            <div className="ml-3.5 flex flex-col gap-0.5 pl-1.5">
+            <div className="ml-3.5 flex flex-col gap-0.5 pl-1.5 max-xl:contents max-xl:ml-0 max-xl:pl-0">
               <OverlayNavItem
                 active={providerView === 'accounts'}
                 icon={Sparkles}
@@ -159,7 +159,7 @@ export function SettingsView({
             onClick={() => setActiveView('keys')}
           />
           {activeView === 'keys' && (
-            <div className="ml-3.5 flex flex-col gap-0.5 pl-1.5">
+            <div className="ml-3.5 flex flex-col gap-0.5 pl-1.5 max-xl:contents max-xl:ml-0 max-xl:pl-0">
               <OverlayNavItem
                 active={keysView === 'tools'}
                 icon={Wrench}
@@ -194,14 +194,14 @@ export function SettingsView({
             label={t.settings.nav.archivedChats}
             onClick={() => setActiveView('sessions')}
           />
-          <div className="my-2 h-px bg-border/30" />
+          <div className="my-2 h-px bg-border/30 max-xl:hidden" />
           <OverlayNavItem
             active={activeView === 'about'}
             icon={Info}
             label={t.settings.nav.about}
             onClick={() => setActiveView('about')}
           />
-          <div className="mt-auto flex items-center gap-1 pt-2">
+          <div className="mt-auto flex items-center gap-1 pt-2 max-xl:mt-0 max-xl:ml-auto max-xl:pt-0">
             <Tip label={t.settings.exportConfig}>
               <OverlayIconButton onClick={() => void exportConfig()}>
                 <IconDownload className="size-3.5" />
