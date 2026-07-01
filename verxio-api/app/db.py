@@ -395,7 +395,7 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     CREATE TABLE IF NOT EXISTS user_inference_settings (
         user_id TEXT PRIMARY KEY,
         mode TEXT NOT NULL DEFAULT 'hosted',
-        default_model_id TEXT NOT NULL DEFAULT 'verxio-gpt',
+        default_model_id TEXT NOT NULL DEFAULT 'verxio-qwen',
         monthly_credit_usd REAL NOT NULL DEFAULT 0,
         overage_enabled INTEGER NOT NULL DEFAULT 0,
         spending_limit_usd REAL,

@@ -164,7 +164,7 @@ class InferenceCatalogResponse(BaseModel):
 
 class InferenceSettings(BaseModel):
     mode: InferenceMode = "hosted"
-    defaultModelId: str = "verxio-gpt"
+    defaultModelId: str = "verxio-qwen"
     monthlyCreditUsd: float = 0
     overageEnabled: bool = False
     spendingLimitUsd: float | None = None
@@ -196,7 +196,7 @@ class InferenceRuntimeBridgeStatus(BaseModel):
     enabled: bool
     changed: bool = False
     mode: InferenceMode = "hosted"
-    defaultModelId: str = "verxio-gpt"
+    defaultModelId: str = "verxio-qwen"
     providerSlug: str = "openai-api"
     upstreamModelId: str = ""
     missingEnvVars: list[str] = Field(default_factory=list)

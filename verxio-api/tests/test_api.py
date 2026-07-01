@@ -137,38 +137,36 @@ def test_protected_composio_endpoint_rejects_anonymous_users(client):
     assert response.status_code == 401
 
 
-def test_inference_catalog_defaults_to_verxio_gpt(client):
+def test_inference_catalog_defaults_to_verxio_qwen(client):
     _payload, token = signup(client, "inference-catalog@example.com")
 
     response = client.get("/api/inference/catalog", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
 
     assert response.status_code == 200
     body = response.json()
-    assert body["defaultModelId"] == "verxio-gpt"
-    default_model = next(model for model in body["models"] if model["id"] == "verxio-gpt")
-    assert default_model["default"] is True
-    assert default_model["providerSlug"] == "openai-api"
-    assert default_model["displayName"] == "Verxio GPT"
-    assert "OPENAI_API_KEY" in default_model["requiredEnvVars"]
-    qwen_model = next(model for model in body["models"] if model["id"] == "verxio-qwen")
+    assert body["defaultModelId"] == "verxio-qwen"
+    assert len(body["models"]) == 1
+    qwen_model = body["models"][0]
+    assert qwen_model["id"] == "verxio-qwen"
+    assert qwen_model["default"] is True
     assert qwen_model["providerSlug"] == "alibaba"
+    assert qwen_model["displayName"] == "Verxio Qwen"
     assert qwen_model["upstreamModelId"] == "qwen3.6-plus"
     assert "DASHSCOPE_API_KEY" in qwen_model["requiredEnvVars"]
 
 
-def test_inference_settings_are_hosted_verxio_gpt_by_default(client):
+def test_inference_settings_are_hosted_verxio_qwen_by_default(client):
     _payload, token = signup(client, "inference-settings@example.com")
 
     response = client.get("/api/inference/settings", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
 
     assert response.status_code == 200
     assert response.json()["mode"] == "hosted"
-    assert response.json()["defaultModelId"] == "verxio-gpt"
+    assert response.json()["defaultModelId"] == "verxio-qwen"
 
 
-def test_inference_bridge_writes_hosted_verxio_gpt_model_config(client, monkeypatch):
-    monkeypatch.setenv("VERXIO_HOSTED_OPENAI_API_KEY", "verxio-openai-key")
-    monkeypatch.setenv("VERXIO_HOSTED_GPT_MODEL", "gpt-5.5")
+def test_inference_bridge_writes_hosted_verxio_qwen_model_config(client, monkeypatch):
+    monkeypatch.setenv("VERXIO_HOSTED_QWEN_API_KEY", "verxio-qwen-key")
     payload, _token = signup(client, "inference-bridge@example.com")
     runtime_row = db.fetch_one(
         "SELECT * FROM runtime_instances WHERE workspace_id = ?",
@@ -182,16 +180,17 @@ def test_inference_bridge_writes_hosted_verxio_gpt_model_config(client, monkeypa
     assert status.configured is True
     assert status.enabled is True
     assert status.changed is True
-    assert status.defaultModelId == "verxio-gpt"
+    assert status.defaultModelId == "verxio-qwen"
+    assert inference.runtime_env_for_user(payload["user"]["id"]) == {"DASHSCOPE_API_KEY": "verxio-qwen-key"}
     config = (Path(runtime.hermes_home_path) / "config.yaml").read_text(encoding="utf-8")
-    assert "provider: openai-api" in config
-    assert "default: gpt-5.5" in config
+    assert "provider: alibaba" in config
+    assert "default: qwen3.6-plus" in config
     state = Path(runtime.hermes_home_path) / ".verxio" / "inference-runtime-bridge.json"
     assert state.is_file()
-    assert "verxio-openai-key" not in state.read_text(encoding="utf-8")
+    assert "verxio-qwen-key" not in state.read_text(encoding="utf-8")
 
 
-def test_inference_bridge_writes_hosted_verxio_qwen_model_config(client, monkeypatch):
+def test_inference_bridge_writes_hosted_verxio_qwen_after_explicit_settings(client, monkeypatch):
     monkeypatch.setenv("VERXIO_HOSTED_QWEN_API_KEY", "verxio-qwen-key")
     payload, token = signup(client, "inference-qwen@example.com")
     response = client.put(
@@ -222,7 +221,7 @@ def test_inference_bridge_writes_hosted_verxio_qwen_model_config(client, monkeyp
 
 
 def test_inference_bridge_byok_preserves_hermes_provider_settings(client, monkeypatch):
-    monkeypatch.setenv("VERXIO_HOSTED_OPENAI_API_KEY", "verxio-openai-key")
+    monkeypatch.setenv("VERXIO_HOSTED_QWEN_API_KEY", "verxio-qwen-key")
     payload, token = signup(client, "inference-byok@example.com")
     response = client.put(
         "/api/inference/settings",

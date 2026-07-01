@@ -25,8 +25,8 @@ from app.models import (
 )
 
 
-DEFAULT_MODEL_ID = "verxio-gpt"
-CATALOG_VERSION = "2026-06-30"
+DEFAULT_MODEL_ID = "verxio-qwen"
+CATALOG_VERSION = "2026-07-01"
 BRIDGE_STATE_FILE = "inference-runtime-bridge.json"
 
 
@@ -51,104 +51,6 @@ def _env_override(name: str, default: str) -> str:
 
 
 MODEL_CATALOG: tuple[HostedModelDefinition, ...] = (
-    HostedModelDefinition(
-        id="verxio-gpt",
-        display_name="Verxio GPT",
-        description="Default hosted GPT model for everyday agent work.",
-        provider_slug="openai-api",
-        upstream_model_id=_env_override("VERXIO_HOSTED_GPT_MODEL", "gpt-5.5"),
-        hosted_secret_env=("VERXIO_HOSTED_OPENAI_API_KEY", "VERXIO_OPENAI_API_KEY"),
-        runtime_env_var="OPENAI_API_KEY",
-        byok_env_vars=("OPENAI_API_KEY",),
-        tier="balanced",
-        input_per_million=2.5,
-        output_per_million=10.0,
-        capabilities=(("tools", "Tool use"), ("reasoning", "Reasoning"), ("coding", "Coding")),
-    ),
-    HostedModelDefinition(
-        id="verxio-sonnet",
-        display_name="Verxio Sonnet",
-        description="Hosted Claude Sonnet for coding, editing, and long-running agent tasks.",
-        provider_slug="anthropic",
-        upstream_model_id=_env_override("VERXIO_HOSTED_SONNET_MODEL", "claude-sonnet-4-6"),
-        hosted_secret_env=("VERXIO_HOSTED_ANTHROPIC_API_KEY", "VERXIO_ANTHROPIC_API_KEY"),
-        runtime_env_var="ANTHROPIC_API_KEY",
-        byok_env_vars=("ANTHROPIC_API_KEY", "ANTHROPIC_TOKEN"),
-        tier="premium",
-        input_per_million=3.0,
-        output_per_million=15.0,
-        capabilities=(("tools", "Tool use"), ("coding", "Coding"), ("long_context", "Long context")),
-    ),
-    HostedModelDefinition(
-        id="verxio-opus",
-        display_name="Verxio Opus",
-        description="Hosted Claude Opus for high-stakes reasoning and complex architecture work.",
-        provider_slug="anthropic",
-        upstream_model_id=_env_override("VERXIO_HOSTED_OPUS_MODEL", "claude-opus-4-6"),
-        hosted_secret_env=("VERXIO_HOSTED_ANTHROPIC_API_KEY", "VERXIO_ANTHROPIC_API_KEY"),
-        runtime_env_var="ANTHROPIC_API_KEY",
-        byok_env_vars=("ANTHROPIC_API_KEY", "ANTHROPIC_TOKEN"),
-        tier="frontier",
-        input_per_million=15.0,
-        output_per_million=75.0,
-        capabilities=(("reasoning", "Deep reasoning"), ("tools", "Tool use"), ("coding", "Coding")),
-    ),
-    HostedModelDefinition(
-        id="verxio-fable",
-        display_name="Verxio Fable",
-        description="Hosted Claude Fable for expensive frontier tasks when enabled by Verxio.",
-        provider_slug="anthropic",
-        upstream_model_id=_env_override("VERXIO_HOSTED_FABLE_MODEL", "claude-fable-5"),
-        hosted_secret_env=("VERXIO_HOSTED_ANTHROPIC_API_KEY", "VERXIO_ANTHROPIC_API_KEY"),
-        runtime_env_var="ANTHROPIC_API_KEY",
-        byok_env_vars=("ANTHROPIC_API_KEY", "ANTHROPIC_TOKEN"),
-        tier="experimental",
-        input_per_million=10.0,
-        output_per_million=50.0,
-        capabilities=(("reasoning", "Deep reasoning"), ("tools", "Tool use"), ("coding", "Coding")),
-    ),
-    HostedModelDefinition(
-        id="verxio-gemini",
-        display_name="Verxio Gemini",
-        description="Hosted Gemini for broad research, multimodal, and large-context workflows.",
-        provider_slug="gemini",
-        upstream_model_id=_env_override("VERXIO_HOSTED_GEMINI_MODEL", "gemini-2.5-pro"),
-        hosted_secret_env=("VERXIO_HOSTED_GOOGLE_API_KEY", "VERXIO_GOOGLE_API_KEY"),
-        runtime_env_var="GOOGLE_API_KEY",
-        byok_env_vars=("GOOGLE_API_KEY", "GEMINI_API_KEY"),
-        tier="balanced",
-        input_per_million=1.25,
-        output_per_million=10.0,
-        capabilities=(("vision", "Vision"), ("long_context", "Long context"), ("tools", "Tool use")),
-    ),
-    HostedModelDefinition(
-        id="verxio-glm",
-        display_name="Verxio GLM",
-        description="Hosted GLM through z.ai for fast coding and reasoning tasks.",
-        provider_slug="zai",
-        upstream_model_id=_env_override("VERXIO_HOSTED_GLM_MODEL", "glm-5.2"),
-        hosted_secret_env=("VERXIO_HOSTED_GLM_API_KEY", "VERXIO_GLM_API_KEY", "VERXIO_ZAI_API_KEY"),
-        runtime_env_var="GLM_API_KEY",
-        byok_env_vars=("GLM_API_KEY", "ZAI_API_KEY", "Z_AI_API_KEY"),
-        tier="balanced",
-        input_per_million=0.6,
-        output_per_million=2.2,
-        capabilities=(("tools", "Tool use"), ("coding", "Coding"), ("reasoning", "Reasoning")),
-    ),
-    HostedModelDefinition(
-        id="verxio-kimi",
-        display_name="Verxio Kimi",
-        description="Hosted Kimi/Moonshot for coding-heavy agent sessions.",
-        provider_slug="kimi-coding",
-        upstream_model_id=_env_override("VERXIO_HOSTED_KIMI_MODEL", "kimi-k2.6"),
-        hosted_secret_env=("VERXIO_HOSTED_KIMI_API_KEY", "VERXIO_KIMI_API_KEY"),
-        runtime_env_var="KIMI_API_KEY",
-        byok_env_vars=("KIMI_API_KEY", "KIMI_CODING_API_KEY"),
-        tier="balanced",
-        input_per_million=0.6,
-        output_per_million=2.5,
-        capabilities=(("coding", "Coding"), ("reasoning", "Reasoning"), ("tools", "Tool use")),
-    ),
     HostedModelDefinition(
         id="verxio-qwen",
         display_name="Verxio Qwen",
