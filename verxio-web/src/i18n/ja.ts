@@ -582,6 +582,8 @@ export const ja = defineLocale({
     },
     providers: {
       connectAccount: 'アカウントを接続',
+      connectAccountFeaturedPitch:
+        'OpenAI、Anthropic、Gemini など、フロンティアモデル向けにご自身のプロバイダーアカウントを接続します。',
       haveApiKey: 'API キーをお持ちですか？',
       intro:
         'サブスクリプションでサインインします。API キーのコピーは不要です。Verxio がアプリ内でブラウザーサインインを代行します。',

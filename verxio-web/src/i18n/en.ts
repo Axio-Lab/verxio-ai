@@ -554,7 +554,9 @@ export const en: Translations = {
       connectAccount: 'Connect an account',
       haveApiKey: 'Have an API key instead?',
       intro:
-        'Sign in with a subscription — no API key to copy. Verxio runs the browser sign-in for you, right here in the app.',
+        'Connect ChatGPT, Claude, Gemini, and other providers with your own account. Verxio runs the browser sign-in for you, right here in the app.',
+      connectAccountFeaturedPitch:
+        'Connect your own provider account for frontier models. OpenAI, Anthropic, Gemini, and more.',
       connected: 'Connected',
       collapse: 'Collapse',
       connectAnother: 'Connect another provider',
@@ -1473,7 +1475,7 @@ export const en: Translations = {
     chooseLater: "I'll choose a provider later",
     recommended: 'Recommended',
     connected: 'Connected',
-    featuredPitch: 'One subscription, 300+ frontier models — the recommended way to run Verxio',
+    featuredPitch: 'Connect your own provider account for frontier models — OpenAI, Anthropic, Gemini, and more.',
     openRouterPitch: 'One key, hundreds of models — a solid default',
     apiKeyOptions: {
       openrouter: {

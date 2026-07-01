@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useState } from 'react'
 
 import {
-  FEATURED_ID,
+  ConnectAccountFeaturedRow,
   FeaturedProviderRow,
   KeyProviderRow,
   ProviderRow,
@@ -14,6 +14,7 @@ import { listOAuthProviders } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { ChevronDown, KeyRound } from '@/lib/icons'
 import { cn } from '@/lib/utils'
+import { oauthProvidersForProduct, usesVerxioConnectAccountPicker } from '@/lib/verxio-oauth-providers'
 import { $desktopOnboarding, startManualProviderOAuth } from '@/store/onboarding'
 import type { EnvVarInfo, OAuthProvider } from '@/types/hermes'
 
@@ -93,21 +94,20 @@ function OAuthPicker({ onWantApiKey, providers }: { onWantApiKey: () => void; pr
   const { t } = useI18n()
   const p = t.settings.providers
   const [showAll, setShowAll] = useState(false)
-  const ordered = useMemo(() => sortProviders(providers), [providers])
+  const verxioConnectPicker = usesVerxioConnectAccountPicker()
+  const ordered = useMemo(() => sortProviders(oauthProvidersForProduct(providers)), [providers])
 
   if (ordered.length === 0) {
     return null
   }
 
-  const select = (p: OAuthProvider) => startManualProviderOAuth(p.id)
+  const select = (provider: OAuthProvider) => startManualProviderOAuth(provider.id)
 
-  const featured = ordered.find(p => p.id === FEATURED_ID) ?? null
-  const rest = featured ? ordered.filter(p => p.id !== FEATURED_ID) : ordered
-  // Keep connected accounts grouped and always visible; only the unconnected
-  // providers hide behind the disclosure, so the page leads with what's set up.
-  const connected = rest.filter(p => p.status?.logged_in)
-  const others = rest.filter(p => !p.status?.logged_in)
-  const collapsible = others.length > 0
+  const featured = verxioConnectPicker ? null : (ordered.find(item => item.id === 'nous') ?? null)
+  const rest = featured ? ordered.filter(item => item.id !== featured.id) : ordered
+  const connected = rest.filter(item => item.status?.logged_in)
+  const others = rest.filter(item => !item.status?.logged_in)
+  const collapsible = verxioConnectPicker ? others.length > 0 : Boolean(featured) && others.length > 0
   const showOthers = !collapsible || showAll
 
   return (
@@ -127,21 +127,24 @@ function OAuthPicker({ onWantApiKey, providers }: { onWantApiKey: () => void; pr
       <p className="-mt-2 mb-1 text-(length:--conversation-caption-font-size) leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
         {p.intro}
       </p>
-      {featured && <FeaturedProviderRow onSelect={select} provider={featured} />}
+      {verxioConnectPicker && collapsible && !showAll ? (
+        <ConnectAccountFeaturedRow onExpand={() => setShowAll(true)} pitch={p.connectAccountFeaturedPitch} />
+      ) : null}
+      {!verxioConnectPicker && featured ? <FeaturedProviderRow onSelect={select} provider={featured} /> : null}
       {connected.length > 0 && (
         <>
           <p className="mt-1 px-0.5 text-(length:--conversation-caption-font-size) font-medium text-(--ui-text-tertiary)">
             {p.connected}
           </p>
-          {connected.map(p => (
-            <ProviderRow key={p.id} onSelect={select} provider={p} />
+          {connected.map(provider => (
+            <ProviderRow key={provider.id} onSelect={select} provider={provider} />
           ))}
         </>
       )}
       {showOthers && (
         <>
-          {others.map(p => (
-            <ProviderRow key={p.id} onSelect={select} provider={p} />
+          {others.map(provider => (
+            <ProviderRow key={provider.id} onSelect={select} provider={provider} />
           ))}
           <KeyProviderRow onClick={onWantApiKey} />
         </>
@@ -149,7 +152,7 @@ function OAuthPicker({ onWantApiKey, providers }: { onWantApiKey: () => void; pr
       {collapsible && (
         <Button
           className="py-1 text-(length:--conversation-caption-font-size)"
-          onClick={() => setShowAll(v => !v)}
+          onClick={() => setShowAll(value => !value)}
           size="inline"
           type="button"
           variant="text"

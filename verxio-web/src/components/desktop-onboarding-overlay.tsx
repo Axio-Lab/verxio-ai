@@ -14,6 +14,7 @@ import { useDecoded } from '@/lib/decoded-text'
 import { Check, ChevronDown, ChevronLeft, ChevronRight, ExternalLink, KeyRound, Loader2, Terminal } from '@/lib/icons'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
 import { cn } from '@/lib/utils'
+import { oauthProvidersForProduct, usesVerxioConnectAccountPicker } from '@/lib/verxio-oauth-providers'
 import { $desktopBoot, type DesktopBootState } from '@/store/boot'
 import {
   $desktopOnboarding,
@@ -237,6 +238,12 @@ export function DesktopOnboardingOverlay({ enabled, onCompleted, requestGateway 
 
     const pendingId = peekPendingProviderOAuth()
 
+    if (pendingId === 'nous' && usesVerxioConnectAccountPicker()) {
+      clearPendingProviderOAuth()
+
+      return
+    }
+
     if (!pendingId) {
       return
     }
@@ -423,7 +430,8 @@ export function Picker({ ctx }: { ctx: OnboardingContext }) {
   const { t } = useI18n()
   const { localEndpoint, manual, mode, providers } = useStore($desktopOnboarding)
   const [showAll, setShowAll] = useState(readShowAll)
-  const ordered = useMemo(() => (providers ? sortProviders(providers) : []), [providers])
+  const verxioConnectPicker = usesVerxioConnectAccountPicker()
+  const ordered = useMemo(() => (providers ? sortProviders(oauthProvidersForProduct(providers)) : []), [providers])
   const hasOauth = ordered.length > 0
   const apiKeyOptions = useApiKeyCatalog()
 
@@ -450,22 +458,26 @@ export function Picker({ ctx }: { ctx: OnboardingContext }) {
     return <Status>{t.onboarding.lookingUpProviders}</Status>
   }
 
-  const select = (p: OAuthProvider) => void startProviderOAuth(p, ctx)
-  const featured = ordered.find(p => p.id === FEATURED_ID) ?? null
-  const rest = featured ? ordered.filter(p => p.id !== FEATURED_ID) : ordered
-  // Collapse the secondary providers behind a disclosure only when the subscription provider
-  // Portal is present to anchor the choice — otherwise show the full list.
-  const collapsible = Boolean(featured) && rest.length > 0
+  const select = (provider: OAuthProvider) => void startProviderOAuth(provider, ctx)
+  const featured = verxioConnectPicker ? null : (ordered.find(item => item.id === FEATURED_ID) ?? null)
+  const rest = featured ? ordered.filter(item => item.id !== featured.id) : ordered
+  const collapsible = verxioConnectPicker ? rest.length > 0 : Boolean(featured) && rest.length > 0
   const showRest = !collapsible || showAll
 
   return (
     <div className="grid gap-2">
       <div className="grid max-h-[60dvh] gap-2 overflow-y-auto p-1">
-        {featured ? <FeaturedProviderRow onSelect={select} provider={featured} /> : null}
+        {verxioConnectPicker && collapsible && !showAll ? (
+          <ConnectAccountFeaturedRow
+            onExpand={() => setShowAll(persistShowAll(true))}
+            pitch={t.settings.providers.connectAccountFeaturedPitch}
+          />
+        ) : null}
+        {!verxioConnectPicker && featured ? <FeaturedProviderRow onSelect={select} provider={featured} /> : null}
         {showRest ? (
           <>
-            {rest.map(p => (
-              <ProviderRow key={p.id} onSelect={select} provider={p} />
+            {rest.map(provider => (
+              <ProviderRow key={provider.id} onSelect={select} provider={provider} />
             ))}
             <KeyProviderRow onClick={() => setOnboardingMode('apikey')} />
           </>
@@ -484,9 +496,6 @@ export function Picker({ ctx }: { ctx: OnboardingContext }) {
         </Button>
       ) : null}
       <div className="flex items-center justify-between gap-3 pt-1">
-        {/* First run only: let the user defer the choice and land in the app.
-            In manual mode the overlay already has a close affordance, so the
-            "choose later" escape would be redundant — hide it. */}
         {manual ? <span /> : <ChooseLaterLink />}
         <Button
           className="-mr-2 font-medium"
@@ -512,6 +521,34 @@ function ChooseLaterLink() {
     <Button className="font-medium" onClick={() => dismissFirstRunOnboarding()} size="xs" type="button" variant="text">
       {t.onboarding.chooseLater}
     </Button>
+  )
+}
+
+export function ConnectAccountFeaturedRow({ onExpand, pitch }: { onExpand: () => void; pitch: string }) {
+  const { t } = useI18n()
+
+  return (
+    <button
+      className="group relative flex w-full items-center justify-between gap-4 rounded-[8px] bg-primary/[0.06] px-3 py-2.5 text-left transition-colors hover:bg-primary/10"
+      onClick={onExpand}
+      type="button"
+    >
+      <span aria-hidden className="arc-border arc-reverse arc-nous" />
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <img alt="" className="size-5 shrink-0 rounded" src={assetPath('verxioIcon.svg')} />
+          <span className="text-[length:var(--conversation-text-font-size)] font-semibold">
+            {t.settings.providers.connectAccount}
+          </span>
+          <span className="inline-flex items-center gap-1.5 bg-primary px-2 py-0.5 text-[0.64rem] font-semibold uppercase tracking-[0.16em] text-primary-foreground">
+            <span aria-hidden="true" className="dither inline-block size-2 shrink-0" />
+            {t.onboarding.recommended}
+          </span>
+        </div>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">{pitch}</p>
+      </div>
+      <ChevronRight className="size-4 shrink-0 text-primary transition group-hover:translate-x-0.5" />
+    </button>
   )
 }
 

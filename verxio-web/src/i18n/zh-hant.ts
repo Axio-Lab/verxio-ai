@@ -564,6 +564,7 @@ export const zhHant = defineLocale({
     },
     providers: {
       connectAccount: '連結帳號',
+      connectAccountFeaturedPitch: '連結您自己的提供商帳號以使用前沿模型，例如 OpenAI、Anthropic、Gemini 等。',
       haveApiKey: '改用 API 金鑰？',
       intro: '使用訂閱登入，無需複製 API 金鑰。Verxio 會在應用程式中為您完成瀏覽器登入。',
       connected: '已連線',

@@ -435,6 +435,7 @@ export interface Translations {
     }
     providers: {
       connectAccount: string
+      connectAccountFeaturedPitch: string
       haveApiKey: string
       intro: string
       connected: string

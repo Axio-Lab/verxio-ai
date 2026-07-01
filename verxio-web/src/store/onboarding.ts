@@ -660,6 +660,12 @@ export async function submitOnboardingCode(ctx: OnboardingContext) {
 }
 
 export function cancelOnboardingFlow() {
+  if ($desktopOnboarding.get().manual) {
+    closeManualOnboarding()
+
+    return
+  }
+
   clearPoll()
   const sessionId = sessionIdFor($desktopOnboarding.get().flow)
 

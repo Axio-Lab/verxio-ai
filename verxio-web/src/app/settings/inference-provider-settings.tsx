@@ -1,9 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { KeyRound, Loader2, Sparkles } from '@/lib/icons'
-import { cn } from '@/lib/utils'
 import {
   getInferenceCatalog,
   getInferenceUsage,
@@ -61,22 +59,19 @@ export function InferenceProviderSettings({ onOpenProviderKeys }: InferenceProvi
     void refresh()
   }, [refresh])
 
-  const hostedModels = catalog?.models ?? []
+  const hostedModel: VerxioInferenceModel | null = catalog?.models[0] ?? null
   const settings = usage?.settings
 
-  const selectedHostedModel = useMemo<VerxioInferenceModel | null>(() => {
-    const modelId = settings?.defaultModelId || catalog?.defaultModelId
-
-    return hostedModels.find(model => model.id === modelId) ?? hostedModels[0] ?? null
-  }, [catalog?.defaultModelId, hostedModels, settings?.defaultModelId])
-
   const applyInferenceMode = useCallback(
-    async (mode: 'hosted' | 'byok', defaultModelId = settings?.defaultModelId) => {
+    async (mode: 'hosted' | 'byok') => {
       setApplying(true)
       setError('')
 
       try {
-        const nextSettings = await updateInferenceSettings({ defaultModelId, mode })
+        const nextSettings = await updateInferenceSettings({
+          defaultModelId: hostedModel?.id ?? catalog?.defaultModelId,
+          mode
+        })
         const nextUsage = await getInferenceUsage()
         setUsage({ ...nextUsage, settings: nextSettings })
       } catch (err) {
@@ -85,7 +80,7 @@ export function InferenceProviderSettings({ onOpenProviderKeys }: InferenceProvi
         setApplying(false)
       }
     },
-    [settings?.defaultModelId]
+    [catalog?.defaultModelId, hostedModel?.id]
   )
 
   if (!verxioApiEnabled()) {
@@ -103,8 +98,8 @@ export function InferenceProviderSettings({ onOpenProviderKeys }: InferenceProvi
         {loading && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
       </div>
       <p className="mb-3 text-xs text-muted-foreground">
-        Verxio Hosted uses Verxio-managed provider access and monthly hosted credit. BYOK uses the provider keys in this
-        runtime only.
+        Verxio Hosted runs on Verxio Qwen through DashScope. Connect your own OpenAI, Anthropic, or other provider
+        accounts below for frontier models via BYOK.
       </p>
 
       {error && (
@@ -140,45 +135,27 @@ export function InferenceProviderSettings({ onOpenProviderKeys }: InferenceProvi
                 </Button>
               </div>
             }
-            description="Hosted calls use Verxio keys and billing. BYOK calls use the provider keys you add below."
+            description="Hosted calls use Verxio Qwen and Verxio billing. BYOK calls use the provider keys you add below."
             title="Billing mode"
           />
           <ListRow
-            action={
-              <Select
-                disabled={applying || settings?.mode !== 'hosted'}
-                onValueChange={value => void applyInferenceMode('hosted', value)}
-                value={selectedHostedModel?.id ?? catalog.defaultModelId}
-              >
-                <SelectTrigger className={cn('min-w-56', CONTROL_TEXT)}>
-                  <SelectValue placeholder="Hosted model" />
-                </SelectTrigger>
-                <SelectContent>
-                  {hostedModels.map(model => (
-                    <SelectItem disabled={!model.hostedAvailable} key={model.id} value={model.id}>
-                      {model.displayName}
-                      {!model.hostedAvailable ? ' · unavailable' : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            }
             description={
-              selectedHostedModel
-                ? `${selectedHostedModel.description} Routes through Hermes provider ${selectedHostedModel.providerSlug}.`
-                : 'Verxio GPT is the default hosted model for new users and runtimes.'
+              hostedModel
+                ? `${hostedModel.description} Routes through Hermes provider ${hostedModel.providerSlug}.`
+                : 'Verxio Qwen is the Verxio Hosted model for all users and runtimes.'
             }
             title={
               <span className="flex flex-wrap items-baseline gap-2">
-                {selectedHostedModel?.displayName ?? 'Verxio GPT'}
-                <Pill tone="primary">Default hosted</Pill>
-                {selectedHostedModel && <Pill>{selectedHostedModel.tier}</Pill>}
+                {hostedModel?.displayName ?? 'Verxio Qwen'}
+                <Pill tone="primary">Verxio Hosted</Pill>
+                {hostedModel && <Pill>{hostedModel.tier}</Pill>}
+                {hostedModel && !hostedModel.hostedAvailable ? <Pill>Unavailable</Pill> : null}
               </span>
             }
           />
           <ListRow
             action={
-              <div className="text-right text-xs">
+              <div className={`text-right text-xs ${CONTROL_TEXT}`}>
                 <div className="font-medium text-foreground">{formatUsd(usage.usage.remainingUsd)} remaining</div>
                 <div className="text-muted-foreground">
                   {formatUsd(usage.usage.usedUsd)} used of {formatUsd(usage.usage.monthlyCreditUsd)}
@@ -194,7 +171,7 @@ export function InferenceProviderSettings({ onOpenProviderKeys }: InferenceProvi
                 Open provider keys
               </Button>
             }
-            description="Add OpenAI, Anthropic, Gemini, GLM, Kimi, or DashScope keys for BYOK. Verxio does not copy those keys into its database."
+            description="Add OpenAI, Anthropic, Gemini, or other provider keys for BYOK. Verxio does not copy those keys into its database."
             title={
               <span className="flex items-center gap-2">
                 <KeyRound className="size-3.5" />

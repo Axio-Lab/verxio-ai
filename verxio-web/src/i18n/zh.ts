@@ -708,6 +708,7 @@ export const zh: Translations = {
     },
     providers: {
       connectAccount: '连接账号',
+      connectAccountFeaturedPitch: '连接您自己的提供商账号以使用前沿模型，例如 OpenAI、Anthropic、Gemini 等。',
       haveApiKey: '改用 API 密钥？',
       intro: '使用订阅登录，无需复制 API 密钥。Verxio 会在应用中为你完成浏览器登录。',
       connected: '已连接',
