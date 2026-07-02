@@ -255,7 +255,13 @@ export function WhatsAppPairingPanel({ onChanged, platform }: WhatsAppPairingPan
             <RefreshCw className="size-3.5" />
             {m.repair}
           </Button>
-          <Button disabled={busy} onClick={() => void handleDisconnect()} size="sm" variant="ghost">
+          <Button
+            className="border-destructive/70 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            disabled={busy}
+            onClick={() => void handleDisconnect()}
+            size="sm"
+            variant="outline"
+          >
             {busy ? m.disconnecting : m.disconnect}
           </Button>
         </div>

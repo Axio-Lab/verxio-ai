@@ -905,10 +905,74 @@ export const en: Translations = {
         label: 'Enable WhatsApp bridge',
         help: 'Set automatically by the toggle below. Leave alone unless you know you need it.'
       },
-      WHATSAPP_MODE: { label: 'Bridge mode' },
+      WHATSAPP_MODE: {
+        label: 'Bridge mode',
+        help: 'self-chat uses Message yourself. bot accepts DMs from allowed numbers on a dedicated line.'
+      },
       WHATSAPP_ALLOWED_USERS: {
-        label: 'Allowed WhatsApp users',
-        help: 'Recommended. Comma-separated phone numbers or WhatsApp IDs.'
+        label: 'Allowed phone numbers',
+        help: 'Comma-separated numbers with country code (no +). Use * to allow everyone.',
+        placeholder: '2347068827272 or *'
+      },
+      WHATSAPP_ALLOW_ALL_USERS: {
+        label: 'Allow all senders',
+        help: 'Development only. Skips the allowlist and accepts any WhatsApp sender.'
+      },
+      WHATSAPP_DM_POLICY: {
+        label: 'DM policy',
+        help: 'open accepts DMs per allowlist rules. allowlist requires WHATSAPP_ALLOWED_USERS. disabled ignores DMs.'
+      },
+      WHATSAPP_HOME_CHANNEL: {
+        label: 'Home chat ID',
+        help: 'Chat or group where cron jobs and proactive notifications are delivered.',
+        placeholder: '2347068827272 or 120363001234567890@g.us'
+      },
+      WHATSAPP_HOME_CHANNEL_NAME: {
+        label: 'Home chat name',
+        help: 'Friendly label for the home chat in logs and status output.',
+        placeholder: 'My WhatsApp'
+      },
+      WHATSAPP_GROUP_POLICY: {
+        label: 'Group policy',
+        help: 'open listens in all groups. allowlist requires WHATSAPP_GROUP_ALLOWED_USERS. disabled ignores groups.'
+      },
+      WHATSAPP_GROUP_ALLOWED_USERS: {
+        label: 'Allowed group IDs',
+        help: 'Comma-separated group JIDs when group policy is allowlist.',
+        placeholder: '120363001234567890@g.us'
+      },
+      WHATSAPP_REQUIRE_MENTION: {
+        label: 'Require mention in groups',
+        help: 'When enabled, the agent only replies in groups after an @mention or mention pattern match.'
+      },
+      WHATSAPP_MENTION_PATTERNS: {
+        label: 'Mention patterns',
+        help: 'JSON array of regex patterns treated as mentions, e.g. ["@verxio", "^hey bot"].',
+        placeholder: '["@verxio"]'
+      },
+      WHATSAPP_FREE_RESPONSE_CHATS: {
+        label: 'Free-response groups',
+        help: 'Group IDs that always get replies without a mention.',
+        placeholder: '120363001234567890@g.us'
+      },
+      WHATSAPP_DEBUG: {
+        label: 'Debug logging',
+        help: 'Write raw WhatsApp message events to bridge.log for troubleshooting.'
+      }
+    },
+    whatsappSettings: {
+      title: 'WhatsApp options',
+      description: 'Access control, delivery target, and group behavior for the WhatsApp bridge.',
+      homeChannelHint:
+        'Use your phone number or LID for a DM (Message yourself in self-chat mode), or a group JID ending in @g.us for group delivery.',
+      groupsHint:
+        'Group IDs look like 120363001234567890@g.us. Enable mention gating to avoid replying to every group message.',
+      sections: {
+        bridge: 'Bridge mode',
+        access: 'Access control',
+        delivery: 'Cron & notifications',
+        groups: 'Groups & mentions',
+        advanced: 'Advanced'
       }
     },
     whatsappPairing: {

@@ -1031,8 +1031,42 @@ export const zh: Translations = {
       SIGNAL_ACCOUNT: { label: '电话号码', help: '在 signal-cli 桥接中注册的号码。' },
       SIGNAL_ALLOWED_USERS: { label: '允许的 Signal 用户', help: '推荐。逗号分隔的 Signal 标识符。' },
       WHATSAPP_ENABLED: { label: '启用 WhatsApp 桥接', help: '由下方开关自动设置。除非确知需要，否则请勿改动。' },
-      WHATSAPP_MODE: { label: '桥接模式' },
-      WHATSAPP_ALLOWED_USERS: { label: '允许的 WhatsApp 用户', help: '推荐。逗号分隔的电话号码或 WhatsApp ID。' }
+      WHATSAPP_MODE: { label: '桥接模式', help: 'self-chat 使用“发给自己”。bot 接受允许列表中的号码。' },
+      WHATSAPP_ALLOWED_USERS: {
+        label: '允许的电话号码',
+        help: '逗号分隔的号码（含国家代码，不含 +）。使用 * 允许所有人。',
+        placeholder: '2347068827272 或 *'
+      },
+      WHATSAPP_ALLOW_ALL_USERS: { label: '允许所有发送者', help: '仅用于开发。跳过允许列表。' },
+      WHATSAPP_DM_POLICY: { label: '私信策略', help: 'open、allowlist 或 disabled。' },
+      WHATSAPP_HOME_CHANNEL: {
+        label: '主聊天 ID',
+        help: '定时任务和通知发送到的聊天或群组。',
+        placeholder: '2347068827272 或 120363001234567890@g.us'
+      },
+      WHATSAPP_HOME_CHANNEL_NAME: { label: '主聊天名称', placeholder: 'My WhatsApp' },
+      WHATSAPP_GROUP_POLICY: { label: '群组策略', help: 'open、allowlist 或 disabled。' },
+      WHATSAPP_GROUP_ALLOWED_USERS: {
+        label: '允许的群组 ID',
+        placeholder: '120363001234567890@g.us'
+      },
+      WHATSAPP_REQUIRE_MENTION: { label: '群组中需要 @提及' },
+      WHATSAPP_MENTION_PATTERNS: { label: '提及模式', placeholder: '["@verxio"]' },
+      WHATSAPP_FREE_RESPONSE_CHATS: { label: '免提及群组', placeholder: '120363001234567890@g.us' },
+      WHATSAPP_DEBUG: { label: '调试日志' }
+    },
+    whatsappSettings: {
+      title: 'WhatsApp 选项',
+      description: 'Hermes WhatsApp 桥接的访问控制、投递目标和群组行为。',
+      homeChannelHint: '使用电话号码/LID 作为私信，或使用以 @g.us 结尾的群组 JID。',
+      groupsHint: '群组 ID 形如 120363001234567890@g.us。启用提及门控可避免回复所有群消息。',
+      sections: {
+        bridge: '桥接模式',
+        access: '访问控制',
+        delivery: '定时任务与通知',
+        groups: '群组与提及',
+        advanced: '高级'
+      }
     },
     whatsappPairing: {
       title: 'Pair WhatsApp',

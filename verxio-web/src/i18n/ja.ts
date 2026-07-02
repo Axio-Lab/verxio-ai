@@ -941,10 +941,40 @@ export const ja = defineLocale({
         label: 'WhatsApp ブリッジを有効にする',
         help: '以下のトグルで自動的に設定されます。必要な場合を除いてそのままにしてください。'
       },
-      WHATSAPP_MODE: { label: 'ブリッジモード' },
+      WHATSAPP_MODE: {
+        label: 'ブリッジモード',
+        help: 'self-chat は「自分にメッセージ」。bot は許可リストの番号を受け付けます。'
+      },
       WHATSAPP_ALLOWED_USERS: {
-        label: '許可する WhatsApp ユーザー',
-        help: '推奨。カンマ区切りの電話番号または WhatsApp ID。'
+        label: '許可する電話番号',
+        help: 'カンマ区切り（国番号、+ なし）。* で全員許可。',
+        placeholder: '2347068827272 または *'
+      },
+      WHATSAPP_ALLOW_ALL_USERS: { label: 'すべての送信者を許可', help: '開発用のみ。' },
+      WHATSAPP_DM_POLICY: { label: 'DM ポリシー' },
+      WHATSAPP_HOME_CHANNEL: {
+        label: 'ホームチャット ID',
+        placeholder: '2347068827272 または 120363001234567890@g.us'
+      },
+      WHATSAPP_HOME_CHANNEL_NAME: { label: 'ホームチャット名' },
+      WHATSAPP_GROUP_POLICY: { label: 'グループポリシー' },
+      WHATSAPP_GROUP_ALLOWED_USERS: { label: '許可するグループ ID', placeholder: '120363001234567890@g.us' },
+      WHATSAPP_REQUIRE_MENTION: { label: 'グループでメンション必須' },
+      WHATSAPP_MENTION_PATTERNS: { label: 'メンションパターン', placeholder: '["@verxio"]' },
+      WHATSAPP_FREE_RESPONSE_CHATS: { label: 'メンション不要グループ' },
+      WHATSAPP_DEBUG: { label: 'デバッグログ' }
+    },
+    whatsappSettings: {
+      title: 'WhatsApp オプション',
+      description: 'Hermes WhatsApp ブリッジのアクセス制御、配信先、グループ動作。',
+      homeChannelHint: 'DM には電話番号/LID、グループには @g.us で終わる JID を使用。',
+      groupsHint: 'グループ ID は 120363001234567890@g.us の形式です。',
+      sections: {
+        bridge: 'ブリッジモード',
+        access: 'アクセス制御',
+        delivery: 'Cron と通知',
+        groups: 'グループとメンション',
+        advanced: '詳細'
       }
     },
     whatsappPairing: {

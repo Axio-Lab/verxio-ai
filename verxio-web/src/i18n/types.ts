@@ -687,6 +687,19 @@ export interface Translations {
     failedSave: (name: string) => string
     failedClear: (key: string) => string
     fieldCopy: Record<string, { label?: string; help?: string; placeholder?: string }>
+    whatsappSettings: {
+      title: string
+      description: string
+      homeChannelHint: string
+      groupsHint: string
+      sections: {
+        bridge: string
+        access: string
+        delivery: string
+        groups: string
+        advanced: string
+      }
+    }
     whatsappPairing: {
       title: string
       description: string

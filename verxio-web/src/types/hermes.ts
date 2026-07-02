@@ -146,6 +146,7 @@ export interface EnvVarInfo {
 
 export interface MessagingEnvVarInfo {
   advanced: boolean
+  current_value?: null | string
   description: string
   is_password: boolean
   is_set: boolean

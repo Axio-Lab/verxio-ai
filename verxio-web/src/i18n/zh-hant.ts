@@ -899,10 +899,34 @@ export const zhHant = defineLocale({
         label: '啟用 WhatsApp 橋接',
         help: '由下方切換開關自動設定。除非確知需要，否則請勿變更。'
       },
-      WHATSAPP_MODE: { label: '橋接模式' },
+      WHATSAPP_MODE: { label: '橋接模式', help: 'self-chat 使用「傳給自己」。bot 接受允許清單中的號碼。' },
       WHATSAPP_ALLOWED_USERS: {
-        label: '允許的 WhatsApp 使用者',
-        help: '建議設定。逗號分隔的電話號碼或 WhatsApp ID。'
+        label: '允許的電話號碼',
+        help: '逗號分隔的號碼（含國碼，不含 +）。使用 * 允許所有人。',
+        placeholder: '2347068827272 或 *'
+      },
+      WHATSAPP_ALLOW_ALL_USERS: { label: '允許所有傳送者', help: '僅用於開發。' },
+      WHATSAPP_DM_POLICY: { label: '私訊策略' },
+      WHATSAPP_HOME_CHANNEL: { label: '主聊天 ID', placeholder: '2347068827272 或 120363001234567890@g.us' },
+      WHATSAPP_HOME_CHANNEL_NAME: { label: '主聊天名稱' },
+      WHATSAPP_GROUP_POLICY: { label: '群組策略' },
+      WHATSAPP_GROUP_ALLOWED_USERS: { label: '允許的群組 ID', placeholder: '120363001234567890@g.us' },
+      WHATSAPP_REQUIRE_MENTION: { label: '群組中需要 @提及' },
+      WHATSAPP_MENTION_PATTERNS: { label: '提及模式', placeholder: '["@verxio"]' },
+      WHATSAPP_FREE_RESPONSE_CHATS: { label: '免提及群組' },
+      WHATSAPP_DEBUG: { label: '偵錯日誌' }
+    },
+    whatsappSettings: {
+      title: 'WhatsApp 選項',
+      description: 'Hermes WhatsApp 橋接的存取控制、投遞目標與群組行為。',
+      homeChannelHint: '使用電話號碼/LID 作為私訊，或使用以 @g.us 結尾的群組 JID。',
+      groupsHint: '群組 ID 形如 120363001234567890@g.us。',
+      sections: {
+        bridge: '橋接模式',
+        access: '存取控制',
+        delivery: '定時任務與通知',
+        groups: '群組與提及',
+        advanced: '進階'
       }
     },
     whatsappPairing: {

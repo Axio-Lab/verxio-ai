@@ -28,6 +28,7 @@ import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 
 import { PlatformAvatar } from './platform-icon'
 import { WhatsAppPairingPanel } from './whatsapp-pairing-panel'
+import { WhatsAppSettingsPanel } from './whatsapp-settings-panel'
 
 interface MessagingViewProps extends React.ComponentProps<'section'> {
   setStatusbarItemGroup?: SetStatusbarItemGroup
@@ -417,6 +418,16 @@ function PlatformDetail({
 
           {isWhatsApp && <WhatsAppPairingPanel onChanged={onRefresh} platform={platform} />}
 
+          {isWhatsApp && platform.configured && (
+            <WhatsAppSettingsPanel
+              edits={edits}
+              envVars={platform.env_vars}
+              onClear={onClear}
+              onEdit={onEdit}
+              saving={saving}
+            />
+          )}
+
           {showWhatsAppPairingError && (
             <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-destructive">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
@@ -523,7 +534,7 @@ function PlatformDetail({
             title={isWhatsApp && !platform.configured ? m.whatsappPairing.scanFirst : undefined}
           />
 
-          {!isWhatsApp && (
+          {(!isWhatsApp || platform.configured) && (
             <div className="ml-auto flex items-center gap-2">
               {hasEdits && <span className="text-xs text-muted-foreground">{m.unsavedChanges}</span>}
               <Button disabled={!hasEdits || isSavingEnv} onClick={onSave} size="sm">
