@@ -678,6 +678,7 @@ export interface Translations {
     platformEnabled: (name: string) => string
     platformDisabled: (name: string) => string
     restartToApply: string
+    gatewayRestarting: string
     setupSaved: (name: string) => string
     restartToReconnect: string
     keyCleared: (key: string) => string
@@ -686,6 +687,31 @@ export interface Translations {
     failedSave: (name: string) => string
     failedClear: (key: string) => string
     fieldCopy: Record<string, { label?: string; help?: string; placeholder?: string }>
+    whatsappPairing: {
+      title: string
+      description: string
+      showQr: string
+      starting: string
+      waitingForQr: string
+      scanInstructions: string
+      qrAlt: string
+      cancel: string
+      pairedTitle: string
+      pairedMessage: string
+      connectedTitle: string
+      restartingGateway: string
+      restartManually: string
+      finishSetup: string
+      connecting: string
+      allowedUsersLabel: string
+      allowedUsersHelp: string
+      allowedUsersPlaceholder: string
+      alreadyPaired: string
+      repair: string
+      startFailed: string
+      applyFailed: string
+      scanFirst: string
+    }
     platformIntro: Record<string, string>
   }
 

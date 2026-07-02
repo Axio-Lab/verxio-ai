@@ -195,6 +195,30 @@ export interface MessagingPlatformTestResponse {
   state?: null | string
 }
 
+export interface WhatsAppPairingStartResponse {
+  pairing_id: string | null
+  status: string
+  qr?: string | null
+  paired?: boolean
+}
+
+export interface WhatsAppPairingStatusResponse {
+  pairing_id: string
+  status: string
+  qr?: string | null
+  paired?: boolean
+}
+
+export interface WhatsAppPairingApplyResponse {
+  ok: boolean
+  platform: string
+  paired: boolean
+  needs_restart?: boolean
+  restart_started?: boolean
+  restart_error?: string
+  restart_action?: string
+}
+
 export interface GatewayReadyPayload {
   skin?: unknown
 }

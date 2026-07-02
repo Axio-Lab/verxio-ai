@@ -851,6 +851,7 @@ export const ja = defineLocale({
     platformEnabled: name => `${name} を有効にしました`,
     platformDisabled: name => `${name} を無効にしました`,
     restartToApply: 'この変更を有効にするにはゲートウェイを再起動してください。',
+    gatewayRestarting: 'Restarting the gateway to apply your changes…',
     setupSaved: name => `${name} の設定を保存しました`,
     restartToReconnect: '新しい認証情報で再接続するにはゲートウェイを再起動してください。',
     keyCleared: key => `${key} をクリアしました`,
@@ -945,6 +946,33 @@ export const ja = defineLocale({
         label: '許可する WhatsApp ユーザー',
         help: '推奨。カンマ区切りの電話番号または WhatsApp ID。'
       }
+    },
+    whatsappPairing: {
+      title: 'Pair WhatsApp',
+      description:
+        'Link your WhatsApp account by scanning a QR code. Open WhatsApp on your phone, go to Settings → Linked Devices → Link a Device, then scan below.',
+      showQr: 'Show QR code',
+      starting: 'Starting pairing…',
+      waitingForQr: 'Generating QR code…',
+      scanInstructions: 'Scan this code with WhatsApp on your phone. The code refreshes automatically if it expires.',
+      qrAlt: 'WhatsApp pairing QR code',
+      cancel: 'Cancel pairing',
+      pairedTitle: 'WhatsApp paired',
+      pairedMessage: 'WhatsApp linked successfully. Finish setup to enable the gateway.',
+      connectedTitle: 'WhatsApp connected',
+      restartingGateway: 'Gateway restarting with WhatsApp enabled.',
+      restartManually: 'WhatsApp is ready. Restart the gateway to connect.',
+      finishSetup: 'Enable WhatsApp',
+      connecting: 'Enabling…',
+      allowedUsersLabel: 'Allowed phone numbers',
+      allowedUsersHelp:
+        'Optional. Comma-separated numbers that may message the bot. Leave blank to allow all incoming messages.',
+      allowedUsersPlaceholder: '15551234567',
+      alreadyPaired: 'WhatsApp is already paired on this runtime.',
+      repair: 'Generate new QR code',
+      startFailed: 'Could not start WhatsApp pairing',
+      applyFailed: 'Could not finish WhatsApp setup',
+      scanFirst: 'Scan the QR code before enabling WhatsApp.'
     },
     platformIntro: {}
   },

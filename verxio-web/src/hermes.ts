@@ -45,7 +45,10 @@ import type {
   SkillWriteResult,
   StatusResponse,
   ToolsetConfig,
-  ToolsetInfo
+  ToolsetInfo,
+  WhatsAppPairingApplyResponse,
+  WhatsAppPairingStartResponse,
+  WhatsAppPairingStatusResponse
 } from '@/types/hermes'
 
 const DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS = 30_000
@@ -105,7 +108,10 @@ export type {
   StaleAuxAssignment,
   StatusResponse,
   ToolsetConfig,
-  ToolsetInfo
+  ToolsetInfo,
+  WhatsAppPairingApplyResponse,
+  WhatsAppPairingStartResponse,
+  WhatsAppPairingStatusResponse
 } from '@/types/hermes'
 
 export class HermesGateway extends JsonRpcGatewayClient {
@@ -509,6 +515,38 @@ export function testMessagingPlatform(platformId: string): Promise<MessagingPlat
   return window.hermesDesktop.api<MessagingPlatformTestResponse>({
     path: `/api/messaging/platforms/${encodeURIComponent(platformId)}/test`,
     method: 'POST'
+  })
+}
+
+export function startWhatsAppPairing(body: { reset?: boolean } = {}): Promise<WhatsAppPairingStartResponse> {
+  return window.hermesDesktop.api<WhatsAppPairingStartResponse>({
+    path: '/api/messaging/whatsapp/pairing/start',
+    method: 'POST',
+    body
+  })
+}
+
+export function getWhatsAppPairingStatus(pairingId: string): Promise<WhatsAppPairingStatusResponse> {
+  return window.hermesDesktop.api<WhatsAppPairingStatusResponse>({
+    path: `/api/messaging/whatsapp/pairing/${encodeURIComponent(pairingId)}`
+  })
+}
+
+export function applyWhatsAppPairing(
+  pairingId: string,
+  body: { allowed_users?: string; profile?: string }
+): Promise<WhatsAppPairingApplyResponse> {
+  return window.hermesDesktop.api<WhatsAppPairingApplyResponse>({
+    path: `/api/messaging/whatsapp/pairing/${encodeURIComponent(pairingId)}/apply`,
+    method: 'POST',
+    body
+  })
+}
+
+export function cancelWhatsAppPairing(pairingId: string): Promise<{ ok: boolean }> {
+  return window.hermesDesktop.api<{ ok: boolean }>({
+    path: `/api/messaging/whatsapp/pairing/${encodeURIComponent(pairingId)}`,
+    method: 'DELETE'
   })
 }
 

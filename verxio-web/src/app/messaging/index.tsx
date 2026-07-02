@@ -27,6 +27,7 @@ import { ListRow } from '../settings/primitives'
 import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 
 import { PlatformAvatar } from './platform-icon'
+import { WhatsAppPairingPanel } from './whatsapp-pairing-panel'
 
 interface MessagingViewProps extends React.ComponentProps<'section'> {
   setStatusbarItemGroup?: SetStatusbarItemGroup
@@ -202,9 +203,13 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
       notify({
         kind: 'success',
         title: enabled ? m.platformEnabled(platform.name) : m.platformDisabled(platform.name),
-        message: m.restartToApply,
-        action: restartGatewayAction
+        message: enabled ? m.gatewayRestarting : m.restartToApply,
+        action: enabled ? undefined : restartGatewayAction
       })
+
+      if (enabled) {
+        await runGatewayRestart()
+      }
     } catch (err) {
       notifyError(err, m.failedUpdate(platform.name))
     } finally {
@@ -222,14 +227,14 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
     setSaving(`env:${platform.id}`)
 
     try {
-      await updateMessagingPlatform(platform.id, { env })
+      await updateMessagingPlatform(platform.id, { env, enabled: true })
       setEdits(current => ({ ...current, [platform.id]: {} }))
       await refreshPlatforms()
+      await runGatewayRestart()
       notify({
         kind: 'success',
         title: m.setupSaved(platform.name),
-        message: m.restartToReconnect,
-        action: restartGatewayAction
+        message: m.gatewayRestarting
       })
     } catch (err) {
       notifyError(err, m.failedSave(platform.name))
@@ -299,6 +304,7 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
                     }
                   }))
                 }
+                onRefresh={refreshPlatforms}
                 onSave={() => void handleSave(selected)}
                 onToggle={enabled => void handleToggle(selected, enabled)}
                 platform={selected}
@@ -345,6 +351,7 @@ function PlatformDetail({
   edits,
   onClear,
   onEdit,
+  onRefresh,
   onSave,
   onToggle,
   platform,
@@ -353,6 +360,7 @@ function PlatformDetail({
   edits: Record<string, string>
   onClear: (key: string) => void
   onEdit: (key: string, value: string) => void
+  onRefresh: () => Promise<void>
   onSave: () => void
   onToggle: (enabled: boolean) => void
   platform: MessagingPlatformInfo
@@ -390,6 +398,8 @@ function PlatformDetail({
               <PlatformHint platform={platform} />
             </div>
           </header>
+
+          {platform.id === 'whatsapp' && <WhatsAppPairingPanel onChanged={onRefresh} platform={platform} />}
 
           {platform.error_message && (
             <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-destructive">
