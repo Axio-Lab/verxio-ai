@@ -804,6 +804,7 @@ def test_composio_setup_returns_inline_fields(client, monkeypatch):
         }
 
     monkeypatch.setattr(composio_catalog, "_fetch_toolkit_by_slug", fake_fetch_toolkit)
+    monkeypatch.setattr(composio_catalog, "_find_existing_custom_auth_config", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(composio_catalog, "_resolve_custom_auth_config_id", fake_resolve_custom_auth_config_id)
     monkeypatch.setattr(composio_catalog, "_fetch_auth_config", fake_fetch_auth_config)
 
@@ -879,6 +880,7 @@ def test_composio_initiate_rejects_oauth_app_toolkit(client, monkeypatch):
         return None
 
     monkeypatch.setattr(composio_catalog, "_fetch_toolkit_by_slug", fake_fetch_toolkit)
+    monkeypatch.setattr(composio_catalog, "_find_existing_custom_auth_config", lambda *_args, **_kwargs: None)
 
     response = client.post(
         "/api/composio/connections/initiate",
@@ -888,6 +890,66 @@ def test_composio_initiate_rejects_oauth_app_toolkit(client, monkeypatch):
 
     assert response.status_code == 400
     assert "oauth app" in response.json()["detail"].lower()
+
+
+def test_composio_initiate_allows_oauth_app_with_custom_auth(client, monkeypatch):
+    monkeypatch.setenv("COMPOSIO_API_KEY", "test-key")
+    _payload, token = signup(client, "composio-oauth-ready@example.com")
+
+    def fake_fetch_toolkit(app_slug: str):
+        return {
+            "slug": "twitter",
+            "name": "Twitter",
+            "auth_schemes": ["OAUTH2"],
+            "composio_managed_auth_schemes": [],
+        }
+
+    def fake_post(url: str, payload: dict, timeout: int = 30):
+        assert url.endswith("/connected_accounts/link")
+        assert payload["auth_config_id"] == "ac_twitter_oauth"
+        return {"redirect_url": "https://composio.dev/oauth", "id": "ca_oauth_1"}
+
+    monkeypatch.setattr(composio_catalog, "_fetch_toolkit_by_slug", fake_fetch_toolkit)
+    monkeypatch.setattr(composio_catalog, "_find_existing_custom_auth_config", lambda *_args, **_kwargs: "ac_twitter_oauth")
+    monkeypatch.setattr(composio_catalog, "_resolve_custom_auth_config_id", lambda *_args, **_kwargs: "ac_twitter_oauth")
+    monkeypatch.setattr(composio_catalog, "_post", fake_post)
+
+    response = client.post(
+        "/api/composio/connections/initiate",
+        json={"appSlug": "twitter"},
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["redirectUrl"] == "https://composio.dev/oauth"
+
+
+def test_composio_setup_returns_oauth_app_fields(client, monkeypatch):
+    monkeypatch.setenv("COMPOSIO_API_KEY", "test-key")
+    _payload, token = signup(client, "composio-oauth-setup@example.com")
+
+    def fake_fetch_toolkit(app_slug: str):
+        return {
+            "slug": "twitter",
+            "name": "Twitter",
+            "auth_schemes": ["OAUTH2"],
+            "composio_managed_auth_schemes": [],
+        }
+
+    monkeypatch.setattr(composio_catalog, "_fetch_toolkit_by_slug", fake_fetch_toolkit)
+    monkeypatch.setattr(composio_catalog, "_find_existing_custom_auth_config", lambda *_args, **_kwargs: None)
+
+    response = client.get(
+        "/api/composio/connections/apps/twitter/setup",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["authMode"] == "requires_oauth_app"
+    assert payload["supportsInline"] is True
+    assert payload["supportsLink"] is False
+    assert payload["inputFields"][0]["name"] == "client_id"
 
 
 def test_runtime_start_updates_registry_without_real_docker(client, monkeypatch):

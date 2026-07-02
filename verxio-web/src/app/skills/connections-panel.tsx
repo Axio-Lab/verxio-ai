@@ -179,7 +179,11 @@ function resolveAuthMode(app: ComposioApp): ComposioAuthMode {
 }
 
 function isAppConnectable(app: ComposioApp): boolean {
-  return resolveAuthMode(app) !== 'requires_oauth_app' && app.connectable !== false
+  if (resolveAuthMode(app) === 'requires_oauth_app') {
+    return true
+  }
+
+  return app.connectable !== false
 }
 
 function authBadgeLabel(app: ComposioApp): string | null {
@@ -592,12 +596,7 @@ export function ConnectionsPanel({
     const authMode = resolveAuthMode(app)
 
     if (authMode === 'requires_oauth_app') {
-      notify({
-        kind: 'warning',
-        message:
-          'This integration needs an OAuth app configured in Composio before users can connect. Create a custom auth config in the Composio dashboard.',
-        title: 'OAuth app required'
-      })
+      setConnectDialogApp(app)
 
       return
     }
@@ -622,10 +621,23 @@ export function ConnectionsPanel({
 
     try {
       const result = await completeComposioConnection(connectDialogApp.slug, connectValues)
+      const needsOAuthLink = connectSetup?.authMode === 'requires_oauth_app'
       setConnectDialogApp(null)
       setConnectSetup(null)
       setConnectValues({})
       await refreshConnections()
+
+      if (needsOAuthLink) {
+        notify({
+          kind: 'info',
+          message: 'OAuth app saved. Finish authorization to connect your account.',
+          title: `${connectDialogApp.name} authorization`
+        })
+        await openConnectLink(connectDialogApp)
+
+        return
+      }
+
       notify({
         kind: 'success',
         message: `${connectDialogApp.name} is connected (${result.status}).`,
@@ -1043,6 +1055,8 @@ function ConnectionConnectDialog({
   const fields = setup?.inputFields ?? []
   const canSubmitInline = setup?.supportsInline && fields.length > 0
   const requiredMissing = fields.some(field => field.required && !values[field.name]?.trim())
+  const needsOAuthApp = setup?.authMode === 'requires_oauth_app'
+  const composioDashboardUrl = 'https://app.composio.dev'
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
@@ -1050,8 +1064,9 @@ function ConnectionConnectDialog({
         <DialogHeader className="pr-8 text-left">
           <DialogTitle className="break-words">Connect {app.name}</DialogTitle>
           <DialogDescription className="break-words">
-            Enter your credentials below to connect without leaving Verxio. Secrets are sent directly to Composio and
-            are not stored in Verxio.
+            {needsOAuthApp
+              ? 'This integration needs an OAuth app in Composio. Enter your client credentials below, or configure them in the Composio dashboard first.'
+              : 'Enter your credentials below to connect without leaving Verxio. Secrets are sent directly to Composio and are not stored in Verxio.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -1122,8 +1137,18 @@ function ConnectionConnectDialog({
         ) : (
           <div className="space-y-3">
             <div className="text-xs text-muted-foreground">
-              Inline credentials are not available for this integration. Continue on Composio to finish the connection.
+              {needsOAuthApp
+                ? 'Configure a custom OAuth app for this integration in Composio, then return here and click Connect again.'
+                : 'Inline credentials are not available for this integration. Continue on Composio to finish the connection.'}
             </div>
+            {needsOAuthApp ? (
+              <Button asChild className="w-full" type="button" variant="outline">
+                <a href={composioDashboardUrl} rel="noreferrer" target="_blank">
+                  <ExternalLink className="size-3" />
+                  Open Composio dashboard
+                </a>
+              </Button>
+            ) : null}
             {setup?.supportsLink ? (
               <Button
                 className="w-full"
