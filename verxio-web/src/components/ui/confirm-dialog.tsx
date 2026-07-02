@@ -89,6 +89,7 @@ export function ConfirmDialog({
             void run()
           }
         }}
+        showCloseButton={false}
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { PageLoader } from '@/components/page-loader'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Input } from '@/components/ui/input'
 import {
   applyWhatsAppPairing,
@@ -33,6 +34,7 @@ export function WhatsAppPairingPanel({ onChanged, platform }: WhatsAppPairingPan
   const [allowedUsers, setAllowedUsers] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [disconnectOpen, setDisconnectOpen] = useState(false)
   const pairingIdRef = useRef<string | null>(null)
 
   pairingIdRef.current = pairingId
@@ -211,10 +213,6 @@ export function WhatsAppPairingPanel({ onChanged, platform }: WhatsAppPairingPan
   }
 
   async function handleDisconnect() {
-    if (!window.confirm(m.disconnectConfirm)) {
-      return
-    }
-
     setBusy(true)
     setError('')
 
@@ -237,6 +235,7 @@ export function WhatsAppPairingPanel({ onChanged, platform }: WhatsAppPairingPan
       await onChanged()
     } catch (err) {
       notifyError(err, m.disconnectFailed)
+      throw err
     } finally {
       setBusy(false)
     }
@@ -244,28 +243,40 @@ export function WhatsAppPairingPanel({ onChanged, platform }: WhatsAppPairingPan
 
   if (platform.configured && status !== 'connected') {
     return (
-      <section className="rounded-xl border border-border/60 bg-muted/20 p-4">
-        <h4 className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{m.title}</h4>
-        <p className="mt-2 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
-          {m.alreadyPaired}
-        </p>
-        <p className="mt-2 text-xs leading-5 text-muted-foreground">{m.messageYourselfHelp}</p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button disabled={busy} onClick={() => void start(true)} size="sm" variant="outline">
-            <RefreshCw className="size-3.5" />
-            {m.repair}
-          </Button>
-          <Button
-            className="border-destructive/70 text-destructive hover:bg-destructive/10 hover:text-destructive"
-            disabled={busy}
-            onClick={() => void handleDisconnect()}
-            size="sm"
-            variant="outline"
-          >
-            {busy ? m.disconnecting : m.disconnect}
-          </Button>
-        </div>
-      </section>
+      <>
+        <section className="rounded-xl border border-border/60 bg-muted/20 p-4">
+          <h4 className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{m.title}</h4>
+          <p className="mt-2 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
+            {m.alreadyPaired}
+          </p>
+          <p className="mt-2 text-xs leading-5 text-muted-foreground">{m.messageYourselfHelp}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button disabled={busy} onClick={() => void start(true)} size="sm" variant="outline">
+              <RefreshCw className="size-3.5" />
+              {m.repair}
+            </Button>
+            <Button
+              className="border-destructive/70 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              disabled={busy}
+              onClick={() => setDisconnectOpen(true)}
+              size="sm"
+              variant="outline"
+            >
+              {busy ? m.disconnecting : m.disconnect}
+            </Button>
+          </div>
+        </section>
+
+        <ConfirmDialog
+          confirmLabel={m.disconnect}
+          description={m.disconnectConfirm}
+          destructive
+          onClose={() => setDisconnectOpen(false)}
+          onConfirm={handleDisconnect}
+          open={disconnectOpen}
+          title={m.disconnect}
+        />
+      </>
     )
   }
 
