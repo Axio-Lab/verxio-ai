@@ -958,6 +958,85 @@ export const en: Translations = {
       WHATSAPP_DEBUG: {
         label: 'Debug logging',
         help: 'Write raw WhatsApp message events to bridge.log for troubleshooting.'
+      },
+      WHATSAPP_CLOUD_PHONE_NUMBER_ID: {
+        label: 'Phone Number ID',
+        help: "Meta's internal ID from API Setup (15-17 digits). Not your phone number.",
+        placeholder: '7794189252778687'
+      },
+      WHATSAPP_CLOUD_ACCESS_TOKEN: {
+        label: 'Access token',
+        help: 'Meta token starting with EAA. Use a System User permanent token in production.',
+        placeholder: 'Paste access token'
+      },
+      WHATSAPP_CLOUD_APP_SECRET: {
+        label: 'App secret',
+        help: '32-character hex secret from App Settings → Basic. Required for inbound webhooks.',
+        placeholder: 'Paste app secret'
+      },
+      WHATSAPP_CLOUD_VERIFY_TOKEN: {
+        label: 'Verify token',
+        help: 'Paste the same value into Meta webhook configuration when subscribing.',
+        placeholder: 'Generate or paste verify token'
+      },
+      WHATSAPP_CLOUD_APP_ID: { label: 'App ID', placeholder: 'Optional Meta App ID' },
+      WHATSAPP_CLOUD_WABA_ID: { label: 'WABA ID', placeholder: 'Optional WhatsApp Business Account ID' },
+      WHATSAPP_CLOUD_WEBHOOK_HOST: { label: 'Webhook host', placeholder: '0.0.0.0' },
+      WHATSAPP_CLOUD_WEBHOOK_PORT: { label: 'Webhook port', placeholder: '8090' },
+      WHATSAPP_CLOUD_WEBHOOK_PATH: { label: 'Webhook path', placeholder: '/whatsapp/webhook' },
+      WHATSAPP_CLOUD_API_VERSION: { label: 'Graph API version', placeholder: 'v20.0' },
+      WHATSAPP_CLOUD_ALLOWED_USERS: {
+        label: 'Allowed senders',
+        help: 'Comma-separated wa_ids with country code (no +). Use * to allow everyone.',
+        placeholder: '2347068827272'
+      },
+      WHATSAPP_CLOUD_ALLOW_ALL_USERS: {
+        label: 'Allow all senders',
+        help: 'Development only. Skips the allowlist.'
+      },
+      WHATSAPP_CLOUD_DM_POLICY: { label: 'DM policy' },
+      WHATSAPP_CLOUD_ALLOW_FROM: {
+        label: 'DM allowlist',
+        placeholder: '2347068827272'
+      },
+      WHATSAPP_CLOUD_HOME_CHANNEL: {
+        label: 'Home chat wa_id',
+        help: 'Default recipient for cron jobs and proactive notifications.',
+        placeholder: '2347068827272'
+      },
+      WHATSAPP_CLOUD_HOME_CHANNEL_NAME: { label: 'Home chat name', placeholder: 'WhatsApp Cloud' },
+      WHATSAPP_CLOUD_GROUP_POLICY: { label: 'Group policy' },
+      WHATSAPP_CLOUD_GROUP_ALLOW_FROM: {
+        label: 'Allowed group IDs',
+        placeholder: '120363001234567890@g.us'
+      }
+    },
+    whatsappCloudIntro: {
+      title: 'How WhatsApp Cloud works',
+      description:
+        "This uses Meta's official WhatsApp Business Cloud API — not QR pairing. You need a Meta developer app, business phone number, and a public HTTPS URL that forwards to the gateway webhook port.",
+      steps: [
+        'Create a Meta app with WhatsApp enabled at developers.facebook.com.',
+        'Fill in Phone Number ID, access token, app secret, and verify token below, then save.',
+        'Expose the webhook port (default 8090) with cloudflared, ngrok, or your own reverse proxy.',
+        'In Meta → WhatsApp → Configuration, set callback URL to https://your-host/whatsapp/webhook and paste the verify token.',
+        'Subscribe to the messages field, add test recipients in API Setup, then enable the platform.'
+      ]
+    },
+    whatsappCloudSettings: {
+      title: 'WhatsApp Cloud options',
+      description:
+        'Meta credentials, webhook binding, access control, and delivery settings for the Cloud API adapter.',
+      webhookHint:
+        'The gateway listens locally on the port below. Meta must reach it through a public HTTPS URL (for example cloudflared tunnel --url http://localhost:8090).',
+      homeChannelHint: 'wa_id of the chat where cron jobs and notifications should be delivered.',
+      groupsHint: 'Cloud group IDs use the same @g.us format as the Baileys adapter.',
+      sections: {
+        credentials: 'Meta credentials',
+        webhook: 'Webhook server',
+        access: 'Access control',
+        delivery: 'Cron & notifications',
+        groups: 'Groups'
       }
     },
     whatsappSettings: {

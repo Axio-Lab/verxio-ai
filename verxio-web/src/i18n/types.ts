@@ -687,6 +687,25 @@ export interface Translations {
     failedSave: (name: string) => string
     failedClear: (key: string) => string
     fieldCopy: Record<string, { label?: string; help?: string; placeholder?: string }>
+    whatsappCloudIntro: {
+      title: string
+      description: string
+      steps: string[]
+    }
+    whatsappCloudSettings: {
+      title: string
+      description: string
+      webhookHint: string
+      homeChannelHint: string
+      groupsHint: string
+      sections: {
+        credentials: string
+        webhook: string
+        access: string
+        delivery: string
+        groups: string
+      }
+    }
     whatsappSettings: {
       title: string
       description: string

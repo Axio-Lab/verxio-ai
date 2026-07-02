@@ -27,6 +27,7 @@ import { ListRow } from '../settings/primitives'
 import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 
 import { PlatformAvatar } from './platform-icon'
+import { WhatsAppCloudSettingsPanel } from './whatsapp-cloud-settings-panel'
 import { WhatsAppPairingPanel } from './whatsapp-pairing-panel'
 import { WhatsAppSettingsPanel } from './whatsapp-settings-panel'
 
@@ -382,6 +383,8 @@ function PlatformDetail({
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   const isWhatsApp = platform.id === 'whatsapp'
+  const isWhatsAppCloud = platform.id === 'whatsapp_cloud'
+  const usesCustomSetup = isWhatsApp || isWhatsAppCloud
   const hasEdits = Object.keys(trimEdits(edits)).length > 0
   const requiredFields = platform.env_vars.filter(field => field.required)
   const optionalFields = platform.env_vars.filter(field => !field.required && !fieldCopy(field, m).advanced)
@@ -428,6 +431,30 @@ function PlatformDetail({
             />
           )}
 
+          {isWhatsAppCloud && (
+            <section>
+              <SectionTitle>{m.whatsappCloudIntro.title}</SectionTitle>
+              <p className="mt-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
+                {m.whatsappCloudIntro.description}
+              </p>
+              <ul className="mt-3 list-disc space-y-1.5 pl-5 text-xs leading-5 text-muted-foreground">
+                {m.whatsappCloudIntro.steps.map(step => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {isWhatsAppCloud && (
+            <WhatsAppCloudSettingsPanel
+              edits={edits}
+              envVars={platform.env_vars}
+              onClear={onClear}
+              onEdit={onEdit}
+              saving={saving}
+            />
+          )}
+
           {showWhatsAppPairingError && (
             <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-destructive">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
@@ -435,7 +462,7 @@ function PlatformDetail({
             </div>
           )}
 
-          {!isWhatsApp && (
+          {!usesCustomSetup && (
             <section>
               <SectionTitle>{m.getCredentials}</SectionTitle>
               <p className="mt-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
@@ -452,7 +479,7 @@ function PlatformDetail({
             </section>
           )}
 
-          {!isWhatsApp && (
+          {!usesCustomSetup && (
             <section>
               <SectionTitle>{m.required}</SectionTitle>
               <div className="mt-3 grid gap-1">
@@ -476,7 +503,7 @@ function PlatformDetail({
             </section>
           )}
 
-          {!isWhatsApp && optionalFields.length > 0 && (
+          {!usesCustomSetup && optionalFields.length > 0 && (
             <section>
               <SectionTitle>{m.recommended}</SectionTitle>
               <div className="mt-3 grid gap-1">
@@ -494,7 +521,7 @@ function PlatformDetail({
             </section>
           )}
 
-          {!isWhatsApp && hiddenCount > 0 && (
+          {!usesCustomSetup && hiddenCount > 0 && (
             <section>
               <button
                 className="flex w-full items-center justify-between gap-2 py-0.5 text-left text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:text-foreground"
@@ -534,7 +561,7 @@ function PlatformDetail({
             title={isWhatsApp && !platform.configured ? m.whatsappPairing.scanFirst : undefined}
           />
 
-          {(!isWhatsApp || platform.configured) && (
+          {(isWhatsAppCloud || !isWhatsApp || platform.configured) && (
             <div className="ml-auto flex items-center gap-2">
               {hasEdits && <span className="text-xs text-muted-foreground">{m.unsavedChanges}</span>}
               <Button disabled={!hasEdits || isSavingEnv} onClick={onSave} size="sm">

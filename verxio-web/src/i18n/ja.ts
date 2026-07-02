@@ -962,7 +962,51 @@ export const ja = defineLocale({
       WHATSAPP_REQUIRE_MENTION: { label: 'グループでメンション必須' },
       WHATSAPP_MENTION_PATTERNS: { label: 'メンションパターン', placeholder: '["@verxio"]' },
       WHATSAPP_FREE_RESPONSE_CHATS: { label: 'メンション不要グループ' },
-      WHATSAPP_DEBUG: { label: 'デバッグログ' }
+      WHATSAPP_DEBUG: { label: 'デバッグログ' },
+      WHATSAPP_CLOUD_PHONE_NUMBER_ID: { label: 'Phone Number ID', placeholder: '7794189252778687' },
+      WHATSAPP_CLOUD_ACCESS_TOKEN: { label: 'Access token', placeholder: 'Paste access token' },
+      WHATSAPP_CLOUD_APP_SECRET: { label: 'App secret', placeholder: 'Paste app secret' },
+      WHATSAPP_CLOUD_VERIFY_TOKEN: { label: 'Verify token' },
+      WHATSAPP_CLOUD_APP_ID: { label: 'App ID' },
+      WHATSAPP_CLOUD_WABA_ID: { label: 'WABA ID' },
+      WHATSAPP_CLOUD_WEBHOOK_HOST: { label: 'Webhook host', placeholder: '0.0.0.0' },
+      WHATSAPP_CLOUD_WEBHOOK_PORT: { label: 'Webhook port', placeholder: '8090' },
+      WHATSAPP_CLOUD_WEBHOOK_PATH: { label: 'Webhook path', placeholder: '/whatsapp/webhook' },
+      WHATSAPP_CLOUD_API_VERSION: { label: 'Graph API version', placeholder: 'v20.0' },
+      WHATSAPP_CLOUD_ALLOWED_USERS: { label: 'Allowed senders', placeholder: '2347068827272' },
+      WHATSAPP_CLOUD_ALLOW_ALL_USERS: { label: 'Allow all senders' },
+      WHATSAPP_CLOUD_DM_POLICY: { label: 'DM policy' },
+      WHATSAPP_CLOUD_ALLOW_FROM: { label: 'DM allowlist' },
+      WHATSAPP_CLOUD_HOME_CHANNEL: { label: 'Home chat wa_id' },
+      WHATSAPP_CLOUD_HOME_CHANNEL_NAME: { label: 'Home chat name' },
+      WHATSAPP_CLOUD_GROUP_POLICY: { label: 'Group policy' },
+      WHATSAPP_CLOUD_GROUP_ALLOW_FROM: { label: 'Allowed group IDs' }
+    },
+    whatsappCloudIntro: {
+      title: 'How WhatsApp Cloud works',
+      description:
+        'Uses Meta official WhatsApp Business Cloud API. Requires Meta app credentials and a public HTTPS webhook URL.',
+      steps: [
+        'Create a Meta app with WhatsApp enabled.',
+        'Fill credentials below and save.',
+        'Expose webhook port 8090 with cloudflared or ngrok.',
+        'Configure Meta webhook callback URL and verify token.',
+        'Subscribe to messages, add test recipients, enable platform.'
+      ]
+    },
+    whatsappCloudSettings: {
+      title: 'WhatsApp Cloud options',
+      description: 'Meta credentials, webhook, access control, and delivery.',
+      webhookHint: 'Expose the local webhook port through a public HTTPS URL.',
+      homeChannelHint: 'wa_id for cron and notification delivery.',
+      groupsHint: 'Group IDs use @g.us format.',
+      sections: {
+        credentials: 'Meta credentials',
+        webhook: 'Webhook server',
+        access: 'Access control',
+        delivery: 'Cron & notifications',
+        groups: 'Groups'
+      }
     },
     whatsappSettings: {
       title: 'WhatsApp オプション',
