@@ -711,6 +711,13 @@ export interface Translations {
       startFailed: string
       applyFailed: string
       scanFirst: string
+      disconnect: string
+      disconnecting: string
+      disconnectConfirm: string
+      disconnectedTitle: string
+      disconnectedMessage: string
+      disconnectFailed: string
+      messageYourselfHelp: string
     }
     platformIntro: Record<string, string>
   }

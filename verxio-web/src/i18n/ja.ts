@@ -972,7 +972,16 @@ export const ja = defineLocale({
       repair: 'Generate new QR code',
       startFailed: 'Could not start WhatsApp pairing',
       applyFailed: 'Could not finish WhatsApp setup',
-      scanFirst: 'Scan the QR code before enabling WhatsApp.'
+      scanFirst: 'Scan the QR code before enabling WhatsApp.',
+      disconnect: 'Disconnect WhatsApp',
+      disconnecting: 'Disconnecting…',
+      disconnectConfirm:
+        'This removes the linked WhatsApp session. You will need to scan a new QR code to connect again.',
+      disconnectedTitle: 'WhatsApp disconnected',
+      disconnectedMessage: 'WhatsApp has been unlinked from this runtime.',
+      disconnectFailed: 'Could not disconnect WhatsApp',
+      messageYourselfHelp:
+        'To chat with your agent, open WhatsApp → tap your profile → Message yourself. Do not use a regular chat with your phone number.'
     },
     platformIntro: {}
   },

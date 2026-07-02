@@ -184,6 +184,16 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
   }, [platforms, query])
 
   async function handleToggle(platform: MessagingPlatformInfo, enabled: boolean) {
+    if (platform.id === 'whatsapp' && enabled && !platform.configured) {
+      notify({
+        kind: 'info',
+        title: m.whatsappPairing.title,
+        message: m.whatsappPairing.scanFirst
+      })
+
+      return
+    }
+
     setSaving(`enabled:${platform.id}`)
 
     try {
@@ -370,12 +380,18 @@ function PlatformDetail({
   const m = t.messaging
   const [showAdvanced, setShowAdvanced] = useState(false)
 
+  const isWhatsApp = platform.id === 'whatsapp'
   const hasEdits = Object.keys(trimEdits(edits)).length > 0
   const requiredFields = platform.env_vars.filter(field => field.required)
   const optionalFields = platform.env_vars.filter(field => !field.required && !fieldCopy(field, m).advanced)
   const advancedFields = platform.env_vars.filter(field => !field.required && fieldCopy(field, m).advanced)
   const hiddenCount = advancedFields.length
   const isSavingEnv = saving === `env:${platform.id}`
+  const showWhatsAppPairingError =
+    platform.error_message && !(isWhatsApp && (platform.error_code === 'whatsapp_not_paired' || !platform.configured))
+  const gatewayEnabled = isWhatsApp ? platform.configured && platform.enabled : platform.enabled
+  const gatewayToggleDisabled =
+    isSavingEnv || saving === `enabled:${platform.id}` || (isWhatsApp && !platform.configured)
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -399,53 +415,57 @@ function PlatformDetail({
             </div>
           </header>
 
-          {platform.id === 'whatsapp' && <WhatsAppPairingPanel onChanged={onRefresh} platform={platform} />}
+          {isWhatsApp && <WhatsAppPairingPanel onChanged={onRefresh} platform={platform} />}
 
-          {platform.error_message && (
+          {showWhatsAppPairingError && (
             <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-destructive">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
               <span>{platform.error_message}</span>
             </div>
           )}
 
-          <section>
-            <SectionTitle>{m.getCredentials}</SectionTitle>
-            <p className="mt-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
-              {introCopy(platform, m)}
-            </p>
-            <div className="mt-3">
-              <Button asChild size="sm" variant="textStrong">
-                <a href={platform.docs_url} rel="noreferrer" target="_blank">
-                  {m.openSetupGuide}
-                  <ExternalLink className="size-3.5" />
-                </a>
-              </Button>
-            </div>
-          </section>
+          {!isWhatsApp && (
+            <section>
+              <SectionTitle>{m.getCredentials}</SectionTitle>
+              <p className="mt-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
+                {introCopy(platform, m)}
+              </p>
+              <div className="mt-3">
+                <Button asChild size="sm" variant="textStrong">
+                  <a href={platform.docs_url} rel="noreferrer" target="_blank">
+                    {m.openSetupGuide}
+                    <ExternalLink className="size-3.5" />
+                  </a>
+                </Button>
+              </div>
+            </section>
+          )}
 
-          <section>
-            <SectionTitle>{m.required}</SectionTitle>
-            <div className="mt-3 grid gap-1">
-              {requiredFields.length > 0 ? (
-                requiredFields.map(field => (
-                  <MessagingField
-                    edits={edits}
-                    field={field}
-                    key={field.key}
-                    onClear={onClear}
-                    onEdit={onEdit}
-                    saving={saving}
-                  />
-                ))
-              ) : (
-                <p className="text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
-                  {m.noTokenNeeded}
-                </p>
-              )}
-            </div>
-          </section>
+          {!isWhatsApp && (
+            <section>
+              <SectionTitle>{m.required}</SectionTitle>
+              <div className="mt-3 grid gap-1">
+                {requiredFields.length > 0 ? (
+                  requiredFields.map(field => (
+                    <MessagingField
+                      edits={edits}
+                      field={field}
+                      key={field.key}
+                      onClear={onClear}
+                      onEdit={onEdit}
+                      saving={saving}
+                    />
+                  ))
+                ) : (
+                  <p className="text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
+                    {m.noTokenNeeded}
+                  </p>
+                )}
+              </div>
+            </section>
+          )}
 
-          {optionalFields.length > 0 && (
+          {!isWhatsApp && optionalFields.length > 0 && (
             <section>
               <SectionTitle>{m.recommended}</SectionTitle>
               <div className="mt-3 grid gap-1">
@@ -463,7 +483,7 @@ function PlatformDetail({
             </section>
           )}
 
-          {hiddenCount > 0 && (
+          {!isWhatsApp && hiddenCount > 0 && (
             <section>
               <button
                 className="flex w-full items-center justify-between gap-2 py-0.5 text-left text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:text-foreground"
@@ -495,20 +515,23 @@ function PlatformDetail({
       <footer className="bg-(--ui-chat-surface-background) px-5 py-2.5">
         <div className="mx-auto flex max-w-2xl flex-wrap items-center gap-2">
           <Switch
-            aria-label={platform.enabled ? m.disableAria(platform.name) : m.enableAria(platform.name)}
-            checked={platform.enabled}
-            disabled={saving === `enabled:${platform.id}`}
+            aria-label={gatewayEnabled ? m.disableAria(platform.name) : m.enableAria(platform.name)}
+            checked={gatewayEnabled}
+            disabled={gatewayToggleDisabled}
             onCheckedChange={onToggle}
             size="xs"
+            title={isWhatsApp && !platform.configured ? m.whatsappPairing.scanFirst : undefined}
           />
 
-          <div className="ml-auto flex items-center gap-2">
-            {hasEdits && <span className="text-xs text-muted-foreground">{m.unsavedChanges}</span>}
-            <Button disabled={!hasEdits || isSavingEnv} onClick={onSave} size="sm">
-              <Save />
-              {isSavingEnv ? m.saving : m.saveChanges}
-            </Button>
-          </div>
+          {!isWhatsApp && (
+            <div className="ml-auto flex items-center gap-2">
+              {hasEdits && <span className="text-xs text-muted-foreground">{m.unsavedChanges}</span>}
+              <Button disabled={!hasEdits || isSavingEnv} onClick={onSave} size="sm">
+                <Save />
+                {isSavingEnv ? m.saving : m.saveChanges}
+              </Button>
+            </div>
+          )}
         </div>
       </footer>
     </div>

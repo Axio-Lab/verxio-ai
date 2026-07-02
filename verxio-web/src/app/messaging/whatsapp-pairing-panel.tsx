@@ -4,7 +4,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { PageLoader } from '@/components/page-loader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { applyWhatsAppPairing, cancelWhatsAppPairing, getWhatsAppPairingStatus, startWhatsAppPairing } from '@/hermes'
+import {
+  applyWhatsAppPairing,
+  cancelWhatsAppPairing,
+  disconnectWhatsApp,
+  getWhatsAppPairingStatus,
+  startWhatsAppPairing
+} from '@/hermes'
 import { useI18n } from '@/i18n'
 import { MessageCircle, RefreshCw } from '@/lib/icons'
 import { notify, notifyError } from '@/store/notifications'
@@ -204,6 +210,38 @@ export function WhatsAppPairingPanel({ onChanged, platform }: WhatsAppPairingPan
     reset()
   }
 
+  async function handleDisconnect() {
+    if (!window.confirm(m.disconnectConfirm)) {
+      return
+    }
+
+    setBusy(true)
+    setError('')
+
+    try {
+      const result = await disconnectWhatsApp()
+
+      if (result.restart_started) {
+        notify({ kind: 'success', title: m.disconnectedTitle, message: m.restartingGateway })
+        await runGatewayRestart()
+      } else {
+        notify({
+          kind: 'success',
+          title: m.disconnectedTitle,
+          message: m.disconnectedMessage,
+          action: { label: t.commandCenter.restartGateway, onClick: () => void runGatewayRestart() }
+        })
+      }
+
+      reset()
+      await onChanged()
+    } catch (err) {
+      notifyError(err, m.disconnectFailed)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   if (platform.configured && status !== 'connected') {
     return (
       <section className="rounded-xl border border-border/60 bg-muted/20 p-4">
@@ -211,10 +249,14 @@ export function WhatsAppPairingPanel({ onChanged, platform }: WhatsAppPairingPan
         <p className="mt-2 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
           {m.alreadyPaired}
         </p>
-        <div className="mt-3">
+        <p className="mt-2 text-xs leading-5 text-muted-foreground">{m.messageYourselfHelp}</p>
+        <div className="mt-3 flex flex-wrap gap-2">
           <Button disabled={busy} onClick={() => void start(true)} size="sm" variant="outline">
             <RefreshCw className="size-3.5" />
             {m.repair}
+          </Button>
+          <Button disabled={busy} onClick={() => void handleDisconnect()} size="sm" variant="ghost">
+            {busy ? m.disconnecting : m.disconnect}
           </Button>
         </div>
       </section>
@@ -227,6 +269,7 @@ export function WhatsAppPairingPanel({ onChanged, platform }: WhatsAppPairingPan
       <p className="mt-2 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
         {m.description}
       </p>
+      <p className="mt-2 text-xs leading-5 text-muted-foreground">{m.messageYourselfHelp}</p>
 
       {status === 'idle' && (
         <div className="mt-4">

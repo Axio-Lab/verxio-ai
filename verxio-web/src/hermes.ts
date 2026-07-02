@@ -550,6 +550,13 @@ export function cancelWhatsAppPairing(pairingId: string): Promise<{ ok: boolean 
   })
 }
 
+export function disconnectWhatsApp(): Promise<WhatsAppPairingApplyResponse & { disconnected?: boolean }> {
+  return window.hermesDesktop.api<WhatsAppPairingApplyResponse & { disconnected?: boolean }>({
+    path: '/api/messaging/whatsapp/disconnect',
+    method: 'DELETE'
+  })
+}
+
 export function getCronJobs(): Promise<CronJob[]> {
   return window.hermesDesktop.api<CronJob[]>({
     path: '/api/cron/jobs'

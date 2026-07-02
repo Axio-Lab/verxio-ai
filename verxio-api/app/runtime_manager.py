@@ -191,6 +191,12 @@ async def start_runtime(runtime: RuntimeInstance, extra_env: dict[str, str] | No
     composio_api_key = os.getenv("COMPOSIO_API_KEY", "").strip()
     if composio_api_key:
         cmd.extend(["-e", f"COMPOSIO_API_KEY={composio_api_key}"])
+    for key, value in {
+        "VERXIO_HOSTED": "1",
+        "WHATSAPP_BROWSER_NAME": "Verxio Agent",
+        "WHATSAPP_REPLY_PREFIX": "⚕ *Verxio Agent*\\n────────────\\n",
+    }.items():
+        cmd.extend(["-e", f"{key}={value}"])
     for key, value in sorted((extra_env or {}).items()):
         if key and value:
             cmd.extend(["-e", f"{key}={value}"])
