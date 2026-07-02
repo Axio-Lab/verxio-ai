@@ -8,6 +8,7 @@ from typing import Any
 
 from app import db
 from app.models import AgentProfile, RuntimeInstance, Workspace, new_id, utc_now
+from app.verxio_agent_defaults import VERXIO_SOUL_MD, ensure_verxio_agent_defaults
 
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
@@ -90,20 +91,9 @@ def ensure_runtime_directories(runtime: RuntimeInstance) -> None:
 
     soul_path = hermes_home / "SOUL.md"
     if not soul_path.exists():
-        soul_path.write_text(
-            "\n".join(
-                [
-                    "# Verxio Agent",
-                    "",
-                    "You are a Hermes-powered Verxio agent running in an isolated workspace.",
-                    "Treat `/workspace` as the working directory.",
-                    "Put generated reports, dashboards, documents, images, and exports in `/workspace/artifacts`.",
-                    "When you mention a generated file, give its `/workspace/artifacts/...` path so Verxio can index it.",
-                    "",
-                ]
-            ),
-            encoding="utf-8",
-        )
+        soul_path.write_text(VERXIO_SOUL_MD, encoding="utf-8")
+
+    ensure_verxio_agent_defaults(hermes_home)
 
 
 def workspace_from_row(row: dict[str, Any]) -> Workspace:

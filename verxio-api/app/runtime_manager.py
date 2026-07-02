@@ -194,7 +194,7 @@ async def start_runtime(runtime: RuntimeInstance, extra_env: dict[str, str] | No
     for key, value in {
         "VERXIO_HOSTED": "1",
         "WHATSAPP_BROWSER_NAME": "Verxio Agent",
-        "WHATSAPP_REPLY_PREFIX": "⚕ *Verxio Agent*\\n────────────\\n",
+        "WHATSAPP_REPLY_PREFIX": "",
     }.items():
         cmd.extend(["-e", f"{key}={value}"])
     for key, value in sorted((extra_env or {}).items()):
