@@ -221,6 +221,40 @@ export interface Translations {
       archivedChats: string
       about: string
       notifications: string
+      runtime: string
+    }
+    runtime: {
+      title: string
+      intro: string
+      statusTitle: string
+      statusDescription: string
+      statusConnected: string
+      statusStarting: string
+      statusStopped: string
+      statusError: string
+      statusUnknown: string
+      reloadTitle: string
+      reloadDescription: string
+      reloadAction: string
+      reloadDoneTitle: string
+      reloadDoneMessage: string
+      reloadFailed: string
+      agentRestartTitle: string
+      agentRestartDescription: string
+      agentRestartAction: string
+      agentRestartDoneTitle: string
+      agentRestartDoneMessage: string
+      agentRestartFailed: string
+      containerRestartTitle: string
+      containerRestartDescription: string
+      containerRestartAction: string
+      containerRestartDoneTitle: string
+      containerRestartDoneMessage: string
+      containerRestartFailed: string
+      restartTimeout: string
+      gatewayRestartTitle: string
+      gatewayRestartDescription: string
+      gatewayRestartAction: string
     }
     notifications: {
       title: string
@@ -618,6 +652,9 @@ export interface Translations {
     hermesActiveSessions: (version: string, count: number) => string
     restartMessaging: string
     restartGateway: string
+    reloadRuntimeEnv: string
+    restartAgentRuntime: string
+    restartVerxioRuntime: string
     gatewayRestartFailed: string
     updateHermes: string
     actionRunning: string

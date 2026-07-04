@@ -12,6 +12,7 @@ export type SettingsView =
   | 'mcp'
   | 'notifications'
   | 'providers'
+  | 'runtime'
   | 'sessions'
   | `config:${string}`
 export type EnvPatch = Partial<Pick<EnvVarInfo, 'is_set' | 'redacted_value'>>

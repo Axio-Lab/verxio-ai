@@ -173,7 +173,45 @@ export const zhHant = defineLocale({
       keysSettings: '設定',
       mcp: 'MCP',
       archivedChats: '已封存聊天',
-      about: '關於'
+      about: '關於',
+      notifications: 'Notifications',
+      runtime: 'Runtime'
+    },
+    runtime: {
+      title: 'Runtime',
+      intro:
+        'After changing providers, models, API keys, or custom endpoints, reload credentials or restart the agent so changes take effect.',
+      statusTitle: 'Container status',
+      statusDescription: 'Your isolated Hermes runtime on Verxio.',
+      statusConnected: 'Connected',
+      statusStarting: 'Starting…',
+      statusStopped: 'Stopped',
+      statusError: 'Unavailable',
+      statusUnknown: 'Unknown',
+      reloadTitle: 'Reload credentials',
+      reloadDescription: 'Re-read ~/.hermes/.env without restarting. Use after pasting API keys or env changes.',
+      reloadAction: 'Reload',
+      reloadDoneTitle: 'Credentials reloaded',
+      reloadDoneMessage: 'Start a new chat if the model or provider still looks stale.',
+      reloadFailed: 'Could not reload credentials',
+      agentRestartTitle: 'Restart agent',
+      agentRestartDescription:
+        'Reload .env and restart the gateway process. Use after model/provider or config.yaml changes.',
+      agentRestartAction: 'Restart agent',
+      agentRestartDoneTitle: 'Agent restarting',
+      agentRestartDoneMessage: 'Verxio reconnects automatically. Start a new chat when the status bar is live again.',
+      agentRestartFailed: 'Agent restart failed',
+      containerRestartTitle: 'Restart runtime container',
+      containerRestartDescription:
+        'Full Docker restart of your Verxio runtime. Use when hosted inference env or mounts changed.',
+      containerRestartAction: 'Restart container',
+      containerRestartDoneTitle: 'Runtime restarted',
+      containerRestartDoneMessage: 'Your agent container is back online.',
+      containerRestartFailed: 'Runtime restart failed',
+      restartTimeout: 'Runtime did not come back online in time. Refresh the page or try again.',
+      gatewayRestartTitle: 'Restart messaging gateway',
+      gatewayRestartDescription: 'Reconnect WhatsApp, Telegram, and other messaging platforms after channel setup.',
+      gatewayRestartAction: 'Restart gateway'
     },
     sections: {
       model: '模型',

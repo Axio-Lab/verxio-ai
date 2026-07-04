@@ -513,6 +513,16 @@ export function syncRuntimeWorkspace(workspacePath: string): Promise<VerxioRunti
   })
 }
 
+export function restartVerxioRuntime(): Promise<VerxioRuntimeControlResponse> {
+  return verxioFetch<VerxioRuntimeControlResponse>('/api/runtime/restart', {
+    method: 'POST'
+  })
+}
+
+export function getVerxioRuntime(): Promise<VerxioRuntimeControlResponse> {
+  return verxioFetch<VerxioRuntimeControlResponse>('/api/runtime')
+}
+
 export function authMe(): Promise<VerxioAuthResponse> {
   return verxioFetch<VerxioAuthResponse>('/api/auth/me')
 }

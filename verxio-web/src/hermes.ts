@@ -786,6 +786,20 @@ export function restartGateway(): Promise<ActionResponse> {
   })
 }
 
+export function reloadRuntimeEnv(): Promise<{ message?: string; ok: boolean; updated?: number }> {
+  return window.hermesDesktop.api<{ message?: string; ok: boolean; updated?: number }>({
+    path: '/api/env/reload',
+    method: 'POST'
+  })
+}
+
+export function restartAgentRuntime(): Promise<ActionResponse & { message?: string; updated?: number }> {
+  return window.hermesDesktop.api<ActionResponse & { message?: string; updated?: number }>({
+    path: '/api/runtime/restart',
+    method: 'POST'
+  })
+}
+
 export function updateHermes(): Promise<ActionResponse> {
   return window.hermesDesktop.api<ActionResponse>({
     path: '/api/hermes/update',
