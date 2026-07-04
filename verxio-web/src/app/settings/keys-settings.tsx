@@ -7,6 +7,7 @@ import type { EnvVarInfo } from '@/types/hermes'
 import { DEFAULT_LIST_PAGE_SIZE, usePaginatedList } from '../hooks/use-paginated-list'
 
 import { CredentialKeyCard, credentialPlaceholder, credentialRowLabel } from './credential-key-ui'
+import { CustomToolKeyForm } from './custom-tool-key-form'
 import { useEnvCredentials } from './env-credentials'
 import { asText } from './helpers'
 import { LoadingState, SettingsContent } from './primitives'
@@ -27,12 +28,12 @@ export type KeysView = (typeof KEYS_VIEWS)[number]
 // appear here alongside ``setting``.
 const VIEW_CATEGORIES: Record<KeysView, readonly string[]> = {
   settings: ['setting', 'messaging'],
-  tools: ['tool']
+  tools: ['tool', 'skill']
 }
 
 export function KeysSettings({ view }: KeysSettingsProps) {
   const { t } = useI18n()
-  const { rowProps, vars } = useEnvCredentials()
+  const { rowProps, saveValue, vars } = useEnvCredentials()
   const [openKey, setOpenKey] = useState<null | string>(null)
 
   useEffect(() => {
@@ -76,8 +77,16 @@ export function KeysSettings({ view }: KeysSettingsProps) {
     return <LoadingState label={t.settings.keys.loading} />
   }
 
+  const existingKeys = new Set(Object.keys(vars))
+  const showCustomForm = view === 'tools'
+
   return (
     <SettingsContent>
+      {showCustomForm && (
+        <div className="mb-4">
+          <CustomToolKeyForm busy={Boolean(rowProps.saving)} existingKeys={existingKeys} onSave={saveValue} />
+        </div>
+      )}
       {pagedEntries.length > 0 ? (
         <div className="grid gap-2">
           {pagedEntries.map(([key, info]: [string, EnvVarInfo]) => {

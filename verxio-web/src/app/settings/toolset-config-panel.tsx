@@ -8,6 +8,7 @@ import { useI18n } from '@/i18n'
 import { Check, Loader2, Save } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
+import { runRuntimeEnvReload } from '@/store/system-actions'
 import type { ToolEnvVar, ToolProvider, ToolsetConfig } from '@/types/hermes'
 
 import { EnvVarActionsMenu, EnvVarActionsTrigger } from './env-var-actions-menu'
@@ -56,6 +57,7 @@ function EnvVarField({ envVar, isSet, onSaved, onCleared }: EnvVarFieldProps) {
       setValue('')
       onSaved(envVar.key)
       notify({ kind: 'success', title: copy.savedTitle, message: copy.savedMessage(envVar.key) })
+      await runRuntimeEnvReload()
     } catch (err) {
       notifyError(err, copy.failedSave(envVar.key))
     } finally {
@@ -75,6 +77,7 @@ function EnvVarField({ envVar, isSet, onSaved, onCleared }: EnvVarFieldProps) {
       setRevealed(null)
       onCleared(envVar.key)
       notify({ kind: 'success', title: copy.removedTitle, message: copy.removedMessage(envVar.key) })
+      await runRuntimeEnvReload()
     } catch (err) {
       notifyError(err, copy.failedRemove(envVar.key))
     } finally {

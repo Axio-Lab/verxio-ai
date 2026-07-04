@@ -132,6 +132,8 @@ export interface MemoryProviderConfig {
 export interface EnvVarInfo {
   advanced: boolean
   category: string
+  /** True for user-added credential vars discovered in .env but not in the catalog. */
+  custom?: boolean
   // True when this var is a messaging-platform credential owned by a card on
   // the dedicated Messaging page. The Keys page hides these to avoid
   // duplicating the richer channel-configuration UI.

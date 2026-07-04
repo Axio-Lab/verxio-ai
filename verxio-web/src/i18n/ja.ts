@@ -470,6 +470,7 @@ export const ja = defineLocale({
       optional: '省略可能',
       enterValueFirst: '最初に値を入力してください。',
       couldNotSave: '認証情報を保存できませんでした。',
+      customToolDescription: 'カスタムツール認証情報（設定または CLI で追加）',
       remove: '削除',
       or: 'または',
       escToCancel: 'Esc でキャンセル',
@@ -562,7 +563,20 @@ export const ja = defineLocale({
     keys: {
       loading: 'API キーと認証情報を読み込み中...',
       failedLoad: 'API キーの読み込みに失敗しました',
-      empty: 'このカテゴリーにはまだ設定がありません。'
+      empty: 'このカテゴリーにはまだ設定がありません。',
+      custom: {
+        addButton: 'カスタムツール API キーを追加',
+        hint: 'hermes config set と同じ — ~/.hermes/.env に保存。MY_VENDOR_API_KEY などの名前を使用。',
+        namePlaceholder: 'ENV_VAR_NAME',
+        valuePlaceholder: 'API キーまたはトークンを貼り付け',
+        nameRequired: '環境変数名を入力してください。',
+        invalidName:
+          '大文字・数字・アンダースコアを使用し、_API_KEY、_TOKEN、_SECRET、_KEY で終わる名前にしてください。',
+        alreadyListed: 'この変数は既に一覧にあります — カードを展開して更新してください。',
+        valueRequired: 'キーまたはトークンの値を貼り付けてください。',
+        saveFailed: 'この認証情報を保存できませんでした。',
+        save: '保存してランタイムを再読み込み'
+      }
     },
     mcp: {
       loading: 'MCP サーバーを読み込み中...',

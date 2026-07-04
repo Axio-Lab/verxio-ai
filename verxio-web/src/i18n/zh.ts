@@ -606,6 +606,7 @@ export const zh: Translations = {
       optional: '可选',
       enterValueFirst: '请先输入一个值。',
       couldNotSave: '无法保存凭据。',
+      customToolDescription: '自定义工具凭据（通过设置或 CLI 添加）',
       remove: '移除',
       or: '或',
       escToCancel: '按 esc 取消',
@@ -689,7 +690,19 @@ export const zh: Translations = {
     keys: {
       loading: '正在加载 API 密钥和凭据...',
       failedLoad: 'API 密钥加载失败',
-      empty: '此类别暂时没有配置项。'
+      empty: '此类别暂时没有配置项。',
+      custom: {
+        addButton: '添加自定义工具 API 密钥',
+        hint: '与 hermes config set 相同 — 保存到 ~/.hermes/.env。名称如 MY_VENDOR_API_KEY 或 GEMINI_API_KEY。',
+        namePlaceholder: 'ENV_VAR_NAME',
+        valuePlaceholder: '粘贴 API 密钥或令牌',
+        nameRequired: '请先输入环境变量名称。',
+        invalidName: '请使用大写字母、数字和下划线，并以 _API_KEY、_TOKEN、_SECRET 或 _KEY 结尾。',
+        alreadyListed: '该变量已在列表中 — 展开对应卡片即可更新。',
+        valueRequired: '请粘贴密钥或令牌值。',
+        saveFailed: '无法保存此凭据。',
+        save: '保存并重新加载运行时'
+      }
     },
     mcp: {
       loading: '正在加载 MCP 服务器...',

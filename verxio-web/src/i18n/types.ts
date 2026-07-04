@@ -341,6 +341,7 @@ export interface Translations {
       optional: string
       enterValueFirst: string
       couldNotSave: string
+      customToolDescription: string
       remove: string
       or: string
       escToCancel: string
@@ -423,6 +424,18 @@ export interface Translations {
       loading: string
       failedLoad: string
       empty: string
+      custom: {
+        addButton: string
+        hint: string
+        namePlaceholder: string
+        valuePlaceholder: string
+        nameRequired: string
+        invalidName: string
+        alreadyListed: string
+        valueRequired: string
+        saveFailed: string
+        save: string
+      }
     }
     mcp: {
       loading: string

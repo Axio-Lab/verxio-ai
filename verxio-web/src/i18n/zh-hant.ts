@@ -463,6 +463,7 @@ export const zhHant = defineLocale({
       optional: '選填',
       enterValueFirst: '請先輸入一個值。',
       couldNotSave: '無法儲存憑證。',
+      customToolDescription: '自訂工具憑證（透過設定或 CLI 新增）',
       remove: '移除',
       or: '或',
       escToCancel: '按 esc 取消',
@@ -546,7 +547,19 @@ export const zhHant = defineLocale({
     keys: {
       loading: '正在載入 API 金鑰和憑證...',
       failedLoad: 'API 金鑰載入失敗',
-      empty: '此類別尚未有任何設定。'
+      empty: '此類別尚未有任何設定。',
+      custom: {
+        addButton: '新增自訂工具 API 金鑰',
+        hint: '與 hermes config set 相同 — 儲存至 ~/.hermes/.env。例如 MY_VENDOR_API_KEY 或 GEMINI_API_KEY。',
+        namePlaceholder: 'ENV_VAR_NAME',
+        valuePlaceholder: '貼上 API 金鑰或權杖',
+        nameRequired: '請先輸入環境變數名稱。',
+        invalidName: '請使用大寫字母、數字和底線，並以 _API_KEY、_TOKEN、_SECRET 或 _KEY 結尾。',
+        alreadyListed: '此變數已在清單中 — 展開卡片即可更新。',
+        valueRequired: '請貼上金鑰或權杖值。',
+        saveFailed: '無法儲存此憑證。',
+        save: '儲存並重新載入執行環境'
+      }
     },
     mcp: {
       loading: '正在載入 MCP 伺服器...',

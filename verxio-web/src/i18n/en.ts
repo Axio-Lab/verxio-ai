@@ -447,6 +447,7 @@ export const en: Translations = {
       optional: 'Optional',
       enterValueFirst: 'Enter a value first.',
       couldNotSave: 'Could not save credential.',
+      customToolDescription: 'Custom tool credential (added via Settings or CLI)',
       remove: 'Remove',
       or: 'or',
       escToCancel: 'esc to cancel',
@@ -533,7 +534,19 @@ export const en: Translations = {
     keys: {
       loading: 'Loading API keys and credentials...',
       failedLoad: 'API keys failed to load',
-      empty: 'Nothing configured in this category yet.'
+      empty: 'Nothing configured in this category yet.',
+      custom: {
+        addButton: 'Add custom tool API key',
+        hint: 'Same as hermes config set — saves to ~/.hermes/.env. Use names like MY_VENDOR_API_KEY or GEMINI_API_KEY for tools/skills.',
+        namePlaceholder: 'ENV_VAR_NAME',
+        valuePlaceholder: 'Paste API key or token',
+        nameRequired: 'Enter the environment variable name first.',
+        invalidName: 'Use uppercase letters, numbers, and underscores ending in _API_KEY, _TOKEN, _SECRET, or _KEY.',
+        alreadyListed: 'That variable is already listed — expand its card to update it.',
+        valueRequired: 'Paste the key or token value.',
+        saveFailed: 'Could not save this credential.',
+        save: 'Save & reload runtime'
+      }
     },
     mcp: {
       loading: 'Loading MCP servers...',
