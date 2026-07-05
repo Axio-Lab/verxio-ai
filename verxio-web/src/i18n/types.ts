@@ -221,6 +221,40 @@ export interface Translations {
       archivedChats: string
       about: string
       notifications: string
+      runtime: string
+    }
+    runtime: {
+      title: string
+      intro: string
+      statusTitle: string
+      statusDescription: string
+      statusConnected: string
+      statusStarting: string
+      statusStopped: string
+      statusError: string
+      statusUnknown: string
+      reloadTitle: string
+      reloadDescription: string
+      reloadAction: string
+      reloadDoneTitle: string
+      reloadDoneMessage: string
+      reloadFailed: string
+      agentRestartTitle: string
+      agentRestartDescription: string
+      agentRestartAction: string
+      agentRestartDoneTitle: string
+      agentRestartDoneMessage: string
+      agentRestartFailed: string
+      containerRestartTitle: string
+      containerRestartDescription: string
+      containerRestartAction: string
+      containerRestartDoneTitle: string
+      containerRestartDoneMessage: string
+      containerRestartFailed: string
+      restartTimeout: string
+      gatewayRestartTitle: string
+      gatewayRestartDescription: string
+      gatewayRestartAction: string
     }
     notifications: {
       title: string
@@ -307,6 +341,7 @@ export interface Translations {
       optional: string
       enterValueFirst: string
       couldNotSave: string
+      customToolDescription: string
       remove: string
       or: string
       escToCancel: string
@@ -389,6 +424,18 @@ export interface Translations {
       loading: string
       failedLoad: string
       empty: string
+      custom: {
+        addButton: string
+        hint: string
+        namePlaceholder: string
+        valuePlaceholder: string
+        nameRequired: string
+        invalidName: string
+        alreadyListed: string
+        valueRequired: string
+        saveFailed: string
+        save: string
+      }
     }
     mcp: {
       loading: string
@@ -435,6 +482,7 @@ export interface Translations {
     }
     providers: {
       connectAccount: string
+      connectAccountFeaturedPitch: string
       haveApiKey: string
       intro: string
       connected: string
@@ -443,6 +491,14 @@ export interface Translations {
       otherProviders: string
       noProviderKeys: string
       loading: string
+      accountLabel: string
+      disconnect: string
+      reconnect: string
+      removeConfirm: (provider: string) => string
+      removeExternalGeneric: (provider: string) => string
+      removedTitle: string
+      removedMessage: (provider: string) => string
+      failedRemove: (provider: string) => string
     }
     sessions: {
       loading: string
@@ -609,6 +665,9 @@ export interface Translations {
     hermesActiveSessions: (version: string, count: number) => string
     restartMessaging: string
     restartGateway: string
+    reloadRuntimeEnv: string
+    restartAgentRuntime: string
+    restartVerxioRuntime: string
     gatewayRestartFailed: string
     updateHermes: string
     actionRunning: string
@@ -669,6 +728,7 @@ export interface Translations {
     platformEnabled: (name: string) => string
     platformDisabled: (name: string) => string
     restartToApply: string
+    gatewayRestarting: string
     setupSaved: (name: string) => string
     restartToReconnect: string
     keyCleared: (key: string) => string
@@ -677,6 +737,70 @@ export interface Translations {
     failedSave: (name: string) => string
     failedClear: (key: string) => string
     fieldCopy: Record<string, { label?: string; help?: string; placeholder?: string }>
+    whatsappCloudIntro: {
+      title: string
+      description: string
+      steps: string[]
+    }
+    whatsappCloudSettings: {
+      title: string
+      description: string
+      webhookHint: string
+      homeChannelHint: string
+      groupsHint: string
+      sections: {
+        credentials: string
+        webhook: string
+        access: string
+        delivery: string
+        groups: string
+      }
+    }
+    whatsappSettings: {
+      title: string
+      description: string
+      homeChannelHint: string
+      groupsHint: string
+      sections: {
+        bridge: string
+        access: string
+        delivery: string
+        groups: string
+        advanced: string
+      }
+    }
+    whatsappPairing: {
+      title: string
+      description: string
+      showQr: string
+      starting: string
+      waitingForQr: string
+      scanInstructions: string
+      qrAlt: string
+      cancel: string
+      pairedTitle: string
+      pairedMessage: string
+      connectedTitle: string
+      restartingGateway: string
+      restartManually: string
+      finishSetup: string
+      connecting: string
+      allowedUsersLabel: string
+      allowedUsersHelp: string
+      allowedUsersPlaceholder: string
+      alreadyPaired: string
+      repair: string
+      startFailed: string
+      applyFailed: string
+      scanFirst: string
+      disconnect: string
+      disconnecting: string
+      disconnectConfirm: string
+      disconnectedTitle: string
+      disconnectedMessage: string
+      disconnectFailed: string
+      messageYourselfHelp: string
+    }
     platformIntro: Record<string, string>
   }
 
@@ -1145,7 +1269,9 @@ export interface Translations {
     openedBrowser: (provider: string) => string
     authorizeThere: string
     copyAuthCode: string
+    copyCallbackUrl: string
     pasteAuthCode: string
+    pasteCallbackUrl: string
     reopenAuthPage: string
     autoBrowser: (provider: string) => string
     reopenSignInPage: string

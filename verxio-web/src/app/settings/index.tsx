@@ -1,11 +1,12 @@
 import { IconDownload, IconRefresh, IconUpload } from '@tabler/icons-react'
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 import { Tip } from '@/components/ui/tooltip'
 import { getHermesConfigDefaults, getHermesConfigRecord, saveHermesConfig } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
-import { Archive, Bell, Globe, Info, KeyRound, Settings2, Sparkles, Wrench, Zap } from '@/lib/icons'
+import { Archive, Bell, Globe, Info, KeyRound, RefreshCw, Settings2, Sparkles, Wrench, Zap } from '@/lib/icons'
 import { notifyError } from '@/store/notifications'
 
 import { useRouteEnumParam } from '../hooks/use-route-enum-param'
@@ -22,12 +23,14 @@ import { KEYS_VIEWS, KeysSettings, type KeysView } from './keys-settings'
 import { McpSettings } from './mcp-settings'
 import { NotificationsSettings } from './notifications-settings'
 import { PROVIDER_VIEWS, ProvidersSettings, type ProviderView } from './providers-settings'
+import { RuntimeSettings } from './runtime-settings'
 import { SessionsSettings } from './sessions-settings'
 import type { SettingsPageProps, SettingsView as SettingsViewId } from './types'
 
 const SETTINGS_VIEWS: readonly SettingsViewId[] = [
   ...SECTIONS.map(s => `config:${s.id}` as SettingsViewId),
   'providers',
+  'runtime',
   'gateway',
   'keys',
   'mcp',
@@ -36,13 +39,30 @@ const SETTINGS_VIEWS: readonly SettingsViewId[] = [
   'about'
 ]
 
-export function SettingsView({ gateway, onClose, onConfigSaved, onMainModelChanged }: SettingsPageProps) {
+export function SettingsView({
+  gateway,
+  onClose,
+  onConfigSaved,
+  onMainModelChanged,
+  requestGateway
+}: SettingsPageProps) {
   const { t } = useI18n()
+  const { hash, pathname, search } = useLocation()
+  const navigate = useNavigate()
   const [activeView, setActiveView] = useRouteEnumParam('tab', SETTINGS_VIEWS, 'config:model' as SettingsViewId)
   // Providers subnav (Accounts vs API keys) lives in its own param so each
   // sub-view is deep-linkable and survives a refresh.
   const [providerView, setProviderView] = useRouteEnumParam<ProviderView>('pview', PROVIDER_VIEWS, 'accounts')
   const [keysView, setKeysView] = useRouteEnumParam<KeysView>('kview', KEYS_VIEWS, 'tools')
+
+  useEffect(() => {
+    const params = new URLSearchParams(search)
+
+    if (!params.has('tab') && params.has('pview')) {
+      params.set('tab', 'providers')
+      navigate({ hash, pathname, search: `?${params.toString()}` }, { replace: true })
+    }
+  }, [hash, navigate, pathname, search])
 
   const openProviderView = (view: ProviderView) => {
     setActiveView('providers')
@@ -103,7 +123,7 @@ export function SettingsView({ gateway, onClose, onConfigSaved, onMainModelChang
               />
             )
           })}
-          <div className="my-2 h-px bg-border/30" />
+          <div className="my-2 h-px bg-border/30 max-xl:hidden" />
           <OverlayNavItem
             active={activeView === 'providers'}
             icon={Zap}
@@ -111,7 +131,7 @@ export function SettingsView({ gateway, onClose, onConfigSaved, onMainModelChang
             onClick={() => setActiveView('providers')}
           />
           {activeView === 'providers' && (
-            <div className="ml-3.5 flex flex-col gap-0.5 pl-1.5">
+            <div className="ml-3.5 flex flex-col gap-0.5 pl-1.5 max-xl:contents max-xl:ml-0 max-xl:pl-0">
               <OverlayNavItem
                 active={providerView === 'accounts'}
                 icon={Sparkles}
@@ -129,6 +149,12 @@ export function SettingsView({ gateway, onClose, onConfigSaved, onMainModelChang
             </div>
           )}
           <OverlayNavItem
+            active={activeView === 'runtime'}
+            icon={RefreshCw}
+            label={t.settings.nav.runtime}
+            onClick={() => setActiveView('runtime')}
+          />
+          <OverlayNavItem
             active={activeView === 'gateway'}
             icon={Globe}
             label={t.settings.nav.gateway}
@@ -141,7 +167,7 @@ export function SettingsView({ gateway, onClose, onConfigSaved, onMainModelChang
             onClick={() => setActiveView('keys')}
           />
           {activeView === 'keys' && (
-            <div className="ml-3.5 flex flex-col gap-0.5 pl-1.5">
+            <div className="ml-3.5 flex flex-col gap-0.5 pl-1.5 max-xl:contents max-xl:ml-0 max-xl:pl-0">
               <OverlayNavItem
                 active={keysView === 'tools'}
                 icon={Wrench}
@@ -176,14 +202,14 @@ export function SettingsView({ gateway, onClose, onConfigSaved, onMainModelChang
             label={t.settings.nav.archivedChats}
             onClick={() => setActiveView('sessions')}
           />
-          <div className="my-2 h-px bg-border/30" />
+          <div className="my-2 h-px bg-border/30 max-xl:hidden" />
           <OverlayNavItem
             active={activeView === 'about'}
             icon={Info}
             label={t.settings.nav.about}
             onClick={() => setActiveView('about')}
           />
-          <div className="mt-auto flex items-center gap-1 pt-2">
+          <div className="mt-auto flex items-center gap-1 pt-2 max-xl:mt-0 max-xl:ml-auto max-xl:pt-0">
             <Tip label={t.settings.exportConfig}>
               <OverlayIconButton onClick={() => void exportConfig()}>
                 <IconDownload className="size-3.5" />
@@ -220,6 +246,8 @@ export function SettingsView({ gateway, onClose, onConfigSaved, onMainModelChang
             <AboutSettings />
           ) : activeView === 'gateway' ? (
             <GatewaySettings />
+          ) : activeView === 'runtime' ? (
+            <RuntimeSettings />
           ) : activeView.startsWith('config:') ? (
             <ConfigSettings
               activeSectionId={activeView.slice('config:'.length)}
@@ -228,7 +256,7 @@ export function SettingsView({ gateway, onClose, onConfigSaved, onMainModelChang
               onMainModelChanged={onMainModelChanged}
             />
           ) : activeView === 'providers' ? (
-            <ProvidersSettings onViewChange={setProviderView} view={providerView} />
+            <ProvidersSettings onViewChange={setProviderView} requestGateway={requestGateway} view={providerView} />
           ) : activeView === 'keys' ? (
             <KeysSettings view={keysView} />
           ) : activeView === 'mcp' ? (

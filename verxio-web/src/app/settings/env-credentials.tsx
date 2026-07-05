@@ -3,7 +3,9 @@ import { useEffect, useState } from 'react'
 import { deleteEnvVar, getEnvVars, revealEnvVar, setEnvVar } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { type IconComponent } from '@/lib/icons'
+import { shouldReloadToolCredential } from '@/lib/tool-credentials'
 import { notify, notifyError } from '@/store/notifications'
+import { runRuntimeEnvReload } from '@/store/system-actions'
 import type { EnvVarInfo } from '@/types/hermes'
 
 import { asText, includesQuery, redactedValue, withoutKey } from './helpers'
@@ -87,6 +89,16 @@ export function useEnvCredentials(): UseEnvCredentials {
     setRevealed(c => withoutKey(c, key))
   }
 
+  async function reloadIfToolCredential(key: string) {
+    const info = vars?.[key]
+
+    if (!shouldReloadToolCredential(key, info)) {
+      return
+    }
+
+    await runRuntimeEnvReload()
+  }
+
   async function handleSave(key: string) {
     const value = edits[key]
 
@@ -101,6 +113,7 @@ export function useEnvCredentials(): UseEnvCredentials {
       patchVar(key, { is_set: true, redacted_value: redactedValue(value) })
       clearLocalState(key)
       notify({ kind: 'success', title: toolsets.savedTitle, message: toolsets.savedMessage(key) })
+      await reloadIfToolCredential(key)
     } catch (err) {
       notifyError(err, toolsets.failedSave(key))
     } finally {
@@ -122,9 +135,28 @@ export function useEnvCredentials(): UseEnvCredentials {
 
     try {
       await setEnvVar(key, trimmed)
+      setVars(c =>
+        c
+          ? {
+              ...c,
+              [key]: c[key] ?? {
+                advanced: false,
+                category: 'tool',
+                custom: true,
+                description: credentials.customToolDescription,
+                is_password: true,
+                is_set: true,
+                redacted_value: redactedValue(trimmed),
+                tools: [],
+                url: null
+              }
+            }
+          : c
+      )
       patchVar(key, { is_set: true, redacted_value: redactedValue(trimmed) })
       clearLocalState(key)
       notify({ kind: 'success', message: toolsets.savedMessage(key), title: toolsets.savedTitle })
+      await reloadIfToolCredential(key)
 
       return { ok: true }
     } catch (err) {
@@ -148,6 +180,7 @@ export function useEnvCredentials(): UseEnvCredentials {
       patchVar(key, { is_set: false, redacted_value: null })
       clearLocalState(key)
       notify({ kind: 'success', title: toolsets.removedTitle, message: toolsets.removedMessage(key) })
+      await reloadIfToolCredential(key)
     } catch (err) {
       notifyError(err, toolsets.failedRemove(key))
     } finally {

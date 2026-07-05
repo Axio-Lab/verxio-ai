@@ -173,7 +173,45 @@ export const zhHant = defineLocale({
       keysSettings: '設定',
       mcp: 'MCP',
       archivedChats: '已封存聊天',
-      about: '關於'
+      about: '關於',
+      notifications: 'Notifications',
+      runtime: 'Runtime'
+    },
+    runtime: {
+      title: 'Runtime',
+      intro:
+        'After changing providers, models, API keys, or custom endpoints, reload credentials or restart the agent so changes take effect.',
+      statusTitle: 'Container status',
+      statusDescription: 'Your isolated Hermes runtime on Verxio.',
+      statusConnected: 'Connected',
+      statusStarting: 'Starting…',
+      statusStopped: 'Stopped',
+      statusError: 'Unavailable',
+      statusUnknown: 'Unknown',
+      reloadTitle: 'Reload credentials',
+      reloadDescription: 'Re-read ~/.hermes/.env without restarting. Use after pasting API keys or env changes.',
+      reloadAction: 'Reload',
+      reloadDoneTitle: 'Credentials reloaded',
+      reloadDoneMessage: 'Start a new chat if the model or provider still looks stale.',
+      reloadFailed: 'Could not reload credentials',
+      agentRestartTitle: 'Restart agent',
+      agentRestartDescription:
+        'Reload .env and restart the gateway process. Use after model/provider or config.yaml changes.',
+      agentRestartAction: 'Restart agent',
+      agentRestartDoneTitle: 'Agent restarting',
+      agentRestartDoneMessage: 'Verxio reconnects automatically. Start a new chat when the status bar is live again.',
+      agentRestartFailed: 'Agent restart failed',
+      containerRestartTitle: 'Restart runtime container',
+      containerRestartDescription:
+        'Full Docker restart of your Verxio runtime. Use when hosted inference env or mounts changed.',
+      containerRestartAction: 'Restart container',
+      containerRestartDoneTitle: 'Runtime restarted',
+      containerRestartDoneMessage: 'Your agent container is back online.',
+      containerRestartFailed: 'Runtime restart failed',
+      restartTimeout: 'Runtime did not come back online in time. Refresh the page or try again.',
+      gatewayRestartTitle: 'Restart messaging gateway',
+      gatewayRestartDescription: 'Reconnect WhatsApp, Telegram, and other messaging platforms after channel setup.',
+      gatewayRestartAction: 'Restart gateway'
     },
     sections: {
       model: '模型',
@@ -425,6 +463,7 @@ export const zhHant = defineLocale({
       optional: '選填',
       enterValueFirst: '請先輸入一個值。',
       couldNotSave: '無法儲存憑證。',
+      customToolDescription: '自訂工具憑證（透過設定或 CLI 新增）',
       remove: '移除',
       or: '或',
       escToCancel: '按 esc 取消',
@@ -508,7 +547,19 @@ export const zhHant = defineLocale({
     keys: {
       loading: '正在載入 API 金鑰和憑證...',
       failedLoad: 'API 金鑰載入失敗',
-      empty: '此類別尚未有任何設定。'
+      empty: '此類別尚未有任何設定。',
+      custom: {
+        addButton: '新增自訂工具 API 金鑰',
+        hint: '與 hermes config set 相同 — 儲存至 ~/.hermes/.env。例如 MY_VENDOR_API_KEY 或 GEMINI_API_KEY。',
+        namePlaceholder: 'ENV_VAR_NAME',
+        valuePlaceholder: '貼上 API 金鑰或權杖',
+        nameRequired: '請先輸入環境變數名稱。',
+        invalidName: '請使用大寫字母、數字和底線，並以 _API_KEY、_TOKEN、_SECRET 或 _KEY 結尾。',
+        alreadyListed: '此變數已在清單中 — 展開卡片即可更新。',
+        valueRequired: '請貼上金鑰或權杖值。',
+        saveFailed: '無法儲存此憑證。',
+        save: '儲存並重新載入執行環境'
+      }
     },
     mcp: {
       loading: '正在載入 MCP 伺服器...',
@@ -564,6 +615,7 @@ export const zhHant = defineLocale({
     },
     providers: {
       connectAccount: '連結帳號',
+      connectAccountFeaturedPitch: '連結您自己的提供商帳號以使用前沿模型，例如 OpenAI、Anthropic、Gemini 等。',
       haveApiKey: '改用 API 金鑰？',
       intro: '使用訂閱登入，無需複製 API 金鑰。Verxio 會在應用程式中為您完成瀏覽器登入。',
       connected: '已連線',
@@ -571,7 +623,15 @@ export const zhHant = defineLocale({
       connectAnother: '連結其他提供方',
       otherProviders: '其他提供方',
       noProviderKeys: '沒有可用的提供方 API 金鑰。',
-      loading: '正在載入提供方...'
+      loading: '正在載入提供方...',
+      accountLabel: '帳戶',
+      disconnect: '中斷連線',
+      reconnect: '重新連線',
+      removeConfirm: provider => `移除 ${provider}？`,
+      removeExternalGeneric: provider => `${provider} 由其 CLI 管理 — 請在那裡連線。`,
+      removedTitle: '帳戶已移除',
+      removedMessage: provider => `${provider} 已移除。`,
+      failedRemove: provider => `無法移除 ${provider}`
     },
     sessions: {
       loading: '正在載入已封存工作階段…',
@@ -815,6 +875,7 @@ export const zhHant = defineLocale({
     platformEnabled: name => `${name} 已啟用`,
     platformDisabled: name => `${name} 已停用`,
     restartToApply: '重新啟動閘道後此變更才會生效。',
+    gatewayRestarting: 'Restarting the gateway to apply your changes…',
     setupSaved: name => `${name} 設定已儲存`,
     restartToReconnect: '重新啟動閘道以使用新憑證重新連線。',
     keyCleared: key => `${key} 已清除`,
@@ -889,11 +950,115 @@ export const zhHant = defineLocale({
         label: '啟用 WhatsApp 橋接',
         help: '由下方切換開關自動設定。除非確知需要，否則請勿變更。'
       },
-      WHATSAPP_MODE: { label: '橋接模式' },
+      WHATSAPP_MODE: { label: '橋接模式', help: 'self-chat 使用「傳給自己」。bot 接受允許清單中的號碼。' },
       WHATSAPP_ALLOWED_USERS: {
-        label: '允許的 WhatsApp 使用者',
-        help: '建議設定。逗號分隔的電話號碼或 WhatsApp ID。'
+        label: '允許的電話號碼',
+        help: '逗號分隔的號碼（含國碼，不含 +）。使用 * 允許所有人。',
+        placeholder: '2347068827272 或 *'
+      },
+      WHATSAPP_ALLOW_ALL_USERS: { label: '允許所有傳送者', help: '僅用於開發。' },
+      WHATSAPP_DM_POLICY: { label: '私訊策略' },
+      WHATSAPP_HOME_CHANNEL: { label: '主聊天 ID', placeholder: '2347068827272 或 120363001234567890@g.us' },
+      WHATSAPP_HOME_CHANNEL_NAME: { label: '主聊天名稱' },
+      WHATSAPP_GROUP_POLICY: { label: '群組策略' },
+      WHATSAPP_GROUP_ALLOWED_USERS: { label: '允許的群組 ID', placeholder: '120363001234567890@g.us' },
+      WHATSAPP_REQUIRE_MENTION: { label: '群組中需要 @提及' },
+      WHATSAPP_MENTION_PATTERNS: { label: '提及模式', placeholder: '["@verxio"]' },
+      WHATSAPP_FREE_RESPONSE_CHATS: { label: '免提及群組' },
+      WHATSAPP_DEBUG: { label: '偵錯日誌' },
+      WHATSAPP_CLOUD_PHONE_NUMBER_ID: { label: 'Phone Number ID', placeholder: '7794189252778687' },
+      WHATSAPP_CLOUD_ACCESS_TOKEN: { label: 'Access token', placeholder: 'Paste access token' },
+      WHATSAPP_CLOUD_APP_SECRET: { label: 'App secret', placeholder: 'Paste app secret' },
+      WHATSAPP_CLOUD_VERIFY_TOKEN: { label: 'Verify token' },
+      WHATSAPP_CLOUD_APP_ID: { label: 'App ID' },
+      WHATSAPP_CLOUD_WABA_ID: { label: 'WABA ID' },
+      WHATSAPP_CLOUD_WEBHOOK_HOST: { label: 'Webhook host', placeholder: '0.0.0.0' },
+      WHATSAPP_CLOUD_WEBHOOK_PORT: { label: 'Webhook port', placeholder: '8090' },
+      WHATSAPP_CLOUD_WEBHOOK_PATH: { label: 'Webhook path', placeholder: '/whatsapp/webhook' },
+      WHATSAPP_CLOUD_API_VERSION: { label: 'Graph API version', placeholder: 'v20.0' },
+      WHATSAPP_CLOUD_ALLOWED_USERS: { label: 'Allowed senders', placeholder: '2347068827272' },
+      WHATSAPP_CLOUD_ALLOW_ALL_USERS: { label: 'Allow all senders' },
+      WHATSAPP_CLOUD_DM_POLICY: { label: 'DM policy' },
+      WHATSAPP_CLOUD_ALLOW_FROM: { label: 'DM allowlist' },
+      WHATSAPP_CLOUD_HOME_CHANNEL: { label: 'Home chat wa_id' },
+      WHATSAPP_CLOUD_HOME_CHANNEL_NAME: { label: 'Home chat name' },
+      WHATSAPP_CLOUD_GROUP_POLICY: { label: 'Group policy' },
+      WHATSAPP_CLOUD_GROUP_ALLOW_FROM: { label: 'Allowed group IDs' }
+    },
+    whatsappCloudIntro: {
+      title: 'How WhatsApp Cloud works',
+      description:
+        'Uses Meta official WhatsApp Business Cloud API. Requires Meta app credentials and a public HTTPS webhook URL.',
+      steps: [
+        'Create a Meta app with WhatsApp enabled.',
+        'Fill credentials below and save.',
+        'Expose webhook port 8090 with cloudflared or ngrok.',
+        'Configure Meta webhook callback URL and verify token.',
+        'Subscribe to messages, add test recipients, enable platform.'
+      ]
+    },
+    whatsappCloudSettings: {
+      title: 'WhatsApp Cloud options',
+      description: 'Meta credentials, webhook, access control, and delivery.',
+      webhookHint: 'Expose the local webhook port through a public HTTPS URL.',
+      homeChannelHint: 'wa_id for cron and notification delivery.',
+      groupsHint: 'Group IDs use @g.us format.',
+      sections: {
+        credentials: 'Meta credentials',
+        webhook: 'Webhook server',
+        access: 'Access control',
+        delivery: 'Cron & notifications',
+        groups: 'Groups'
       }
+    },
+    whatsappSettings: {
+      title: 'WhatsApp 選項',
+      description: 'Hermes WhatsApp 橋接的存取控制、投遞目標與群組行為。',
+      homeChannelHint: '使用電話號碼/LID 作為私訊，或使用以 @g.us 結尾的群組 JID。',
+      groupsHint: '群組 ID 形如 120363001234567890@g.us。',
+      sections: {
+        bridge: '橋接模式',
+        access: '存取控制',
+        delivery: '定時任務與通知',
+        groups: '群組與提及',
+        advanced: '進階'
+      }
+    },
+    whatsappPairing: {
+      title: 'Pair WhatsApp',
+      description:
+        'Link your WhatsApp account by scanning a QR code. Open WhatsApp on your phone, go to Settings → Linked Devices → Link a Device, then scan below.',
+      showQr: 'Show QR code',
+      starting: 'Starting pairing…',
+      waitingForQr: 'Generating QR code…',
+      scanInstructions: 'Scan this code with WhatsApp on your phone. The code refreshes automatically if it expires.',
+      qrAlt: 'WhatsApp pairing QR code',
+      cancel: 'Cancel pairing',
+      pairedTitle: 'WhatsApp paired',
+      pairedMessage: 'WhatsApp linked successfully. Finish setup to enable the gateway.',
+      connectedTitle: 'WhatsApp connected',
+      restartingGateway: 'Gateway restarting with WhatsApp enabled.',
+      restartManually: 'WhatsApp is ready. Restart the gateway to connect.',
+      finishSetup: 'Enable WhatsApp',
+      connecting: 'Enabling…',
+      allowedUsersLabel: 'Allowed phone numbers',
+      allowedUsersHelp:
+        'Optional. Comma-separated numbers that may message the bot. Leave blank to allow all incoming messages.',
+      allowedUsersPlaceholder: '15551234567',
+      alreadyPaired: 'WhatsApp is already paired on this runtime.',
+      repair: 'Generate new QR code',
+      startFailed: 'Could not start WhatsApp pairing',
+      applyFailed: 'Could not finish WhatsApp setup',
+      scanFirst: 'Scan the QR code before enabling WhatsApp.',
+      disconnect: 'Disconnect WhatsApp',
+      disconnecting: 'Disconnecting…',
+      disconnectConfirm:
+        'This removes the linked WhatsApp session. You will need to scan a new QR code to connect again.',
+      disconnectedTitle: 'WhatsApp disconnected',
+      disconnectedMessage: 'WhatsApp has been unlinked from this runtime.',
+      disconnectFailed: 'Could not disconnect WhatsApp',
+      messageYourselfHelp:
+        'To chat with your agent, open WhatsApp → tap your profile → Message yourself. Do not use a regular chat with your phone number.'
     },
     platformIntro: {}
   },
@@ -1436,7 +1601,9 @@ export const zhHant = defineLocale({
     openedBrowser: provider => `已在瀏覽器中開啟 ${provider}。`,
     authorizeThere: '請在那裡授權 Verxio。',
     copyAuthCode: '複製授權碼並貼到下方。',
+    copyCallbackUrl: '登入後，從瀏覽器複製完整的回呼 URL 並貼到下方。',
     pasteAuthCode: '貼上授權碼',
+    pasteCallbackUrl: '貼上回呼 URL（http://127.0.0.1:56121/callback?...）',
     reopenAuthPage: '重新開啟授權頁面',
     autoBrowser: provider => `已在瀏覽器中開啟 ${provider}。請在那裡授權 Verxio，連線會自動完成，無需複製或貼上。`,
     reopenSignInPage: '重新開啟登入頁面',

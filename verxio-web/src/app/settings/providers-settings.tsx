@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useState } from 'react'
 
 import {
-  FEATURED_ID,
+  ConnectAccountFeaturedRow,
   FeaturedProviderRow,
   KeyProviderRow,
   ProviderRow,
@@ -14,15 +14,20 @@ import { listOAuthProviders } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { ChevronDown, KeyRound } from '@/lib/icons'
 import { cn } from '@/lib/utils'
-import { $desktopOnboarding, startManualProviderOAuth } from '@/store/onboarding'
+import { oauthProvidersForProduct, usesVerxioConnectAccountPicker } from '@/lib/verxio-oauth-providers'
+import { $desktopOnboarding } from '@/store/onboarding'
+import type { OnboardingContext } from '@/store/onboarding'
 import type { EnvVarInfo, OAuthProvider } from '@/types/hermes'
 
 import { DEFAULT_LIST_PAGE_SIZE, usePaginatedList } from '../hooks/use-paginated-list'
+import { useRouteStringParam } from '../hooks/use-route-string-param'
 
 import { isKeyVar, ProviderKeyRows } from './credential-key-ui'
 import { SettingsCategoryHeading, useEnvCredentials } from './env-credentials'
 import { providerGroup, providerMeta, providerPriority } from './helpers'
+import { InferenceProviderSettings } from './inference-provider-settings'
 import { LoadingState, SettingsContent } from './primitives'
+import { ProviderAccountSetup } from './provider-account-setup'
 
 // Sub-views surfaced as a sidebar subnav: account sign-in vs raw API keys.
 export const PROVIDER_VIEWS = ['accounts', 'keys'] as const
@@ -88,25 +93,32 @@ function buildProviderKeyGroups(vars: Record<string, EnvVarInfo>): ProviderKeyGr
 // Selecting a provider hands off to the shared onboarding overlay, which runs
 // that provider's real sign-in flow; the key affordances open the API-key
 // catalog below.
-function OAuthPicker({ onWantApiKey, providers }: { onWantApiKey: () => void; providers: OAuthProvider[] }) {
+function OAuthPicker({
+  onSelectProvider,
+  onWantApiKey,
+  providers
+}: {
+  onSelectProvider: (provider: OAuthProvider) => void
+  onWantApiKey: () => void
+  providers: OAuthProvider[]
+}) {
   const { t } = useI18n()
   const p = t.settings.providers
   const [showAll, setShowAll] = useState(false)
-  const ordered = useMemo(() => sortProviders(providers), [providers])
+  const verxioConnectPicker = usesVerxioConnectAccountPicker()
+  const ordered = useMemo(() => sortProviders(oauthProvidersForProduct(providers)), [providers])
 
   if (ordered.length === 0) {
     return null
   }
 
-  const select = (p: OAuthProvider) => startManualProviderOAuth(p.id)
+  const select = (provider: OAuthProvider) => onSelectProvider(provider)
 
-  const featured = ordered.find(p => p.id === FEATURED_ID) ?? null
-  const rest = featured ? ordered.filter(p => p.id !== FEATURED_ID) : ordered
-  // Keep connected accounts grouped and always visible; only the unconnected
-  // providers hide behind the disclosure, so the page leads with what's set up.
-  const connected = rest.filter(p => p.status?.logged_in)
-  const others = rest.filter(p => !p.status?.logged_in)
-  const collapsible = others.length > 0
+  const featured = verxioConnectPicker ? null : (ordered.find(item => item.id === 'nous') ?? null)
+  const rest = featured ? ordered.filter(item => item.id !== featured.id) : ordered
+  const connected = rest.filter(item => item.status?.logged_in)
+  const others = rest.filter(item => !item.status?.logged_in)
+  const collapsible = verxioConnectPicker ? others.length > 0 : Boolean(featured) && others.length > 0
   const showOthers = !collapsible || showAll
 
   return (
@@ -114,7 +126,7 @@ function OAuthPicker({ onWantApiKey, providers }: { onWantApiKey: () => void; pr
       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
         <SettingsCategoryHeading icon={KeyRound} title={p.connectAccount} />
         <Button
-          className="text-[length:var(--conversation-caption-font-size)]"
+          className="text-(length:--conversation-caption-font-size)"
           onClick={onWantApiKey}
           size="inline"
           type="button"
@@ -123,32 +135,35 @@ function OAuthPicker({ onWantApiKey, providers }: { onWantApiKey: () => void; pr
           {p.haveApiKey}
         </Button>
       </div>
-      <p className="-mt-2 mb-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
+      <p className="-mt-2 mb-1 text-(length:--conversation-caption-font-size) leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
         {p.intro}
       </p>
-      {featured && <FeaturedProviderRow onSelect={select} provider={featured} />}
+      {verxioConnectPicker && collapsible && !showAll ? (
+        <ConnectAccountFeaturedRow onExpand={() => setShowAll(true)} pitch={p.connectAccountFeaturedPitch} />
+      ) : null}
+      {!verxioConnectPicker && featured ? <FeaturedProviderRow onSelect={select} provider={featured} /> : null}
       {connected.length > 0 && (
         <>
-          <p className="mt-1 px-0.5 text-[length:var(--conversation-caption-font-size)] font-medium text-(--ui-text-tertiary)">
+          <p className="mt-1 px-0.5 text-(length:--conversation-caption-font-size) font-medium text-(--ui-text-tertiary)">
             {p.connected}
           </p>
-          {connected.map(p => (
-            <ProviderRow key={p.id} onSelect={select} provider={p} />
+          {connected.map(provider => (
+            <ProviderRow key={provider.id} onSelect={select} provider={provider} />
           ))}
         </>
       )}
       {showOthers && (
         <>
-          {others.map(p => (
-            <ProviderRow key={p.id} onSelect={select} provider={p} />
+          {others.map(provider => (
+            <ProviderRow key={provider.id} onSelect={select} provider={provider} />
           ))}
           <KeyProviderRow onClick={onWantApiKey} />
         </>
       )}
       {collapsible && (
         <Button
-          className="py-1 text-[length:var(--conversation-caption-font-size)]"
-          onClick={() => setShowAll(v => !v)}
+          className="py-1 text-(length:--conversation-caption-font-size)"
+          onClick={() => setShowAll(value => !value)}
           size="inline"
           type="button"
           variant="text"
@@ -165,21 +180,31 @@ function NoProviderKeys() {
   const { t } = useI18n()
 
   return (
-    <div className="grid min-h-32 place-items-center px-4 py-8 text-center text-[length:var(--conversation-caption-font-size)] text-muted-foreground">
+    <div className="grid min-h-32 place-items-center px-4 py-8 text-center text-(length:--conversation-caption-font-size) text-muted-foreground">
       {t.settings.providers.noProviderKeys}
     </div>
   )
 }
 
-export function ProvidersSettings({ onViewChange, view }: ProvidersSettingsProps) {
+export function ProvidersSettings({ onViewChange, requestGateway, view }: ProvidersSettingsProps) {
   const { t } = useI18n()
   const { rowProps, vars } = useEnvCredentials()
   const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([])
+  const [activeProviderId, setActiveProviderId] = useRouteStringParam('paccount')
   const [openProvider, setOpenProvider] = useState<null | string>(null)
   // The onboarding overlay owns the OAuth flow. Watch its `manual` flag so we
   // re-read connection state when the user finishes (or dismisses) a sign-in
   // they launched from this page — otherwise the cards keep their stale status.
   const onboardingActive = useStore($desktopOnboarding).manual
+
+  const refreshOAuthProviders = async () => {
+    try {
+      const { providers } = await listOAuthProviders()
+      setOauthProviders(providers)
+    } catch {
+      // Ignore — the OAuth panel just won't render.
+    }
+  }
 
   useEffect(() => {
     if (onboardingActive) {
@@ -188,7 +213,6 @@ export function ProvidersSettings({ onViewChange, view }: ProvidersSettingsProps
 
     let cancelled = false
 
-    // OAuth providers are best-effort — a failure here just hides the panel.
     void (async () => {
       try {
         const { providers } = await listOAuthProviders()
@@ -218,6 +242,7 @@ export function ProvidersSettings({ onViewChange, view }: ProvidersSettingsProps
   }
 
   const hasOauth = oauthProviders.length > 0
+  const activeProvider = oauthProviders.find(provider => provider.id === activeProviderId) ?? null
   // The sidebar subnav owns the Accounts/API-keys split now; with no OAuth
   // providers there's nothing for the "Accounts" view to show, so fall to keys.
   const showApiKeys = view === 'keys' || !hasOauth
@@ -255,7 +280,23 @@ export function ProvidersSettings({ onViewChange, view }: ProvidersSettingsProps
 
   return (
     <SettingsContent>
-      <OAuthPicker onWantApiKey={() => onViewChange('keys')} providers={oauthProviders} />
+      {activeProvider ? (
+        <ProviderAccountSetup
+          onBack={() => setActiveProviderId(null)}
+          onUpdated={refreshOAuthProviders}
+          provider={activeProvider}
+          requestGateway={requestGateway}
+        />
+      ) : (
+        <>
+          <InferenceProviderSettings onOpenProviderKeys={() => onViewChange('keys')} />
+          <OAuthPicker
+            onSelectProvider={provider => setActiveProviderId(provider.id)}
+            onWantApiKey={() => onViewChange('keys')}
+            providers={oauthProviders}
+          />
+        </>
+      )}
     </SettingsContent>
   )
 }
@@ -272,5 +313,6 @@ interface ProviderKeyGroup {
 
 interface ProvidersSettingsProps {
   onViewChange: (view: ProviderView) => void
+  requestGateway: OnboardingContext['requestGateway']
   view: ProviderView
 }

@@ -282,7 +282,44 @@ export const en: Translations = {
       mcp: 'MCP',
       archivedChats: 'Archived Chats',
       about: 'About',
-      notifications: 'Notifications'
+      notifications: 'Notifications',
+      runtime: 'Runtime'
+    },
+    runtime: {
+      title: 'Runtime',
+      intro:
+        'After changing providers, models, API keys, or custom endpoints, reload credentials or restart the agent so changes take effect.',
+      statusTitle: 'Container status',
+      statusDescription: 'Your isolated Hermes runtime on Verxio.',
+      statusConnected: 'Connected',
+      statusStarting: 'Starting…',
+      statusStopped: 'Stopped',
+      statusError: 'Unavailable',
+      statusUnknown: 'Unknown',
+      reloadTitle: 'Reload credentials',
+      reloadDescription: 'Re-read ~/.hermes/.env without restarting. Use after pasting API keys or env changes.',
+      reloadAction: 'Reload',
+      reloadDoneTitle: 'Credentials reloaded',
+      reloadDoneMessage: 'Start a new chat if the model or provider still looks stale.',
+      reloadFailed: 'Could not reload credentials',
+      agentRestartTitle: 'Restart agent',
+      agentRestartDescription:
+        'Reload .env and restart the gateway process. Use after model/provider or config.yaml changes.',
+      agentRestartAction: 'Restart agent',
+      agentRestartDoneTitle: 'Agent restarting',
+      agentRestartDoneMessage: 'Verxio reconnects automatically. Start a new chat when the status bar is live again.',
+      agentRestartFailed: 'Agent restart failed',
+      containerRestartTitle: 'Restart runtime container',
+      containerRestartDescription:
+        'Full Docker restart of your Verxio runtime. Use when hosted inference env or mounts changed.',
+      containerRestartAction: 'Restart container',
+      containerRestartDoneTitle: 'Runtime restarted',
+      containerRestartDoneMessage: 'Your agent container is back online.',
+      containerRestartFailed: 'Runtime restart failed',
+      restartTimeout: 'Runtime did not come back online in time. Refresh the page or try again.',
+      gatewayRestartTitle: 'Restart messaging gateway',
+      gatewayRestartDescription: 'Reconnect WhatsApp, Telegram, and other messaging platforms after channel setup.',
+      gatewayRestartAction: 'Restart gateway'
     },
     notifications: {
       title: 'Notifications',
@@ -410,6 +447,7 @@ export const en: Translations = {
       optional: 'Optional',
       enterValueFirst: 'Enter a value first.',
       couldNotSave: 'Could not save credential.',
+      customToolDescription: 'Custom tool credential (added via Settings or CLI)',
       remove: 'Remove',
       or: 'or',
       escToCancel: 'esc to cancel',
@@ -496,7 +534,19 @@ export const en: Translations = {
     keys: {
       loading: 'Loading API keys and credentials...',
       failedLoad: 'API keys failed to load',
-      empty: 'Nothing configured in this category yet.'
+      empty: 'Nothing configured in this category yet.',
+      custom: {
+        addButton: 'Add custom tool API key',
+        hint: 'Same as hermes config set — saves to ~/.hermes/.env. Use names like MY_VENDOR_API_KEY or GEMINI_API_KEY for tools/skills.',
+        namePlaceholder: 'ENV_VAR_NAME',
+        valuePlaceholder: 'Paste API key or token',
+        nameRequired: 'Enter the environment variable name first.',
+        invalidName: 'Use uppercase letters, numbers, and underscores ending in _API_KEY, _TOKEN, _SECRET, or _KEY.',
+        alreadyListed: 'That variable is already listed — expand its card to update it.',
+        valueRequired: 'Paste the key or token value.',
+        saveFailed: 'Could not save this credential.',
+        save: 'Save & reload runtime'
+      }
     },
     mcp: {
       loading: 'Loading MCP servers...',
@@ -554,13 +604,23 @@ export const en: Translations = {
       connectAccount: 'Connect an account',
       haveApiKey: 'Have an API key instead?',
       intro:
-        'Sign in with a subscription — no API key to copy. Verxio runs the browser sign-in for you, right here in the app.',
+        'Connect ChatGPT, Claude, Gemini, and other providers with your own account. Verxio runs the browser sign-in for you, right here in the app.',
+      connectAccountFeaturedPitch:
+        'Connect your own provider account for frontier models. OpenAI, Anthropic, Gemini, and more.',
       connected: 'Connected',
       collapse: 'Collapse',
       connectAnother: 'Connect another provider',
       otherProviders: 'Other providers',
       noProviderKeys: 'No provider API keys available.',
-      loading: 'Loading providers...'
+      loading: 'Loading providers...',
+      accountLabel: 'Account',
+      disconnect: 'Disconnect',
+      reconnect: 'Reconnect',
+      removeConfirm: provider => `Remove ${provider}?`,
+      removeExternalGeneric: provider => `${provider} is managed by its own CLI — connect it there.`,
+      removedTitle: 'Account removed',
+      removedMessage: provider => `${provider} was removed.`,
+      failedRemove: provider => `Could not remove ${provider}`
     },
     sessions: {
       loading: 'Loading archived sessions…',
@@ -741,6 +801,9 @@ export const en: Translations = {
     hermesActiveSessions: (version, count) => `Verxio ${version} · Active sessions ${count}`,
     restartMessaging: 'Restart messaging',
     restartGateway: 'Restart gateway',
+    reloadRuntimeEnv: 'Reload credentials',
+    restartAgentRuntime: 'Restart agent',
+    restartVerxioRuntime: 'Restart runtime container',
     gatewayRestartFailed: 'Gateway restart failed.',
     updateHermes: 'Update Verxio',
     actionRunning: 'running',
@@ -811,6 +874,7 @@ export const en: Translations = {
     platformEnabled: name => `${name} enabled`,
     platformDisabled: name => `${name} disabled`,
     restartToApply: 'Restart the gateway for this change to take effect.',
+    gatewayRestarting: 'Restarting the gateway to apply your changes…',
     setupSaved: name => `${name} setup saved`,
     restartToReconnect: 'Restart the gateway to reconnect with the new credentials.',
     keyCleared: key => `${key} cleared`,
@@ -894,11 +958,190 @@ export const en: Translations = {
         label: 'Enable WhatsApp bridge',
         help: 'Set automatically by the toggle below. Leave alone unless you know you need it.'
       },
-      WHATSAPP_MODE: { label: 'Bridge mode' },
+      WHATSAPP_MODE: {
+        label: 'Bridge mode',
+        help: 'self-chat uses Message yourself. bot accepts DMs from allowed numbers on a dedicated line.'
+      },
       WHATSAPP_ALLOWED_USERS: {
-        label: 'Allowed WhatsApp users',
-        help: 'Recommended. Comma-separated phone numbers or WhatsApp IDs.'
+        label: 'Allowed phone numbers',
+        help: 'Comma-separated numbers with country code (no +). Use * to allow everyone.',
+        placeholder: '2347068827272 or *'
+      },
+      WHATSAPP_ALLOW_ALL_USERS: {
+        label: 'Allow all senders',
+        help: 'Development only. Skips the allowlist and accepts any WhatsApp sender.'
+      },
+      WHATSAPP_DM_POLICY: {
+        label: 'DM policy',
+        help: 'open accepts DMs per allowlist rules. allowlist requires WHATSAPP_ALLOWED_USERS. disabled ignores DMs.'
+      },
+      WHATSAPP_HOME_CHANNEL: {
+        label: 'Home chat ID',
+        help: 'Chat or group where cron jobs and proactive notifications are delivered.',
+        placeholder: '2347068827272 or 120363001234567890@g.us'
+      },
+      WHATSAPP_HOME_CHANNEL_NAME: {
+        label: 'Home chat name',
+        help: 'Friendly label for the home chat in logs and status output.',
+        placeholder: 'My WhatsApp'
+      },
+      WHATSAPP_GROUP_POLICY: {
+        label: 'Group policy',
+        help: 'open listens in all groups. allowlist requires WHATSAPP_GROUP_ALLOWED_USERS. disabled ignores groups.'
+      },
+      WHATSAPP_GROUP_ALLOWED_USERS: {
+        label: 'Allowed group IDs',
+        help: 'Comma-separated group JIDs when group policy is allowlist.',
+        placeholder: '120363001234567890@g.us'
+      },
+      WHATSAPP_REQUIRE_MENTION: {
+        label: 'Require mention in groups',
+        help: 'When enabled, the agent only replies in groups after an @mention or mention pattern match.'
+      },
+      WHATSAPP_MENTION_PATTERNS: {
+        label: 'Mention patterns',
+        help: 'JSON array of regex patterns treated as mentions, e.g. ["@verxio", "^hey bot"].',
+        placeholder: '["@verxio"]'
+      },
+      WHATSAPP_FREE_RESPONSE_CHATS: {
+        label: 'Free-response groups',
+        help: 'Group IDs that always get replies without a mention.',
+        placeholder: '120363001234567890@g.us'
+      },
+      WHATSAPP_DEBUG: {
+        label: 'Debug logging',
+        help: 'Write raw WhatsApp message events to bridge.log for troubleshooting.'
+      },
+      WHATSAPP_CLOUD_PHONE_NUMBER_ID: {
+        label: 'Phone Number ID',
+        help: "Meta's internal ID from API Setup (15-17 digits). Not your phone number.",
+        placeholder: '7794189252778687'
+      },
+      WHATSAPP_CLOUD_ACCESS_TOKEN: {
+        label: 'Access token',
+        help: 'Meta token starting with EAA. Use a System User permanent token in production.',
+        placeholder: 'Paste access token'
+      },
+      WHATSAPP_CLOUD_APP_SECRET: {
+        label: 'App secret',
+        help: '32-character hex secret from App Settings → Basic. Required for inbound webhooks.',
+        placeholder: 'Paste app secret'
+      },
+      WHATSAPP_CLOUD_VERIFY_TOKEN: {
+        label: 'Verify token',
+        help: 'Paste the same value into Meta webhook configuration when subscribing.',
+        placeholder: 'Generate or paste verify token'
+      },
+      WHATSAPP_CLOUD_APP_ID: { label: 'App ID', placeholder: 'Optional Meta App ID' },
+      WHATSAPP_CLOUD_WABA_ID: { label: 'WABA ID', placeholder: 'Optional WhatsApp Business Account ID' },
+      WHATSAPP_CLOUD_WEBHOOK_HOST: { label: 'Webhook host', placeholder: '0.0.0.0' },
+      WHATSAPP_CLOUD_WEBHOOK_PORT: { label: 'Webhook port', placeholder: '8090' },
+      WHATSAPP_CLOUD_WEBHOOK_PATH: { label: 'Webhook path', placeholder: '/whatsapp/webhook' },
+      WHATSAPP_CLOUD_API_VERSION: { label: 'Graph API version', placeholder: 'v20.0' },
+      WHATSAPP_CLOUD_ALLOWED_USERS: {
+        label: 'Allowed senders',
+        help: 'Comma-separated wa_ids with country code (no +). Use * to allow everyone.',
+        placeholder: '2347068827272'
+      },
+      WHATSAPP_CLOUD_ALLOW_ALL_USERS: {
+        label: 'Allow all senders',
+        help: 'Development only. Skips the allowlist.'
+      },
+      WHATSAPP_CLOUD_DM_POLICY: { label: 'DM policy' },
+      WHATSAPP_CLOUD_ALLOW_FROM: {
+        label: 'DM allowlist',
+        placeholder: '2347068827272'
+      },
+      WHATSAPP_CLOUD_HOME_CHANNEL: {
+        label: 'Home chat wa_id',
+        help: 'Default recipient for cron jobs and proactive notifications.',
+        placeholder: '2347068827272'
+      },
+      WHATSAPP_CLOUD_HOME_CHANNEL_NAME: { label: 'Home chat name', placeholder: 'WhatsApp Cloud' },
+      WHATSAPP_CLOUD_GROUP_POLICY: { label: 'Group policy' },
+      WHATSAPP_CLOUD_GROUP_ALLOW_FROM: {
+        label: 'Allowed group IDs',
+        placeholder: '120363001234567890@g.us'
       }
+    },
+    whatsappCloudIntro: {
+      title: 'How WhatsApp Cloud works',
+      description:
+        "This uses Meta's official WhatsApp Business Cloud API — not QR pairing. You need a Meta developer app, business phone number, and a public HTTPS URL that forwards to the gateway webhook port.",
+      steps: [
+        'Create a Meta app with WhatsApp enabled at developers.facebook.com.',
+        'Fill in Phone Number ID, access token, app secret, and verify token below, then save.',
+        'Expose the webhook port (default 8090) with cloudflared, ngrok, or your own reverse proxy.',
+        'In Meta → WhatsApp → Configuration, set callback URL to https://your-host/whatsapp/webhook and paste the verify token.',
+        'Subscribe to the messages field, add test recipients in API Setup, then enable the platform.'
+      ]
+    },
+    whatsappCloudSettings: {
+      title: 'WhatsApp Cloud options',
+      description:
+        'Meta credentials, webhook binding, access control, and delivery settings for the Cloud API adapter.',
+      webhookHint:
+        'The gateway listens locally on the port below. Meta must reach it through a public HTTPS URL (for example cloudflared tunnel --url http://localhost:8090).',
+      homeChannelHint: 'wa_id of the chat where cron jobs and notifications should be delivered.',
+      groupsHint: 'Cloud group IDs use the same @g.us format as the Baileys adapter.',
+      sections: {
+        credentials: 'Meta credentials',
+        webhook: 'Webhook server',
+        access: 'Access control',
+        delivery: 'Cron & notifications',
+        groups: 'Groups'
+      }
+    },
+    whatsappSettings: {
+      title: 'WhatsApp options',
+      description: 'Access control, delivery target, and group behavior for the WhatsApp bridge.',
+      homeChannelHint:
+        'Use your phone number or LID for a DM (Message yourself in self-chat mode), or a group JID ending in @g.us for group delivery.',
+      groupsHint:
+        'Group IDs look like 120363001234567890@g.us. Enable mention gating to avoid replying to every group message.',
+      sections: {
+        bridge: 'Bridge mode',
+        access: 'Access control',
+        delivery: 'Cron & notifications',
+        groups: 'Groups & mentions',
+        advanced: 'Advanced'
+      }
+    },
+    whatsappPairing: {
+      title: 'Pair WhatsApp',
+      description:
+        'Scan the QR code with WhatsApp on your phone. After connecting, open Message Yourself in WhatsApp and send a test message there.',
+      showQr: 'Show QR code',
+      starting: 'Starting pairing…',
+      waitingForQr: 'Generating QR code…',
+      scanInstructions: 'Scan this code with WhatsApp on your phone. The code refreshes automatically if it expires.',
+      qrAlt: 'WhatsApp pairing QR code',
+      cancel: 'Cancel pairing',
+      pairedTitle: 'WhatsApp paired',
+      pairedMessage: 'WhatsApp linked successfully. Finish setup to enable the gateway.',
+      connectedTitle: 'WhatsApp connected',
+      restartingGateway: 'Gateway restarting with WhatsApp enabled.',
+      restartManually: 'WhatsApp is ready. Restart the gateway to connect.',
+      finishSetup: 'Enable WhatsApp',
+      connecting: 'Enabling…',
+      allowedUsersLabel: 'Allowed phone numbers',
+      allowedUsersHelp:
+        'Optional. Comma-separated numbers that may message the bot. Leave blank to allow all incoming messages.',
+      allowedUsersPlaceholder: '15551234567',
+      alreadyPaired: 'WhatsApp is already paired on this runtime.',
+      repair: 'Generate new QR code',
+      startFailed: 'Could not start WhatsApp pairing',
+      applyFailed: 'Could not finish WhatsApp setup',
+      scanFirst: 'Scan the QR code before enabling WhatsApp.',
+      disconnect: 'Disconnect WhatsApp',
+      disconnecting: 'Disconnecting…',
+      disconnectConfirm:
+        'This removes the linked WhatsApp session. You will need to scan a new QR code to connect again.',
+      disconnectedTitle: 'WhatsApp disconnected',
+      disconnectedMessage: 'WhatsApp has been unlinked from this runtime.',
+      disconnectFailed: 'Could not disconnect WhatsApp',
+      messageYourselfHelp:
+        'To chat with your agent, open WhatsApp → tap your profile → Message yourself. Do not use a regular chat with your phone number.'
     },
     platformIntro: {}
   },
@@ -1473,7 +1716,7 @@ export const en: Translations = {
     chooseLater: "I'll choose a provider later",
     recommended: 'Recommended',
     connected: 'Connected',
-    featuredPitch: 'One subscription, 300+ frontier models — the recommended way to run Verxio',
+    featuredPitch: 'Connect your own provider account for frontier models — OpenAI, Anthropic, Gemini, and more.',
     openRouterPitch: 'One key, hundreds of models — a solid default',
     apiKeyOptions: {
       openrouter: {
@@ -1512,7 +1755,9 @@ export const en: Translations = {
     openedBrowser: provider => `We opened ${provider} in your browser.`,
     authorizeThere: 'Authorize Verxio there.',
     copyAuthCode: 'Copy the authorization code and paste it below.',
+    copyCallbackUrl: 'After sign-in, copy the full callback URL from your browser and paste it below.',
     pasteAuthCode: 'Paste authorization code',
+    pasteCallbackUrl: 'Paste callback URL (http://127.0.0.1:56121/callback?...)',
     reopenAuthPage: 'Re-open authorization page',
     autoBrowser: provider =>
       `We opened ${provider} in your browser. Authorize Verxio there and you'll be connected automatically — nothing to copy or paste.`,

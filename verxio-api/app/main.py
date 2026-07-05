@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode
@@ -40,6 +41,14 @@ from app.composio_catalog import (
     sync_composio_runtime_bridge,
 )
 from app.control_plane import ensure_runtime_directories, get_context_for_user, get_runtime_for_user
+from app.inference import (
+    inference_usage,
+    list_inference_catalog,
+    runtime_env_for_user,
+    sync_inference_runtime_bridge,
+    update_inference_settings,
+    ensure_inference_settings,
+)
 from app.leash_agent import clear_leash_agent, read_leash_agent, write_leash_agent
 from app.models import (
     ArtifactListResponse,
@@ -57,6 +66,10 @@ from app.models import (
     ComposioInitiateRequest,
     ComposioInitiateResponse,
     EmailRequest,
+    InferenceCatalogResponse,
+    InferenceSettings,
+    InferenceSettingsUpdate,
+    InferenceUsageResponse,
     LoginRequest,
     NotepadFolderCreateRequest,
     NotepadFolderRecord,
@@ -292,7 +305,8 @@ async def get_runtime(request: Request) -> RuntimeControlResponse:
 async def start_runtime_route(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
     _accounts, _bridge = await _sync_composio_bridge_for_user(user, refresh_running=True)
-    runtime = await start_runtime(get_runtime_for_user(user))
+    _inference_bridge = await _sync_inference_bridge_for_user(user, refresh_running=True)
+    runtime = await start_runtime(get_runtime_for_user(user), extra_env=runtime_env_for_user(str(user["id"])))
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
 
@@ -308,7 +322,9 @@ async def stop_runtime_route(request: Request) -> RuntimeControlResponse:
 @app.post("/api/runtime/restart", response_model=RuntimeControlResponse)
 async def restart_runtime_route(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
-    runtime = await restart_runtime(get_runtime_for_user(user))
+    await _sync_composio_bridge_for_user(user, refresh_running=True)
+    await _sync_inference_bridge_for_user(user, refresh_running=True)
+    runtime = await restart_runtime(get_runtime_for_user(user), extra_env=runtime_env_for_user(str(user["id"])))
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
 
@@ -325,6 +341,34 @@ async def sync_runtime_workspace_route(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
+
+
+@app.get("/api/inference/catalog", response_model=InferenceCatalogResponse)
+async def get_inference_catalog_route(request: Request) -> InferenceCatalogResponse:
+    require_user(request)
+    return list_inference_catalog()
+
+
+@app.get("/api/inference/settings", response_model=InferenceSettings)
+async def get_inference_settings_route(request: Request) -> InferenceSettings:
+    user = require_user(request)
+    return ensure_inference_settings(str(user["id"]))
+
+
+@app.put("/api/inference/settings", response_model=InferenceSettings)
+async def put_inference_settings_route(
+    payload: InferenceSettingsUpdate, request: Request
+) -> InferenceSettings:
+    user = require_user(request)
+    settings = update_inference_settings(str(user["id"]), payload)
+    await _sync_inference_bridge_for_user(user, refresh_running=True)
+    return settings
+
+
+@app.get("/api/inference/usage", response_model=InferenceUsageResponse)
+async def get_inference_usage_route(request: Request) -> InferenceUsageResponse:
+    user = require_user(request)
+    return inference_usage(str(user["id"]))
 
 
 @app.get("/api/artifacts", response_model=ArtifactListResponse)
@@ -694,6 +738,22 @@ async def _sync_composio_bridge_for_user(user: dict, *, refresh_running: bool = 
     return accounts, bridge
 
 
+async def _sync_inference_bridge_for_user(user: dict, *, refresh_running: bool = False):
+    runtime = get_runtime_for_user(user)
+    bridge = sync_inference_runtime_bridge(runtime, str(user["id"]))
+    runtime_env = runtime_env_for_user(str(user["id"]))
+    runtime_env_changed = (
+        bridge.enabled
+        and runtime.status == "running"
+        and any(not runtime_container_env_matches(runtime, key, value) for key, value in runtime_env.items())
+    )
+
+    if runtime.status == "running" and (runtime_env_changed or (refresh_running and bridge.changed)):
+        await restart_runtime(runtime, extra_env=runtime_env)
+
+    return bridge
+
+
 @app.get("/api/composio/connections", response_model=ComposioConnectionsResponse)
 async def list_composio_connections_route(request: Request) -> ComposioConnectionsResponse:
     user = require_user(request)
@@ -833,21 +893,31 @@ def _proxy_headers(request: Request, token: str) -> dict[str, str]:
 async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     user = require_user(request)
     await _sync_composio_bridge_for_user(user)
-    runtime = await start_runtime(get_runtime_for_user(user))
+    await _sync_inference_bridge_for_user(user)
+    runtime = await start_runtime(get_runtime_for_user(user), extra_env=runtime_env_for_user(str(user["id"])))
     if not runtime.dashboard_url:
         raise HTTPException(status_code=503, detail="Runtime dashboard is not ready.")
 
     token = _runtime_dashboard_token(runtime.id)
     target = f"{runtime.dashboard_url.rstrip('/')}/{path}"
     body = await request.body()
-    async with httpx.AsyncClient(timeout=300, follow_redirects=False) as client:
-        upstream = await client.request(
-            request.method,
-            target,
-            params=request.query_params,
-            content=body,
-            headers=_proxy_headers(request, token),
-        )
+    try:
+        async with httpx.AsyncClient(timeout=300, follow_redirects=False) as client:
+            upstream = await client.request(
+                request.method,
+                target,
+                params=request.query_params,
+                content=body,
+                headers=_proxy_headers(request, token),
+            )
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.RemoteProtocolError, httpx.ReadError) as exc:
+        # The runtime container is still booting (or restarting): the dashboard
+        # socket isn't accepting yet. Return 503 so the web client keeps polling
+        # readiness cleanly instead of surfacing a 500 stack trace.
+        raise HTTPException(
+            status_code=503,
+            detail="Runtime dashboard is starting. Retry shortly.",
+        ) from exc
 
     response_headers = {
         key: value
@@ -865,25 +935,47 @@ def _ws_target_url(runtime_url: str, path: str, query: str, token: str) -> str:
     return f"{scheme}://{parsed.host}:{parsed.port or 80}/{path}?{urlencode(params)}"
 
 
+logger = logging.getLogger(__name__)
+
+
+async def _safe_websocket_close(websocket: WebSocket, code: int) -> None:
+    try:
+        await websocket.close(code=code)
+    except RuntimeError:
+        # Starlette rejects a second close after the socket is already gone.
+        pass
+
+
 @app.websocket("/api/runtime/dashboard/ws/{path:path}")
 async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
     user = get_current_user(websocket)  # type: ignore[arg-type]
     if not user:
-        await websocket.close(code=4401)
+        await _safe_websocket_close(websocket, 4401)
         return
 
-    await _sync_composio_bridge_for_user(user)
-    runtime = await start_runtime(get_runtime_for_user(user))
-    if not runtime.dashboard_url:
-        await websocket.close(code=1011)
-        return
-
-    token = _runtime_dashboard_token(runtime.id)
-    target = _ws_target_url(runtime.dashboard_url, path, websocket.url.query, token)
+    # Finish the browser handshake before docker/runtime prep — nginx and the
+    # renderer both time out if accept() waits on start_runtime + bridge sync.
     await websocket.accept()
 
     try:
-        async with websockets.connect(target, additional_headers={"X-Hermes-Session-Token": token}) as upstream:
+        await _sync_composio_bridge_for_user(user)
+        await _sync_inference_bridge_for_user(user)
+        runtime = await start_runtime(
+            get_runtime_for_user(user),
+            extra_env=runtime_env_for_user(str(user["id"])),
+        )
+        if not runtime.dashboard_url:
+            await _safe_websocket_close(websocket, 1011)
+            return
+
+        token = _runtime_dashboard_token(runtime.id)
+        target = _ws_target_url(runtime.dashboard_url, path, websocket.url.query, token)
+
+        async with websockets.connect(
+            target,
+            additional_headers={"X-Hermes-Session-Token": token},
+            open_timeout=15,
+        ) as upstream:
             async def client_to_runtime() -> None:
                 while True:
                     message = await websocket.receive()
@@ -906,7 +998,8 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
 
             await asyncio.gather(client_to_runtime(), runtime_to_client())
     except Exception:
-        await websocket.close(code=1011)
+        logger.exception("Runtime dashboard websocket proxy failed for path=%s", path)
+        await _safe_websocket_close(websocket, 1011)
 
 
 def _find_run(run_id: str) -> RunRecord:

@@ -144,7 +144,6 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
   )
 
   const selectedProviderModels = selectedProviderRow?.models ?? []
-
   // An unconfigured provider was picked: no credentials yet, so there are no
   // models to choose. `api_key` providers can be activated inline (paste key);
   // OAuth / external flows hand off to the onboarding sign-in.

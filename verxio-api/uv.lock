@@ -451,7 +451,6 @@ source = { virtual = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
-    { name = "libsql" },
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "uvicorn", extra = ["standard"] },
@@ -461,18 +460,21 @@ dependencies = [
 dev = [
     { name = "pytest" },
 ]
+turso = [
+    { name = "libsql" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.104.0,<1" },
     { name = "httpx", specifier = ">=0.28.0,<1" },
-    { name = "libsql", specifier = ">=0.1.0,<1" },
+    { name = "libsql", marker = "extra == 'turso'", specifier = ">=0.1.0,<1" },
     { name = "pydantic", specifier = ">=2.7.0,<3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0,<10" },
     { name = "pyyaml", specifier = ">=6.0.2,<7" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.24.0,<1" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["turso", "dev"]
 
 [[package]]
 name = "watchfiles"

@@ -45,7 +45,10 @@ import type {
   SkillWriteResult,
   StatusResponse,
   ToolsetConfig,
-  ToolsetInfo
+  ToolsetInfo,
+  WhatsAppPairingApplyResponse,
+  WhatsAppPairingStartResponse,
+  WhatsAppPairingStatusResponse
 } from '@/types/hermes'
 
 const DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS = 30_000
@@ -105,7 +108,10 @@ export type {
   StaleAuxAssignment,
   StatusResponse,
   ToolsetConfig,
-  ToolsetInfo
+  ToolsetInfo,
+  WhatsAppPairingApplyResponse,
+  WhatsAppPairingStartResponse,
+  WhatsAppPairingStatusResponse
 } from '@/types/hermes'
 
 export class HermesGateway extends JsonRpcGatewayClient {
@@ -366,6 +372,14 @@ export function listOAuthProviders(): Promise<OAuthProvidersResponse> {
   })
 }
 
+export function disconnectOAuthProvider(providerId: string): Promise<{ ok: boolean; provider: string }> {
+  return window.hermesDesktop.api<{ ok: boolean; provider: string }>({
+    ...profileScoped(),
+    path: `/api/providers/oauth/${encodeURIComponent(providerId)}`,
+    method: 'DELETE'
+  })
+}
+
 export function startOAuthLogin(providerId: string): Promise<OAuthStartResponse> {
   return window.hermesDesktop.api<OAuthStartResponse>({
     ...profileScoped(),
@@ -501,6 +515,45 @@ export function testMessagingPlatform(platformId: string): Promise<MessagingPlat
   return window.hermesDesktop.api<MessagingPlatformTestResponse>({
     path: `/api/messaging/platforms/${encodeURIComponent(platformId)}/test`,
     method: 'POST'
+  })
+}
+
+export function startWhatsAppPairing(body: { reset?: boolean } = {}): Promise<WhatsAppPairingStartResponse> {
+  return window.hermesDesktop.api<WhatsAppPairingStartResponse>({
+    path: '/api/messaging/whatsapp/pairing/start',
+    method: 'POST',
+    body
+  })
+}
+
+export function getWhatsAppPairingStatus(pairingId: string): Promise<WhatsAppPairingStatusResponse> {
+  return window.hermesDesktop.api<WhatsAppPairingStatusResponse>({
+    path: `/api/messaging/whatsapp/pairing/${encodeURIComponent(pairingId)}`
+  })
+}
+
+export function applyWhatsAppPairing(
+  pairingId: string,
+  body: { allowed_users?: string; profile?: string }
+): Promise<WhatsAppPairingApplyResponse> {
+  return window.hermesDesktop.api<WhatsAppPairingApplyResponse>({
+    path: `/api/messaging/whatsapp/pairing/${encodeURIComponent(pairingId)}/apply`,
+    method: 'POST',
+    body
+  })
+}
+
+export function cancelWhatsAppPairing(pairingId: string): Promise<{ ok: boolean }> {
+  return window.hermesDesktop.api<{ ok: boolean }>({
+    path: `/api/messaging/whatsapp/pairing/${encodeURIComponent(pairingId)}`,
+    method: 'DELETE'
+  })
+}
+
+export function disconnectWhatsApp(): Promise<WhatsAppPairingApplyResponse & { disconnected?: boolean }> {
+  return window.hermesDesktop.api<WhatsAppPairingApplyResponse & { disconnected?: boolean }>({
+    path: '/api/messaging/whatsapp/disconnect',
+    method: 'DELETE'
   })
 }
 
@@ -729,6 +782,20 @@ export function grantComputerUsePermissions(): Promise<ActionResponse> {
 export function restartGateway(): Promise<ActionResponse> {
   return window.hermesDesktop.api<ActionResponse>({
     path: '/api/gateway/restart',
+    method: 'POST'
+  })
+}
+
+export function reloadRuntimeEnv(): Promise<{ message?: string; ok: boolean; updated?: number }> {
+  return window.hermesDesktop.api<{ message?: string; ok: boolean; updated?: number }>({
+    path: '/api/env/reload',
+    method: 'POST'
+  })
+}
+
+export function restartAgentRuntime(): Promise<ActionResponse & { message?: string; updated?: number }> {
+  return window.hermesDesktop.api<ActionResponse & { message?: string; updated?: number }>({
+    path: '/api/runtime/restart',
     method: 'POST'
   })
 }

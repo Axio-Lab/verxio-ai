@@ -315,11 +315,12 @@ def list_composio_apps() -> list[ComposioApp]:
 
     try:
         items = _fetch_all_toolkits()
+        custom_auth_slugs = _fetch_toolkit_slugs_with_custom_auth()
     except Exception as exc:
         _CATALOG_ERROR = str(exc)
         return COMPOSIO_APP_CATALOG
 
-    apps = [_toolkit_to_app(item) for item in items]
+    apps = [_toolkit_to_app(item, custom_auth_slugs=custom_auth_slugs) for item in items]
     apps = [app for app in apps if app.slug and app.name]
     _CATALOG_ERROR = None
 
@@ -461,7 +462,7 @@ def initiate_composio_connection(
     if toolkit is None:
         raise HTTPException(status_code=404, detail=f"Toolkit '{slug}' was not found in Composio.")
 
-    auth_mode = _resolve_toolkit_auth_mode(toolkit)
+    auth_mode = _resolve_effective_auth_mode(toolkit)
     if auth_mode == "requires_oauth_app":
         name = str(toolkit.get("name") or slug)
         raise HTTPException(
@@ -478,7 +479,7 @@ def initiate_composio_connection(
         if auth_mode == "managed_oauth":
             auth_config_id = _resolve_managed_auth_config_id(slug)
         else:
-            auth_scheme = _pick_connect_link_auth_scheme(toolkit)
+            auth_scheme = _pick_auth_scheme_for_connect(toolkit)
             auth_config_id = _resolve_custom_auth_config_id(slug, auth_scheme)
         response = _post(
             f"{_tools_api_base()}/connected_accounts/link",
@@ -513,7 +514,7 @@ def get_composio_connection_setup(app_slug: str) -> ComposioConnectionSetupRespo
     if toolkit is None:
         raise HTTPException(status_code=404, detail=f"Toolkit '{slug}' was not found in Composio.")
 
-    auth_mode = _resolve_toolkit_auth_mode(toolkit)
+    auth_mode = _resolve_effective_auth_mode(toolkit)
     name = str(toolkit.get("name") or slug)
     auth_scheme: str | None = None
     input_fields: list[ComposioAuthInputField] = []
@@ -525,14 +526,13 @@ def get_composio_connection_setup(app_slug: str) -> ComposioConnectionSetupRespo
         if isinstance(managed, list) and managed:
             auth_scheme = str(managed[0]).upper()
     elif auth_mode == "connect_link":
-        auth_scheme = _pick_connect_link_auth_scheme(toolkit)
-        try:
-            auth_config_id = _resolve_custom_auth_config_id(slug, auth_scheme)
-            auth_config = _fetch_auth_config(auth_config_id)
-            input_fields = _parse_expected_input_fields(auth_config)
-            supports_inline = len(input_fields) > 0
-        except RuntimeError as exc:
-            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        auth_scheme = _pick_auth_scheme_for_connect(toolkit)
+        input_fields = _load_connection_setup_fields(slug, auth_scheme)
+        supports_inline = len(input_fields) > 0
+    elif auth_mode == "requires_oauth_app":
+        auth_scheme = _pick_oauth_auth_scheme(toolkit)
+        input_fields = _load_connection_setup_fields(slug, auth_scheme)
+        supports_inline = len(input_fields) > 0
 
     return ComposioConnectionSetupResponse(
         appSlug=slug,
@@ -559,15 +559,21 @@ def complete_composio_connection(
     if toolkit is None:
         raise HTTPException(status_code=404, detail=f"Toolkit '{slug}' was not found in Composio.")
 
-    auth_mode = _resolve_toolkit_auth_mode(toolkit)
-    if auth_mode != "connect_link":
+    auth_mode = _resolve_effective_auth_mode(toolkit)
+    base_mode = _resolve_toolkit_auth_mode(toolkit)
+    if auth_mode not in {"connect_link", "requires_oauth_app"}:
         raise HTTPException(
             status_code=400,
             detail="Inline credentials are only supported for API key and credential-based integrations.",
         )
 
-    auth_scheme = _pick_connect_link_auth_scheme(toolkit)
+    auth_scheme = _pick_auth_scheme_for_connect(toolkit)
     try:
+        if base_mode == "requires_oauth_app" or auth_scheme in OAUTH_APP_AUTH_SCHEMES:
+            credential_payload = _build_oauth_app_credential_payload(credentials)
+            auth_config_id = _save_custom_auth_config_credentials(slug, auth_scheme, credential_payload)
+            return ComposioCompleteConnectionResponse(connectionId=auth_config_id, status="AUTH_CONFIG_READY")
+
         auth_config_id = _resolve_custom_auth_config_id(slug, auth_scheme)
         auth_config = _fetch_auth_config(auth_config_id)
         credential_payload = _build_credential_payload(auth_config, credentials)
@@ -917,6 +923,20 @@ def _delete(url: str, timeout: int = 30) -> Any:
     return response.json()
 
 
+def _patch(url: str, payload: dict[str, Any], timeout: int = 30) -> Any:
+    response = httpx.patch(
+        url,
+        headers={**_headers(), "Content-Type": "application/json"},
+        json=payload,
+        timeout=timeout,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(_format_composio_error(response))
+    if not response.content:
+        return {}
+    return response.json()
+
+
 CONNECT_LINK_AUTH_SCHEMES = frozenset({"API_KEY", "BASIC", "BEARER_TOKEN", "BASIC_WITH_JWT"})
 OAUTH_APP_AUTH_SCHEMES = frozenset({"OAUTH2", "OAUTH1", "DCR_OAUTH", "S2S_OAUTH2", "SAML"})
 
@@ -948,17 +968,204 @@ def _resolve_toolkit_auth_mode(item: dict[str, Any]) -> str:
     return "requires_oauth_app"
 
 
-def _toolkit_is_connectable(item: dict[str, Any]) -> bool:
-    return _resolve_toolkit_auth_mode(item) != "requires_oauth_app"
+def _resolve_effective_auth_mode(
+    item: dict[str, Any],
+    *,
+    custom_auth_slugs: set[str] | None = None,
+) -> str:
+    mode = _resolve_toolkit_auth_mode(item)
+    if mode != "requires_oauth_app":
+        return mode
+
+    slug = str(item.get("slug") or item.get("toolkit_slug") or "").lower()
+    if not slug:
+        return mode
+
+    if custom_auth_slugs is not None:
+        return "connect_link" if slug in custom_auth_slugs else mode
+
+    auth_scheme = _pick_oauth_auth_scheme(item)
+    if _find_existing_custom_auth_config(slug, auth_scheme):
+        return "connect_link"
+
+    return mode
 
 
-def _pick_connect_link_auth_scheme(item: dict[str, Any]) -> str:
+def _toolkit_is_connectable(item: dict[str, Any], *, custom_auth_slugs: set[str] | None = None) -> bool:
+    return _resolve_effective_auth_mode(item, custom_auth_slugs=custom_auth_slugs) != "requires_oauth_app"
+
+
+def _pick_oauth_auth_scheme(item: dict[str, Any]) -> str:
+    schemes = _normalize_auth_schemes(item)
+    for scheme in schemes:
+        if scheme in OAUTH_APP_AUTH_SCHEMES:
+            return scheme
+
+    return "OAUTH2"
+
+
+def _pick_auth_scheme_for_connect(item: dict[str, Any]) -> str:
     schemes = _normalize_auth_schemes(item)
     for scheme in schemes:
         if scheme in CONNECT_LINK_AUTH_SCHEMES:
             return scheme
+    for scheme in schemes:
+        if scheme in OAUTH_APP_AUTH_SCHEMES:
+            return scheme
 
     return schemes[0] if schemes else "API_KEY"
+
+
+def _pick_connect_link_auth_scheme(item: dict[str, Any]) -> str:
+    return _pick_auth_scheme_for_connect(item)
+
+
+def _fetch_toolkit_slugs_with_custom_auth() -> set[str]:
+    slugs: set[str] = set()
+    cursor: str | None = None
+
+    for _ in range(20):
+        params: dict[str, Any] = {"limit": 100}
+        if cursor:
+            params["cursor"] = cursor
+
+        response = _get(_tools_api_base(), "/auth_configs", params=params, timeout=20)
+        for item in _extract_items(response):
+            if bool(item.get("is_composio_managed")):
+                continue
+            if str(item.get("status") or "ENABLED").upper() == "DISABLED":
+                continue
+
+            toolkit = item.get("toolkit") if isinstance(item.get("toolkit"), dict) else {}
+            slug = str(toolkit.get("slug") or item.get("toolkit_slug") or "").lower()
+            if slug:
+                slugs.add(slug)
+
+        cursor = _next_cursor(response)
+        if not cursor:
+            break
+
+    return slugs
+
+
+def _default_oauth_input_fields() -> list[ComposioAuthInputField]:
+    return [
+        ComposioAuthInputField(
+            description="OAuth client ID from the provider developer portal.",
+            displayName="Client ID",
+            name="client_id",
+            required=True,
+        ),
+        ComposioAuthInputField(
+            description="OAuth client secret from the provider developer portal.",
+            displayName="Client Secret",
+            isSecret=True,
+            name="client_secret",
+            required=True,
+        ),
+    ]
+
+
+def _load_connection_setup_fields(app_slug: str, auth_scheme: str) -> list[ComposioAuthInputField]:
+    target_scheme = auth_scheme.upper()
+    auth_config_id: str | None = None
+    try:
+        auth_config_id = _find_existing_custom_auth_config(app_slug, target_scheme)
+    except RuntimeError:
+        auth_config_id = None
+
+    if auth_config_id:
+        try:
+            auth_config = _fetch_auth_config(auth_config_id)
+            fields = _parse_expected_input_fields(auth_config)
+            if fields:
+                return fields
+        except RuntimeError:
+            pass
+
+    if target_scheme in OAUTH_APP_AUTH_SCHEMES:
+        return _default_oauth_input_fields()
+
+    try:
+        auth_config_id = _resolve_custom_auth_config_id(app_slug, target_scheme)
+        auth_config = _fetch_auth_config(auth_config_id)
+        return _parse_expected_input_fields(auth_config)
+    except RuntimeError:
+        return []
+
+
+def _build_oauth_app_credential_payload(credentials: dict[str, str]) -> dict[str, str]:
+    payload: dict[str, str] = {}
+    missing: list[str] = []
+
+    for field in _default_oauth_input_fields():
+        value = str(credentials.get(field.name) or "").strip()
+        if not value and field.required:
+            missing.append(field.displayName)
+            continue
+        if value:
+            payload[field.name] = value
+
+    if missing:
+        raise RuntimeError(f"Missing required fields: {', '.join(missing)}.")
+
+    return payload
+
+
+def _save_custom_auth_config_credentials(
+    app_slug: str, auth_scheme: str, credentials: dict[str, str]
+) -> str:
+    target_scheme = auth_scheme.upper()
+    existing = _find_existing_custom_auth_config(app_slug, target_scheme)
+    if existing:
+        _patch(
+            f"{_tools_api_base()}/auth_configs/{existing}",
+            {"credentials": credentials},
+            timeout=20,
+        )
+        return existing
+
+    created = _post(
+        f"{_tools_api_base()}/auth_configs",
+        {
+            "toolkit": {"slug": app_slug},
+            "auth_config": {
+                "type": "use_custom_auth",
+                "authScheme": target_scheme,
+                "credentials": credentials,
+                "restrict_to_following_tools": [],
+            },
+        },
+        timeout=20,
+    )
+    auth_config = created.get("auth_config") if isinstance(created.get("auth_config"), dict) else {}
+    auth_config_id = str(auth_config.get("id") or created.get("id") or "").strip()
+    if not auth_config_id:
+        raise RuntimeError(f"Could not create a Composio auth config for {app_slug}.")
+    return auth_config_id
+
+
+def _find_existing_custom_auth_config(app_slug: str, auth_scheme: str) -> str | None:
+    response = _get(
+        _tools_api_base(),
+        "/auth_configs",
+        params={"toolkit_slug": app_slug, "limit": 20},
+        timeout=20,
+    )
+    target_scheme = auth_scheme.upper()
+    for item in _extract_items(response):
+        if bool(item.get("is_composio_managed")):
+            continue
+        if str(item.get("status") or "ENABLED").upper() == "DISABLED":
+            continue
+        scheme = str(item.get("auth_scheme") or item.get("authScheme") or "").upper()
+        if scheme != target_scheme:
+            continue
+        auth_config_id = str(item.get("id") or "").strip()
+        if auth_config_id:
+            return auth_config_id
+
+    return None
 
 
 def _fetch_toolkit_by_slug(app_slug: str) -> dict[str, Any] | None:
@@ -1205,20 +1412,20 @@ def _next_cursor(response: Any) -> str | None:
     return None
 
 
-def _toolkit_to_app(item: dict[str, Any]) -> ComposioApp:
+def _toolkit_to_app(item: dict[str, Any], *, custom_auth_slugs: set[str] | None = None) -> ComposioApp:
     meta = item.get("meta") if isinstance(item.get("meta"), dict) else {}
     slug = str(item.get("slug") or item.get("toolkit_slug") or "").lower()
     name = str(item.get("name") or meta.get("name") or slug.replace("_", " ").title())
     tools_count = _int_or_none(meta.get("toolsCount") or meta.get("tools_count"))
     triggers_count = _int_or_none(meta.get("triggersCount") or meta.get("triggers_count"))
 
-    auth_mode = _resolve_toolkit_auth_mode(item)
+    auth_mode = _resolve_effective_auth_mode(item, custom_auth_slugs=custom_auth_slugs)
 
     return ComposioApp(
         authMode=auth_mode,
         authSchemes=_normalize_auth_schemes(item),
         categories=_normalize_categories(meta.get("categories") or item.get("categories")),
-        connectable=_toolkit_is_connectable(item),
+        connectable=_toolkit_is_connectable(item, custom_auth_slugs=custom_auth_slugs),
         description=str(meta.get("description") or item.get("description") or ""),
         logoUrl=meta.get("logo") or item.get("logoUrl") or item.get("logo_url"),
         name=name,

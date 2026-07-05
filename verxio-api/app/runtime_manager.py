@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import mimetypes
 import os
 import secrets
@@ -36,6 +37,10 @@ def _run_docker(args: list[str]) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
     )
+
+
+async def _run_docker_async(args: list[str]) -> subprocess.CompletedProcess[str]:
+    return await asyncio.to_thread(_run_docker, args)
 
 
 def _container_name(runtime: RuntimeInstance) -> str:
@@ -127,10 +132,10 @@ async def runtime_health(runtime: RuntimeInstance) -> tuple[bool, str]:
         return False, f"Hermes dashboard is not reachable: {exc}"
 
 
-async def start_runtime(runtime: RuntimeInstance) -> RuntimeInstance:
+async def start_runtime(runtime: RuntimeInstance, extra_env: dict[str, str] | None = None) -> RuntimeInstance:
     ensure_runtime_directories(runtime)
 
-    current = _run_docker(["inspect", "-f", "{{.State.Running}}", _container_name(runtime)])
+    current = await _run_docker_async(["inspect", "-f", "{{.State.Running}}", _container_name(runtime)])
     if current.returncode == 0 and current.stdout.strip() == "true":
         connected, detail = await runtime_health(runtime)
         return save_runtime(
@@ -141,7 +146,7 @@ async def start_runtime(runtime: RuntimeInstance) -> RuntimeInstance:
         )
 
     if current.returncode == 0:
-        _run_docker(["rm", _container_name(runtime)])
+        await _run_docker_async(["rm", _container_name(runtime)])
 
     port = _dashboard_port(runtime)
     token_row = db.fetch_one("SELECT dashboard_token FROM runtime_instances WHERE id = ?", (runtime.id,))
@@ -186,10 +191,19 @@ async def start_runtime(runtime: RuntimeInstance) -> RuntimeInstance:
     composio_api_key = os.getenv("COMPOSIO_API_KEY", "").strip()
     if composio_api_key:
         cmd.extend(["-e", f"COMPOSIO_API_KEY={composio_api_key}"])
+    for key, value in {
+        "VERXIO_HOSTED": "1",
+        "WHATSAPP_BROWSER_NAME": "Verxio Agent",
+        "WHATSAPP_REPLY_PREFIX": "",
+    }.items():
+        cmd.extend(["-e", f"{key}={value}"])
+    for key, value in sorted((extra_env or {}).items()):
+        if key and value:
+            cmd.extend(["-e", f"{key}={value}"])
 
     cmd.extend([image, "gateway", "run"])
 
-    result = _run_docker(cmd)
+    result = await _run_docker_async(cmd)
     if result.returncode != 0:
         return save_runtime(
             runtime,
@@ -222,9 +236,9 @@ def stop_runtime(runtime: RuntimeInstance) -> RuntimeInstance:
     return save_runtime(runtime, status="stopped", last_error=None)
 
 
-async def restart_runtime(runtime: RuntimeInstance) -> RuntimeInstance:
+async def restart_runtime(runtime: RuntimeInstance, extra_env: dict[str, str] | None = None) -> RuntimeInstance:
     stopped = stop_runtime(runtime)
-    return await start_runtime(stopped)
+    return await start_runtime(stopped, extra_env=extra_env)
 
 
 def _merge_workspace_tree(source: Path, destination: Path) -> None:

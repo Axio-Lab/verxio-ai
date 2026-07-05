@@ -6,13 +6,19 @@ requires-python = ">=3.11,<3.14"
 dependencies = [
   "fastapi>=0.104.0,<1",
   "httpx>=0.28.0,<1",
-  "libsql>=0.1.0,<1",
   "pydantic>=2.7.0,<3",
   "PyYAML>=6.0.2,<7",
   "uvicorn[standard]>=0.24.0,<1",
 ]
 
 [project.optional-dependencies]
+# libsql is only needed for VERXIO_DATABASE_MODE=turso. It ships prebuilt
+# wheels for linux/amd64 but not linux/arm64, so keeping it out of the core
+# dependencies lets verxio-api build/run natively on Apple Silicon (sqlite
+# mode) without Rosetta emulation. Install with `--extra turso` for Turso.
+turso = [
+  "libsql>=0.1.0,<1",
+]
 dev = [
   "pytest>=8.0.0,<10",
 ]

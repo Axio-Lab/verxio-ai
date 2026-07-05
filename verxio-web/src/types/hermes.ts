@@ -47,6 +47,9 @@ export interface OAuthProviderStatus {
 
 export interface OAuthProvider {
   cli_command: string
+  disconnect_command?: null | string
+  disconnect_hint?: null | string
+  disconnectable?: boolean
   docs_url: string
   flow: 'device_code' | 'external' | 'loopback' | 'pkce'
   id: string
@@ -77,6 +80,7 @@ export type OAuthStartResponse =
       auth_url: string
       expires_in: number
       flow: 'loopback'
+      manual_paste?: boolean
       session_id: string
     }
 
@@ -128,6 +132,8 @@ export interface MemoryProviderConfig {
 export interface EnvVarInfo {
   advanced: boolean
   category: string
+  /** True for user-added credential vars discovered in .env but not in the catalog. */
+  custom?: boolean
   // True when this var is a messaging-platform credential owned by a card on
   // the dedicated Messaging page. The Keys page hides these to avoid
   // duplicating the richer channel-configuration UI.
@@ -142,6 +148,7 @@ export interface EnvVarInfo {
 
 export interface MessagingEnvVarInfo {
   advanced: boolean
+  current_value?: null | string
   description: string
   is_password: boolean
   is_set: boolean
@@ -189,6 +196,30 @@ export interface MessagingPlatformTestResponse {
   message: string
   ok: boolean
   state?: null | string
+}
+
+export interface WhatsAppPairingStartResponse {
+  pairing_id: string | null
+  status: string
+  qr?: string | null
+  paired?: boolean
+}
+
+export interface WhatsAppPairingStatusResponse {
+  pairing_id: string
+  status: string
+  qr?: string | null
+  paired?: boolean
+}
+
+export interface WhatsAppPairingApplyResponse {
+  ok: boolean
+  platform: string
+  paired: boolean
+  needs_restart?: boolean
+  restart_started?: boolean
+  restart_error?: string
+  restart_action?: string
 }
 
 export interface GatewayReadyPayload {

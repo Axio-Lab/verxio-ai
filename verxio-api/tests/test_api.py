@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from subprocess import CompletedProcess
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app import composio_catalog, control_plane, db, emailer, main
+from app import composio_catalog, control_plane, db, emailer, inference, main
 from app.auth import SESSION_COOKIE
 from app.main import app
 from app.models import ComposioConnectedAccount, ComposioToolBridgeStatus
@@ -135,6 +136,187 @@ def test_protected_composio_endpoint_rejects_anonymous_users(client):
     response = client.get("/api/composio/connections/apps")
 
     assert response.status_code == 401
+
+
+def test_inference_catalog_defaults_to_verxio_qwen(client):
+    _payload, token = signup(client, "inference-catalog@example.com")
+
+    response = client.get("/api/inference/catalog", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["defaultModelId"] == "verxio-qwen"
+    assert len(body["models"]) == 1
+    qwen_model = body["models"][0]
+    assert qwen_model["id"] == "verxio-qwen"
+    assert qwen_model["default"] is True
+    assert qwen_model["providerSlug"] == "alibaba"
+    assert qwen_model["displayName"] == "Verxio Qwen"
+    assert qwen_model["upstreamModelId"] == "qwen3.6-plus"
+    assert "DASHSCOPE_API_KEY" in qwen_model["requiredEnvVars"]
+
+
+def test_inference_settings_are_hosted_verxio_qwen_by_default(client):
+    _payload, token = signup(client, "inference-settings@example.com")
+
+    response = client.get("/api/inference/settings", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+
+    assert response.status_code == 200
+    assert response.json()["mode"] == "hosted"
+    assert response.json()["defaultModelId"] == "verxio-qwen"
+
+
+def test_inference_bridge_writes_hosted_verxio_qwen_model_config(client, monkeypatch):
+    monkeypatch.setenv("VERXIO_HOSTED_QWEN_API_KEY", "verxio-qwen-key")
+    payload, _token = signup(client, "inference-bridge@example.com")
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    runtime = control_plane.runtime_from_row(runtime_row)
+
+    status = inference.sync_inference_runtime_bridge(runtime, payload["user"]["id"])
+
+    assert status.configured is True
+    assert status.enabled is True
+    assert status.changed is True
+    assert status.defaultModelId == "verxio-qwen"
+    assert inference.runtime_env_for_user(payload["user"]["id"]) == {"DASHSCOPE_API_KEY": "verxio-qwen-key"}
+    config = (Path(runtime.hermes_home_path) / "config.yaml").read_text(encoding="utf-8")
+    assert "provider: alibaba" in config
+    assert "default: qwen3.6-plus" in config
+    state = Path(runtime.hermes_home_path) / ".verxio" / "inference-runtime-bridge.json"
+    assert state.is_file()
+    assert "verxio-qwen-key" not in state.read_text(encoding="utf-8")
+
+
+def test_inference_bridge_writes_hosted_verxio_qwen_after_explicit_settings(client, monkeypatch):
+    monkeypatch.setenv("VERXIO_HOSTED_QWEN_API_KEY", "verxio-qwen-key")
+    payload, token = signup(client, "inference-qwen@example.com")
+    response = client.put(
+        "/api/inference/settings",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"mode": "hosted", "defaultModelId": "verxio-qwen"},
+    )
+    assert response.status_code == 200
+
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    runtime = control_plane.runtime_from_row(runtime_row)
+
+    status = inference.sync_inference_runtime_bridge(runtime, payload["user"]["id"])
+
+    assert status.configured is True
+    assert status.enabled is True
+    assert status.defaultModelId == "verxio-qwen"
+    assert inference.runtime_env_for_user(payload["user"]["id"]) == {"DASHSCOPE_API_KEY": "verxio-qwen-key"}
+    config = (Path(runtime.hermes_home_path) / "config.yaml").read_text(encoding="utf-8")
+    assert "provider: alibaba" in config
+    assert "default: qwen3.6-plus" in config
+    state = Path(runtime.hermes_home_path) / ".verxio" / "inference-runtime-bridge.json"
+    assert "verxio-qwen-key" not in state.read_text(encoding="utf-8")
+
+
+def test_inference_bridge_strips_legacy_openai_credentials(client, monkeypatch):
+    monkeypatch.setenv("VERXIO_HOSTED_QWEN_API_KEY", "verxio-qwen-key")
+    payload, _token = signup(client, "inference-legacy@example.com")
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    runtime = control_plane.runtime_from_row(runtime_row)
+    hermes_home = Path(runtime.hermes_home_path)
+    hermes_home.mkdir(parents=True, exist_ok=True)
+    (hermes_home / ".env").write_text("OPENAI_API_KEY=legacy-verxio-gpt-key\nDASHSCOPE_API_KEY=keep\n", encoding="utf-8")
+    (hermes_home / "auth.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "providers": {},
+                "active_provider": "openai-api",
+                "credential_pool": {
+                    "openai-api": [
+                        {
+                            "id": "legacy",
+                            "label": "OPENAI_API_KEY",
+                            "auth_type": "api_key",
+                            "source": "env:OPENAI_API_KEY",
+                        }
+                    ],
+                    "openai-codex": [
+                        {
+                            "id": "keep",
+                            "label": "device_code",
+                            "auth_type": "oauth",
+                            "source": "device_code",
+                        }
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status = inference.sync_inference_runtime_bridge(runtime, payload["user"]["id"])
+
+    assert status.enabled is True
+    assert status.changed is True
+    assert "OPENAI_API_KEY" not in (hermes_home / ".env").read_text(encoding="utf-8")
+    auth = json.loads((hermes_home / "auth.json").read_text(encoding="utf-8"))
+    assert "openai-api" not in auth.get("credential_pool", {})
+    assert auth.get("active_provider") == ""
+    assert "openai-codex" in auth.get("credential_pool", {})
+
+
+def test_inference_bridge_honors_verxio_hosted_qwen_model_env(client, monkeypatch):
+    monkeypatch.setenv("VERXIO_HOSTED_QWEN_API_KEY", "verxio-qwen-key")
+    monkeypatch.setenv("VERXIO_HOSTED_QWEN_MODEL", "qwen3.7-max")
+    payload, _token = signup(client, "inference-qwen-model-env@example.com")
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    runtime = control_plane.runtime_from_row(runtime_row)
+
+    status = inference.sync_inference_runtime_bridge(runtime, payload["user"]["id"])
+
+    assert status.enabled is True
+    assert status.upstreamModelId == "qwen3.7-max"
+    config = (Path(runtime.hermes_home_path) / "config.yaml").read_text(encoding="utf-8")
+    assert "default: qwen3.7-max" in config
+
+
+def test_inference_bridge_byok_preserves_hermes_provider_settings(client, monkeypatch):
+    monkeypatch.setenv("VERXIO_HOSTED_QWEN_API_KEY", "verxio-qwen-key")
+    payload, token = signup(client, "inference-byok@example.com")
+    response = client.put(
+        "/api/inference/settings",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"mode": "byok"},
+    )
+    assert response.status_code == 200
+
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    runtime = control_plane.runtime_from_row(runtime_row)
+    before = (Path(runtime.hermes_home_path) / "config.yaml").read_text(encoding="utf-8")
+
+    status = inference.sync_inference_runtime_bridge(runtime, payload["user"]["id"])
+
+    assert status.enabled is False
+    assert status.message == "BYOK mode uses Hermes provider settings."
+    after = (Path(runtime.hermes_home_path) / "config.yaml").read_text(encoding="utf-8")
+    assert after == before
+    assert inference.runtime_env_for_user(payload["user"]["id"]) == {}
 
 
 def test_signup_creates_user_workspace_agent_and_runtime(client):
@@ -622,6 +804,7 @@ def test_composio_setup_returns_inline_fields(client, monkeypatch):
         }
 
     monkeypatch.setattr(composio_catalog, "_fetch_toolkit_by_slug", fake_fetch_toolkit)
+    monkeypatch.setattr(composio_catalog, "_find_existing_custom_auth_config", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(composio_catalog, "_resolve_custom_auth_config_id", fake_resolve_custom_auth_config_id)
     monkeypatch.setattr(composio_catalog, "_fetch_auth_config", fake_fetch_auth_config)
 
@@ -697,6 +880,7 @@ def test_composio_initiate_rejects_oauth_app_toolkit(client, monkeypatch):
         return None
 
     monkeypatch.setattr(composio_catalog, "_fetch_toolkit_by_slug", fake_fetch_toolkit)
+    monkeypatch.setattr(composio_catalog, "_find_existing_custom_auth_config", lambda *_args, **_kwargs: None)
 
     response = client.post(
         "/api/composio/connections/initiate",
@@ -706,6 +890,66 @@ def test_composio_initiate_rejects_oauth_app_toolkit(client, monkeypatch):
 
     assert response.status_code == 400
     assert "oauth app" in response.json()["detail"].lower()
+
+
+def test_composio_initiate_allows_oauth_app_with_custom_auth(client, monkeypatch):
+    monkeypatch.setenv("COMPOSIO_API_KEY", "test-key")
+    _payload, token = signup(client, "composio-oauth-ready@example.com")
+
+    def fake_fetch_toolkit(app_slug: str):
+        return {
+            "slug": "twitter",
+            "name": "Twitter",
+            "auth_schemes": ["OAUTH2"],
+            "composio_managed_auth_schemes": [],
+        }
+
+    def fake_post(url: str, payload: dict, timeout: int = 30):
+        assert url.endswith("/connected_accounts/link")
+        assert payload["auth_config_id"] == "ac_twitter_oauth"
+        return {"redirect_url": "https://composio.dev/oauth", "id": "ca_oauth_1"}
+
+    monkeypatch.setattr(composio_catalog, "_fetch_toolkit_by_slug", fake_fetch_toolkit)
+    monkeypatch.setattr(composio_catalog, "_find_existing_custom_auth_config", lambda *_args, **_kwargs: "ac_twitter_oauth")
+    monkeypatch.setattr(composio_catalog, "_resolve_custom_auth_config_id", lambda *_args, **_kwargs: "ac_twitter_oauth")
+    monkeypatch.setattr(composio_catalog, "_post", fake_post)
+
+    response = client.post(
+        "/api/composio/connections/initiate",
+        json={"appSlug": "twitter"},
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["redirectUrl"] == "https://composio.dev/oauth"
+
+
+def test_composio_setup_returns_oauth_app_fields(client, monkeypatch):
+    monkeypatch.setenv("COMPOSIO_API_KEY", "test-key")
+    _payload, token = signup(client, "composio-oauth-setup@example.com")
+
+    def fake_fetch_toolkit(app_slug: str):
+        return {
+            "slug": "twitter",
+            "name": "Twitter",
+            "auth_schemes": ["OAUTH2"],
+            "composio_managed_auth_schemes": [],
+        }
+
+    monkeypatch.setattr(composio_catalog, "_fetch_toolkit_by_slug", fake_fetch_toolkit)
+    monkeypatch.setattr(composio_catalog, "_find_existing_custom_auth_config", lambda *_args, **_kwargs: None)
+
+    response = client.get(
+        "/api/composio/connections/apps/twitter/setup",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["authMode"] == "requires_oauth_app"
+    assert payload["supportsInline"] is True
+    assert payload["supportsLink"] is False
+    assert payload["inputFields"][0]["name"] == "client_id"
 
 
 def test_runtime_start_updates_registry_without_real_docker(client, monkeypatch):

@@ -60,6 +60,9 @@ def build_agent_instructions(workspace: Workspace, profile: AgentProfile) -> str
             "- Treat `/workspace` as the runtime workspace when Hermes is containerized.",
             "- Save generated reports, dashboards, documents, and exports under `/workspace/artifacts`.",
             "- If a capability is missing, say which Hermes setting or connection appears missing.",
+            "- When a tool or integration needs an API key, NEVER ask the user to paste it in chat. "
+            "Tell them the env var name and direct them to Verxio Settings → Tools & Keys → Tools "
+            "(Add custom key for unlisted vars). Provider keys live under Settings → Providers.",
             "- Behave like the normal Hermes assistant, but present yourself through Verxio.",
             "- Be concise unless the user asks for depth.",
         ]

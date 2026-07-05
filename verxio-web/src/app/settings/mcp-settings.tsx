@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { getHermesConfigRecord, type HermesGateway, saveHermesConfig } from '@/hermes'
 import { useI18n } from '@/i18n'
+import { COMPOSIO_MCP_SERVER_NAME, isComposioMcpServer } from '@/lib/composio'
 import { Wrench } from '@/lib/icons'
 import { isLeashIdentityConfigured } from '@/lib/leash/identity'
 import { LEASH_MCP_SERVER_NAME } from '@/lib/leash/types'
@@ -36,6 +37,12 @@ function getServers(config: HermesConfigRecord | null): McpServers {
   const raw = config?.mcp_servers
 
   return raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as McpServers) : {}
+}
+
+function listEditableMcpServerNames(servers: McpServers): string[] {
+  return Object.keys(servers)
+    .filter(name => !isComposioMcpServer(name))
+    .sort()
 }
 
 const transportLabel = (server: Record<string, unknown>) =>
@@ -77,7 +84,7 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps) {
           return
         }
 
-        const first = Object.keys(getServers(next)).sort()[0] ?? null
+        const first = listEditableMcpServerNames(getServers(next))[0] ?? LEASH_MCP_SERVER_NAME
         setSelected(first)
       })
       .catch(err => notifyError(err, m.failedLoad))
@@ -88,7 +95,7 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps) {
   const servers = useMemo(() => getServers(config), [config])
 
   const names = useMemo(() => {
-    const keys = Object.keys(servers).sort()
+    const keys = listEditableMcpServerNames(servers)
 
     if (!keys.includes(LEASH_MCP_SERVER_NAME)) {
       return [LEASH_MCP_SERVER_NAME, ...keys]
@@ -102,7 +109,9 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps) {
     elementId: serverName => `mcp-server-${serverName}`,
     onResolve: setSelected,
     param: 'server',
-    ready: serverName => serverName === LEASH_MCP_SERVER_NAME || (Boolean(config) && serverName in servers)
+    ready: serverName =>
+      serverName === LEASH_MCP_SERVER_NAME ||
+      (Boolean(config) && serverName in servers && !isComposioMcpServer(serverName))
   })
 
   useEffect(() => {
@@ -164,6 +173,16 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps) {
       return
     }
 
+    if (nextName === COMPOSIO_MCP_SERVER_NAME) {
+      notify({
+        kind: 'warning',
+        title: m.nameRequiredTitle,
+        message: 'Composio is managed automatically. Connect apps under Skills → Connections instead.'
+      })
+
+      return
+    }
+
     let parsed: Record<string, unknown>
 
     try {
@@ -205,7 +224,7 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps) {
   }
 
   const removeServer = async (serverName: string) => {
-    if (serverName === LEASH_MCP_SERVER_NAME) {
+    if (serverName === LEASH_MCP_SERVER_NAME || isComposioMcpServer(serverName)) {
       return
     }
 

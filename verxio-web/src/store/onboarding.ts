@@ -14,6 +14,7 @@ import {
 } from '@/hermes'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
 import { evaluateRuntimeReadiness, type RuntimeReadinessResult } from '@/lib/runtime-readiness'
+import { verxioApiEnabled } from '@/lib/verxio-api'
 import { notify, notifyError } from '@/store/notifications'
 import type { ModelOptionProvider, OAuthProvider, OAuthStartResponse } from '@/types/hermes'
 
@@ -294,6 +295,19 @@ async function fetchProviderDefaultModel(
 // onFail receives the runtime-readiness `reason` from checkRuntime so
 // the caller can fold it into a user-facing error — same contract as
 // reloadAndConnect used to have (which this replaces).
+function finishProviderConnection(ctx: OnboardingContext, providerLabel: string) {
+  if ($desktopOnboarding.get().manual) {
+    notifyReady(providerLabel)
+    closeManualOnboarding()
+    ctx.onCompleted?.()
+
+    return
+  }
+
+  completeDesktopOnboarding()
+  ctx.onCompleted?.()
+}
+
 async function completeWithModelConfirm(
   ctx: OnboardingContext,
   providerLabel: string,
@@ -304,10 +318,18 @@ async function completeWithModelConfirm(
   // where we intentionally don't validate the key (it blocked too many users).
   ignoreRuntimeGate = false
 ) {
-  await ctx.requestGateway('reload.env').catch(() => undefined)
-  const runtime = await checkRuntime(ctx)
+  const isManual = $desktopOnboarding.get().manual
 
-  if (!runtime.ready && !ignoreRuntimeGate) {
+  if (!isManual) {
+    await ctx.requestGateway('reload.env').catch(() => undefined)
+  }
+
+  const runtime =
+    isManual || ignoreRuntimeGate
+      ? ({ checksDisagree: false, ready: true, reason: null, source: 'fallback' } satisfies RuntimeReadinessResult)
+      : await checkRuntime(ctx)
+
+  if (!runtime.ready && !ignoreRuntimeGate && !isManual) {
     onFail(runtime.reason)
 
     return
@@ -316,10 +338,27 @@ async function completeWithModelConfirm(
   const defaults = await fetchProviderDefaultModel(preferredSlugs)
 
   if (!defaults) {
-    // Couldn't get a sensible default — proceed without confirm step.
-    notifyReady(providerLabel)
-    completeDesktopOnboarding()
-    ctx.onCompleted?.()
+    finishProviderConnection(ctx, providerLabel)
+
+    return
+  }
+
+  if (isManual) {
+    // Verxio Hosted keeps Qwen as the main inference route. Connecting a
+    // BYOK OAuth account from Settings must not switch (or wipe) the main model.
+    if (!verxioApiEnabled()) {
+      try {
+        await setModelAssignment({
+          scope: 'main',
+          provider: defaults.providerSlug,
+          model: defaults.defaultModel
+        })
+      } catch {
+        // Non-fatal for settings-driven connect flows.
+      }
+    }
+
+    finishProviderConnection(ctx, providerLabel)
 
     return
   }
@@ -501,6 +540,13 @@ export async function refreshOnboarding(ctx: OnboardingContext) {
     return false
   }
 
+  if (verxioApiEnabled()) {
+    completeDesktopOnboarding()
+    ctx.onCompleted?.()
+
+    return true
+  }
+
   const runtime = await checkRuntime(ctx)
 
   if (runtime.ready) {
@@ -571,6 +617,22 @@ export async function startProviderOAuth(provider: OAuthProvider, ctx: Onboardin
     }
 
     if (start.flow === 'loopback') {
+      if (start.manual_paste) {
+        setFlow({
+          status: 'awaiting_user',
+          provider,
+          start: {
+            auth_url: start.auth_url,
+            expires_in: start.expires_in,
+            flow: 'pkce',
+            session_id: start.session_id
+          },
+          code: ''
+        })
+
+        return
+      }
+
       // No code to paste: the redirect lands on the backend's loopback
       // listener. Just wait and poll the session until the worker finishes.
       setFlow({ status: 'awaiting_browser', provider, start })
@@ -652,6 +714,12 @@ export async function submitOnboardingCode(ctx: OnboardingContext) {
 }
 
 export function cancelOnboardingFlow() {
+  if ($desktopOnboarding.get().manual) {
+    closeManualOnboarding()
+
+    return
+  }
+
   clearPoll()
   const sessionId = sessionIdFor($desktopOnboarding.get().flow)
 
@@ -705,6 +773,27 @@ export async function copyExternalCommand() {
 
   const id = flow.provider.id
   await copyAndFlash(flow.provider.cli_command, f => f.status === 'external_pending' && f.provider.id === id)
+}
+
+// Settings → Providers detail page: verify an external/CLI provider after the
+// user ran its command locally, without opening the onboarding overlay.
+export async function verifyExternalProviderFromSettings(
+  provider: OAuthProvider,
+  ctx: OnboardingContext
+): Promise<{ ok: true } | { message: string; ok: false }> {
+  await ctx.requestGateway('reload.env').catch(() => undefined)
+  const runtime = await checkRuntime(ctx)
+
+  if (!runtime.ready) {
+    return {
+      ok: false,
+      message:
+        runtime.reason?.trim() ||
+        `Verxio still cannot reach ${provider.name}. Run \`${provider.cli_command}\` in a terminal first.`
+    }
+  }
+
+  return { ok: true }
 }
 
 export async function recheckExternalSignin(ctx: OnboardingContext) {
@@ -891,9 +980,5 @@ export function confirmOnboardingModel(ctx: OnboardingContext) {
     return
   }
 
-  // No success toast here: the confirm-model screen already showed "<provider>
-  // connected." notifyReady is reserved for completion paths that SKIP this
-  // screen (no-default fallthrough, local endpoint) so feedback isn't lost.
-  completeDesktopOnboarding()
-  ctx.onCompleted?.()
+  finishProviderConnection(ctx, flow.label)
 }

@@ -37,7 +37,12 @@ import {
 } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { $commandPaletteOpen, closeCommandPalette, setCommandPaletteOpen } from '@/store/command-palette'
-import { runGatewayRestart } from '@/store/system-actions'
+import {
+  runAgentRuntimeRestart,
+  runGatewayRestart,
+  runRuntimeEnvReload,
+  runVerxioContainerRestart
+} from '@/store/system-actions'
 import { type ThemeMode, useTheme } from '@/themes/context'
 
 import {
@@ -273,6 +278,27 @@ export function CommandPalette() {
             keywords: ['gateway', 'restart', 'messaging', 'reconnect', 'system'],
             label: cc.restartGateway,
             run: () => void runGatewayRestart()
+          },
+          {
+            icon: RefreshCw,
+            id: 'cc-reload-runtime-env',
+            keywords: ['reload', 'credentials', 'env', 'api key', 'provider', 'runtime'],
+            label: cc.reloadRuntimeEnv,
+            run: () => void runRuntimeEnvReload()
+          },
+          {
+            icon: RefreshCw,
+            id: 'cc-restart-agent-runtime',
+            keywords: ['restart', 'agent', 'runtime', 'model', 'provider', 'config'],
+            label: cc.restartAgentRuntime,
+            run: () => void runAgentRuntimeRestart()
+          },
+          {
+            icon: RefreshCw,
+            id: 'cc-restart-verxio-runtime',
+            keywords: ['restart', 'container', 'docker', 'runtime', 'verxio'],
+            label: cc.restartVerxioRuntime,
+            run: () => void runVerxioContainerRestart()
           }
         ]
       },
