@@ -28,6 +28,8 @@ from app.models import (
 DEFAULT_MODEL_ID = "verxio-qwen"
 DEFAULT_QWEN_UPSTREAM_MODEL = "qwen3.6-plus"
 HOSTED_QWEN_MODEL_ENV = "VERXIO_HOSTED_QWEN_MODEL"
+DEFAULT_GEMINI_UPSTREAM_MODEL = "gemini-2.5-flash-lite"
+HOSTED_GEMINI_MODEL_ENV = "VERXIO_HOSTED_GEMINI_MODEL"
 CATALOG_VERSION = "2026-07-01"
 BRIDGE_STATE_FILE = "inference-runtime-bridge.json"
 
@@ -79,6 +81,21 @@ MODEL_CATALOG: tuple[HostedModelDefinition, ...] = (
         input_per_million=0.8,
         output_per_million=2.4,
         capabilities=(("coding", "Coding"), ("long_context", "Long context"), ("tools", "Tool use")),
+    ),
+    HostedModelDefinition(
+        id="verxio-gemini",
+        display_name="Verxio Gemini",
+        description="Hosted Gemini through Google AI Studio for fast, low-cost agent turns.",
+        provider_slug="gemini",
+        upstream_model_default=DEFAULT_GEMINI_UPSTREAM_MODEL,
+        upstream_model_env=HOSTED_GEMINI_MODEL_ENV,
+        hosted_secret_env=("VERXIO_HOSTED_GEMINI_API_KEY", "VERXIO_GOOGLE_API_KEY"),
+        runtime_env_var="GEMINI_API_KEY",
+        byok_env_vars=("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+        tier="fast",
+        input_per_million=0.1,
+        output_per_million=0.4,
+        capabilities=(("coding", "Coding"), ("tools", "Tool use"), ("vision", "Vision")),
     ),
 )
 
