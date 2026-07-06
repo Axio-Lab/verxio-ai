@@ -1065,8 +1065,8 @@ function ConnectionConnectDialog({
           <DialogTitle className="break-words">Connect {app.name}</DialogTitle>
           <DialogDescription className="break-words">
             {needsOAuthApp
-              ? 'This integration needs an OAuth app in Composio. Enter your client credentials below, or configure them in the Composio dashboard first.'
-              : 'Enter your credentials below to connect without leaving Verxio. Secrets are sent directly to Composio and are not stored in Verxio.'}
+              ? 'This integration needs an OAuth app. Enter your client credentials below, or configure them.'
+              : 'Enter your credentials below to connect without leaving Verxio. Secrets are sent directly and are not stored in Verxio.'}
           </DialogDescription>
         </DialogHeader>
 
