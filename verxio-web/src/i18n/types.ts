@@ -769,6 +769,19 @@ export interface Translations {
         advanced: string
       }
     }
+    slackManifest: {
+      title: string
+      description: string
+      steps: string[]
+      generate: string
+      generating: string
+      openSlackApps: string
+      manifestLabel: string
+      copy: string
+      copied: string
+      generateFailed: string
+      copyFailed: string
+    }
     whatsappPairing: {
       title: string
       description: string

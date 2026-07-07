@@ -43,6 +43,7 @@ import type {
   SkillCreateResponse,
   SkillInfo,
   SkillWriteResult,
+  SlackManifestResponse,
   StatusResponse,
   ToolsetConfig,
   ToolsetInfo,
@@ -105,6 +106,7 @@ export type {
   SessionSearchResponse,
   SessionSearchResult,
   SkillInfo,
+  SlackManifestResponse,
   StaleAuxAssignment,
   StatusResponse,
   ToolsetConfig,
@@ -515,6 +517,30 @@ export function testMessagingPlatform(platformId: string): Promise<MessagingPlat
   return window.hermesDesktop.api<MessagingPlatformTestResponse>({
     path: `/api/messaging/platforms/${encodeURIComponent(platformId)}/test`,
     method: 'POST'
+  })
+}
+
+export function getSlackManifest(
+  params: { description?: string; include_assistant?: boolean; name?: string } = {}
+): Promise<SlackManifestResponse> {
+  const search = new URLSearchParams()
+
+  if (params.name) {
+    search.set('name', params.name)
+  }
+
+  if (params.description) {
+    search.set('description', params.description)
+  }
+
+  if (params.include_assistant === false) {
+    search.set('include_assistant', 'false')
+  }
+
+  const query = search.toString()
+
+  return window.hermesDesktop.api<SlackManifestResponse>({
+    path: `/api/messaging/slack/manifest${query ? `?${query}` : ''}`
   })
 }
 

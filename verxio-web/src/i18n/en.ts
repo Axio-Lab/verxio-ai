@@ -1107,6 +1107,26 @@ export const en: Translations = {
         advanced: 'Advanced'
       }
     },
+    slackManifest: {
+      title: 'Create your Slack app',
+      description:
+        'Generate a ready-to-paste Slack app manifest with the scopes, events, slash commands, and Socket Mode settings Verxio needs.',
+      steps: [
+        'Click Generate manifest and copy the JSON below.',
+        'Open api.slack.com/apps → Create New App → From an app manifest.',
+        'Pick your workspace, paste the manifest, and create the app.',
+        'Enable Socket Mode, create an app-level token with connections:write, and install the app to your workspace.',
+        'Copy the bot token (xoxb-…) and app token (xapp-…) into the fields below.'
+      ],
+      generate: 'Generate manifest',
+      generating: 'Generating…',
+      openSlackApps: 'Open Slack apps',
+      manifestLabel: 'App manifest JSON',
+      copy: 'Copy JSON',
+      copied: 'Copied',
+      generateFailed: 'Could not generate Slack manifest',
+      copyFailed: 'Could not copy manifest to clipboard'
+    },
     whatsappPairing: {
       title: 'Pair WhatsApp',
       description:

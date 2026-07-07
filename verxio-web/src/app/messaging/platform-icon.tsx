@@ -17,26 +17,28 @@ import type { ComponentType, SVGProps } from 'react'
 import { Globe, Link as LinkIcon, MessageSquareText } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 
+const assetPath = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`
+
 // We render simpleicons.org brand glyphs for platforms whose owners publish a
 // usable mark (telegram, discord, matrix, ...). A few brands — Slack, Dingtalk,
 // Feishu, WeCom — have been removed from Simple Icons at the brand owner's
-// request, so we fall back to a colored letter monogram for those.
+// request, so we use bundled image assets or letter monograms for those.
 //
-// `iconColor` is the brand's hex from simpleicons.org so we can paint each
-// glyph in its native color on top of a soft tint. The fallback monogram uses
-// the same hex to keep visual consistency.
-type IconKind = 'brand' | 'generic'
+// `color` is the brand hex from simpleicons.org so we can paint each glyph in
+// its native color on top of a soft tint.
+type IconKind = 'brand' | 'generic' | 'image'
 
 interface PlatformIconSpec {
-  Icon: ComponentType<SVGProps<SVGSVGElement>>
-  color: string
+  Icon?: ComponentType<SVGProps<SVGSVGElement>>
+  color?: string
   kind: IconKind
+  imageSrc?: string
 }
 
 const PLATFORM_ICONS: Record<string, PlatformIconSpec> = {
   telegram: { Icon: SiTelegram, color: '#26A5E4', kind: 'brand' },
   discord: { Icon: SiDiscord, color: '#5865F2', kind: 'brand' },
-  // Slack removed from Simple Icons by Salesforce request — letter monogram.
+  slack: { kind: 'image', imageSrc: 'platform-icons/slack.png' },
   mattermost: { Icon: SiMattermost, color: '#0058CC', kind: 'brand' },
   matrix: { Icon: SiMatrix, color: '#000000', kind: 'brand' },
   signal: { Icon: SiSignal, color: '#3A76F0', kind: 'brand' },
@@ -62,7 +64,7 @@ export function PlatformAvatar({ className, platformId, platformName }: Platform
   const spec = PLATFORM_ICONS[platformId]
 
   const baseClass = cn(
-    'inline-grid size-6 shrink-0 place-items-center rounded-md text-[length:var(--conversation-caption-font-size)] font-medium',
+    'inline-grid size-6 shrink-0 place-items-center overflow-hidden rounded-md text-[length:var(--conversation-caption-font-size)] font-medium',
     className
   )
 
@@ -70,6 +72,14 @@ export function PlatformAvatar({ className, platformId, platformName }: Platform
     return (
       <span aria-hidden="true" className={cn(baseClass, 'bg-(--ui-bg-tertiary) text-(--ui-text-tertiary)')}>
         {platformName.charAt(0).toUpperCase()}
+      </span>
+    )
+  }
+
+  if (spec.kind === 'image' && spec.imageSrc) {
+    return (
+      <span aria-hidden="true" className={baseClass}>
+        <img alt="" className="size-full object-cover" src={assetPath(spec.imageSrc)} />
       </span>
     )
   }
@@ -87,7 +97,7 @@ export function PlatformAvatar({ className, platformId, platformName }: Platform
         color
       }}
     >
-      <Icon className="size-3.5" />
+      {Icon ? <Icon className="size-3.5" /> : platformName.charAt(0).toUpperCase()}
     </span>
   )
 }
