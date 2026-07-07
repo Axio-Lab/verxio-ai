@@ -157,7 +157,7 @@ def test_inference_catalog_defaults_to_verxio_qwen(client):
     assert "DASHSCOPE_API_KEY" in qwen_model["requiredEnvVars"]
     assert gemini_model["providerSlug"] == "gemini"
     assert gemini_model["displayName"] == "Verxio Gemini"
-    assert gemini_model["upstreamModelId"] == "gemini-2.5-flash-lite"
+    assert gemini_model["upstreamModelId"] == "gemini-flash-lite-latest"
     assert gemini_model["default"] is False
     assert "GEMINI_API_KEY" in gemini_model["requiredEnvVars"]
 
@@ -325,7 +325,7 @@ def test_inference_bridge_writes_hosted_verxio_gemini_model_config(client, monke
     assert inference.runtime_env_for_user(payload["user"]["id"]) == {"GEMINI_API_KEY": "verxio-gemini-key"}
     config = (Path(runtime.hermes_home_path) / "config.yaml").read_text(encoding="utf-8")
     assert "provider: gemini" in config
-    assert "default: gemini-2.5-flash-lite" in config
+    assert "default: gemini-flash-lite-latest" in config
     state = Path(runtime.hermes_home_path) / ".verxio" / "inference-runtime-bridge.json"
     assert state.is_file()
     assert "verxio-gemini-key" not in state.read_text(encoding="utf-8")
