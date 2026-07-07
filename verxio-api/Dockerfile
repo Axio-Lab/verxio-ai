@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir uv
 # Turso support (the libsql client) has no linux/arm64 wheel; opt in with
 # `--build-arg INSTALL_TURSO=1` (best built under linux/amd64 where wheels exist).
 ARG INSTALL_TURSO=
-COPY pyproject.toml uv.lock ./
+COPY verxio-api/pyproject.toml verxio-api/uv.lock ./
 RUN if [ -n "$INSTALL_TURSO" ]; then \
         apt-get update \
         && apt-get install -y --no-install-recommends build-essential cmake pkg-config \
@@ -29,6 +29,7 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PATH="/app/.venv/bin:${PATH}"
+ENV VERXIO_HERMES_REPO=/opt/hermes-agent
 
 WORKDIR /app
 
@@ -37,9 +38,10 @@ COPY --from=docker_cli /usr/local/bin/docker /usr/local/bin/docker
 
 COPY --from=builder /app/.venv /app/.venv
 
-COPY app ./app
-COPY migrations ./migrations
-COPY static ./static
+COPY verxio-api/app ./app
+COPY verxio-api/migrations ./migrations
+COPY verxio-api/static ./static
+COPY hermes-agent /opt/hermes-agent
 
 EXPOSE 8787
 

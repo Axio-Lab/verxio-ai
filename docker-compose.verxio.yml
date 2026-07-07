@@ -3,7 +3,8 @@ name: verxio-ai
 services:
   verxio-api:
     build:
-      context: ./verxio-api
+      context: .
+      dockerfile: verxio-api/Dockerfile
     image: verxio-api:local
     ports:
       - "127.0.0.1:8787:8787"
@@ -47,8 +48,10 @@ services:
       META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN:-}
       META_GRAPH_VERSION: ${META_GRAPH_VERSION:-v20.0}
       VERXIO_PULSE_SECRET: ${VERXIO_PULSE_SECRET:-}
+      VERXIO_HERMES_REPO: /opt/hermes-agent
     volumes:
       - ${VERXIO_STATE_DIR:-./.verxio}:/app/.verxio
+      - ./hermes-agent:/opt/hermes-agent:ro
       - /var/run/docker.sock:/var/run/docker.sock
 
   verxio-web:

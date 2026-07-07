@@ -1146,3 +1146,17 @@ def test_leash_agent_config_is_runtime_local_not_db(client):
     deleted = client.delete("/api/leash/agent-config", headers=headers)
     assert deleted.status_code == 200
     assert not agent_path.is_file()
+
+
+def test_slack_manifest_endpoint_returns_socket_mode_manifest(client):
+    _, token = signup(client)
+    response = client.get(
+        "/api/messaging/slack/manifest?name=Verxio",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["manifest"]["settings"]["socket_mode_enabled"] is True
+    assert payload["manifest"]["display_information"]["name"] == "Verxio"
+    assert '"socket_mode_enabled": true' in payload["json"]

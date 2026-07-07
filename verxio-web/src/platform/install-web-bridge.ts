@@ -89,6 +89,7 @@ function buildApiUrl(path: string): string {
       path.startsWith('/api/bootstrap') ||
       path.startsWith('/api/health') ||
       path.startsWith('/api/hermes') ||
+      path.startsWith('/api/messaging/slack/manifest') ||
       path === '/api/profile' ||
       path.startsWith('/api/profile?') ||
       path.startsWith('/api/runtime')
