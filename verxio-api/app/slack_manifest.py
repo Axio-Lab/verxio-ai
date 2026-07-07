@@ -38,6 +38,43 @@ def _ensure_hermes_import_path() -> Path:
     return repo
 
 
+def _rebrand_manifest_for_verxio(
+    manifest: dict[str, object],
+    bot_name: str,
+) -> dict[str, object]:
+    """Rewrite Hermes-specific manifest copy for Verxio-hosted manifests."""
+    features = manifest.get("features")
+    if isinstance(features, dict):
+        assistant_view = features.get("assistant_view")
+        if isinstance(assistant_view, dict):
+            assistant_view["assistant_description"] = (
+                f"Chat with {bot_name} in threads and DMs."
+            )
+
+        slash_commands = features.get("slash_commands")
+        if isinstance(slash_commands, list):
+            for entry in slash_commands:
+                if not isinstance(entry, dict):
+                    continue
+                if entry.get("command") == "/hermes":
+                    entry["command"] = "/verxio"
+                for key in ("description", "usage_hint"):
+                    value = entry.get(key)
+                    if isinstance(value, str):
+                        entry[key] = value.replace("Hermes", bot_name).replace(
+                            "/hermes",
+                            "/verxio",
+                        )
+
+    display = manifest.get("display_information")
+    if isinstance(display, dict):
+        desc = display.get("description")
+        if isinstance(desc, str):
+            display["description"] = desc.replace("Hermes", bot_name)
+
+    return manifest
+
+
 def build_slack_manifest(
     *,
     name: str = "Verxio",
@@ -54,6 +91,7 @@ def build_slack_manifest(
         bot_description,
         include_assistant=include_assistant,
     )
+    manifest = _rebrand_manifest_for_verxio(manifest, bot_name)
     return {
         "manifest": manifest,
         "json": json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",

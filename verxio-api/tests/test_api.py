@@ -1157,6 +1157,18 @@ def test_slack_manifest_endpoint_returns_socket_mode_manifest(client):
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["manifest"]["settings"]["socket_mode_enabled"] is True
-    assert payload["manifest"]["display_information"]["name"] == "Verxio"
+    manifest = payload["manifest"]
+    assert manifest["settings"]["socket_mode_enabled"] is True
+    assert manifest["display_information"]["name"] == "Verxio"
+    assert manifest["features"]["assistant_view"]["assistant_description"] == (
+        "Chat with Verxio in threads and DMs."
+    )
+    slash_commands = manifest["features"]["slash_commands"]
+    command_names = {entry["command"] for entry in slash_commands}
+    assert "/verxio" in command_names
+    assert "/hermes" not in command_names
+    verxio_cmd = next(entry for entry in slash_commands if entry["command"] == "/verxio")
+    assert "Verxio" in verxio_cmd["description"]
+    assert "Hermes" not in verxio_cmd["description"]
     assert '"socket_mode_enabled": true' in payload["json"]
+    assert '"command": "/verxio"' in payload["json"]
