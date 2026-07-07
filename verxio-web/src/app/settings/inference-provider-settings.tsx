@@ -189,7 +189,7 @@ export function InferenceProviderSettings({ onOpenProviderKeys }: InferenceProvi
                     )
                   ) : null
                 }
-                description={`${model.description}. Upstream: ${model.upstreamModelId}.`}
+                description={model.description}
                 key={model.id}
                 title={
                   <span className="flex flex-wrap items-baseline gap-2">

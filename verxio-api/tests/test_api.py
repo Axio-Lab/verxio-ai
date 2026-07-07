@@ -272,7 +272,9 @@ def test_inference_bridge_strips_legacy_openai_credentials(client, monkeypatch):
 
     assert status.enabled is True
     assert status.changed is True
-    assert "OPENAI_API_KEY" not in (hermes_home / ".env").read_text(encoding="utf-8")
+    env_text = (hermes_home / ".env").read_text(encoding="utf-8")
+    assert "OPENAI_API_KEY" not in env_text
+    assert "DASHSCOPE_API_KEY" not in env_text
     auth = json.loads((hermes_home / "auth.json").read_text(encoding="utf-8"))
     assert "openai-api" not in auth.get("credential_pool", {})
     assert auth.get("active_provider") == ""
@@ -353,6 +355,70 @@ def test_inference_bridge_honors_verxio_hosted_gemini_model_env(client, monkeypa
     assert status.upstreamModelId == "gemini-2.5-flash"
     config = (Path(runtime.hermes_home_path) / "config.yaml").read_text(encoding="utf-8")
     assert "default: gemini-2.5-flash" in config
+
+
+def test_inference_bridge_strips_sibling_hosted_credentials_for_gemini(client, monkeypatch):
+    monkeypatch.setenv("VERXIO_HOSTED_GEMINI_API_KEY", "verxio-gemini-key")
+    payload, token = signup(client, "inference-gemini-strip@example.com")
+    response = client.put(
+        "/api/inference/settings",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"mode": "hosted", "defaultModelId": "verxio-gemini"},
+    )
+    assert response.status_code == 200
+
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    runtime = control_plane.runtime_from_row(runtime_row)
+    hermes_home = Path(runtime.hermes_home_path)
+    hermes_home.mkdir(parents=True, exist_ok=True)
+    (hermes_home / ".env").write_text(
+        "DASHSCOPE_API_KEY=stale-qwen-key\nGEMINI_API_KEY=stale-gemini-key\n",
+        encoding="utf-8",
+    )
+    (hermes_home / "auth.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "providers": {},
+                "active_provider": "alibaba",
+                "credential_pool": {
+                    "alibaba": [
+                        {
+                            "id": "qwen",
+                            "label": "DASHSCOPE_API_KEY",
+                            "auth_type": "api_key",
+                            "source": "env:DASHSCOPE_API_KEY",
+                        }
+                    ],
+                    "gemini": [
+                        {
+                            "id": "gemini",
+                            "label": "GEMINI_API_KEY",
+                            "auth_type": "api_key",
+                            "source": "env:GEMINI_API_KEY",
+                        }
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status = inference.sync_inference_runtime_bridge(runtime, payload["user"]["id"])
+
+    assert status.enabled is True
+    assert status.defaultModelId == "verxio-gemini"
+    env_text = (hermes_home / ".env").read_text(encoding="utf-8")
+    assert "DASHSCOPE_API_KEY" not in env_text
+    assert "GEMINI_API_KEY" not in env_text
+    auth = json.loads((hermes_home / "auth.json").read_text(encoding="utf-8"))
+    assert "alibaba" not in auth.get("credential_pool", {})
+    assert "gemini" not in auth.get("credential_pool", {})
+    assert auth.get("active_provider") == ""
 
 
 def test_inference_bridge_byok_preserves_hermes_provider_settings(client, monkeypatch):
