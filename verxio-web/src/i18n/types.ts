@@ -1357,14 +1357,6 @@ export interface Translations {
       messagingPlatforms: string
     }
     statusbar: {
-      unknown: string
-      restart: string
-      update: string
-      updateInProgress: string
-      commitsBehind: (count: number, branch: string) => string
-      desktopVersion: (version: string) => string
-      commit: (sha: string) => string
-      branch: (branch: string) => string
       closeCommandCenter: string
       openCommandCenter: string
       status: string

@@ -1750,14 +1750,6 @@ export const ja = defineLocale({
       messagingPlatforms: 'メッセージングプラットフォーム'
     },
     statusbar: {
-      unknown: '不明',
-      restart: '再起動',
-      update: '更新',
-      updateInProgress: '更新中',
-      commitsBehind: (count, branch) => `${branch} より ${count} コミット遅れています`,
-      desktopVersion: version => `Verxio v${version}`,
-      commit: sha => `コミット ${sha}`,
-      branch: branch => `ブランチ ${branch}`,
       closeCommandCenter: 'コマンドセンターを閉じる',
       openCommandCenter: 'コマンドセンターを開く',
       status: 'ステータス',

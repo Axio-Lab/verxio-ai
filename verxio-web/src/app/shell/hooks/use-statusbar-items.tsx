@@ -4,7 +4,7 @@ import { useMemo } from 'react'
 
 import { GlyphSpinner } from '@/components/ui/glyph-spinner'
 import { useI18n } from '@/i18n'
-import { AlertCircle, ChevronDown, Clock, Hash, Loader2, MonitorPlay, Plug, PlugOff, Sparkles } from '@/lib/icons'
+import { AlertCircle, ChevronDown, Clock, Loader2, MonitorPlay, Plug, PlugOff, Sparkles } from '@/lib/icons'
 import { formatModelStatusLabel } from '@/lib/model-status-label'
 import { contextBarLabel, LiveDuration, usageContextLabel } from '@/lib/statusbar'
 import { cn } from '@/lib/utils'
@@ -25,7 +25,6 @@ import {
 } from '@/store/session'
 import { $subagentsBySession, activeSubagentCount } from '@/store/subagents'
 import { $gatewayRestarting } from '@/store/system-actions'
-import { $desktopVersion, $updateApply, $updateStatus, setUpdateOverlayOpen } from '@/store/updates'
 
 import { CRON_ROUTE } from '../../routes'
 import type { StatusbarItem } from '../statusbar-controls'
@@ -65,10 +64,6 @@ export function useStatusbarItems({
   const turnStartedAt = useStore($turnStartedAt)
   const workingSessionIds = useStore($workingSessionIds)
   const subagentsBySession = useStore($subagentsBySession)
-  const updateStatus = useStore($updateStatus)
-  const updateApply = useStore($updateApply)
-  const desktopVersion = useStore($desktopVersion)
-
   const contextUsage = useMemo(() => usageContextLabel(currentUsage), [currentUsage])
   const contextBar = useMemo(() => contextBarLabel(currentUsage), [currentUsage])
 
@@ -93,55 +88,6 @@ export function useStatusbarItems({
 
   const serverConnected = gatewayState === 'open'
   const serverConnecting = gatewayState === 'connecting'
-
-  const hideVersionBadge = desktopVersion?.platform === 'web'
-
-  const versionItem = useMemo<StatusbarItem>(() => {
-    const appVersion = hideVersionBadge ? null : desktopVersion?.appVersion
-    const sha = updateStatus?.currentSha?.slice(0, 7) ?? null
-    const behind = updateStatus?.behind ?? 0
-    const applying = updateApply.applying || updateApply.stage === 'restart'
-    const base = appVersion ? `v${appVersion}` : (sha ?? copy.unknown)
-    const behindHint = !applying && behind > 0 ? ` (+${behind})` : ''
-
-    const label = applying
-      ? updateApply.stage === 'restart'
-        ? `${base} · ${copy.restart}`
-        : `${base} · ${copy.update}`
-      : `${base}${behindHint}`
-
-    const tooltip = [
-      applying ? updateApply.message || copy.updateInProgress : null,
-      !applying && behind > 0 && copy.commitsBehind(behind, updateStatus?.branch ?? '...'),
-      appVersion && copy.desktopVersion(appVersion),
-      sha && copy.commit(sha),
-      updateStatus?.branch && copy.branch(updateStatus.branch)
-    ]
-      .filter(Boolean)
-      .join(' · ')
-
-    return {
-      className: !applying && behind > 0 ? 'text-primary hover:text-primary' : undefined,
-      detail: appVersion && sha && !applying ? sha : undefined,
-      hidden: hideVersionBadge || (!appVersion && !sha),
-      icon: applying ? <Loader2 className="size-3 animate-spin" /> : <Hash className="size-3" />,
-      id: 'version',
-      label,
-      onSelect: () => setUpdateOverlayOpen(true),
-      title: tooltip || undefined,
-      variant: 'action'
-    }
-  }, [
-    desktopVersion?.appVersion,
-    hideVersionBadge,
-    copy,
-    updateApply.applying,
-    updateApply.message,
-    updateApply.stage,
-    updateStatus?.behind,
-    updateStatus?.branch,
-    updateStatus?.currentSha
-  ])
 
   const coreLeftStatusbarItems = useMemo<readonly StatusbarItem[]>(
     () => [
@@ -287,8 +233,7 @@ export function useStatusbarItems({
                 : copy.openModelPicker,
               variant: 'action' as const
             })
-      },
-      versionItem
+      }
     ],
     [
       busy,
@@ -301,8 +246,7 @@ export function useStatusbarItems({
       currentReasoningEffort,
       modelMenuContent,
       sessionStartedAt,
-      turnStartedAt,
-      versionItem
+      turnStartedAt
     ]
   )
 

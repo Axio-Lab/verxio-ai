@@ -1918,14 +1918,6 @@ export const zh: Translations = {
       messagingPlatforms: '消息平台'
     },
     statusbar: {
-      unknown: '未知',
-      restart: '重启',
-      update: '更新',
-      updateInProgress: '正在更新',
-      commitsBehind: (count, branch) => `落后 ${branch} ${count} 个提交`,
-      desktopVersion: version => `Verxio v${version}`,
-      commit: sha => `提交 ${sha}`,
-      branch: branch => `分支 ${branch}`,
       closeCommandCenter: '关闭命令中心',
       openCommandCenter: '打开命令中心',
       status: '状态',

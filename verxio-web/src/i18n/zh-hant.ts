@@ -1689,14 +1689,6 @@ export const zhHant = defineLocale({
       messagingPlatforms: '訊息平台'
     },
     statusbar: {
-      unknown: '未知',
-      restart: '重新啟動',
-      update: '更新',
-      updateInProgress: '更新中',
-      commitsBehind: (count, branch) => `落後 ${branch} ${count} 個提交`,
-      desktopVersion: version => `Verxio v${version}`,
-      commit: sha => `提交 ${sha}`,
-      branch: branch => `分支 ${branch}`,
       closeCommandCenter: '關閉命令中心',
       openCommandCenter: '開啟命令中心',
       status: '狀態',

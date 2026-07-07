@@ -1845,14 +1845,6 @@ export const en: Translations = {
       messagingPlatforms: 'Messaging platforms'
     },
     statusbar: {
-      unknown: 'unknown',
-      restart: 'restart',
-      update: 'update',
-      updateInProgress: 'Update in progress',
-      commitsBehind: (count, branch) => `${count} commit${count === 1 ? '' : 's'} behind ${branch}`,
-      desktopVersion: version => `Verxio v${version}`,
-      commit: sha => `commit ${sha}`,
-      branch: branch => `branch ${branch}`,
       closeCommandCenter: 'Close Command Center',
       openCommandCenter: 'Open Command Center',
       status: 'Status',
