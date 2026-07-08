@@ -28,6 +28,8 @@ from app.models import (
 DEFAULT_MODEL_ID = "verxio-qwen"
 DEFAULT_QWEN_UPSTREAM_MODEL = "qwen3.6-plus"
 HOSTED_QWEN_MODEL_ENV = "VERXIO_HOSTED_QWEN_MODEL"
+DEFAULT_GEMINI_UPSTREAM_MODEL = "gemini-flash-lite-latest"
+HOSTED_GEMINI_MODEL_ENV = "VERXIO_HOSTED_GEMINI_MODEL"
 CATALOG_VERSION = "2026-07-01"
 BRIDGE_STATE_FILE = "inference-runtime-bridge.json"
 
@@ -35,6 +37,7 @@ BRIDGE_STATE_FILE = "inference-runtime-bridge.json"
 # hosted is active so the model picker does not keep showing OpenAI API.
 LEGACY_HOSTED_RUNTIME_ENV_VARS = ("OPENAI_API_KEY",)
 LEGACY_HOSTED_PROVIDER_SLUGS = ("openai-api",)
+HOSTED_RUNTIME_ENV_VARS = ("DASHSCOPE_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")
 
 
 @dataclass(frozen=True)
@@ -80,7 +83,26 @@ MODEL_CATALOG: tuple[HostedModelDefinition, ...] = (
         output_per_million=2.4,
         capabilities=(("coding", "Coding"), ("long_context", "Long context"), ("tools", "Tool use")),
     ),
+    HostedModelDefinition(
+        id="verxio-gemini",
+        display_name="Verxio Gemini",
+        description="Hosted Gemini through Google AI Studio for fast, low-cost agent turns.",
+        provider_slug="gemini",
+        upstream_model_default=DEFAULT_GEMINI_UPSTREAM_MODEL,
+        upstream_model_env=HOSTED_GEMINI_MODEL_ENV,
+        hosted_secret_env=("VERXIO_HOSTED_GEMINI_API_KEY", "VERXIO_GOOGLE_API_KEY"),
+        runtime_env_var="GEMINI_API_KEY",
+        byok_env_vars=("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+        tier="fast",
+        input_per_million=0.1,
+        output_per_million=0.4,
+        capabilities=(("coding", "Coding"), ("tools", "Tool use"), ("vision", "Vision")),
+    ),
 )
+
+
+def _hosted_provider_slugs() -> tuple[str, ...]:
+    return tuple(model.provider_slug for model in MODEL_CATALOG)
 
 
 def _model_by_id(model_id: str | None) -> HostedModelDefinition:
@@ -254,18 +276,18 @@ def _runtime_auth_path(runtime: RuntimeInstance) -> Path:
     return Path(runtime.hermes_home_path) / "auth.json"
 
 
-def _strip_legacy_env_vars_from_dotenv(env_path: Path) -> bool:
-    if not env_path.is_file():
+def _strip_env_vars_from_dotenv(env_path: Path, env_var_names: tuple[str, ...]) -> bool:
+    if not env_path.is_file() or not env_var_names:
         return False
 
-    legacy_prefixes = tuple(f"{name}=" for name in LEGACY_HOSTED_RUNTIME_ENV_VARS)
+    prefixes = tuple(f"{name}=" for name in env_var_names)
     original = env_path.read_text(encoding="utf-8")
     kept: list[str] = []
     removed = False
 
     for line in original.splitlines():
         stripped = line.strip()
-        if stripped and not stripped.startswith("#") and stripped.startswith(legacy_prefixes):
+        if stripped and not stripped.startswith("#") and stripped.startswith(prefixes):
             removed = True
             continue
         kept.append(line)
@@ -280,7 +302,11 @@ def _strip_legacy_env_vars_from_dotenv(env_path: Path) -> bool:
     return True
 
 
-def _strip_legacy_providers_from_auth(auth_path: Path) -> bool:
+def _strip_legacy_env_vars_from_dotenv(env_path: Path) -> bool:
+    return _strip_env_vars_from_dotenv(env_path, LEGACY_HOSTED_RUNTIME_ENV_VARS + HOSTED_RUNTIME_ENV_VARS)
+
+
+def _strip_hosted_providers_from_auth(auth_path: Path) -> bool:
     if not auth_path.is_file():
         return False
 
@@ -293,10 +319,11 @@ def _strip_legacy_providers_from_auth(auth_path: Path) -> bool:
         return False
 
     changed = False
-    legacy_env_sources = {f"env:{name}" for name in LEGACY_HOSTED_RUNTIME_ENV_VARS}
+    env_sources = {f"env:{name}" for name in LEGACY_HOSTED_RUNTIME_ENV_VARS + HOSTED_RUNTIME_ENV_VARS}
+    provider_slugs = LEGACY_HOSTED_PROVIDER_SLUGS + _hosted_provider_slugs()
     pool = payload.get("credential_pool")
     if isinstance(pool, dict):
-        for slug in LEGACY_HOSTED_PROVIDER_SLUGS:
+        for slug in provider_slugs:
             entries = pool.get(slug)
             if not isinstance(entries, list):
                 continue
@@ -305,7 +332,7 @@ def _strip_legacy_providers_from_auth(auth_path: Path) -> bool:
                 for entry in entries
                 if not (
                     isinstance(entry, dict)
-                    and str(entry.get("source") or "") in legacy_env_sources
+                    and str(entry.get("source") or "") in env_sources
                 )
             ]
             if len(filtered) != len(entries):
@@ -316,7 +343,7 @@ def _strip_legacy_providers_from_auth(auth_path: Path) -> bool:
                     pool.pop(slug, None)
 
     active_provider = str(payload.get("active_provider") or "")
-    if active_provider in LEGACY_HOSTED_PROVIDER_SLUGS:
+    if active_provider in provider_slugs:
         pool = payload.get("credential_pool")
         if not isinstance(pool, dict) or active_provider not in pool:
             payload["active_provider"] = ""
@@ -328,6 +355,10 @@ def _strip_legacy_providers_from_auth(auth_path: Path) -> bool:
     payload["updated_at"] = now_iso()
     auth_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return True
+
+
+def _strip_legacy_providers_from_auth(auth_path: Path) -> bool:
+    return _strip_hosted_providers_from_auth(auth_path)
 
 
 def cleanup_legacy_hosted_credentials(runtime: RuntimeInstance) -> bool:

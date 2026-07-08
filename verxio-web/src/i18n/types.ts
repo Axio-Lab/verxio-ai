@@ -769,6 +769,19 @@ export interface Translations {
         advanced: string
       }
     }
+    slackManifest: {
+      title: string
+      description: string
+      steps: string[]
+      generate: string
+      generating: string
+      openSlackApps: string
+      manifestLabel: string
+      copy: string
+      copied: string
+      generateFailed: string
+      copyFailed: string
+    }
     whatsappPairing: {
       title: string
       description: string
@@ -1357,14 +1370,6 @@ export interface Translations {
       messagingPlatforms: string
     }
     statusbar: {
-      unknown: string
-      restart: string
-      update: string
-      updateInProgress: string
-      commitsBehind: (count: number, branch: string) => string
-      desktopVersion: (version: string) => string
-      commit: (sha: string) => string
-      branch: (branch: string) => string
       closeCommandCenter: string
       openCommandCenter: string
       status: string

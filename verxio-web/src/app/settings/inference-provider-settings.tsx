@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { KeyRound, Loader2, Sparkles } from '@/lib/icons'
+import { Check, KeyRound, Loader2, Sparkles } from '@/lib/icons'
 import {
   getInferenceCatalog,
   getInferenceUsage,
@@ -59,8 +59,11 @@ export function InferenceProviderSettings({ onOpenProviderKeys }: InferenceProvi
     void refresh()
   }, [refresh])
 
-  const hostedModel: VerxioInferenceModel | null = catalog?.models[0] ?? null
+  const hostedModels: VerxioInferenceModel[] = catalog?.models.filter(model => model.hostedAvailable) ?? []
   const settings = usage?.settings
+  const selectedModelId = settings?.defaultModelId ?? catalog?.defaultModelId ?? null
+  const selectedHostedModel =
+    hostedModels.find(model => model.id === selectedModelId) ?? hostedModels.find(model => model.default) ?? null
 
   const applyInferenceMode = useCallback(
     async (mode: 'hosted' | 'byok') => {
@@ -69,7 +72,10 @@ export function InferenceProviderSettings({ onOpenProviderKeys }: InferenceProvi
 
       try {
         const nextSettings = await updateInferenceSettings({
-          defaultModelId: hostedModel?.id ?? catalog?.defaultModelId,
+          defaultModelId:
+            mode === 'hosted'
+              ? (selectedHostedModel?.id ?? catalog?.defaultModelId)
+              : (settings?.defaultModelId ?? catalog?.defaultModelId),
           mode
         })
 
@@ -81,8 +87,27 @@ export function InferenceProviderSettings({ onOpenProviderKeys }: InferenceProvi
         setApplying(false)
       }
     },
-    [catalog?.defaultModelId, hostedModel?.id]
+    [catalog?.defaultModelId, selectedHostedModel?.id, settings?.defaultModelId]
   )
+
+  const applyHostedModel = useCallback(async (modelId: string) => {
+    setApplying(true)
+    setError('')
+
+    try {
+      const nextSettings = await updateInferenceSettings({
+        defaultModelId: modelId,
+        mode: 'hosted'
+      })
+
+      const nextUsage = await getInferenceUsage()
+      setUsage({ ...nextUsage, settings: nextSettings })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setApplying(false)
+    }
+  }, [])
 
   if (!verxioApiEnabled()) {
     return null
@@ -99,8 +124,8 @@ export function InferenceProviderSettings({ onOpenProviderKeys }: InferenceProvi
         {loading && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
       </div>
       <p className="mb-3 text-xs text-muted-foreground">
-        Verxio Hosted runs on Verxio Qwen through DashScope. Connect your own OpenAI, Anthropic, or other provider
-        accounts below for frontier models via BYOK.
+        Verxio Hosted runs on Verxio Qwen (DashScope) or Verxio Gemini (Google AI Studio). Connect your own OpenAI,
+        Anthropic, or other provider accounts below for frontier models via BYOK.
       </p>
 
       {error && (
@@ -136,24 +161,47 @@ export function InferenceProviderSettings({ onOpenProviderKeys }: InferenceProvi
                 </Button>
               </div>
             }
-            description="Hosted calls use Verxio Qwen and Verxio billing. BYOK calls use the provider keys you add below."
+            description="Hosted calls use Verxio Qwen or Gemini and Verxio billing. BYOK calls use the provider keys you add below."
             title="Billing mode"
           />
-          <ListRow
-            description={
-              hostedModel
-                ? `${hostedModel.description}.`
-                : 'Verxio Qwen is the Verxio Hosted model for all users and runtimes.'
-            }
-            title={
-              <span className="flex flex-wrap items-baseline gap-2">
-                {hostedModel?.displayName ?? 'Verxio Qwen'}
-                <Pill tone="primary">Verxio Hosted</Pill>
-                {hostedModel && <Pill>{hostedModel.tier}</Pill>}
-                {hostedModel && !hostedModel.hostedAvailable ? <Pill>Unavailable</Pill> : null}
-              </span>
-            }
-          />
+          {hostedModels.map(model => {
+            const isSelected = settings?.mode === 'hosted' && model.id === selectedModelId
+
+            return (
+              <ListRow
+                action={
+                  settings?.mode === 'hosted' ? (
+                    isSelected ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-primary">
+                        <Check className="size-3.5" />
+                        Active
+                      </span>
+                    ) : (
+                      <Button
+                        disabled={applying || !model.hostedAvailable}
+                        onClick={() => void applyHostedModel(model.id)}
+                        size="sm"
+                        type="button"
+                        variant="textStrong"
+                      >
+                        Use
+                      </Button>
+                    )
+                  ) : null
+                }
+                description={model.description}
+                key={model.id}
+                title={
+                  <span className="flex flex-wrap items-baseline gap-2">
+                    {model.displayName}
+                    <Pill tone="primary">Verxio Hosted</Pill>
+                    <Pill>{model.tier}</Pill>
+                    {!model.hostedAvailable ? <Pill>Unavailable</Pill> : null}
+                  </span>
+                }
+              />
+            )
+          })}
           <ListRow
             action={
               <div className={`text-right text-xs ${CONTROL_TEXT}`}>

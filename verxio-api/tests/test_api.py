@@ -146,14 +146,20 @@ def test_inference_catalog_defaults_to_verxio_qwen(client):
     assert response.status_code == 200
     body = response.json()
     assert body["defaultModelId"] == "verxio-qwen"
-    assert len(body["models"]) == 1
-    qwen_model = body["models"][0]
+    assert len(body["models"]) == 2
+    qwen_model = next(model for model in body["models"] if model["id"] == "verxio-qwen")
+    gemini_model = next(model for model in body["models"] if model["id"] == "verxio-gemini")
     assert qwen_model["id"] == "verxio-qwen"
     assert qwen_model["default"] is True
     assert qwen_model["providerSlug"] == "alibaba"
     assert qwen_model["displayName"] == "Verxio Qwen"
     assert qwen_model["upstreamModelId"] == "qwen3.6-plus"
     assert "DASHSCOPE_API_KEY" in qwen_model["requiredEnvVars"]
+    assert gemini_model["providerSlug"] == "gemini"
+    assert gemini_model["displayName"] == "Verxio Gemini"
+    assert gemini_model["upstreamModelId"] == "gemini-flash-lite-latest"
+    assert gemini_model["default"] is False
+    assert "GEMINI_API_KEY" in gemini_model["requiredEnvVars"]
 
 
 def test_inference_settings_are_hosted_verxio_qwen_by_default(client):
@@ -266,7 +272,9 @@ def test_inference_bridge_strips_legacy_openai_credentials(client, monkeypatch):
 
     assert status.enabled is True
     assert status.changed is True
-    assert "OPENAI_API_KEY" not in (hermes_home / ".env").read_text(encoding="utf-8")
+    env_text = (hermes_home / ".env").read_text(encoding="utf-8")
+    assert "OPENAI_API_KEY" not in env_text
+    assert "DASHSCOPE_API_KEY" not in env_text
     auth = json.loads((hermes_home / "auth.json").read_text(encoding="utf-8"))
     assert "openai-api" not in auth.get("credential_pool", {})
     assert auth.get("active_provider") == ""
@@ -290,6 +298,127 @@ def test_inference_bridge_honors_verxio_hosted_qwen_model_env(client, monkeypatc
     assert status.upstreamModelId == "qwen3.7-max"
     config = (Path(runtime.hermes_home_path) / "config.yaml").read_text(encoding="utf-8")
     assert "default: qwen3.7-max" in config
+
+
+def test_inference_bridge_writes_hosted_verxio_gemini_model_config(client, monkeypatch):
+    monkeypatch.setenv("VERXIO_HOSTED_GEMINI_API_KEY", "verxio-gemini-key")
+    payload, token = signup(client, "inference-gemini-bridge@example.com")
+    response = client.put(
+        "/api/inference/settings",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"mode": "hosted", "defaultModelId": "verxio-gemini"},
+    )
+    assert response.status_code == 200
+
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    runtime = control_plane.runtime_from_row(runtime_row)
+
+    status = inference.sync_inference_runtime_bridge(runtime, payload["user"]["id"])
+
+    assert status.configured is True
+    assert status.enabled is True
+    assert status.defaultModelId == "verxio-gemini"
+    assert inference.runtime_env_for_user(payload["user"]["id"]) == {"GEMINI_API_KEY": "verxio-gemini-key"}
+    config = (Path(runtime.hermes_home_path) / "config.yaml").read_text(encoding="utf-8")
+    assert "provider: gemini" in config
+    assert "default: gemini-flash-lite-latest" in config
+    state = Path(runtime.hermes_home_path) / ".verxio" / "inference-runtime-bridge.json"
+    assert state.is_file()
+    assert "verxio-gemini-key" not in state.read_text(encoding="utf-8")
+
+
+def test_inference_bridge_honors_verxio_hosted_gemini_model_env(client, monkeypatch):
+    monkeypatch.setenv("VERXIO_HOSTED_GEMINI_API_KEY", "verxio-gemini-key")
+    monkeypatch.setenv("VERXIO_HOSTED_GEMINI_MODEL", "gemini-2.5-flash")
+    payload, token = signup(client, "inference-gemini-model-env@example.com")
+    response = client.put(
+        "/api/inference/settings",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"mode": "hosted", "defaultModelId": "verxio-gemini"},
+    )
+    assert response.status_code == 200
+
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    runtime = control_plane.runtime_from_row(runtime_row)
+
+    status = inference.sync_inference_runtime_bridge(runtime, payload["user"]["id"])
+
+    assert status.enabled is True
+    assert status.upstreamModelId == "gemini-2.5-flash"
+    config = (Path(runtime.hermes_home_path) / "config.yaml").read_text(encoding="utf-8")
+    assert "default: gemini-2.5-flash" in config
+
+
+def test_inference_bridge_strips_sibling_hosted_credentials_for_gemini(client, monkeypatch):
+    monkeypatch.setenv("VERXIO_HOSTED_GEMINI_API_KEY", "verxio-gemini-key")
+    payload, token = signup(client, "inference-gemini-strip@example.com")
+    response = client.put(
+        "/api/inference/settings",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"mode": "hosted", "defaultModelId": "verxio-gemini"},
+    )
+    assert response.status_code == 200
+
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    runtime = control_plane.runtime_from_row(runtime_row)
+    hermes_home = Path(runtime.hermes_home_path)
+    hermes_home.mkdir(parents=True, exist_ok=True)
+    (hermes_home / ".env").write_text(
+        "DASHSCOPE_API_KEY=stale-qwen-key\nGEMINI_API_KEY=stale-gemini-key\n",
+        encoding="utf-8",
+    )
+    (hermes_home / "auth.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "providers": {},
+                "active_provider": "alibaba",
+                "credential_pool": {
+                    "alibaba": [
+                        {
+                            "id": "qwen",
+                            "label": "DASHSCOPE_API_KEY",
+                            "auth_type": "api_key",
+                            "source": "env:DASHSCOPE_API_KEY",
+                        }
+                    ],
+                    "gemini": [
+                        {
+                            "id": "gemini",
+                            "label": "GEMINI_API_KEY",
+                            "auth_type": "api_key",
+                            "source": "env:GEMINI_API_KEY",
+                        }
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status = inference.sync_inference_runtime_bridge(runtime, payload["user"]["id"])
+
+    assert status.enabled is True
+    assert status.defaultModelId == "verxio-gemini"
+    env_text = (hermes_home / ".env").read_text(encoding="utf-8")
+    assert "DASHSCOPE_API_KEY" not in env_text
+    assert "GEMINI_API_KEY" not in env_text
+    auth = json.loads((hermes_home / "auth.json").read_text(encoding="utf-8"))
+    assert "alibaba" not in auth.get("credential_pool", {})
+    assert "gemini" not in auth.get("credential_pool", {})
+    assert auth.get("active_provider") == ""
 
 
 def test_inference_bridge_byok_preserves_hermes_provider_settings(client, monkeypatch):
@@ -1017,3 +1146,29 @@ def test_leash_agent_config_is_runtime_local_not_db(client):
     deleted = client.delete("/api/leash/agent-config", headers=headers)
     assert deleted.status_code == 200
     assert not agent_path.is_file()
+
+
+def test_slack_manifest_endpoint_returns_socket_mode_manifest(client):
+    _, token = signup(client)
+    response = client.get(
+        "/api/messaging/slack/manifest?name=Verxio",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    manifest = payload["manifest"]
+    assert manifest["settings"]["socket_mode_enabled"] is True
+    assert manifest["display_information"]["name"] == "Verxio"
+    assert manifest["features"]["assistant_view"]["assistant_description"] == (
+        "Chat with Verxio in threads and DMs."
+    )
+    slash_commands = manifest["features"]["slash_commands"]
+    command_names = {entry["command"] for entry in slash_commands}
+    assert "/verxio" in command_names
+    assert "/hermes" not in command_names
+    verxio_cmd = next(entry for entry in slash_commands if entry["command"] == "/verxio")
+    assert "Verxio" in verxio_cmd["description"]
+    assert "Hermes" not in verxio_cmd["description"]
+    assert '"socket_mode_enabled": true' in payload["json"]
+    assert '"command": "/verxio"' in payload["json"]

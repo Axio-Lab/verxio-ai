@@ -1165,6 +1165,25 @@ export const zh: Translations = {
         advanced: '高级'
       }
     },
+    slackManifest: {
+      title: '创建 Slack 应用',
+      description: '生成可直接粘贴的 Slack 应用清单，包含 Verxio 所需的权限范围、事件、斜杠命令和 Socket Mode 设置。',
+      steps: [
+        '点击“生成清单”并复制下方 JSON。',
+        '打开 api.slack.com/apps → Create New App → From an app manifest。',
+        '选择你的工作区，粘贴清单并创建应用。',
+        '启用 Socket Mode，创建带有 connections:write 的应用级令牌，并将应用安装到工作区。',
+        '将 bot 令牌（xoxb-…）和 app 令牌（xapp-…）复制到下方字段。'
+      ],
+      generate: '生成清单',
+      generating: '生成中…',
+      openSlackApps: '打开 Slack 应用',
+      manifestLabel: '应用清单 JSON',
+      copy: '复制 JSON',
+      copied: '已复制',
+      generateFailed: '无法生成 Slack 清单',
+      copyFailed: '无法将清单复制到剪贴板'
+    },
     whatsappPairing: {
       title: 'Pair WhatsApp',
       description:
@@ -1206,7 +1225,7 @@ export const zh: Translations = {
         '在 Telegram 中，与 @BotFather 对话，运行 /newbot，复制它给你的令牌。然后从 @userinfobot 获取你的数字用户 ID。',
       discord:
         '打开 Discord 开发者门户，创建应用，添加 Bot，然后复制其令牌。用正确的权限范围把机器人邀请到你的服务器。',
-      slack: '创建 Slack 应用，启用 Socket Mode，安装到你的工作区，然后复制 bot 令牌和 app 级令牌。',
+      slack: '使用上方的清单生成器创建 Slack 应用，然后将 bot 令牌和 app 级令牌粘贴到下方。',
       mattermost: '在你的 Mattermost 服务器上，创建机器人账户或个人访问令牌，然后在此粘贴服务器 URL 和令牌。',
       matrix: '用机器人账户登录你的 homeserver，然后复制访问令牌、用户 ID 和 homeserver URL。',
       signal: '在可访问的位置运行 signal-cli REST 桥接，然后把 Verxio 指向该 URL 和已注册的电话号码。',
@@ -1918,14 +1937,6 @@ export const zh: Translations = {
       messagingPlatforms: '消息平台'
     },
     statusbar: {
-      unknown: '未知',
-      restart: '重启',
-      update: '更新',
-      updateInProgress: '正在更新',
-      commitsBehind: (count, branch) => `落后 ${branch} ${count} 个提交`,
-      desktopVersion: version => `Verxio v${version}`,
-      commit: sha => `提交 ${sha}`,
-      branch: branch => `分支 ${branch}`,
       closeCommandCenter: '关闭命令中心',
       openCommandCenter: '打开命令中心',
       status: '状态',

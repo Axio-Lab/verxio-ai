@@ -27,6 +27,7 @@ import { ListRow } from '../settings/primitives'
 import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 
 import { PlatformAvatar } from './platform-icon'
+import { SlackManifestPanel } from './slack-manifest-panel'
 import { WhatsAppCloudSettingsPanel } from './whatsapp-cloud-settings-panel'
 import { WhatsAppPairingPanel } from './whatsapp-pairing-panel'
 import { WhatsAppSettingsPanel } from './whatsapp-settings-panel'
@@ -384,6 +385,7 @@ function PlatformDetail({
 
   const isWhatsApp = platform.id === 'whatsapp'
   const isWhatsAppCloud = platform.id === 'whatsapp_cloud'
+  const isSlack = platform.id === 'slack'
   const usesCustomSetup = isWhatsApp || isWhatsAppCloud
   const hasEdits = Object.keys(trimEdits(edits)).length > 0
   const requiredFields = platform.env_vars.filter(field => field.required)
@@ -418,6 +420,8 @@ function PlatformDetail({
               <PlatformHint platform={platform} />
             </div>
           </header>
+
+          {isSlack && <SlackManifestPanel />}
 
           {isWhatsApp && <WhatsAppPairingPanel onChanged={onRefresh} platform={platform} />}
 
@@ -582,7 +586,7 @@ const PLATFORM_INTRO: Record<string, string> = {
   discord:
     'Open the Discord Developer Portal, create an application, add a Bot, then copy its token. Invite the bot to your server with the right scopes.',
   slack:
-    'Create a Slack app, enable Socket Mode, install it to your workspace, then copy the bot token and app-level token.',
+    'Use the manifest generator above to create your Slack app, then paste the bot token and app-level token below.',
   mattermost:
     'On your Mattermost server, create a bot account or personal access token, then paste the server URL and token here.',
   matrix: 'Sign in to your homeserver with the bot account, then copy the access token, user ID, and homeserver URL.',

@@ -50,6 +50,7 @@ from app.inference import (
     ensure_inference_settings,
 )
 from app.leash_agent import clear_leash_agent, read_leash_agent, write_leash_agent
+from app.slack_manifest import build_slack_manifest
 from app.models import (
     ArtifactListResponse,
     AuthCodeChallengeResponse,
@@ -291,6 +292,24 @@ async def get_profile(request: Request):
 @app.get("/api/hermes")
 async def get_hermes_metadata():
     return await HermesRuntimeAdapter().metadata()
+
+
+@app.get("/api/messaging/slack/manifest")
+async def get_slack_manifest(
+    request: Request,
+    name: str | None = None,
+    description: str | None = None,
+    include_assistant: bool = True,
+):
+    require_user(request)
+    try:
+        return build_slack_manifest(
+            name=name or "Verxio",
+            description=description,
+            include_assistant=include_assistant,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.get("/api/runtime", response_model=RuntimeControlResponse)

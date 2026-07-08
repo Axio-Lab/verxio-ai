@@ -198,6 +198,11 @@ export interface MessagingPlatformTestResponse {
   state?: null | string
 }
 
+export interface SlackManifestResponse {
+  manifest: Record<string, unknown>
+  json: string
+}
+
 export interface WhatsAppPairingStartResponse {
   pairing_id: string | null
   status: string

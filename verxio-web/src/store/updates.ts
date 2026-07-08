@@ -1,6 +1,6 @@
 /**
- * Desktop self-update store. Tracks distance from the configured branch,
- * surfaces it as an ambient pill, and orchestrates the apply flow.
+ * Desktop self-update store. Tracks distance from the configured branch and
+ * surfaces availability via notifications and the updates overlay.
  */
 
 import { atom } from 'nanostores'
