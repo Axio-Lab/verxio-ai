@@ -200,7 +200,10 @@ async function requestJson<T>(
   options?: { allowUnauthorized?: boolean }
 ): Promise<Response> {
   const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), init.timeoutMs ?? 30_000)
+  // Hosted runtimes often need >30s on first container boot; the old default
+  // surfaced Chrome's opaque "signal is aborted without reason".
+  const timeoutMs = init.timeoutMs ?? (verxioApiEnabled() ? 90_000 : 30_000)
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs)
 
   try {
     return await fetch(url, {
@@ -213,6 +216,12 @@ async function requestJson<T>(
         ...(init.headers ?? {})
       }
     })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('Verxio backend timed out while starting. Retry in a moment.')
+    }
+
+    throw error
   } finally {
     window.clearTimeout(timeout)
   }
@@ -397,9 +406,15 @@ export function installWebBridge(): void {
     getConnection: async () => getConnection(),
     touchBackend: async () => ({ ok: true }),
     getGatewayWsUrl: async () => {
-      const conn = await getConnection()
+      // Do not re-enter waitForDashboardReady — boot already waited, and a
+      // second blocked start_runtime call was racing the 30s abort timer.
+      const token = verxioApiEnabled() ? 'verxio-proxy' : getToken()
 
-      return conn.wsUrl
+      if (!token) {
+        throw new Error('Missing Verxio session token. Restart hermes dashboard and reload.')
+      }
+
+      return buildWsUrl('/api/ws', { token })
     },
     getBootProgress: async () => bootProgress,
     getConnectionConfig: async () => readConnectionConfig(),
