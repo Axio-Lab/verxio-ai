@@ -346,6 +346,7 @@ export function ConnectionsPanel({
       }
 
       if (callback.status === 'success') {
+        onSearchChange('')
         void refreshConnections().then(() => {
           notify({
             kind: 'success',
@@ -365,7 +366,7 @@ export function ConnectionsPanel({
         title: 'Connection incomplete'
       })
     },
-    [refreshConnections]
+    [onSearchChange, refreshConnections]
   )
 
   useEffect(() => {
@@ -513,16 +514,30 @@ export function ConnectionsPanel({
           return true
         }
 
-        return (
-          includesQuery(app.name, q) ||
-          includesQuery(app.description, q) ||
-          includesQuery(app.slug, q) ||
-          app.categories.some(category => includesQuery(category, q)) ||
-          (app.sampleTools ?? []).some(tool => includesQuery(tool.name, q) || includesQuery(tool.description, q))
-        )
+        return appMatchesQuery(app, q)
       })
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [apps, connectedSlugs, query])
+
+  // After connect (or refresh), drop a search that only matched now-connected apps
+  // so Available connections shows the full catalog instead of "No connections found".
+  useEffect(() => {
+    if (loading) {
+      return
+    }
+
+    const q = query.trim().toLowerCase()
+
+    if (!q || filteredApps.length > 0) {
+      return
+    }
+
+    const queryMatchesConnected = connectedRows.some(({ app }) => appMatchesQuery(app, q))
+
+    if (queryMatchesConnected) {
+      onSearchChange('')
+    }
+  }, [connectedRows, filteredApps.length, loading, onSearchChange, query])
 
   const pageCount = Math.max(1, Math.ceil(filteredApps.length / pageSize))
   const currentPage = Math.min(page, pageCount)
@@ -638,6 +653,7 @@ export function ConnectionsPanel({
         return
       }
 
+      onSearchChange('')
       notify({
         kind: 'success',
         message: `${connectDialogApp.name} is connected. Agent tools were refreshed.`,
@@ -1175,6 +1191,16 @@ function ConnectionStatus({ connected, setupRequired }: { connected: boolean; se
 
   return (
     <Badge variant={setupRequired ? 'outline' : 'muted'}>{setupRequired ? 'API key needed' : 'Not connected'}</Badge>
+  )
+}
+
+function appMatchesQuery(app: ComposioApp, q: string): boolean {
+  return (
+    includesQuery(app.name, q) ||
+    includesQuery(app.description, q) ||
+    includesQuery(app.slug, q) ||
+    app.categories.some(category => includesQuery(category, q)) ||
+    (app.sampleTools ?? []).some(tool => includesQuery(tool.name, q) || includesQuery(tool.description, q))
   )
 }
 
