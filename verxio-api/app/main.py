@@ -157,6 +157,7 @@ from app.runtime_manager import (
     index_artifacts,
     restart_runtime,
     runtime_container_env_matches,
+    runtime_dashboard_base_url,
     runtime_health,
     start_runtime,
     stop_runtime,
@@ -939,11 +940,12 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
         extra_env=runtime_env_for_user(str(user["id"])),
         wait_ready=False,
     )
-    if not runtime.dashboard_url or runtime.status not in {"running"}:
+    base = runtime_dashboard_base_url(runtime)
+    if not base or runtime.status not in {"running"}:
         raise HTTPException(status_code=503, detail="Runtime dashboard is starting. Retry shortly.")
 
     token = _runtime_dashboard_token(runtime.id)
-    target = f"{runtime.dashboard_url.rstrip('/')}/{path}"
+    target = f"{base.rstrip('/')}/{path}"
     body = await request.body()
     try:
         async with httpx.AsyncClient(timeout=300, follow_redirects=False) as client:
@@ -1011,7 +1013,8 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
         )
         if runtime.status != "running":
             runtime = await wait_for_runtime_ready(runtime, timeout_seconds=25)
-        if not runtime.dashboard_url or runtime.status != "running":
+        base = runtime_dashboard_base_url(runtime)
+        if not base or runtime.status != "running":
             await _safe_websocket_close(websocket, 1011)
             return
 
@@ -1025,12 +1028,15 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
         asyncio.create_task(_sync_bridges_in_background())
 
         token = _runtime_dashboard_token(runtime.id)
-        target = _ws_target_url(runtime.dashboard_url, path, websocket.url.query, token)
+        # Prefer container bridge IP:9119 — host-published ports go through
+        # docker-proxy, which commonly hangs WebSocket opening handshakes.
+        target = _ws_target_url(base, path, websocket.url.query, token)
+        logger.info("Runtime dashboard websocket proxy connecting target=%s", target.split("?", 1)[0])
 
         async with websockets.connect(
             target,
             additional_headers={"X-Hermes-Session-Token": token},
-            open_timeout=15,
+            open_timeout=20,
         ) as upstream:
             async def client_to_runtime() -> None:
                 while True:
