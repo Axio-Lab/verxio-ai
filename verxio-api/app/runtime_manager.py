@@ -170,7 +170,12 @@ async def wait_for_runtime_ready(
     )
 
 
-async def start_runtime(runtime: RuntimeInstance, extra_env: dict[str, str] | None = None) -> RuntimeInstance:
+async def start_runtime(
+    runtime: RuntimeInstance,
+    extra_env: dict[str, str] | None = None,
+    *,
+    wait_ready: bool = True,
+) -> RuntimeInstance:
     ensure_runtime_directories(runtime)
 
     current = await _run_docker_async(["inspect", "-f", "{{.State.Running}}", _container_name(runtime)])
@@ -183,15 +188,17 @@ async def start_runtime(runtime: RuntimeInstance, extra_env: dict[str, str] | No
                 last_seen_at=now_iso(),
                 last_error=None,
             )
-        # Container is up but the dashboard is still booting. Wait instead of
-        # returning "starting" and letting the UI race into a 503.
-        return await wait_for_runtime_ready(
-            save_runtime(
-                runtime,
-                status="starting",
-                last_error=detail,
-            )
+        starting = save_runtime(
+            runtime,
+            status="starting",
+            last_error=detail,
         )
+        # Polling clients (dashboard proxy GETs) need a fast 503 so the browser
+        # can retry. Blocking up to VERXIO_RUNTIME_READY_TIMEOUT_SECONDS here
+        # races the web client's 30s AbortController ("signal is aborted…").
+        if not wait_ready:
+            return starting
+        return await wait_for_runtime_ready(starting)
 
     if current.returncode == 0:
         await _run_docker_async(["rm", _container_name(runtime)])
@@ -274,6 +281,8 @@ async def start_runtime(runtime: RuntimeInstance, extra_env: dict[str, str] | No
         last_started_at=now_iso(),
         last_error=None,
     )
+    if not wait_ready:
+        return started
     return await wait_for_runtime_ready(started)
 
 
