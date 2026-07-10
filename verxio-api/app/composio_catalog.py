@@ -578,14 +578,13 @@ def complete_composio_connection(
         auth_config = _fetch_auth_config(auth_config_id)
         credential_payload = _build_credential_payload(auth_config, credentials)
         response = _post(
-            f"{_tools_api_base()}/connected_accounts/initiate",
+            f"{_api_base()}/connected_accounts",
             {
-                "auth_config_id": auth_config_id,
-                "config": {
-                    "auth_scheme": auth_scheme,
-                    "val": credential_payload,
+                "auth_config": {"id": auth_config_id},
+                "connection": {
+                    "data": credential_payload,
+                    "user_id": user_id,
                 },
-                "user_id": user_id,
             },
             timeout=30,
         )

@@ -132,17 +132,65 @@ async def runtime_health(runtime: RuntimeInstance) -> tuple[bool, str]:
         return False, f"Hermes dashboard is not reachable: {exc}"
 
 
+def _runtime_ready_timeout_seconds() -> float:
+    raw = os.getenv("VERXIO_RUNTIME_READY_TIMEOUT_SECONDS", "90").strip()
+    try:
+        return max(5.0, float(raw))
+    except ValueError:
+        return 90.0
+
+
+async def wait_for_runtime_ready(
+    runtime: RuntimeInstance,
+    *,
+    timeout_seconds: float | None = None,
+) -> RuntimeInstance:
+    """Block until the Hermes dashboard answers, or the timeout elapses."""
+    deadline = asyncio.get_running_loop().time() + (
+        _runtime_ready_timeout_seconds() if timeout_seconds is None else max(1.0, timeout_seconds)
+    )
+    latest = runtime
+    detail = "Hermes dashboard is not reachable yet."
+
+    while asyncio.get_running_loop().time() < deadline:
+        connected, detail = await runtime_health(latest)
+        if connected:
+            return save_runtime(
+                latest,
+                status="running",
+                last_seen_at=now_iso(),
+                last_error=None,
+            )
+        await asyncio.sleep(1.0)
+
+    return save_runtime(
+        latest,
+        status="starting",
+        last_error=detail,
+    )
+
+
 async def start_runtime(runtime: RuntimeInstance, extra_env: dict[str, str] | None = None) -> RuntimeInstance:
     ensure_runtime_directories(runtime)
 
     current = await _run_docker_async(["inspect", "-f", "{{.State.Running}}", _container_name(runtime)])
     if current.returncode == 0 and current.stdout.strip() == "true":
         connected, detail = await runtime_health(runtime)
-        return save_runtime(
-            runtime,
-            status="running" if connected else "starting",
-            last_seen_at=now_iso() if connected else runtime.last_seen_at,
-            last_error=None if connected else detail,
+        if connected:
+            return save_runtime(
+                runtime,
+                status="running",
+                last_seen_at=now_iso(),
+                last_error=None,
+            )
+        # Container is up but the dashboard is still booting. Wait instead of
+        # returning "starting" and letting the UI race into a 503.
+        return await wait_for_runtime_ready(
+            save_runtime(
+                runtime,
+                status="starting",
+                last_error=detail,
+            )
         )
 
     if current.returncode == 0:
@@ -215,7 +263,7 @@ async def start_runtime(runtime: RuntimeInstance, extra_env: dict[str, str] | No
             last_error=result.stderr.strip() or result.stdout.strip() or "Docker failed to start runtime.",
         )
 
-    return save_runtime(
+    started = save_runtime(
         runtime,
         status="starting",
         container_id=result.stdout.strip(),
@@ -226,6 +274,7 @@ async def start_runtime(runtime: RuntimeInstance, extra_env: dict[str, str] | No
         last_started_at=now_iso(),
         last_error=None,
     )
+    return await wait_for_runtime_ready(started)
 
 
 def stop_runtime(runtime: RuntimeInstance) -> RuntimeInstance:
