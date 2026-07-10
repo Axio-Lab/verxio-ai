@@ -104,6 +104,28 @@ def _runtime_publish_host() -> str:
     return os.getenv("VERXIO_RUNTIME_PUBLISH_HOST", "127.0.0.1").strip() or "127.0.0.1"
 
 
+def _self_container_ref() -> str | None:
+    """Best-effort id/name for the container running this process."""
+    # Compose sets hostname to the container id (or service name).
+    hostname = socket.gethostname().strip()
+    if hostname:
+        return hostname
+
+    try:
+        with open("/proc/self/cgroup", encoding="utf-8") as handle:
+            text = handle.read()
+    except OSError:
+        return None
+
+    for marker in ("/docker/", "/docker-ce/docker/", "/cri-containerd-"):
+        if marker not in text:
+            continue
+        for part in text.replace("\n", "/").split("/"):
+            if len(part) >= 12 and all(ch in "0123456789abcdef" for ch in part[:12]):
+                return part
+    return None
+
+
 def _runtime_docker_network() -> str | None:
     """Docker network shared with verxio-api (so HTTP + WS reach Hermes).
 
@@ -114,13 +136,16 @@ def _runtime_docker_network() -> str | None:
     if explicit:
         return explicit
 
-    hostname = socket.gethostname()
+    self_ref = _self_container_ref()
+    if not self_ref:
+        return None
+
     result = _run_docker(
         [
             "inspect",
             "-f",
             "{{range $k, $v := .NetworkSettings.Networks}}{{println $k}}{{end}}",
-            hostname,
+            self_ref,
         ]
     )
     if result.returncode != 0:
@@ -200,10 +225,28 @@ def runtime_dashboard_base_url(runtime: RuntimeInstance) -> str | None:
     if network:
         ip = _runtime_container_ip(runtime)
         if ip:
-            # Same network as verxio-api — DNS name is stable across recreates.
+            # Prefer stable DNS on the shared network; IP is a fallback target
+            # used by the WS proxy when DNS is flaky.
             return f"http://{_container_name(runtime)}:9119"
 
     return runtime.dashboard_url
+
+
+def runtime_dashboard_ws_candidates(runtime: RuntimeInstance) -> list[str]:
+    """Ordered base URLs to try for Hermes WebSocket (never prefer docker-proxy)."""
+    _ensure_runtime_on_network(runtime)
+    candidates: list[str] = []
+    name = _container_name(runtime)
+    network = _runtime_docker_network()
+    if network:
+        candidates.append(f"http://{name}:9119")
+        ip = _runtime_container_ip(runtime)
+        if ip:
+            candidates.append(f"http://{ip}:9119")
+    # Last resort only — known to hang WS on Linux docker-proxy.
+    if runtime.dashboard_url and runtime.dashboard_url not in candidates:
+        candidates.append(runtime.dashboard_url)
+    return candidates
 
 
 def _docker_mount_path(path: str) -> str:
