@@ -5,14 +5,14 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import { installWebBridge } from '@/platform/install-web-bridge'
 
 installWebBridge()
-import { StrictMode } from 'react'
+import { lazy, StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 
-import App from './app'
 import { PublicNotepadShareView } from './app/notepad'
 import { ErrorBoundary } from './components/error-boundary'
 import { HapticsProvider } from './components/haptics-provider'
+import { PageLoader } from './components/page-loader'
 import { VerxioAuthGate } from './components/verxio-auth-gate'
 import { I18nProvider } from './i18n'
 import { installClipboardShim } from './lib/clipboard'
@@ -20,6 +20,9 @@ import { queryClient } from './lib/query-client'
 import { ThemeProvider } from './themes/context'
 
 installClipboardShim()
+
+// Defer the chat/shell bundle until after auth so first paint (login) stays small.
+const App = lazy(() => import('./app'))
 
 function normalizeLegacyHashRoute() {
   const hashRoute = window.location.hash.match(/^#(\/.*)$/)?.[1]
@@ -58,7 +61,9 @@ createRoot(document.getElementById('root')!).render(
                   <PublicNotepadShareView />
                 ) : (
                   <VerxioAuthGate>
-                    <App />
+                    <Suspense fallback={<PageLoader label="Loading Verxio…" />}>
+                      <App />
+                    </Suspense>
                   </VerxioAuthGate>
                 )}
               </BrowserRouter>

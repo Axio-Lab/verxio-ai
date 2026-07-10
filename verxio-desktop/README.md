@@ -61,6 +61,26 @@ npm run desktop:build
 This currently verifies that `verxio-web` builds and that the generated
 renderer is copied into `verxio-desktop/build/renderer`.
 
+## Point Desktop At Hosted Verxio
+
+Local scripts default to `http://127.0.0.1:8787`. Production scripts bake
+`https://app.verxio.xyz` into the renderer and `electron/runtime-env.json`.
+
+From the repo root:
+
+```bash
+# Dev UI against production API
+npm run desktop:dev:prod
+
+# Run a built renderer against production
+npm run desktop:build:prod
+npm run desktop:start:prod
+
+# Package installers aimed at production
+npm run desktop:pack:prod
+npm run desktop:dist:mac:prod
+```
+
 ## Local Packaging
 
 From the repo root:
@@ -76,6 +96,14 @@ Platform installer commands are available from `verxio-desktop`:
 npm run dist:mac
 npm run dist:win
 npm run dist:linux
+```
+
+Production variants:
+
+```bash
+npm run dist:mac:prod
+npm run dist:win:prod
+npm run dist:linux:prod
 ```
 
 macOS signing/notarization and Windows Authenticode signing require external
