@@ -34,8 +34,21 @@ function envValue(name, fallback = '') {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback
 }
 
+function runtimeEnv() {
+  try {
+    return require('./runtime-env.json')
+  } catch {
+    return {}
+  }
+}
+
 function verxioApiBaseUrl() {
-  return envValue('VERXIO_API_URL', envValue('VITE_VERXIO_API_URL', 'http://127.0.0.1:8787')).replace(/\/$/, '')
+  const baked = typeof runtimeEnv().apiUrl === 'string' ? runtimeEnv().apiUrl.trim() : ''
+
+  return envValue('VERXIO_API_URL', envValue('VITE_VERXIO_API_URL', baked || 'http://127.0.0.1:8787')).replace(
+    /\/$/,
+    ''
+  )
 }
 
 function verxioApiEnabled() {

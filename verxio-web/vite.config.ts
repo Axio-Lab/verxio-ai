@@ -57,10 +57,12 @@ export default defineConfig({
     dedupe: ['react', 'react-dom']
   },
   build: {
-    chunkSizeWarningLimit: 25000,
+    // Allow natural route/vendor splitting. A single manual `vendor` chunk would
+    // force the whole dependency graph onto first paint (bad on mobile).
+    chunkSizeWarningLimit: 5000,
     rolldownOptions: {
       output: {
-        codeSplitting: false
+        codeSplitting: true
       }
     }
   },

@@ -1422,7 +1422,18 @@ ipcMain.handle('verxio:version', () => ({
   electronVersion: process.versions.electron,
   nodeVersion: process.versions.node,
   platform: process.platform,
-  hermesRoot: process.env.VERXIO_API_URL || process.env.VITE_VERXIO_API_URL || 'http://127.0.0.1:8787'
+  hermesRoot: (() => {
+    try {
+      const baked = require('./runtime-env.json')
+      if (typeof baked.apiUrl === 'string' && baked.apiUrl.trim()) {
+        return process.env.VERXIO_API_URL || process.env.VITE_VERXIO_API_URL || baked.apiUrl.trim()
+      }
+    } catch {
+      // fall through
+    }
+
+    return process.env.VERXIO_API_URL || process.env.VITE_VERXIO_API_URL || 'http://127.0.0.1:8787'
+  })()
 }))
 
 app.on('web-contents-created', (_event, contents) => {
