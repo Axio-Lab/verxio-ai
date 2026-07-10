@@ -104,8 +104,75 @@ def _runtime_publish_host() -> str:
     return os.getenv("VERXIO_RUNTIME_PUBLISH_HOST", "127.0.0.1").strip() or "127.0.0.1"
 
 
+def _runtime_docker_network() -> str | None:
+    """Docker network shared with verxio-api (so HTTP + WS reach Hermes).
+
+    Prefer ``VERXIO_RUNTIME_DOCKER_NETWORK``. Otherwise inspect this process's
+    container networks (works when the API itself runs in Docker Compose).
+    """
+    explicit = os.getenv("VERXIO_RUNTIME_DOCKER_NETWORK", "").strip()
+    if explicit:
+        return explicit
+
+    hostname = socket.gethostname()
+    result = _run_docker(
+        [
+            "inspect",
+            "-f",
+            "{{range $k, $v := .NetworkSettings.Networks}}{{println $k}}{{end}}",
+            hostname,
+        ]
+    )
+    if result.returncode != 0:
+        return None
+
+    networks = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    for name in networks:
+        if "verxio" in name or name.endswith("_default"):
+            return name
+    return networks[0] if networks else None
+
+
+def _ensure_runtime_on_network(runtime: RuntimeInstance) -> None:
+    """Attach an already-running runtime to the API compose network if needed."""
+    network = _runtime_docker_network()
+    if not network:
+        return
+
+    name = _container_name(runtime)
+    check = _run_docker(
+        [
+            "inspect",
+            "-f",
+            f"{{{{index .NetworkSettings.Networks \"{network}\"}}}}",
+            name,
+        ]
+    )
+    # Empty / <no value> means not attached.
+    attached = check.returncode == 0 and check.stdout.strip() not in {"", "<no value>", "map[]"}
+    if attached:
+        return
+
+    _run_docker(["network", "connect", network, name])
+
+
 def _runtime_container_ip(runtime: RuntimeInstance) -> str | None:
-    """Bridge IP of the runtime container (avoids docker-proxy WebSocket hangs)."""
+    """IP of the runtime on the preferred shared network, else any bridge IP."""
+    network = _runtime_docker_network()
+    if network:
+        result = _run_docker(
+            [
+                "inspect",
+                "-f",
+                f"{{{{(index .NetworkSettings.Networks \"{network}\").IPAddress}}}}",
+                _container_name(runtime),
+            ]
+        )
+        if result.returncode == 0:
+            ip = result.stdout.strip()
+            if ip and ip not in {"<no value>", "<nil>"}:
+                return ip
+
     result = _run_docker(
         [
             "inspect",
@@ -123,14 +190,19 @@ def _runtime_container_ip(runtime: RuntimeInstance) -> str | None:
 def runtime_dashboard_base_url(runtime: RuntimeInstance) -> str | None:
     """URL the API should use to reach Hermes.
 
-    Prefer the container's docker-bridge IP on the internal dashboard port.
-    Going through the host-published port (``172.17.0.1:19119``) works for
-    HTTP but Docker's userland proxy often stalls WebSocket upgrades, which
-    surfaces as ``TimeoutError: timed out during opening handshake``.
+    Prefer the shared Docker Compose network (container DNS name :9119). That
+    path works for both HTTP and WebSockets. Host-published ports
+    (``172.17.0.1:19119``) go through docker-proxy and often hang WS upgrades;
+    default-bridge IPs are often unreachable from the compose network.
     """
-    ip = _runtime_container_ip(runtime)
-    if ip:
-        return f"http://{ip}:9119"
+    _ensure_runtime_on_network(runtime)
+    network = _runtime_docker_network()
+    if network:
+        ip = _runtime_container_ip(runtime)
+        if ip:
+            # Same network as verxio-api — DNS name is stable across recreates.
+            return f"http://{_container_name(runtime)}:9119"
+
     return runtime.dashboard_url
 
 
@@ -151,16 +223,25 @@ def _docker_mount_path(path: str) -> str:
 
 
 async def runtime_health(runtime: RuntimeInstance) -> tuple[bool, str]:
-    base = runtime_dashboard_base_url(runtime) or runtime.dashboard_url
-    if not base:
+    candidates: list[str] = []
+    preferred = runtime_dashboard_base_url(runtime)
+    if preferred:
+        candidates.append(preferred)
+    if runtime.dashboard_url and runtime.dashboard_url not in candidates:
+        candidates.append(runtime.dashboard_url)
+    if not candidates:
         return False, "Runtime has no dashboard URL yet."
-    try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            response = await client.get(f"{base.rstrip('/')}/api/status")
-            response.raise_for_status()
-        return True, "Hermes dashboard is reachable."
-    except Exception as exc:
-        return False, f"Hermes dashboard is not reachable: {exc}"
+
+    errors: list[str] = []
+    async with httpx.AsyncClient(timeout=5) as client:
+        for base in candidates:
+            try:
+                response = await client.get(f"{base.rstrip('/')}/api/status")
+                response.raise_for_status()
+                return True, "Hermes dashboard is reachable."
+            except Exception as exc:
+                errors.append(f"{base}: {exc}")
+    return False, f"Hermes dashboard is not reachable: {'; '.join(errors)}"
 
 
 def _runtime_ready_timeout_seconds() -> float:
@@ -274,6 +355,10 @@ async def start_runtime(
         "-e",
         f"HERMES_GID={os.getenv('VERXIO_RUNTIME_GID', os.getenv('HERMES_GID', '10000'))}",
     ]
+    network = _runtime_docker_network()
+    if network:
+        # Same network as verxio-api → DNS name works for HTTP and WebSocket.
+        cmd.extend(["--network", network])
     composio_api_key = os.getenv("COMPOSIO_API_KEY", "").strip()
     if composio_api_key:
         cmd.extend(["-e", f"COMPOSIO_API_KEY={composio_api_key}"])
