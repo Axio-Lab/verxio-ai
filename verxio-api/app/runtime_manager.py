@@ -104,6 +104,36 @@ def _runtime_publish_host() -> str:
     return os.getenv("VERXIO_RUNTIME_PUBLISH_HOST", "127.0.0.1").strip() or "127.0.0.1"
 
 
+def _runtime_container_ip(runtime: RuntimeInstance) -> str | None:
+    """Bridge IP of the runtime container (avoids docker-proxy WebSocket hangs)."""
+    result = _run_docker(
+        [
+            "inspect",
+            "-f",
+            "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+            _container_name(runtime),
+        ]
+    )
+    if result.returncode != 0:
+        return None
+    ip = result.stdout.strip()
+    return ip or None
+
+
+def runtime_dashboard_base_url(runtime: RuntimeInstance) -> str | None:
+    """URL the API should use to reach Hermes.
+
+    Prefer the container's docker-bridge IP on the internal dashboard port.
+    Going through the host-published port (``172.17.0.1:19119``) works for
+    HTTP but Docker's userland proxy often stalls WebSocket upgrades, which
+    surfaces as ``TimeoutError: timed out during opening handshake``.
+    """
+    ip = _runtime_container_ip(runtime)
+    if ip:
+        return f"http://{ip}:9119"
+    return runtime.dashboard_url
+
+
 def _docker_mount_path(path: str) -> str:
     docker_root = os.getenv("VERXIO_RUNTIME_DOCKER_ROOT", "").strip()
     if not docker_root:
@@ -121,11 +151,12 @@ def _docker_mount_path(path: str) -> str:
 
 
 async def runtime_health(runtime: RuntimeInstance) -> tuple[bool, str]:
-    if not runtime.dashboard_url:
+    base = runtime_dashboard_base_url(runtime) or runtime.dashboard_url
+    if not base:
         return False, "Runtime has no dashboard URL yet."
     try:
         async with httpx.AsyncClient(timeout=5) as client:
-            response = await client.get(f"{runtime.dashboard_url}/api/status")
+            response = await client.get(f"{base.rstrip('/')}/api/status")
             response.raise_for_status()
         return True, "Hermes dashboard is reachable."
     except Exception as exc:
