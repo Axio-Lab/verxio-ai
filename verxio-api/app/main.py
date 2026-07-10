@@ -158,6 +158,7 @@ from app.runtime_manager import (
     restart_runtime,
     runtime_container_env_matches,
     runtime_dashboard_base_url,
+    runtime_dashboard_ws_candidates,
     runtime_health,
     start_runtime,
     stop_runtime,
@@ -741,7 +742,7 @@ async def tick_pulse_route(request: Request) -> dict[str, int]:
     return tick_pulse_due_runs()
 
 
-async def _sync_composio_bridge_for_user(user: dict, *, apply_live: bool = False):
+async def _sync_composio_bridge_for_user(user: dict, *, apply_live: bool = False, allow_restart: bool = True):
     """Sync Composio → Hermes MCP config without bouncing the UI.
 
     - Always writes/updates the runtime config bridge when needed.
@@ -761,7 +762,7 @@ async def _sync_composio_bridge_for_user(user: dict, *, apply_live: bool = False
         and not runtime_container_env_matches(runtime, "COMPOSIO_API_KEY", composio_api_key)
     )
 
-    if runtime.status == "running" and runtime_env_changed:
+    if allow_restart and runtime.status == "running" and runtime_env_changed:
         # Env injection requires a new container. Rare — only when the platform
         # key was added after the runtime was already started.
         await restart_runtime(runtime, extra_env=runtime_env_for_user(str(user["id"])))
@@ -772,7 +773,12 @@ async def _sync_composio_bridge_for_user(user: dict, *, apply_live: bool = False
     return accounts, bridge
 
 
-async def _sync_inference_bridge_for_user(user: dict, *, refresh_running: bool = False):
+async def _sync_inference_bridge_for_user(
+    user: dict,
+    *,
+    refresh_running: bool = False,
+    allow_restart: bool = True,
+):
     runtime = get_runtime_for_user(user)
     bridge = sync_inference_runtime_bridge(runtime, str(user["id"]))
     runtime_env = runtime_env_for_user(str(user["id"]))
@@ -782,7 +788,7 @@ async def _sync_inference_bridge_for_user(user: dict, *, refresh_running: bool =
         and any(not runtime_container_env_matches(runtime, key, value) for key, value in runtime_env.items())
     )
 
-    if runtime.status == "running" and (runtime_env_changed or (refresh_running and bridge.changed)):
+    if allow_restart and runtime.status == "running" and (runtime_env_changed or (refresh_running and bridge.changed)):
         await restart_runtime(runtime, extra_env=runtime_env)
 
     return bridge
@@ -1020,24 +1026,40 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
 
         async def _sync_bridges_in_background() -> None:
             try:
-                await _sync_composio_bridge_for_user(user)
-                await _sync_inference_bridge_for_user(user)
+                # Never restart the container from the WS path — a Docker bounce
+                # mid-handshake is what turns a green status into "Reconnecting".
+                await _sync_composio_bridge_for_user(user, allow_restart=False)
+                await _sync_inference_bridge_for_user(user, refresh_running=False, allow_restart=False)
             except Exception:
                 logger.exception("Background runtime bridge sync failed after websocket connect")
 
         asyncio.create_task(_sync_bridges_in_background())
 
         token = _runtime_dashboard_token(runtime.id)
-        # Prefer container bridge IP:9119 — host-published ports go through
-        # docker-proxy, which commonly hangs WebSocket opening handshakes.
-        target = _ws_target_url(base, path, websocket.url.query, token)
-        logger.info("Runtime dashboard websocket proxy connecting target=%s", target.split("?", 1)[0])
+        last_error: Exception | None = None
+        upstream = None
+        for base in runtime_dashboard_ws_candidates(runtime):
+            target = _ws_target_url(base, path, websocket.url.query, token)
+            logger.info("Runtime dashboard websocket proxy connecting target=%s", target.split("?", 1)[0])
+            try:
+                upstream = await websockets.connect(
+                    target,
+                    additional_headers={"X-Hermes-Session-Token": token},
+                    open_timeout=8,
+                )
+                break
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "Runtime dashboard websocket upstream failed target=%s error=%s",
+                    target.split("?", 1)[0],
+                    exc,
+                )
 
-        async with websockets.connect(
-            target,
-            additional_headers={"X-Hermes-Session-Token": token},
-            open_timeout=20,
-        ) as upstream:
+        if upstream is None:
+            raise last_error or RuntimeError("No Hermes websocket upstream available")
+
+        try:
             async def client_to_runtime() -> None:
                 while True:
                     message = await websocket.receive()
@@ -1057,6 +1079,8 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
                         await websocket.send_text(str(message))
 
             await asyncio.gather(client_to_runtime(), runtime_to_client())
+        finally:
+            await upstream.close()
     except WebSocketDisconnect:
         logger.info("Runtime dashboard websocket client disconnected path=%s", path)
     except Exception:

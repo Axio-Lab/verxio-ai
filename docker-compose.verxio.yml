@@ -20,7 +20,7 @@ services:
       VERXIO_RUNTIME_CONNECT_HOST: ${VERXIO_RUNTIME_CONNECT_HOST:-host.docker.internal}
       VERXIO_RUNTIME_PUBLISH_HOST: ${VERXIO_RUNTIME_PUBLISH_HOST:-127.0.0.1}
       # Shared with Hermes runtimes so API can reach them by container DNS (HTTP+WS).
-      # Empty = auto-detect from the API container's networks (compose default).
+      # On ECS set explicitly: VERXIO_RUNTIME_DOCKER_NETWORK=verxio-ai_default
       VERXIO_RUNTIME_DOCKER_NETWORK: ${VERXIO_RUNTIME_DOCKER_NETWORK:-}
       VERXIO_RUNTIME_UID: ${HERMES_UID:-10000}
       VERXIO_RUNTIME_GID: ${HERMES_GID:-10000}
