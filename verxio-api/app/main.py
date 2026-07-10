@@ -103,6 +103,7 @@ from app.models import (
     PulseConversationsResponse,
     PulseMetaOAuthCompleteRequest,
     PulseMetaOAuthCompleteResponse,
+    RuntimeInstance,
     PulseMessageRecord,
     PulseSendMessageRequest,
     PulseTagsResponse,
@@ -160,6 +161,7 @@ from app.runtime_manager import (
     runtime_dashboard_base_url,
     runtime_dashboard_ws_candidates,
     runtime_health,
+    runtime_live_dashboard_token,
     start_runtime,
     stop_runtime,
     sync_runtime_workspace,
@@ -910,9 +912,25 @@ async def delete_leash_agent_config(request: Request) -> dict[str, bool]:
     return {"ok": True}
 
 
-def _runtime_dashboard_token(runtime_id: str) -> str:
+def _runtime_dashboard_token(runtime_id: str, runtime: RuntimeInstance | None = None) -> str:
     row = db.fetch_one("SELECT dashboard_token FROM runtime_instances WHERE id = ?", (runtime_id,))
-    token = str(row.get("dashboard_token") or "") if row else ""
+    db_token = str(row.get("dashboard_token") or "") if row else ""
+    token = db_token
+    if runtime is not None:
+        # Hermes authenticates WS against the process env token. Prefer that over
+        # a stale DB copy so proxy handshakes do not hang on close-before-accept.
+        live = runtime_live_dashboard_token(runtime, fallback="")
+        if live:
+            if db_token and live != db_token:
+                logger.warning(
+                    "Runtime dashboard token mismatch runtime_id=%s; using live container token",
+                    runtime_id,
+                )
+                db.execute(
+                    "UPDATE runtime_instances SET dashboard_token = ? WHERE id = ?",
+                    (live, runtime_id),
+                )
+            token = live
     if not token:
         raise HTTPException(status_code=503, detail="Runtime dashboard token is not ready.")
     return token
@@ -928,6 +946,9 @@ def _proxy_headers(request: Request, token: str) -> dict[str, str]:
 
 def _dashboard_request_is_read(method: str) -> bool:
     return method.upper() in {"GET", "HEAD", "OPTIONS"}
+
+
+logger = logging.getLogger(__name__)
 
 
 @app.api_route(
@@ -950,7 +971,7 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     if not base or runtime.status not in {"running"}:
         raise HTTPException(status_code=503, detail="Runtime dashboard is starting. Retry shortly.")
 
-    token = _runtime_dashboard_token(runtime.id)
+    token = _runtime_dashboard_token(runtime.id, runtime)
     target = f"{base.rstrip('/')}/{path}"
     body = await request.body()
     try:
@@ -987,7 +1008,12 @@ def _ws_target_url(runtime_url: str, path: str, query: str, token: str) -> str:
     return f"{scheme}://{parsed.host}:{parsed.port or 80}/{path}?{urlencode(params)}"
 
 
-logger = logging.getLogger(__name__)
+def _runtime_ws_open_timeout_seconds() -> float:
+    raw = os.getenv("VERXIO_RUNTIME_WS_OPEN_TIMEOUT_SECONDS", "45").strip()
+    try:
+        return max(8.0, float(raw))
+    except ValueError:
+        return 45.0
 
 
 async def _safe_websocket_close(websocket: WebSocket, code: int) -> None:
@@ -1035,7 +1061,7 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
 
         asyncio.create_task(_sync_bridges_in_background())
 
-        token = _runtime_dashboard_token(runtime.id)
+        token = _runtime_dashboard_token(runtime.id, runtime)
         last_error: Exception | None = None
         upstream = None
         for base in runtime_dashboard_ws_candidates(runtime):
@@ -1045,7 +1071,7 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
                 upstream = await websockets.connect(
                     target,
                     additional_headers={"X-Hermes-Session-Token": token},
-                    open_timeout=8,
+                    open_timeout=_runtime_ws_open_timeout_seconds(),
                 )
                 break
             except Exception as exc:

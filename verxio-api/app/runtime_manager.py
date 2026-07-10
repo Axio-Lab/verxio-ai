@@ -49,11 +49,11 @@ def _container_name(runtime: RuntimeInstance) -> str:
     return f"verxio-{safe_path_part(runtime.workspace_id)}-{safe_path_part(runtime.agent_id)}"
 
 
-def runtime_container_env_matches(runtime: RuntimeInstance, key: str, expected_value: str) -> bool:
-    """Return True when the running runtime container has the expected env value."""
+def runtime_container_env_value(runtime: RuntimeInstance, key: str) -> str | None:
+    """Return an env value from the running runtime container, if present."""
 
-    if not key or not expected_value:
-        return False
+    if not key:
+        return None
 
     result = _run_docker(
         [
@@ -64,14 +64,30 @@ def runtime_container_env_matches(runtime: RuntimeInstance, key: str, expected_v
         ]
     )
     if result.returncode != 0:
-        return False
+        return None
 
     prefix = f"{key}="
     for line in result.stdout.splitlines():
         if line.startswith(prefix):
-            return line[len(prefix) :] == expected_value
+            return line[len(prefix) :]
+    return None
 
-    return False
+
+def runtime_container_env_matches(runtime: RuntimeInstance, key: str, expected_value: str) -> bool:
+    """Return True when the running runtime container has the expected env value."""
+
+    if not expected_value:
+        return False
+    return runtime_container_env_value(runtime, key) == expected_value
+
+
+def runtime_live_dashboard_token(runtime: RuntimeInstance, fallback: str = "") -> str:
+    """Prefer the token Hermes was actually started with over the DB copy."""
+
+    live = runtime_container_env_value(runtime, "HERMES_DASHBOARD_SESSION_TOKEN")
+    if live:
+        return live
+    return fallback
 
 
 def _port_is_free(port: int) -> bool:

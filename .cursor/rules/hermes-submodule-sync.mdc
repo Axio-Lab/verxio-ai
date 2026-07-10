@@ -1,0 +1,20 @@
+---
+description: Keep hermes-agent submodule commits pushed in sync with verxio-ai
+alwaysApply: true
+---
+
+# Hermes submodule sync
+
+`hermes-agent/` is a git submodule pointing at `https://github.com/Axio-Lab/hermes-agent.git`.
+
+Whenever a commit includes Hermes changes (or updates the submodule pointer):
+
+1. Commit inside `hermes-agent` first
+2. Push that commit to the Hermes remote (`origin` on the current hermes branch, usually `verxio`)
+3. In the parent `verxio-ai` repo, stage the updated `hermes-agent` pointer plus any Verxio changes
+4. Commit the parent repo
+5. Push the parent branch
+
+Never leave Hermes changes only local — ECS deploy builds from the submodule SHA on the deployed ref, so an unpushed Hermes commit will not ship.
+
+Do not skip the Hermes push even if the parent commit succeeds.
