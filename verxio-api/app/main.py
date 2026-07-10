@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -11,6 +12,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response, 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.websockets import WebSocketDisconnect
 
 from app import db
 from app.auth import (
@@ -916,14 +918,35 @@ def _proxy_headers(request: Request, token: str) -> dict[str, str]:
     return headers
 
 
+# Boot/readiness polls hit these constantly — never block them on Composio/inference sync.
+_DASHBOARD_LIGHTWEIGHT_GET_PREFIXES = (
+    "api/status",
+    "api/config",
+    "api/config/defaults",
+    "api/model/info",
+    "api/profiles",
+    "api/cron/jobs",
+)
+
+
+def _dashboard_path_is_lightweight_get(method: str, path: str) -> bool:
+    if method.upper() != "GET":
+        return False
+    normalized = path.lstrip("/")
+    return any(normalized == prefix or normalized.startswith(f"{prefix}?") for prefix in _DASHBOARD_LIGHTWEIGHT_GET_PREFIXES) or any(
+        normalized.startswith(f"{prefix}/") for prefix in _DASHBOARD_LIGHTWEIGHT_GET_PREFIXES
+    )
+
+
 @app.api_route(
     "/api/runtime/dashboard/{path:path}",
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 )
 async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     user = require_user(request)
-    await _sync_composio_bridge_for_user(user)
-    await _sync_inference_bridge_for_user(user)
+    if not _dashboard_path_is_lightweight_get(request.method, path):
+        await _sync_composio_bridge_for_user(user)
+        await _sync_inference_bridge_for_user(user)
     runtime = await start_runtime(get_runtime_for_user(user), extra_env=runtime_env_for_user(str(user["id"])))
     if not runtime.dashboard_url:
         raise HTTPException(status_code=503, detail="Runtime dashboard is not ready.")
@@ -988,8 +1011,8 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
     await websocket.accept()
 
     try:
-        await _sync_composio_bridge_for_user(user)
-        await _sync_inference_bridge_for_user(user)
+        # Bridge Hermes immediately. Composio/inference sync can take tens of
+        # seconds and was closing the browser socket before upstream connected.
         runtime = await start_runtime(
             get_runtime_for_user(user),
             extra_env=runtime_env_for_user(str(user["id"])),
@@ -997,6 +1020,15 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
         if not runtime.dashboard_url:
             await _safe_websocket_close(websocket, 1011)
             return
+
+        async def _sync_bridges_in_background() -> None:
+            try:
+                await _sync_composio_bridge_for_user(user)
+                await _sync_inference_bridge_for_user(user)
+            except Exception:
+                logger.exception("Background runtime bridge sync failed after websocket connect")
+
+        asyncio.create_task(_sync_bridges_in_background())
 
         token = _runtime_dashboard_token(runtime.id)
         target = _ws_target_url(runtime.dashboard_url, path, websocket.url.query, token)
@@ -1024,9 +1056,9 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
                     else:
                         await websocket.send_text(str(message))
 
-            import asyncio
-
             await asyncio.gather(client_to_runtime(), runtime_to_client())
+    except WebSocketDisconnect:
+        logger.info("Runtime dashboard websocket client disconnected path=%s", path)
     except Exception:
         logger.exception("Runtime dashboard websocket proxy failed for path=%s", path)
         await _safe_websocket_close(websocket, 1011)
