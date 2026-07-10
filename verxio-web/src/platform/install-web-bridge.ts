@@ -300,20 +300,57 @@ function emitBoot(patch: Partial<DesktopBootProgress>) {
   }
 }
 
+let dashboardReadyAt = 0
+const DASHBOARD_READY_TTL_MS = 120_000
+
+async function fetchDashboardStatus(timeoutMs = 20_000): Promise<Response> {
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    return await fetch(buildApiUrl('/api/status'), {
+      credentials: fetchCredentials(),
+      headers: authHeaders(),
+      signal: controller.signal
+    })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('Verxio runtime status check timed out. Retry in a moment.')
+    }
+
+    throw error
+  } finally {
+    window.clearTimeout(timeout)
+  }
+}
+
 async function waitForDashboardReady(): Promise<void> {
   // Hosted runtimes can take longer after a container start/restart while the
   // Hermes dashboard boots. Keep polling so a brief 503 does not surface as
   // "Verxio couldn't start".
   const deadline = Date.now() + (verxioApiEnabled() ? 90_000 : 30_000)
 
-  while (Date.now() < deadline) {
+  if (verxioApiEnabled() && dashboardReadyAt > 0 && Date.now() - dashboardReadyAt < DASHBOARD_READY_TTL_MS) {
     try {
-      const res = await fetch(buildApiUrl('/api/status'), {
-        credentials: fetchCredentials(),
-        headers: authHeaders()
-      })
+      const res = await fetchDashboardStatus(15_000)
 
       if (res.ok) {
+        dashboardReadyAt = Date.now()
+
+        return
+      }
+    } catch {
+      dashboardReadyAt = 0
+    }
+  }
+
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetchDashboardStatus()
+
+      if (res.ok) {
+        dashboardReadyAt = Date.now()
+
         return
       }
 
