@@ -120,13 +120,16 @@ export function useGatewayBoot({
       reconnecting = true
 
       try {
-        const conn = await desktop.getConnection($activeGatewayProfile.get())
+        const cached = $connection.get()
+        const conn = cached ?? (await desktop.getConnection($activeGatewayProfile.get()))
 
         if (cancelled) {
           return
         }
 
-        publish(conn)
+        if (!cached) {
+          publish(conn)
+        }
         // Re-mint the WS URL before reconnecting. OAuth tickets are single-use
         // with a short TTL, so the ticket baked into the cached conn.wsUrl is
         // dead on every reconnect after the initial boot — reusing it surfaces

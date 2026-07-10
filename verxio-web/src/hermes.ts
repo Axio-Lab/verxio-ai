@@ -121,6 +121,7 @@ export class HermesGateway extends JsonRpcGatewayClient {
     super({
       closedErrorMessage: 'Verxio gateway connection closed',
       connectErrorMessage: 'Could not connect to Verxio gateway',
+      connectTimeoutMs: verxioApiEnabled() ? 60_000 : undefined,
       createRequestId: nextId => nextId,
       notConnectedErrorMessage: 'Verxio gateway is not connected',
       requestTimeoutMs: DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS
