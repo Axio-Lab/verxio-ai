@@ -108,7 +108,7 @@ def test_sync_runtime_workspace_updates_mount_paths(client, monkeypatch, tmp_pat
     payload, _token = signup(client)
     local_workspace = tmp_path / "Documents" / "Verxio"
 
-    async def fake_restart(runtime):
+    async def fake_restart(runtime, extra_env=None):
         return runtime
 
     monkeypatch.setattr("app.runtime_manager.restart_runtime", fake_restart)
@@ -842,7 +842,7 @@ def test_composio_connections_restart_stale_runtime_env(client, monkeypatch):
 
     restarted: list[str] = []
 
-    async def fake_restart(runtime):
+    async def fake_restart(runtime, extra_env=None):
         restarted.append(runtime.id)
         return runtime
 
@@ -854,7 +854,7 @@ def test_composio_connections_restart_stale_runtime_env(client, monkeypatch):
     assert restarted == [runtime_row["id"]]
 
 
-def test_composio_bridge_sync_restarts_stale_runtime_env_without_refresh_flag(client, monkeypatch):
+def test_composio_bridge_sync_restarts_stale_runtime_env_without_apply_live(client, monkeypatch):
     monkeypatch.setenv("COMPOSIO_API_KEY", "test-key")
     payload, _token = signup(client, "composio-stale-runtime-login@example.com")
     runtime_row = db.fetch_one(
@@ -886,7 +886,7 @@ def test_composio_bridge_sync_restarts_stale_runtime_env_without_refresh_flag(cl
 
     restarted: list[str] = []
 
-    async def fake_restart(runtime):
+    async def fake_restart(runtime, extra_env=None):
         restarted.append(runtime.id)
         return runtime
 
@@ -894,9 +894,67 @@ def test_composio_bridge_sync_restarts_stale_runtime_env_without_refresh_flag(cl
 
     import asyncio
 
-    asyncio.run(main._sync_composio_bridge_for_user(payload["user"], refresh_running=False))
+    asyncio.run(main._sync_composio_bridge_for_user(payload["user"], apply_live=False))
 
     assert restarted == [runtime_row["id"]]
+
+
+def test_composio_connection_change_soft_reloads_mcp_without_docker_restart(client, monkeypatch):
+    monkeypatch.setenv("COMPOSIO_API_KEY", "test-key")
+    payload, token = signup(client, "composio-soft-reload@example.com")
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    db.execute(
+        """
+        UPDATE runtime_instances
+        SET status = 'running',
+            container_name = ?,
+            dashboard_url = 'http://127.0.0.1:19119',
+            dashboard_token = 'token'
+        WHERE id = ?
+        """,
+        ("verxio-test-runtime", runtime_row["id"]),
+    )
+
+    monkeypatch.setattr(
+        main,
+        "list_composio_accounts",
+        lambda _user_id: [ComposioConnectedAccount(appSlug="turso", id="ca_turso", status="ACTIVE")],
+    )
+    monkeypatch.setattr(
+        main,
+        "sync_composio_runtime_bridge",
+        lambda _runtime, _user_id, _accounts: ComposioToolBridgeStatus(
+            configured=True,
+            enabled=True,
+            changed=True,
+            connectedApps=["turso"],
+        ),
+    )
+    monkeypatch.setattr(main, "runtime_container_env_matches", lambda _runtime, _key, _value: True)
+
+    restarted: list[str] = []
+    soft_reloads: list[str] = []
+
+    async def fake_restart(runtime, extra_env=None):
+        restarted.append(runtime.id)
+        return runtime
+
+    async def fake_soft_reload(runtime):
+        soft_reloads.append(runtime.id)
+        return {"ok": True, "message": "Reloaded MCP servers (3 tool(s)).", "toolCount": 3}
+
+    monkeypatch.setattr(main, "restart_runtime", fake_restart)
+    monkeypatch.setattr(main, "soft_reload_runtime_mcp", fake_soft_reload)
+
+    response = client.get("/api/composio/connections", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+
+    assert response.status_code == 200
+    assert restarted == []
+    assert soft_reloads == [runtime_row["id"]]
 
 
 def test_composio_setup_returns_inline_fields(client, monkeypatch):
@@ -962,8 +1020,11 @@ def test_composio_complete_accepts_credentials(client, monkeypatch):
         }
 
     def fake_post(url: str, payload: dict, timeout: int = 30):
-        assert url.endswith("/connected_accounts/initiate")
-        assert payload["config"]["val"]["generic_api_key"] == "secret-key"
+        assert url.endswith("/connected_accounts")
+        assert "/initiate" not in url
+        assert payload["auth_config"]["id"] == "ac_test"
+        assert payload["connection"]["data"]["generic_api_key"] == "secret-key"
+        assert payload["connection"]["user_id"]
         return {"id": "ca_test_123", "status": "ACTIVE"}
 
     monkeypatch.setattr(composio_catalog, "_fetch_toolkit_by_slug", fake_fetch_toolkit)

@@ -149,6 +149,7 @@ from app.pulse import (
 from app.pulse_engine import tick_due_runs as tick_pulse_due_runs
 from app.pulse_webhooks import ingest_meta_webhook, ingest_whatsapp_webhook, verify_challenge
 from app.runtime import HermesRuntimeAdapter
+from app.runtime_dashboard import soft_reload_runtime_mcp
 from app.runtime_manager import (
     artifact_file,
     index_artifacts,
@@ -323,8 +324,8 @@ async def get_runtime(request: Request) -> RuntimeControlResponse:
 @app.post("/api/runtime/start", response_model=RuntimeControlResponse)
 async def start_runtime_route(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
-    _accounts, _bridge = await _sync_composio_bridge_for_user(user, refresh_running=True)
-    _inference_bridge = await _sync_inference_bridge_for_user(user, refresh_running=True)
+    await _sync_composio_bridge_for_user(user)
+    await _sync_inference_bridge_for_user(user, refresh_running=True)
     runtime = await start_runtime(get_runtime_for_user(user), extra_env=runtime_env_for_user(str(user["id"])))
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
@@ -341,7 +342,7 @@ async def stop_runtime_route(request: Request) -> RuntimeControlResponse:
 @app.post("/api/runtime/restart", response_model=RuntimeControlResponse)
 async def restart_runtime_route(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
-    await _sync_composio_bridge_for_user(user, refresh_running=True)
+    await _sync_composio_bridge_for_user(user)
     await _sync_inference_bridge_for_user(user, refresh_running=True)
     runtime = await restart_runtime(get_runtime_for_user(user), extra_env=runtime_env_for_user(str(user["id"])))
     connected, detail = await runtime_health(runtime)
@@ -736,7 +737,14 @@ async def tick_pulse_route(request: Request) -> dict[str, int]:
     return tick_pulse_due_runs()
 
 
-async def _sync_composio_bridge_for_user(user: dict, *, refresh_running: bool = False):
+async def _sync_composio_bridge_for_user(user: dict, *, apply_live: bool = False):
+    """Sync Composio → Hermes MCP config without bouncing the UI.
+
+    - Always writes/updates the runtime config bridge when needed.
+    - Soft-reloads MCP in the live dashboard when connections change.
+    - Only Docker-restarts when COMPOSIO_API_KEY is missing from the container
+      (cannot hot-inject env vars).
+    """
     runtime = get_runtime_for_user(user)
     accounts = list_composio_accounts(str(user["id"]))
     bridge = sync_composio_runtime_bridge(runtime, str(user["id"]), accounts)
@@ -749,10 +757,13 @@ async def _sync_composio_bridge_for_user(user: dict, *, refresh_running: bool = 
         and not runtime_container_env_matches(runtime, "COMPOSIO_API_KEY", composio_api_key)
     )
 
-    if runtime.status == "running" and (
-        runtime_env_changed or (refresh_running and bridge.changed)
-    ):
-        await restart_runtime(runtime)
+    if runtime.status == "running" and runtime_env_changed:
+        # Env injection requires a new container. Rare — only when the platform
+        # key was added after the runtime was already started.
+        await restart_runtime(runtime, extra_env=runtime_env_for_user(str(user["id"])))
+    elif apply_live and bridge.changed and runtime.status in {"running", "starting"}:
+        # Keep the UI session alive: reload MCP servers from the updated config.
+        await soft_reload_runtime_mcp(runtime)
 
     return accounts, bridge
 
@@ -776,7 +787,7 @@ async def _sync_inference_bridge_for_user(user: dict, *, refresh_running: bool =
 @app.get("/api/composio/connections", response_model=ComposioConnectionsResponse)
 async def list_composio_connections_route(request: Request) -> ComposioConnectionsResponse:
     user = require_user(request)
-    accounts, bridge = await _sync_composio_bridge_for_user(user, refresh_running=True)
+    accounts, bridge = await _sync_composio_bridge_for_user(user, apply_live=True)
     return ComposioConnectionsResponse(
         accounts=accounts,
         configured=is_composio_configured(),
@@ -837,7 +848,7 @@ async def complete_composio_connection_route(
 ) -> ComposioCompleteConnectionResponse:
     user = require_user(request)
     result = complete_composio_connection(str(user["id"]), payload.appSlug, payload.credentials)
-    await _sync_composio_bridge_for_user(user, refresh_running=True)
+    await _sync_composio_bridge_for_user(user, apply_live=True)
     return result
 
 
@@ -849,7 +860,7 @@ async def delete_composio_connection_route(account_id: str, request: Request) ->
     if not is_composio_configured():
         raise HTTPException(status_code=500, detail="Composio is not configured.")
     result = delete_composio_account(account_id)
-    await _sync_composio_bridge_for_user(user, refresh_running=True)
+    await _sync_composio_bridge_for_user(user, apply_live=True)
     return result
 
 

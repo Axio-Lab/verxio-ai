@@ -350,8 +350,8 @@ export function ConnectionsPanel({
           notify({
             kind: 'success',
             message: callback.connectedAccountId
-              ? `Connection ${callback.connectedAccountId} is ready for the agent.`
-              : 'Your connection is ready for the agent.',
+              ? `Connection ${callback.connectedAccountId} is ready. Agent tools were refreshed.`
+              : 'Your connection is ready. Agent tools were refreshed.',
             title: 'Connection ready'
           })
         })
@@ -640,7 +640,7 @@ export function ConnectionsPanel({
 
       notify({
         kind: 'success',
-        message: `${connectDialogApp.name} is connected (${result.status}).`,
+        message: `${connectDialogApp.name} is connected. Agent tools were refreshed.`,
         title: 'Connection ready'
       })
     } catch (err) {

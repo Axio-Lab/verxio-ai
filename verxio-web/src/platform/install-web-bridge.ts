@@ -292,7 +292,10 @@ function emitBoot(patch: Partial<DesktopBootProgress>) {
 }
 
 async function waitForDashboardReady(): Promise<void> {
-  const deadline = Date.now() + 30_000
+  // Hosted runtimes can take longer after a container start/restart while the
+  // Hermes dashboard boots. Keep polling so a brief 503 does not surface as
+  // "Verxio couldn't start".
+  const deadline = Date.now() + (verxioApiEnabled() ? 90_000 : 30_000)
 
   while (Date.now() < deadline) {
     try {
@@ -303,6 +306,14 @@ async function waitForDashboardReady(): Promise<void> {
 
       if (res.ok) {
         return
+      }
+
+      // 503 while the runtime is restarting is expected — keep waiting.
+      if (res.status !== 503 && res.status !== 502) {
+        // Auth/other hard failures should not burn the full timeout.
+        if (res.status === 401 || res.status === 403) {
+          break
+        }
       }
     } catch {
       // retry
@@ -327,14 +338,6 @@ async function getConnection(): Promise<HermesConnection> {
   if (!token) {
     throw new Error('Missing Verxio session token. Restart hermes dashboard and reload.')
   }
-
-  emitBoot({
-    phase: 'backend.ready',
-    message: 'Verxio backend is ready',
-    progress: 94,
-    running: true,
-    error: null
-  })
 
   const wsUrl = buildWsUrl('/api/ws', { token })
 
