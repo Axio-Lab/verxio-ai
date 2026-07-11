@@ -8,6 +8,8 @@ import { NotificationStack } from '@/components/notifications'
 import { PaneShell } from '@/components/pane-shell'
 import { SidebarProvider } from '@/components/ui/sidebar'
 import { useResponsivePanes } from '@/hooks/use-responsive-panes'
+import { isVerxioWeb } from '@/lib/platform'
+import { verxioApiEnabled } from '@/lib/verxio-api'
 import {
   $fileBrowserOpen,
   $panesFlipped,
@@ -84,7 +86,7 @@ export function AppShell({
     : titlebarControls.left + TITLEBAR_HEIGHT + Math.round(TITLEBAR_HEIGHT / 2)
 
   // The static system cluster (haptics, keybinds, settings, plus logout on web
-  // or right-sidebar on desktop) is hardcoded in TitlebarControls. Pane-supplied
+  // or hosted desktop, or right-sidebar on local desktop) is hardcoded in TitlebarControls. Pane-supplied
   // tools (preview's group) render in a separate cluster anchored further left.
   //
   // Width math has to include the `gap-x-1` (0.25rem) between buttons:
@@ -92,7 +94,9 @@ export function AppShell({
   // between the pane-tool cluster and the system cluster so they don't sit
   // flush against each other. Modeled as N gaps (N - 1 inner + 1 trailing)
   // to keep the formula generic for any pane-tool count.
-  const SYSTEM_TOOL_COUNT = 4
+  // Static system tools — haptics, keybinds, settings, plus logout (web/hosted)
+  // and/or right-sidebar (desktop local Hermes).
+  const SYSTEM_TOOL_COUNT = isVerxioWeb() ? 4 : verxioApiEnabled() ? 5 : 4
   const paneToolCount = titlebarTools?.filter(tool => !tool.hidden).length ?? 0
   const systemToolsWidth = `calc(${SYSTEM_TOOL_COUNT} * (var(--titlebar-control-size) + 0.25rem))`
 

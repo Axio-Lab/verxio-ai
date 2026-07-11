@@ -7,6 +7,7 @@ import { Codicon } from '@/components/ui/codicon'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
 import { isVerxioWeb } from '@/lib/platform'
+import { verxioApiEnabled } from '@/lib/verxio-api'
 import { cn } from '@/lib/utils'
 import { $hapticsMuted, toggleHapticsMuted } from '@/store/haptics'
 import { toggleKeybindPanel } from '@/store/keybinds'
@@ -55,6 +56,7 @@ export function TitlebarControls({ leftTools = [], tools = [], onOpenSettings }:
   const sidebarOpen = useStore($sidebarOpen)
   const panesFlipped = useStore($panesFlipped)
   const verxioWeb = isVerxioWeb()
+  const showLogout = verxioWeb || verxioApiEnabled()
 
   const toggleHaptics = () => {
     if (!hapticsMuted) {
@@ -202,7 +204,7 @@ export function TitlebarControls({ leftTools = [], tools = [], onOpenSettings }:
           <TitlebarToolButton key={tool.id} navigate={navigate} tool={tool} />
         ))}
         {settingsTool && <TitlebarToolButton navigate={navigate} tool={settingsTool} />}
-        {verxioWeb ? <TitlebarToolButton navigate={navigate} tool={logoutTool} /> : null}
+        {showLogout ? <TitlebarToolButton navigate={navigate} tool={logoutTool} /> : null}
         {/*
           Verxio web does not expose the desktop file-browser/right-sidebar yet.
           Keep this control wired for the future Verxio desktop surface.
