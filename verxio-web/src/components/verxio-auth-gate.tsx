@@ -44,6 +44,7 @@ function describeConnectivityError(message: string): string | null {
   }
 
   const statusMatch = message.trim().match(/^(\d{3})\b/)
+
   if (
     statusMatch ||
     lower.includes('internal server error') ||
