@@ -1254,3 +1254,22 @@ def test_slack_manifest_endpoint_returns_socket_mode_manifest(client):
     assert "Hermes" not in verxio_cmd["description"]
     assert '"socket_mode_enabled": true' in payload["json"]
     assert '"command": "/verxio"' in payload["json"]
+
+
+def test_secure_session_cookie_uses_samesite_none(client, monkeypatch):
+    monkeypatch.setenv("VERXIO_COOKIE_SECURE", "true")
+
+    payload, _token = signup(client, "desktop@example.com")
+    logout = client.post("/api/auth/logout")
+    assert logout.status_code == 200
+
+    response = client.post(
+        "/api/auth/login",
+        json={"email": "desktop@example.com", "password": "password-123"},
+    )
+
+    assert response.status_code == 200
+    set_cookie = response.headers.get("set-cookie", "")
+    assert "samesite=none" in set_cookie.lower()
+    assert "secure" in set_cookie.lower()
+    assert response.cookies.get(SESSION_COOKIE)
