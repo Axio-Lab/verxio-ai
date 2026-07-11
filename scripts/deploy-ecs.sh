@@ -6,6 +6,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+# Hermes Dockerfile uses COPY --chmod=… which requires BuildKit. Without this,
+# ECS hosts on the legacy builder abort mid-deploy and never recreate api/web.
+export DOCKER_BUILDKIT=1
+export COMPOSE_DOCKER_CLI_BUILD=1
+
 COMPOSE=(docker compose -f docker-compose.verxio.yml)
 HERMES_IMAGE="${VERXIO_HERMES_IMAGE:-verxio-hermes-runtime:local}"
 DEPLOY_REF="${DEPLOY_REF:-main}"
@@ -34,13 +39,15 @@ echo "    hermes-agent @ ${HERMES_SHA}"
 echo "==> Building verxio-api + verxio-web"
 "${COMPOSE[@]}" build --build-arg INSTALL_TURSO=1 verxio-api verxio-web
 
+# Recreate control plane before Hermes so a Hermes BuildKit failure cannot leave
+# production stuck on yesterday's api/web containers.
+echo "==> Recreating control-plane services"
+"${COMPOSE[@]}" up -d --force-recreate verxio-api verxio-web
+
 echo "==> Building Hermes runtime image (${HERMES_IMAGE})"
 HERMES_BEFORE="$(image_id "${HERMES_IMAGE}")"
 echo "    before: ${HERMES_BEFORE}"
 
-# Build explicitly (not only via the compose profile) so a missed --profile
-# cannot silently skip Hermes. Pass HERMES_GIT_SHA so the bake layer and
-# image metadata always reflect the submodule commit being deployed.
 docker build \
   -t "${HERMES_IMAGE}" \
   --build-arg "HERMES_GIT_SHA=${HERMES_SHA}" \
@@ -70,9 +77,6 @@ if ! docker run --rm --entrypoint grep "${HERMES_IMAGE}" -q \
 fi
 echo "    verified: session-token WS auth present in image"
 
-echo "==> Recreating control-plane services"
-"${COMPOSE[@]}" up -d --force-recreate verxio-api verxio-web
-
 echo "==> Removing per-user Hermes runtimes (they recreate on next use with the new image)"
 # Compose services are named like verxio-ai-verxio-api-1 — leave those alone.
 # User runtimes are named verxio-{workspace}-{agent}, e.g. verxio-ws_xxx-agent_yyy.
@@ -96,3 +100,4 @@ docker images --format 'table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedSinc
 echo
 echo "Done. Hermes image: ${HERMES_IMAGE} @ hermes-agent ${HERMES_SHA}"
 echo "Open the app once so Verxio starts fresh Hermes runtimes from the new image."
+echo "Quick check: curl -sS -m 5 -w ' time=%{time_total}\\n' http://127.0.0.1:8787/api/health"
