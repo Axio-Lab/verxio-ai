@@ -14,8 +14,8 @@ import { useSkinCommand } from '@/themes/use-skin-command'
 import { formatRefValue } from '../components/assistant-ui/directive-text'
 import { getCronJobs, getSessionMessages, listAllProfileSessions, type SessionInfo, triggerCronJob } from '../hermes'
 import { preserveLocalAssistantErrors, toChatMessages } from '../lib/chat-messages'
-import { shouldRefreshSessions, withSessionListRetries } from '../lib/session-list-sync'
 import { storedSessionIdForNotification } from '../lib/session-ids'
+import { shouldRefreshSessions, withSessionListRetries } from '../lib/session-list-sync'
 import { setCronFocusJobId, setCronJobs } from '../store/cron'
 import {
   $panesFlipped,
@@ -632,6 +632,7 @@ export function DesktopController() {
     const poll = async () => {
       try {
         const overview = await listAllProfileSessions(1, 1)
+
         if (cancelled) {
           return
         }
