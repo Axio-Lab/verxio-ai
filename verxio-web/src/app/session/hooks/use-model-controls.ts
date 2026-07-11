@@ -3,9 +3,33 @@ import { useCallback } from 'react'
 
 import { getGlobalModelInfo, setGlobalModel } from '@/hermes'
 import { useI18n } from '@/i18n'
+import { resolveHostedDefaultModel, resolveStatusbarModel } from '@/lib/hosted-default-model'
+import { getInferenceCatalog, getInferenceSettings, verxioApiEnabled } from '@/lib/verxio-api'
 import { notifyError } from '@/store/notifications'
 import { $currentModel, $currentProvider, setCurrentModel, setCurrentProvider } from '@/store/session'
 import type { ModelOptionsResponse } from '@/types/hermes'
+
+async function loadHostedDefaultModel() {
+  if (!verxioApiEnabled()) {
+    return null
+  }
+
+  try {
+    const [settings, catalog] = await Promise.all([getInferenceSettings(), getInferenceCatalog()])
+
+    return resolveHostedDefaultModel(settings, catalog)
+  } catch {
+    return null
+  }
+}
+
+function applyModelSelection(selection: { model: string; provider: string }) {
+  setCurrentModel(selection.model)
+
+  if (selection.provider) {
+    setCurrentProvider(selection.provider)
+  }
+}
 
 interface ModelSelection {
   model: string
@@ -39,16 +63,22 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
   const refreshCurrentModel = useCallback(async () => {
     try {
       const result = await getGlobalModelInfo()
+      const hermesModel = typeof result.model === 'string' ? result.model.trim() : ''
+      const hostedDefault = !hermesModel && !$currentModel.get() ? await loadHostedDefaultModel() : null
+      const next = resolveStatusbarModel(result, $currentModel.get(), hostedDefault)
 
-      if (typeof result.model === 'string') {
-        setCurrentModel(result.model)
-      }
-
-      if (typeof result.provider === 'string') {
-        setCurrentProvider(result.provider)
+      if (next) {
+        applyModelSelection(next)
       }
     } catch {
       // The delayed session.info event still updates this once the agent is ready.
+      if (!$currentModel.get()) {
+        const hosted = await loadHostedDefaultModel()
+
+        if (hosted) {
+          applyModelSelection(hosted)
+        }
+      }
     }
   }, [])
 

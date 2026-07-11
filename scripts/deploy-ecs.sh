@@ -6,8 +6,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-# Hermes Dockerfile uses COPY --chmod=… which requires BuildKit. Without this,
-# ECS hosts on the legacy builder abort mid-deploy and never recreate api/web.
+# Hermes Dockerfile uses COPY --chmod=… which requires BuildKit via buildx.
+# Docker Engine 23+ falls back to the legacy builder when the buildx plugin is
+# missing — DOCKER_BUILDKIT=1 alone is not enough on bare ECS hosts.
 export DOCKER_BUILDKIT=1
 export COMPOSE_DOCKER_CLI_BUILD=1
 
@@ -19,11 +20,40 @@ image_id() {
   docker image inspect -f '{{.Id}}' "$1" 2>/dev/null || echo "(missing)"
 }
 
+require_buildx() {
+  if docker buildx version >/dev/null 2>&1; then
+    return 0
+  fi
+
+  echo "ERROR: docker buildx is required to build ${HERMES_IMAGE}."
+  echo "       Hermes Dockerfile uses COPY --chmod, which the legacy builder rejects."
+  echo "       Install on Debian/Ubuntu ECS hosts:"
+  echo "         apt-get update && apt-get install -y docker-buildx-plugin"
+  echo "       Then re-run: bash scripts/deploy-ecs.sh"
+  exit 1
+}
+
+build_hermes_image() {
+  require_buildx
+  docker buildx build --load \
+    -t "${HERMES_IMAGE}" \
+    --build-arg "HERMES_GIT_SHA=${HERMES_SHA}" \
+    -f hermes-agent/Dockerfile \
+    hermes-agent
+}
+
 echo "==> Pulling ${DEPLOY_REF}"
 git fetch origin
 git checkout "${DEPLOY_REF}"
 git pull origin "${DEPLOY_REF}"
 git submodule update --init --recursive
+
+# Re-exec after pull so script updates (BuildKit/buildx, recreate order) apply
+# immediately instead of continuing with the pre-pull script in memory.
+if [[ "${VERXIO_DEPLOY_REEXEC:-}" != "1" ]]; then
+  export VERXIO_DEPLOY_REEXEC=1
+  exec bash "$ROOT/scripts/deploy-ecs.sh" "$@"
+fi
 
 if [[ -n "$(git -C hermes-agent status --porcelain 2>/dev/null || true)" ]]; then
   echo "ERROR: hermes-agent submodule has local modifications after checkout."
@@ -39,7 +69,7 @@ echo "    hermes-agent @ ${HERMES_SHA}"
 echo "==> Building verxio-api + verxio-web"
 "${COMPOSE[@]}" build --build-arg INSTALL_TURSO=1 verxio-api verxio-web
 
-# Recreate control plane before Hermes so a Hermes BuildKit failure cannot leave
+# Recreate control plane before Hermes so a Hermes build failure cannot leave
 # production stuck on yesterday's api/web containers.
 echo "==> Recreating control-plane services"
 "${COMPOSE[@]}" up -d --force-recreate verxio-api verxio-web
@@ -48,11 +78,7 @@ echo "==> Building Hermes runtime image (${HERMES_IMAGE})"
 HERMES_BEFORE="$(image_id "${HERMES_IMAGE}")"
 echo "    before: ${HERMES_BEFORE}"
 
-docker build \
-  -t "${HERMES_IMAGE}" \
-  --build-arg "HERMES_GIT_SHA=${HERMES_SHA}" \
-  -f hermes-agent/Dockerfile \
-  hermes-agent
+build_hermes_image
 
 # Keep compose's named service tag in sync for operators using compose later.
 "${COMPOSE[@]}" --profile image build \

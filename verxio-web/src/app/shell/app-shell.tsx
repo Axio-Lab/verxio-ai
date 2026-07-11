@@ -118,7 +118,10 @@ export function AppShell({
 
   return (
     <SidebarProvider
-      className="h-screen min-h-0 flex-col bg-background"
+      // h-dvh (not h-screen/100vh): on mobile browsers 100vh is often taller than
+      // the visible viewport while chrome is showing, which wedges the composer
+      // and statusbar below the fold. dvh tracks the visible area.
+      className="h-dvh max-h-dvh min-h-0 flex-col overflow-hidden bg-background"
       onOpenChange={setSidebarOpen}
       open={sidebarOpen}
       style={

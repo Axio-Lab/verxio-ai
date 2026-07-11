@@ -172,6 +172,14 @@ def test_inference_settings_are_hosted_verxio_qwen_by_default(client):
     assert response.json()["defaultModelId"] == "verxio-qwen"
 
 
+def test_dashboard_model_paths_need_inference_sync():
+    assert main._dashboard_path_needs_inference_sync("api/model/info") is True
+    assert main._dashboard_path_needs_inference_sync("/api/model/options") is True
+    assert main._dashboard_path_needs_inference_sync("api/status") is False
+    assert main._dashboard_path_needs_inference_sync("api/config") is False
+    assert main._dashboard_path_needs_inference_sync("api/sessions") is False
+
+
 def test_inference_bridge_writes_hosted_verxio_qwen_model_config(client, monkeypatch):
     monkeypatch.setenv("VERXIO_HOSTED_QWEN_API_KEY", "verxio-qwen-key")
     payload, _token = signup(client, "inference-bridge@example.com")

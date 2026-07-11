@@ -384,7 +384,11 @@
   html,
   body,
   #root {
+    /* Prefer dvh so mobile browser chrome doesn't push the shell (composer +
+       statusbar) below the visible viewport. Fall back to % for older engines. */
     height: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
   }
 
   html {

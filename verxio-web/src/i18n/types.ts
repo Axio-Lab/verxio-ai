@@ -1061,6 +1061,7 @@ export interface Translations {
     groupTitleGrouped: string
     groupTitleUngrouped: string
     allPinned: string
+    noSessions: string
     shiftClickHint: string
     noWorkspace: string
     newSessionIn: (label: string) => string
