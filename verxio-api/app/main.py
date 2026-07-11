@@ -1023,11 +1023,14 @@ def _schedule_runtime_ensure(user: dict) -> None:
 
     async def _run() -> None:
         try:
-            await start_runtime(
+            runtime = await start_runtime(
                 get_runtime_for_user(user),
                 extra_env=runtime_env_for_user(str(user["id"])),
                 wait_ready=False,
             )
+            # Finish ready-wait in the background so WS can connect once Hermes is up.
+            if runtime.status != "running":
+                await wait_for_runtime_ready(runtime, timeout_seconds=90)
         except Exception:
             logger.exception("Background runtime ensure failed")
 
@@ -1144,28 +1147,18 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
         await _safe_websocket_close(websocket, 4401)
         return
 
-    # Finish the browser handshake before docker/runtime prep — nginx and the
-    # renderer both time out if accept() waits on start_runtime + bridge sync.
+    # Finish the browser handshake before any runtime work — nginx and the
+    # renderer both time out if accept() waits on docker + bridge sync.
     await websocket.accept()
 
     try:
-        # Warm compose-network cache off-thread so later health/status polls never
-        # pay for a sync docker inspect on the event loop.
-        await warm_runtime_docker_network()
-
-        # Bridge Hermes immediately. Composio/inference sync can take tens of
-        # seconds and was closing the browser socket before upstream connected.
-        runtime = await start_runtime(
-            get_runtime_for_user(user),
-            extra_env=runtime_env_for_user(str(user["id"])),
-            wait_ready=False,
-        )
-        # Brief ready wait only — long waits here used to freeze /api/health while
-        # docker-proxy or a cold Hermes dashboard black-holed the worker.
-        if runtime.status != "running":
-            runtime = await wait_for_runtime_ready(runtime, timeout_seconds=5)
+        runtime = get_runtime_for_user(user)
         base = runtime_dashboard_base_url(runtime, ensure_network=False)
+        # Never await docker run / ready-wait on the WS path. Cold start belongs
+        # in a background task; the client reconnects once Hermes is up. Awaiting
+        # start here is what made /api/health time out after opening the app.
         if not base or runtime.status != "running":
+            _schedule_runtime_ensure(user)
             await _safe_websocket_close(websocket, 1013)
             return
 
@@ -1180,19 +1173,23 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
 
         asyncio.create_task(_sync_bridges_in_background())
 
-        token = await _runtime_dashboard_token_async(runtime.id, runtime, prefer_live=True)
+        # DB token only — live docker inspect on connect freezes the worker.
+        token = await _runtime_dashboard_token_async(runtime.id, runtime, prefer_live=False)
         last_error: Exception | None = None
         upstream = None
-        candidates = await asyncio.to_thread(runtime_dashboard_ws_candidates, runtime)
-        for base in candidates:
-            target = _ws_target_url(base, path, websocket.url.query, token)
+        candidates = runtime_dashboard_ws_candidates(runtime) or ([base] if base else [])
+        for candidate in candidates:
+            target = _ws_target_url(candidate, path, websocket.url.query, token)
             logger.info("Runtime dashboard websocket proxy connecting target=%s", target.split("?", 1)[0])
             try:
-                upstream = await websockets.connect(
-                    target,
-                    additional_headers={"X-Hermes-Session-Token": token},
-                    open_timeout=_runtime_ws_open_timeout_seconds(),
-                    close_timeout=2,
+                upstream = await asyncio.wait_for(
+                    websockets.connect(
+                        target,
+                        additional_headers={"X-Hermes-Session-Token": token},
+                        open_timeout=_runtime_ws_open_timeout_seconds(),
+                        close_timeout=2,
+                    ),
+                    timeout=_runtime_ws_open_timeout_seconds() + 2.0,
                 )
                 break
             except Exception as exc:
@@ -1204,6 +1201,7 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
                 )
 
         if upstream is None:
+            _schedule_runtime_ensure(user)
             raise last_error or RuntimeError("No Hermes websocket upstream available")
 
         try:

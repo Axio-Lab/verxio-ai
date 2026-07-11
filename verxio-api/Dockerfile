@@ -45,4 +45,6 @@ COPY hermes-agent /opt/hermes-agent
 
 EXPOSE 8787
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8787"]
+# Two workers: a busy gateway/docker thread pool on one worker must not make
+# /api/health time out for the whole control plane (single-worker freeze on ECS).
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8787", "--workers", "2"]
