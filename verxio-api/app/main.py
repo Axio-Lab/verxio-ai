@@ -188,6 +188,10 @@ cors_origins = [
     for origin in os.getenv("VERXIO_CORS_ORIGINS", "").split(",")
     if origin.strip()
 ]
+# Packaged Verxio Desktop loads from file:// and sends Origin: null.
+if os.getenv("VERXIO_DESKTOP_CORS", "true").strip().lower() not in {"0", "false", "no", "off"}:
+    if "null" not in cors_origins:
+        cors_origins.append("null")
 
 app.add_middleware(
     CORSMiddleware,
