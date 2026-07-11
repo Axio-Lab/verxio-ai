@@ -380,7 +380,21 @@ async function waitForDashboardReady(): Promise<void> {
 }
 
 async function getConnection(): Promise<HermesConnection> {
-  await waitForDashboardReady()
+  // Hosted Verxio: return proxy URLs immediately. Waiting on dashboard ready
+  // here made every refresh feel like a cold runtime start. WS connect (and
+  // its reconnect loop) owns readiness; status polls no longer call start_runtime.
+  if (verxioApiEnabled()) {
+    void fetchDashboardStatus(2_000)
+      .then(res => {
+        if (res.ok) {
+          dashboardReadyAt = Date.now()
+        }
+      })
+      .catch(() => undefined)
+  } else {
+    await waitForDashboardReady()
+  }
+
   const token = verxioApiEnabled() ? 'verxio-proxy' : getToken()
 
   if (!token) {

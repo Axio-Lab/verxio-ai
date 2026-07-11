@@ -26,7 +26,7 @@ _LIVE_TOKEN_CACHE: dict[str, tuple[float, str]] = {}
 _HEALTHY_UNTIL: dict[str, float] = {}
 _START_LOCKS: dict[str, asyncio.Lock] = {}
 _CACHE_TTL_SECONDS = 60.0
-_HEALTHY_TTL_SECONDS = 20.0
+_HEALTHY_TTL_SECONDS = 45.0
 
 
 def _sha256_file(path: Path) -> str:
