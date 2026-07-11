@@ -32,6 +32,51 @@ interface VerxioAuthGateProps {
   children: ReactNode
 }
 
+function describeConnectivityError(message: string): string | null {
+  const lower = message.toLowerCase()
+
+  if (lower.includes('access control') || lower.includes('cors')) {
+    return 'Verxio blocked the request (CORS).'
+  }
+
+  if (lower.includes('timed out') || lower.includes('abort')) {
+    return 'Verxio API timed out. Try again.'
+  }
+
+  const statusMatch = message.trim().match(/^(\d{3})\b/)
+
+  if (
+    statusMatch ||
+    lower.includes('internal server error') ||
+    lower.includes('bad gateway') ||
+    lower.includes('service unavailable')
+  ) {
+    return statusMatch ? `Verxio API error (${statusMatch[1]}).` : 'Verxio API error. Try again.'
+  }
+
+  const looksLikeNetwork =
+    message.includes('NetworkError') ||
+    message.includes('Load failed') ||
+    lower.includes('err_connection') ||
+    lower.includes('err_internet_disconnected') ||
+    lower.includes('err_name_not_resolved') ||
+    lower.includes('network request failed')
+
+  if (looksLikeNetwork) {
+    return 'Network error. Could not reach Verxio.'
+  }
+
+  if (message.includes('Failed to fetch')) {
+    if (typeof window !== 'undefined' && window.location.protocol === 'file:' && verxioApiEnabled()) {
+      return 'Verxio blocked the request (CORS).'
+    }
+
+    return 'Network error. Could not reach Verxio.'
+  }
+
+  return null
+}
+
 function readableAuthError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
 
@@ -55,20 +100,17 @@ function readableAuthError(error: unknown): string {
     return 'Password must be at least 8 characters.'
   }
 
-  if (
-    message.includes('Failed to fetch') ||
-    message.includes('NetworkError') ||
-    message.includes('Load failed') ||
-    message.includes('access control check')
-  ) {
-    return 'Could not reach the Verxio API (network or CORS). If you use Verxio Desktop against app.verxio.xyz, deploy the latest verxio-api on ECS, then retry. For local debugging, run npm run desktop:dev:prod or open DevTools (Cmd+Option+I).'
+  const connectivity = describeConnectivityError(message)
+
+  if (connectivity) {
+    return connectivity
   }
 
   if (message.trim()) {
     return message
   }
 
-  return 'Verxio could not complete this request. Check the API server and try again.'
+  return 'Sign-in failed. Try again.'
 }
 
 function cleanCode(value: string): string {
