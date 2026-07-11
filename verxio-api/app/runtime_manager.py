@@ -6,6 +6,7 @@ import os
 import secrets
 import socket
 import subprocess
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -14,6 +15,18 @@ import httpx
 from app import db
 from app.control_plane import ensure_runtime_directories, now_iso, runtime_from_row, safe_path_part, save_runtime
 from app.models import ArtifactRecord, RuntimeInstance, new_id
+
+
+# Hot-path caches: sync docker.sock calls on every /api/status poll freeze the
+# whole uvicorn event loop on ECS (auth/me waits 20s+, boot spinner hangs).
+_NETWORK_CACHE: str | None = None
+_NETWORK_CACHE_LOADED = False
+_CONTAINER_IP_CACHE: dict[str, tuple[float, str]] = {}
+_LIVE_TOKEN_CACHE: dict[str, tuple[float, str]] = {}
+_HEALTHY_UNTIL: dict[str, float] = {}
+_START_LOCKS: dict[str, asyncio.Lock] = {}
+_CACHE_TTL_SECONDS = 60.0
+_HEALTHY_TTL_SECONDS = 20.0
 
 
 def _sha256_file(path: Path) -> str:
@@ -47,6 +60,37 @@ def _container_name(runtime: RuntimeInstance) -> str:
     if runtime.container_name:
         return runtime.container_name
     return f"verxio-{safe_path_part(runtime.workspace_id)}-{safe_path_part(runtime.agent_id)}"
+
+
+def _cache_get(cache: dict[str, tuple[float, str]], key: str) -> str | None:
+    item = cache.get(key)
+    if not item:
+        return None
+    expires_at, value = item
+    if time.monotonic() >= expires_at:
+        cache.pop(key, None)
+        return None
+    return value
+
+
+def _cache_set(cache: dict[str, tuple[float, str]], key: str, value: str, ttl: float = _CACHE_TTL_SECONDS) -> None:
+    cache[key] = (time.monotonic() + ttl, value)
+
+
+def mark_runtime_healthy(runtime: RuntimeInstance, ttl: float = _HEALTHY_TTL_SECONDS) -> None:
+    _HEALTHY_UNTIL[_container_name(runtime)] = time.monotonic() + ttl
+
+
+def runtime_recently_healthy(runtime: RuntimeInstance) -> bool:
+    until = _HEALTHY_UNTIL.get(_container_name(runtime), 0.0)
+    return time.monotonic() < until
+
+
+def invalidate_runtime_caches(runtime: RuntimeInstance) -> None:
+    name = _container_name(runtime)
+    _CONTAINER_IP_CACHE.pop(name, None)
+    _LIVE_TOKEN_CACHE.pop(name, None)
+    _HEALTHY_UNTIL.pop(name, None)
 
 
 def runtime_container_env_value(runtime: RuntimeInstance, key: str) -> str | None:
@@ -84,10 +128,26 @@ def runtime_container_env_matches(runtime: RuntimeInstance, key: str, expected_v
 def runtime_live_dashboard_token(runtime: RuntimeInstance, fallback: str = "") -> str:
     """Prefer the token Hermes was actually started with over the DB copy."""
 
+    name = _container_name(runtime)
+    cached = _cache_get(_LIVE_TOKEN_CACHE, name)
+    if cached:
+        return cached
+
     live = runtime_container_env_value(runtime, "HERMES_DASHBOARD_SESSION_TOKEN")
     if live:
+        _cache_set(_LIVE_TOKEN_CACHE, name, live)
         return live
     return fallback
+
+
+async def runtime_live_dashboard_token_async(runtime: RuntimeInstance, fallback: str = "") -> str:
+    """Async variant so WS auth never blocks the uvicorn event loop."""
+
+    name = _container_name(runtime)
+    cached = _cache_get(_LIVE_TOKEN_CACHE, name)
+    if cached:
+        return cached
+    return await asyncio.to_thread(runtime_live_dashboard_token, runtime, fallback)
 
 
 def _port_is_free(port: int) -> bool:
@@ -148,12 +208,19 @@ def _runtime_docker_network() -> str | None:
     Prefer ``VERXIO_RUNTIME_DOCKER_NETWORK``. Otherwise inspect this process's
     container networks (works when the API itself runs in Docker Compose).
     """
+    global _NETWORK_CACHE, _NETWORK_CACHE_LOADED
+    if _NETWORK_CACHE_LOADED:
+        return _NETWORK_CACHE
+
     explicit = os.getenv("VERXIO_RUNTIME_DOCKER_NETWORK", "").strip()
     if explicit:
-        return explicit
+        _NETWORK_CACHE = explicit
+        _NETWORK_CACHE_LOADED = True
+        return _NETWORK_CACHE
 
     self_ref = _self_container_ref()
     if not self_ref:
+        _NETWORK_CACHE_LOADED = True
         return None
 
     result = _run_docker(
@@ -165,13 +232,18 @@ def _runtime_docker_network() -> str | None:
         ]
     )
     if result.returncode != 0:
+        _NETWORK_CACHE_LOADED = True
         return None
 
     networks = [line.strip() for line in result.stdout.splitlines() if line.strip()]
     for name in networks:
         if "verxio" in name or name.endswith("_default"):
-            return name
-    return networks[0] if networks else None
+            _NETWORK_CACHE = name
+            _NETWORK_CACHE_LOADED = True
+            return _NETWORK_CACHE
+    _NETWORK_CACHE = networks[0] if networks else None
+    _NETWORK_CACHE_LOADED = True
+    return _NETWORK_CACHE
 
 
 def _ensure_runtime_on_network(runtime: RuntimeInstance) -> None:
@@ -195,10 +267,16 @@ def _ensure_runtime_on_network(runtime: RuntimeInstance) -> None:
         return
 
     _run_docker(["network", "connect", network, name])
+    invalidate_runtime_caches(runtime)
 
 
 def _runtime_container_ip(runtime: RuntimeInstance) -> str | None:
     """IP of the runtime on the preferred shared network, else any bridge IP."""
+    name = _container_name(runtime)
+    cached = _cache_get(_CONTAINER_IP_CACHE, name)
+    if cached:
+        return cached
+
     network = _runtime_docker_network()
     if network:
         result = _run_docker(
@@ -206,12 +284,13 @@ def _runtime_container_ip(runtime: RuntimeInstance) -> str | None:
                 "inspect",
                 "-f",
                 f"{{{{(index .NetworkSettings.Networks \"{network}\").IPAddress}}}}",
-                _container_name(runtime),
+                name,
             ]
         )
         if result.returncode == 0:
             ip = result.stdout.strip()
             if ip and ip not in {"<no value>", "<nil>"}:
+                _cache_set(_CONTAINER_IP_CACHE, name, ip)
                 return ip
 
     result = _run_docker(
@@ -219,31 +298,34 @@ def _runtime_container_ip(runtime: RuntimeInstance) -> str | None:
             "inspect",
             "-f",
             "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
-            _container_name(runtime),
+            name,
         ]
     )
     if result.returncode != 0:
         return None
     ip = result.stdout.strip()
+    if ip:
+        _cache_set(_CONTAINER_IP_CACHE, name, ip)
     return ip or None
 
 
-def runtime_dashboard_base_url(runtime: RuntimeInstance) -> str | None:
+def runtime_dashboard_base_url(runtime: RuntimeInstance, *, ensure_network: bool = False) -> str | None:
     """URL the API should use to reach Hermes.
 
     Prefer the shared Docker Compose network (container DNS name :9119). That
     path works for both HTTP and WebSockets. Host-published ports
     (``172.17.0.1:19119``) go through docker-proxy and often hang WS upgrades;
     default-bridge IPs are often unreachable from the compose network.
+
+    ``ensure_network`` is for start/WS paths only — never on status polling.
     """
-    _ensure_runtime_on_network(runtime)
+    if ensure_network:
+        _ensure_runtime_on_network(runtime)
     network = _runtime_docker_network()
     if network:
-        ip = _runtime_container_ip(runtime)
-        if ip:
-            # Prefer stable DNS on the shared network; IP is a fallback target
-            # used by the WS proxy when DNS is flaky.
-            return f"http://{_container_name(runtime)}:9119"
+        # DNS on the compose network is enough for HTTP+WS; skip IP inspect on
+        # the hot path so status polls stay non-blocking.
+        return f"http://{_container_name(runtime)}:9119"
 
     return runtime.dashboard_url
 
@@ -283,7 +365,7 @@ def _docker_mount_path(path: str) -> str:
 
 async def runtime_health(runtime: RuntimeInstance) -> tuple[bool, str]:
     candidates: list[str] = []
-    preferred = runtime_dashboard_base_url(runtime)
+    preferred = runtime_dashboard_base_url(runtime, ensure_network=False)
     if preferred:
         candidates.append(preferred)
     if runtime.dashboard_url and runtime.dashboard_url not in candidates:
@@ -292,11 +374,13 @@ async def runtime_health(runtime: RuntimeInstance) -> tuple[bool, str]:
         return False, "Runtime has no dashboard URL yet."
 
     errors: list[str] = []
-    async with httpx.AsyncClient(timeout=5) as client:
+    # Keep this short — status polling must not pile up 5s+ waits per request.
+    async with httpx.AsyncClient(timeout=2.0) as client:
         for base in candidates:
             try:
                 response = await client.get(f"{base.rstrip('/')}/api/status")
                 response.raise_for_status()
+                mark_runtime_healthy(runtime)
                 return True, "Hermes dashboard is reachable."
             except Exception as exc:
                 errors.append(f"{base}: {exc}")
@@ -341,6 +425,15 @@ async def wait_for_runtime_ready(
     )
 
 
+def _start_lock_for(runtime: RuntimeInstance) -> asyncio.Lock:
+    name = _container_name(runtime)
+    lock = _START_LOCKS.get(name)
+    if lock is None:
+        lock = asyncio.Lock()
+        _START_LOCKS[name] = lock
+    return lock
+
+
 async def start_runtime(
     runtime: RuntimeInstance,
     extra_env: dict[str, str] | None = None,
@@ -349,8 +442,30 @@ async def start_runtime(
 ) -> RuntimeInstance:
     ensure_runtime_directories(runtime)
 
+    async with _start_lock_for(runtime):
+        return await _start_runtime_locked(runtime, extra_env=extra_env, wait_ready=wait_ready)
+
+
+async def _start_runtime_locked(
+    runtime: RuntimeInstance,
+    extra_env: dict[str, str] | None = None,
+    *,
+    wait_ready: bool = True,
+) -> RuntimeInstance:
+    # Fast path for boot polling: skip docker + Hermes probes when we just
+    # confirmed the dashboard is up. Prevents thundering-herd freezes on refresh.
+    if not wait_ready and runtime.status == "running" and runtime_recently_healthy(runtime):
+        return runtime
+
     current = await _run_docker_async(["inspect", "-f", "{{.State.Running}}", _container_name(runtime)])
     if current.returncode == 0 and current.stdout.strip() == "true":
+        if not wait_ready and runtime_recently_healthy(runtime):
+            return save_runtime(
+                runtime,
+                status="running",
+                last_seen_at=now_iso(),
+                last_error=None,
+            )
         connected, detail = await runtime_health(runtime)
         if connected:
             return save_runtime(
@@ -373,6 +488,7 @@ async def start_runtime(
 
     if current.returncode == 0:
         await _run_docker_async(["rm", _container_name(runtime)])
+        invalidate_runtime_caches(runtime)
 
     port = _dashboard_port(runtime)
     token_row = db.fetch_one("SELECT dashboard_token FROM runtime_instances WHERE id = ?", (runtime.id,))
@@ -463,6 +579,7 @@ async def start_runtime(
 
 def stop_runtime(runtime: RuntimeInstance) -> RuntimeInstance:
     name = _container_name(runtime)
+    invalidate_runtime_caches(runtime)
     result = _run_docker(["stop", name])
     if result.returncode not in {0, 1}:
         return save_runtime(runtime, status="error", last_error=result.stderr.strip() or "Docker stop failed.")

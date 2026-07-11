@@ -303,7 +303,7 @@ function emitBoot(patch: Partial<DesktopBootProgress>) {
 let dashboardReadyAt = 0
 const DASHBOARD_READY_TTL_MS = 120_000
 
-async function fetchDashboardStatus(timeoutMs = 20_000): Promise<Response> {
+async function fetchDashboardStatus(timeoutMs = 5_000): Promise<Response> {
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs)
 
@@ -329,10 +329,11 @@ async function waitForDashboardReady(): Promise<void> {
   // Hermes dashboard boots. Keep polling so a brief 503 does not surface as
   // "Verxio couldn't start".
   const deadline = Date.now() + (verxioApiEnabled() ? 90_000 : 30_000)
+  let delayMs = 250
 
   if (verxioApiEnabled() && dashboardReadyAt > 0 && Date.now() - dashboardReadyAt < DASHBOARD_READY_TTL_MS) {
     try {
-      const res = await fetchDashboardStatus(15_000)
+      const res = await fetchDashboardStatus(3_000)
 
       if (res.ok) {
         dashboardReadyAt = Date.now()
@@ -346,7 +347,7 @@ async function waitForDashboardReady(): Promise<void> {
 
   while (Date.now() < deadline) {
     try {
-      const res = await fetchDashboardStatus()
+      const res = await fetchDashboardStatus(5_000)
 
       if (res.ok) {
         dashboardReadyAt = Date.now()
@@ -365,7 +366,8 @@ async function waitForDashboardReady(): Promise<void> {
       // retry
     }
 
-    await new Promise(resolve => window.setTimeout(resolve, 500))
+    await new Promise(resolve => window.setTimeout(resolve, delayMs))
+    delayMs = Math.min(2_000, Math.round(delayMs * 1.4))
   }
 
   if (verxioApiEnabled()) {

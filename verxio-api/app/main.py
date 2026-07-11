@@ -156,12 +156,14 @@ from app.runtime_dashboard import soft_reload_runtime_mcp
 from app.runtime_manager import (
     artifact_file,
     index_artifacts,
+    mark_runtime_healthy,
     restart_runtime,
     runtime_container_env_matches,
     runtime_dashboard_base_url,
     runtime_dashboard_ws_candidates,
     runtime_health,
     runtime_live_dashboard_token,
+    runtime_live_dashboard_token_async,
     start_runtime,
     stop_runtime,
     sync_runtime_workspace,
@@ -912,14 +914,41 @@ async def delete_leash_agent_config(request: Request) -> dict[str, bool]:
     return {"ok": True}
 
 
-def _runtime_dashboard_token(runtime_id: str, runtime: RuntimeInstance | None = None) -> str:
+def _runtime_dashboard_token(runtime_id: str, runtime: RuntimeInstance | None = None, *, prefer_live: bool = False) -> str:
     row = db.fetch_one("SELECT dashboard_token FROM runtime_instances WHERE id = ?", (runtime_id,))
     db_token = str(row.get("dashboard_token") or "") if row else ""
     token = db_token
-    if runtime is not None:
-        # Hermes authenticates WS against the process env token. Prefer that over
-        # a stale DB copy so proxy handshakes do not hang on close-before-accept.
+    # Live docker inspect is expensive and blocks the event loop when called
+    # sync. HTTP status polling must use the DB token; WS may prefer live.
+    if prefer_live and runtime is not None:
         live = runtime_live_dashboard_token(runtime, fallback="")
+        if live:
+            if db_token and live != db_token:
+                logger.warning(
+                    "Runtime dashboard token mismatch runtime_id=%s; using live container token",
+                    runtime_id,
+                )
+                db.execute(
+                    "UPDATE runtime_instances SET dashboard_token = ? WHERE id = ?",
+                    (live, runtime_id),
+                )
+            token = live
+    if not token:
+        raise HTTPException(status_code=503, detail="Runtime dashboard token is not ready.")
+    return token
+
+
+async def _runtime_dashboard_token_async(
+    runtime_id: str,
+    runtime: RuntimeInstance,
+    *,
+    prefer_live: bool = False,
+) -> str:
+    row = db.fetch_one("SELECT dashboard_token FROM runtime_instances WHERE id = ?", (runtime_id,))
+    db_token = str(row.get("dashboard_token") or "") if row else ""
+    token = db_token
+    if prefer_live:
+        live = await runtime_live_dashboard_token_async(runtime, fallback="")
         if live:
             if db_token and live != db_token:
                 logger.warning(
@@ -948,6 +977,11 @@ def _dashboard_request_is_read(method: str) -> bool:
     return method.upper() in {"GET", "HEAD", "OPTIONS"}
 
 
+def _dashboard_path_is_lightweight(path: str) -> bool:
+    normalized = path.strip("/")
+    return normalized in {"api/status", "api/config", "api/sessions", "api/models"}
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -967,15 +1001,19 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
         extra_env=runtime_env_for_user(str(user["id"])),
         wait_ready=False,
     )
-    base = runtime_dashboard_base_url(runtime)
+    base = runtime_dashboard_base_url(runtime, ensure_network=False)
     if not base or runtime.status not in {"running"}:
         raise HTTPException(status_code=503, detail="Runtime dashboard is starting. Retry shortly.")
 
-    token = _runtime_dashboard_token(runtime.id, runtime)
+    # Status polls must stay cheap: DB token + short upstream timeout. Live
+    # docker inspect + 300s httpx was freezing the whole API on ECS refresh.
+    lightweight = _dashboard_request_is_read(request.method) and _dashboard_path_is_lightweight(path)
+    token = await _runtime_dashboard_token_async(runtime.id, runtime, prefer_live=False)
     target = f"{base.rstrip('/')}/{path}"
     body = await request.body()
+    timeout = httpx.Timeout(3.0 if lightweight else 300.0)
     try:
-        async with httpx.AsyncClient(timeout=300, follow_redirects=False) as client:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
             upstream = await client.request(
                 request.method,
                 target,
@@ -983,7 +1021,7 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
                 content=body,
                 headers=_proxy_headers(request, token),
             )
-    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.RemoteProtocolError, httpx.ReadError) as exc:
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.RemoteProtocolError, httpx.ReadError, httpx.TimeoutException) as exc:
         # The runtime container is still booting (or restarting): the dashboard
         # socket isn't accepting yet. Return 503 so the web client keeps polling
         # readiness cleanly instead of surfacing a 500 stack trace.
@@ -991,6 +1029,9 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
             status_code=503,
             detail="Runtime dashboard is starting. Retry shortly.",
         ) from exc
+
+    if upstream.status_code < 500:
+        mark_runtime_healthy(runtime)
 
     response_headers = {
         key: value
@@ -1045,7 +1086,7 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
         )
         if runtime.status != "running":
             runtime = await wait_for_runtime_ready(runtime, timeout_seconds=25)
-        base = runtime_dashboard_base_url(runtime)
+        base = runtime_dashboard_base_url(runtime, ensure_network=False)
         if not base or runtime.status != "running":
             await _safe_websocket_close(websocket, 1011)
             return
@@ -1061,10 +1102,11 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
 
         asyncio.create_task(_sync_bridges_in_background())
 
-        token = _runtime_dashboard_token(runtime.id, runtime)
+        token = await _runtime_dashboard_token_async(runtime.id, runtime, prefer_live=True)
         last_error: Exception | None = None
         upstream = None
-        for base in runtime_dashboard_ws_candidates(runtime):
+        candidates = await asyncio.to_thread(runtime_dashboard_ws_candidates, runtime)
+        for base in candidates:
             target = _ws_target_url(base, path, websocket.url.query, token)
             logger.info("Runtime dashboard websocket proxy connecting target=%s", target.split("?", 1)[0])
             try:
