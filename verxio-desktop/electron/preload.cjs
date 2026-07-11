@@ -167,34 +167,85 @@ async function fetchJson(url, init = {}) {
   }
 }
 
+async function fetchDashboardStatus(timeoutMs = 5_000) {
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    return await fetch(buildApiUrl('/api/status'), {
+      credentials: fetchCredentials(),
+      signal: controller.signal
+    })
+  } finally {
+    window.clearTimeout(timeout)
+  }
+}
+
+let dashboardReadyAt = 0
+const DASHBOARD_READY_TTL_MS = 120_000
+
 async function waitForDashboardReady() {
-  const deadline = Date.now() + 30_000
+  const deadline = Date.now() + (verxioApiEnabled() ? 90_000 : 30_000)
+  let delayMs = 250
+
+  if (verxioApiEnabled() && dashboardReadyAt > 0 && Date.now() - dashboardReadyAt < DASHBOARD_READY_TTL_MS) {
+    try {
+      const res = await fetchDashboardStatus(3_000)
+
+      if (res.ok) {
+        dashboardReadyAt = Date.now()
+
+        return
+      }
+    } catch {
+      dashboardReadyAt = 0
+    }
+  }
 
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(buildApiUrl('/api/status'), {
-        credentials: fetchCredentials()
-      })
+      const res = await fetchDashboardStatus(5_000)
 
       if (res.ok) {
+        dashboardReadyAt = Date.now()
+
         return
+      }
+
+      if (res.status !== 503 && res.status !== 502) {
+        if (res.status === 401 || res.status === 403) {
+          break
+        }
       }
     } catch {
       // retry
     }
 
-    await new Promise(resolve => window.setTimeout(resolve, 500))
+    await new Promise(resolve => window.setTimeout(resolve, delayMs))
+    delayMs = Math.min(2_000, Math.round(delayMs * 1.4))
   }
 
   if (verxioApiEnabled()) {
-    throw new Error('Verxio agent runtime is not reachable. Start verxio-api, sign in, then reload Verxio Desktop.')
+    throw new Error(
+      'Verxio agent runtime is not reachable. Sign in, then wait for verxio-api to start your isolated Hermes container.'
+    )
   }
 
   throw new Error('Hermes dashboard is not reachable. Start it with: hermes dashboard --no-open')
 }
 
 async function getConnection() {
-  await waitForDashboardReady()
+  if (verxioApiEnabled()) {
+    void fetchDashboardStatus(2_000)
+      .then(res => {
+        if (res.ok) {
+          dashboardReadyAt = Date.now()
+        }
+      })
+      .catch(() => undefined)
+  } else {
+    await waitForDashboardReady()
+  }
 
   emitBoot({
     phase: 'backend.ready',
