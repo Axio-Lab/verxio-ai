@@ -55,7 +55,9 @@ export function StatusbarControls({ className, leftItems = [], items = [], ...pr
   return (
     <footer
       className={cn(
-        'flex h-5 shrink-0 items-stretch justify-between gap-2 border-t border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) px-1 py-0 text-(--ui-text-tertiary) [-webkit-app-region:no-drag]',
+        // Include safe-area so the home indicator doesn't cover Status/Agents/Cron
+        // on notched phones when viewport-fit=cover is set.
+        'flex h-[calc(1.25rem+env(safe-area-inset-bottom,0px))] shrink-0 items-stretch justify-between gap-2 border-t border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) px-1 pt-0 pb-[env(safe-area-inset-bottom,0px)] text-(--ui-text-tertiary) [-webkit-app-region:no-drag]',
         className
       )}
       {...props}
