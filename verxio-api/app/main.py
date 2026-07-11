@@ -69,6 +69,7 @@ from app.models import (
     ComposioInitiateRequest,
     ComposioInitiateResponse,
     EmailRequest,
+    HermesRuntimeMetadata,
     InferenceCatalogResponse,
     InferenceSettings,
     InferenceSettingsUpdate,
@@ -151,7 +152,7 @@ from app.pulse import (
 )
 from app.pulse_engine import tick_due_runs as tick_pulse_due_runs
 from app.pulse_webhooks import ingest_meta_webhook, ingest_whatsapp_webhook, verify_challenge
-from app.runtime import HermesRuntimeAdapter
+from app.runtime import HermesRuntimeAdapter, hosted_runtime_status, is_hosted_control_plane
 from app.runtime_dashboard import soft_reload_runtime_mcp
 from app.runtime_manager import (
     artifact_file,
@@ -233,16 +234,20 @@ async def bootstrap(request: Request) -> BootstrapResponse:
     else:
         workspace, profile = WORKSPACE, PROFILE
 
-    adapter = HermesRuntimeAdapter()
-    runtime = await adapter.status()
-    hermes = await adapter.metadata() if runtime.configured else None
+    if is_hosted_control_plane():
+        runtime = hosted_runtime_status()
+        hermes = HermesRuntimeMetadata()
+    else:
+        adapter = HermesRuntimeAdapter()
+        runtime = await adapter.status()
+        hermes = await adapter.metadata() if runtime.configured else HermesRuntimeMetadata()
     return BootstrapResponse(
         workspace=workspace,
         profile=profile,
         audit_log=sorted(AUDIT_LOG, key=lambda event: event.created_at, reverse=True),
         runs=sorted(RUNS, key=lambda run: run.created_at, reverse=True),
         runtime=runtime,
-        hermes=hermes or await HermesRuntimeAdapter().metadata(),
+        hermes=hermes,
     )
 
 
@@ -1066,7 +1071,6 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
         runtime = get_runtime_for_user(user)
         if runtime.status != "running":
             _schedule_runtime_ensure(user)
-            raise HTTPException(status_code=503, detail="Runtime dashboard is starting. Retry shortly.")
     else:
         runtime = await start_runtime(
             get_runtime_for_user(user),
@@ -1075,7 +1079,7 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
         )
 
     base = runtime_dashboard_base_url(runtime, ensure_network=False)
-    if not base or runtime.status not in {"running"}:
+    if not base:
         if lightweight:
             _schedule_runtime_ensure(user)
         raise HTTPException(status_code=503, detail="Runtime dashboard is starting. Retry shortly.")
@@ -1154,13 +1158,14 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
     try:
         runtime = get_runtime_for_user(user)
         base = runtime_dashboard_base_url(runtime, ensure_network=False)
-        # Never await docker run / ready-wait on the WS path. Cold start belongs
-        # in a background task; the client reconnects once Hermes is up. Awaiting
-        # start here is what made /api/health time out after opening the app.
-        if not base or runtime.status != "running":
+        # Never await docker run on the WS path. Try upstream directly so a
+        # stale DB status does not block reconnect while ensure runs in background.
+        if not base:
             _schedule_runtime_ensure(user)
             await _safe_websocket_close(websocket, 1013)
             return
+        if runtime.status != "running":
+            _schedule_runtime_ensure(user)
 
         async def _sync_bridges_in_background() -> None:
             try:

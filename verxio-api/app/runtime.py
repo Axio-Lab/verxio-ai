@@ -24,6 +24,22 @@ LOCAL_RUNTIME_STATE = VERXIO_STATE_DIR / "runtime.json"
 LOCAL_RUNTIME_LOG = VERXIO_STATE_DIR / "hermes-gateway.log"
 
 
+def is_hosted_control_plane() -> bool:
+    """True when verxio-api orchestrates per-user Docker runtimes (production ECS)."""
+
+    return os.getenv("VERXIO_RUNTIME_MANAGER", "").strip().lower() == "local-docker"
+
+
+def hosted_runtime_status() -> RuntimeStatus:
+    return RuntimeStatus(
+        mode="auto",
+        configured=True,
+        connected=True,
+        base_url="",
+        detail="Hermes runtimes are managed per user on the hosted control plane.",
+    )
+
+
 @dataclass(frozen=True)
 class RuntimeSettings:
     mode: str
@@ -36,14 +52,16 @@ class RuntimeSettings:
 
 def get_runtime_settings() -> RuntimeSettings:
     hermes_repo = Path(os.getenv("VERXIO_HERMES_REPO", str(DEFAULT_HERMES_REPO))).expanduser()
+    hosted = is_hosted_control_plane()
+    autostart_default = "false" if hosted else "true"
+    autostart_raw = os.getenv("VERXIO_AUTOSTART_HERMES", autostart_default).strip().lower()
     return RuntimeSettings(
         mode=os.getenv("VERXIO_RUNTIME_MODE", "auto").strip().lower() or "auto",
         base_url=os.getenv("HERMES_API_BASE_URL", DEFAULT_HERMES_BASE_URL).rstrip("/"),
         api_key=os.getenv("HERMES_API_KEY", "").strip(),
         timeout_seconds=float(os.getenv("VERXIO_HERMES_TIMEOUT_SECONDS", "180")),
         hermes_repo=hermes_repo,
-        autostart_local=os.getenv("VERXIO_AUTOSTART_HERMES", "true").strip().lower()
-        not in {"0", "false", "no", "off"},
+        autostart_local=autostart_raw not in {"0", "false", "no", "off"},
     )
 
 
@@ -86,6 +104,9 @@ class HermesRuntimeAdapter:
         self.settings = settings or get_runtime_settings()
 
     async def status(self) -> RuntimeStatus:
+        if is_hosted_control_plane():
+            return hosted_runtime_status()
+
         if self.settings.mode == "demo":
             return RuntimeStatus(
                 mode="demo",
@@ -143,6 +164,9 @@ class HermesRuntimeAdapter:
             )
 
     async def metadata(self) -> HermesRuntimeMetadata:
+        if is_hosted_control_plane():
+            return HermesRuntimeMetadata()
+
         if self.settings.mode == "demo":
             return HermesRuntimeMetadata(errors=["Demo mode is enabled; Hermes metadata is unavailable."])
 
@@ -590,6 +614,8 @@ class HermesRuntimeAdapter:
         return ""
 
     def _has_local_hermes_clone(self) -> bool:
+        if is_hosted_control_plane():
+            return False
         return (
             self.settings.hermes_repo.exists()
             and (self.settings.hermes_repo / "hermes_cli" / "main.py").exists()
