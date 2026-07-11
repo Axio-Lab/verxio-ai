@@ -202,11 +202,14 @@ def _self_container_ref() -> str | None:
     return None
 
 
-def _runtime_docker_network() -> str | None:
+def _runtime_docker_network(*, allow_docker_probe: bool = True) -> str | None:
     """Docker network shared with verxio-api (so HTTP + WS reach Hermes).
 
     Prefer ``VERXIO_RUNTIME_DOCKER_NETWORK``. Otherwise inspect this process's
     container networks (works when the API itself runs in Docker Compose).
+
+    Hot HTTP paths must pass ``allow_docker_probe=False`` so a slow docker.sock
+    inspect cannot freeze the uvicorn event loop.
     """
     global _NETWORK_CACHE, _NETWORK_CACHE_LOADED
     if _NETWORK_CACHE_LOADED:
@@ -217,6 +220,9 @@ def _runtime_docker_network() -> str | None:
         _NETWORK_CACHE = explicit
         _NETWORK_CACHE_LOADED = True
         return _NETWORK_CACHE
+
+    if not allow_docker_probe:
+        return None
 
     self_ref = _self_container_ref()
     if not self_ref:
@@ -244,6 +250,12 @@ def _runtime_docker_network() -> str | None:
     _NETWORK_CACHE = networks[0] if networks else None
     _NETWORK_CACHE_LOADED = True
     return _NETWORK_CACHE
+
+
+async def warm_runtime_docker_network() -> str | None:
+    """Resolve and cache the compose network off the event loop."""
+
+    return await asyncio.to_thread(_runtime_docker_network, allow_docker_probe=True)
 
 
 def _ensure_runtime_on_network(runtime: RuntimeInstance) -> None:
@@ -321,7 +333,8 @@ def runtime_dashboard_base_url(runtime: RuntimeInstance, *, ensure_network: bool
     """
     if ensure_network:
         _ensure_runtime_on_network(runtime)
-    network = _runtime_docker_network()
+    # Hot path: env/cache only. Never docker-inspect here.
+    network = _runtime_docker_network(allow_docker_probe=False)
     if network:
         # DNS on the compose network is enough for HTTP+WS; skip IP inspect on
         # the hot path so status polls stay non-blocking.
@@ -335,14 +348,17 @@ def runtime_dashboard_ws_candidates(runtime: RuntimeInstance) -> list[str]:
     _ensure_runtime_on_network(runtime)
     candidates: list[str] = []
     name = _container_name(runtime)
-    network = _runtime_docker_network()
+    network = _runtime_docker_network(allow_docker_probe=True)
     if network:
         candidates.append(f"http://{name}:9119")
         ip = _runtime_container_ip(runtime)
         if ip:
             candidates.append(f"http://{ip}:9119")
-    # Last resort only — known to hang WS on Linux docker-proxy.
-    if runtime.dashboard_url and runtime.dashboard_url not in candidates:
+        # Do not fall back to host-published dashboard_url — on Linux ECS that
+        # hairpins through docker-proxy and can black-hole the asyncio loop.
+        return candidates
+
+    if runtime.dashboard_url:
         candidates.append(runtime.dashboard_url)
     return candidates
 
@@ -368,7 +384,9 @@ async def runtime_health(runtime: RuntimeInstance) -> tuple[bool, str]:
     preferred = runtime_dashboard_base_url(runtime, ensure_network=False)
     if preferred:
         candidates.append(preferred)
-    if runtime.dashboard_url and runtime.dashboard_url not in candidates:
+    # Only hairpin to the published host port when we have no compose-network URL.
+    # docker-proxy to 127.0.0.1/host.docker.internal often hangs from inside the API.
+    if not preferred and runtime.dashboard_url and runtime.dashboard_url not in candidates:
         candidates.append(runtime.dashboard_url)
     if not candidates:
         return False, "Runtime has no dashboard URL yet."
