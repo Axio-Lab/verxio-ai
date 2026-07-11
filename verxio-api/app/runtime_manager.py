@@ -586,8 +586,12 @@ def stop_runtime(runtime: RuntimeInstance) -> RuntimeInstance:
     return save_runtime(runtime, status="stopped", last_error=None)
 
 
+async def stop_runtime_async(runtime: RuntimeInstance) -> RuntimeInstance:
+    return await asyncio.to_thread(stop_runtime, runtime)
+
+
 async def restart_runtime(runtime: RuntimeInstance, extra_env: dict[str, str] | None = None) -> RuntimeInstance:
-    stopped = stop_runtime(runtime)
+    stopped = await stop_runtime_async(runtime)
     return await start_runtime(stopped, extra_env=extra_env)
 
 

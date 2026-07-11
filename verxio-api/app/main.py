@@ -755,16 +755,21 @@ async def _sync_composio_bridge_for_user(user: dict, *, apply_live: bool = False
       (cannot hot-inject env vars).
     """
     runtime = get_runtime_for_user(user)
-    accounts = list_composio_accounts(str(user["id"]))
-    bridge = sync_composio_runtime_bridge(runtime, str(user["id"]), accounts)
 
-    composio_api_key = os.getenv("COMPOSIO_API_KEY", "").strip()
-    runtime_env_changed = (
-        bridge.enabled
-        and bool(composio_api_key)
-        and runtime.status == "running"
-        and not runtime_container_env_matches(runtime, "COMPOSIO_API_KEY", composio_api_key)
-    )
+    def _prepare() -> tuple:
+        accounts = list_composio_accounts(str(user["id"]))
+        bridge = sync_composio_runtime_bridge(runtime, str(user["id"]), accounts)
+        composio_api_key = os.getenv("COMPOSIO_API_KEY", "").strip()
+        # docker inspect must not run on the event loop — it freezes health/auth.
+        runtime_env_changed = (
+            bridge.enabled
+            and bool(composio_api_key)
+            and runtime.status == "running"
+            and not runtime_container_env_matches(runtime, "COMPOSIO_API_KEY", composio_api_key)
+        )
+        return accounts, bridge, runtime_env_changed
+
+    accounts, bridge, runtime_env_changed = await asyncio.to_thread(_prepare)
 
     if allow_restart and runtime.status == "running" and runtime_env_changed:
         # Env injection requires a new container. Rare — only when the platform
@@ -784,13 +789,19 @@ async def _sync_inference_bridge_for_user(
     allow_restart: bool = True,
 ):
     runtime = get_runtime_for_user(user)
-    bridge = sync_inference_runtime_bridge(runtime, str(user["id"]))
-    runtime_env = runtime_env_for_user(str(user["id"]))
-    runtime_env_changed = (
-        bridge.enabled
-        and runtime.status == "running"
-        and any(not runtime_container_env_matches(runtime, key, value) for key, value in runtime_env.items())
-    )
+
+    def _prepare() -> tuple:
+        bridge = sync_inference_runtime_bridge(runtime, str(user["id"]))
+        runtime_env = runtime_env_for_user(str(user["id"]))
+        # docker inspect must not run on the event loop — it freezes health/auth.
+        runtime_env_changed = (
+            bridge.enabled
+            and runtime.status == "running"
+            and any(not runtime_container_env_matches(runtime, key, value) for key, value in runtime_env.items())
+        )
+        return bridge, runtime_env, runtime_env_changed
+
+    bridge, runtime_env, runtime_env_changed = await asyncio.to_thread(_prepare)
 
     if allow_restart and runtime.status == "running" and (runtime_env_changed or (refresh_running and bridge.changed)):
         await restart_runtime(runtime, extra_env=runtime_env)
