@@ -203,11 +203,16 @@ app.mount("/static", StaticFiles(directory=STATIC_ROOT), name="static")
 @app.on_event("startup")
 async def startup() -> None:
     db.run_migrations()
-    # Resolve compose network once off-thread so status/WS never sync-probe docker.sock.
-    try:
-        await warm_runtime_docker_network()
-    except Exception:
-        logging.getLogger(__name__).exception("Failed to warm runtime docker network cache")
+
+    # Never block accept() on docker.sock — a busy daemon after deploy would make
+    # /api/health connection-refused until the probe finishes (or hangs).
+    async def _warm() -> None:
+        try:
+            await warm_runtime_docker_network()
+        except Exception:
+            logging.getLogger(__name__).exception("Failed to warm runtime docker network cache")
+
+    asyncio.create_task(_warm())
 
 
 @app.get("/", include_in_schema=False)
