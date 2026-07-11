@@ -67,10 +67,6 @@ function describeConnectivityError(message: string): string | null {
   }
 
   if (message.includes('Failed to fetch')) {
-    if (typeof window !== 'undefined' && window.location.protocol === 'file:' && verxioApiEnabled()) {
-      return 'Verxio blocked the request (CORS).'
-    }
-
     return 'Network error. Could not reach Verxio.'
   }
 

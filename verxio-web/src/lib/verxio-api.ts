@@ -408,7 +408,17 @@ export interface PulseAutomationSimulateResponse {
 }
 
 export function verxioApiBaseUrl(): string {
-  return import.meta.env.VITE_VERXIO_API_URL?.replace(/\/$/, '') ?? ''
+  const baked = import.meta.env.VITE_VERXIO_API_URL?.replace(/\/$/, '') ?? ''
+
+  if (baked) {
+    return baked
+  }
+
+  if (typeof window !== 'undefined' && typeof window.hermesDesktop?.verxioApiBaseUrl === 'function') {
+    return window.hermesDesktop.verxioApiBaseUrl().replace(/\/$/, '')
+  }
+
+  return ''
 }
 
 export function verxioApiEnabled(): boolean {
