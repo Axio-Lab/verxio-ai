@@ -14,6 +14,7 @@ import { useSkinCommand } from '@/themes/use-skin-command'
 import { formatRefValue } from '../components/assistant-ui/directive-text'
 import { getCronJobs, getSessionMessages, listAllProfileSessions, type SessionInfo, triggerCronJob } from '../hermes'
 import { preserveLocalAssistantErrors, toChatMessages } from '../lib/chat-messages'
+import { shouldRefreshSessions, withSessionListRetries } from '../lib/session-list-sync'
 import { storedSessionIdForNotification } from '../lib/session-ids'
 import { setCronFocusJobId, setCronJobs } from '../store/cron'
 import {
@@ -275,8 +276,11 @@ export function DesktopController() {
     setSessionsLoading(true)
 
     try {
-      const limit = $sessionsLimit.get()
-      const result = await listAllProfileSessions(limit, 1)
+      const result = await withSessionListRetries(async () => {
+        const limit = $sessionsLimit.get()
+
+        return listAllProfileSessions(limit, 1)
+      })
 
       if (refreshSessionsRequestRef.current === requestId) {
         setSessions(prev => mergeSessionPage(prev, result.sessions, sessionsToKeep()))
@@ -613,6 +617,48 @@ export function DesktopController() {
       void refreshCronJobs()
     }
   }, [gatewayState, refreshCronJobs, refreshCurrentModel, refreshSessions])
+
+  // Cross-device sync: devices share one Hermes state.db but have no push channel.
+  // Poll the newest session id and re-fetch when another device creates a chat,
+  // or when this client still has an empty list after a cold-start miss.
+  useEffect(() => {
+    if (gatewayState !== 'open') {
+      return
+    }
+
+    let cancelled = false
+    let newestId: string | null = null
+
+    const poll = async () => {
+      try {
+        const overview = await listAllProfileSessions(1, 1)
+        if (cancelled) {
+          return
+        }
+
+        const head = overview.sessions[0]?.id ?? null
+        const localCount = $sessions.get().length
+
+        if (shouldRefreshSessions(newestId, head, localCount)) {
+          await refreshSessions().catch(() => undefined)
+        }
+
+        if (head) {
+          newestId = head
+        }
+      } catch {
+        // Poll failures are non-fatal; the next tick retries.
+      }
+    }
+
+    const intervalId = window.setInterval(() => void poll(), 8_000)
+    void poll()
+
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+    }
+  }, [gatewayState, refreshSessions])
 
   useRouteResume({
     activeSessionId,

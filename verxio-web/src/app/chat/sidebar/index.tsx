@@ -436,7 +436,11 @@ export function ChatSidebar({
   ])
 
   const showSessionSkeletons = sessionsLoading && sortedSessions.length === 0
-  const showSessionSections = showSessionSkeletons || sortedSessions.length > 0
+  // Always keep search / pinned / sessions chrome visible while the sidebar is
+  // open. Gating on a non-empty list hid the whole section after a failed or
+  // cold-start fetch (common on mobile and second devices), which looked like
+  // the account had no sessions at all.
+  const showSessionSections = true
   // Pagination is scope-aware. In "All profiles" mode it tracks the global
   // unified set. When scoped to one profile it must compare that profile's own
   // loaded rows against that profile's total — otherwise a huge default profile
@@ -640,7 +644,15 @@ export function ChatSidebar({
               showAllProfiles ? 'gap-3' : 'gap-px'
             )}
             dndSensors={dndSensors}
-            emptyState={showSessionSkeletons ? <SidebarSessionSkeletons /> : <SidebarAllPinnedState />}
+            emptyState={
+              showSessionSkeletons ? (
+                <SidebarSessionSkeletons />
+              ) : sortedSessions.length === 0 ? (
+                <SidebarNoSessionsState />
+              ) : (
+                <SidebarAllPinnedState />
+              )
+            }
             footer={
               // Hide "load more" only when workspace-grouped (those groups page
               // themselves). ALL-profiles now pages per-profile from each profile
@@ -764,6 +776,16 @@ function SidebarSessionSkeletons() {
           <Skeleton className="mx-auto size-4 rounded-md opacity-60" />
         </div>
       ))}
+    </div>
+  )
+}
+
+function SidebarNoSessionsState() {
+  const { t } = useI18n()
+
+  return (
+    <div className="grid min-h-24 place-items-center rounded-lg px-2 text-center text-xs text-(--ui-text-tertiary)">
+      {t.sidebar.noSessions}
     </div>
   )
 }
