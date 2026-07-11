@@ -180,21 +180,40 @@ def user_public(row: dict[str, Any]) -> UserPublic:
     return UserPublic(id=str(row["id"]), email=str(row["email"]), name=str(row["name"]))
 
 
+def _cookie_secure() -> bool:
+    return os.getenv("VERXIO_COOKIE_SECURE", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _cookie_samesite() -> str:
+    override = os.getenv("VERXIO_COOKIE_SAMESITE", "").strip().lower()
+
+    if override in {"lax", "strict", "none"}:
+        return override
+
+    # Packaged Verxio Desktop loads from file:// (Origin: null). Lax cookies are not
+    # stored on cross-site fetch responses, so production secure cookies use SameSite=None.
+    if _cookie_secure():
+        return "none"
+
+    return "lax"
+
+
 def set_session_cookie(response: Response, token: str) -> None:
-    secure = os.getenv("VERXIO_COOKIE_SECURE", "false").strip().lower() in {"1", "true", "yes", "on"}
+    secure = _cookie_secure()
+    samesite = _cookie_samesite()
     response.set_cookie(
         SESSION_COOKIE,
         token,
         max_age=SESSION_DAYS * 24 * 60 * 60,
         httponly=True,
         secure=secure,
-        samesite="lax",
+        samesite=samesite,
         path="/",
     )
 
 
 def clear_session_cookie(response: Response) -> None:
-    response.delete_cookie(SESSION_COOKIE, path="/")
+    response.delete_cookie(SESSION_COOKIE, path="/", samesite=_cookie_samesite())
 
 
 def create_session(user: dict[str, Any], request: Request, response: Response) -> None:
