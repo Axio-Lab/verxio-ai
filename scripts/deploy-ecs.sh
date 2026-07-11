@@ -106,6 +106,22 @@ echo "==> Building verxio-api + verxio-web"
 echo "==> Recreating control-plane services"
 "${COMPOSE[@]}" up -d --force-recreate verxio-api verxio-web
 
+echo "==> Waiting for API health"
+api_ready=0
+for _ in $(seq 1 30); do
+  if curl -fsS -m 2 http://127.0.0.1:8787/api/health >/dev/null 2>&1; then
+    api_ready=1
+    break
+  fi
+  sleep 1
+done
+if [[ "${api_ready}" -ne 1 ]]; then
+  echo "ERROR: verxio-api did not become healthy within 30s."
+  "${COMPOSE[@]}" logs --tail=80 verxio-api || true
+  exit 1
+fi
+curl -sS -m 5 -w ' time=%{time_total}\n' http://127.0.0.1:8787/api/health
+
 echo "==> Building Hermes runtime image (${HERMES_IMAGE})"
 HERMES_BEFORE="$(image_id "${HERMES_IMAGE}")"
 echo "    before: ${HERMES_BEFORE}"
@@ -135,15 +151,19 @@ if ! docker run --rm --entrypoint grep "${HERMES_IMAGE}" -q \
 fi
 echo "    verified: session-token WS auth present in image"
 
-echo "==> Removing per-user Hermes runtimes (they recreate on next use with the new image)"
-# Compose services are named like verxio-ai-verxio-api-1 — leave those alone.
-# User runtimes are named verxio-{workspace}-{agent}, e.g. verxio-ws_xxx-agent_yyy.
-mapfile -t RUNTIME_NAMES < <(docker ps -a --format '{{.Names}}' | grep -E '^verxio-' | grep -vE '^verxio-ai-' || true)
-if ((${#RUNTIME_NAMES[@]})); then
-  printf '    removing: %s\n' "${RUNTIME_NAMES[@]}"
-  docker rm -f "${RUNTIME_NAMES[@]}"
+if [[ "${HERMES_BEFORE}" == "${HERMES_AFTER}" && "${VERXIO_FORCE_RUNTIME_WIPE:-}" != "1" ]]; then
+  echo "==> Hermes image unchanged; leaving per-user runtimes running"
 else
-  echo "    none found"
+  echo "==> Removing per-user Hermes runtimes (they recreate on next use with the new image)"
+  # Compose services are named like verxio-ai-verxio-api-1 — leave those alone.
+  # User runtimes are named verxio-{workspace}-{agent}, e.g. verxio-ws_xxx-agent_yyy.
+  mapfile -t RUNTIME_NAMES < <(docker ps -a --format '{{.Names}}' | grep -E '^verxio-' | grep -vE '^verxio-ai-' || true)
+  if ((${#RUNTIME_NAMES[@]})); then
+    printf '    removing: %s\n' "${RUNTIME_NAMES[@]}"
+    docker rm -f "${RUNTIME_NAMES[@]}"
+  else
+    echo "    none found"
+  fi
 fi
 
 if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet caddy 2>/dev/null; then
