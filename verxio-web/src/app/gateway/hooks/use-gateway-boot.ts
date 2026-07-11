@@ -296,6 +296,8 @@ export function useGatewayBoot({
 
     async function boot() {
       try {
+        // Hosted: connection URLs are instant. Reveal the shell as soon as the
+        // gateway socket opens — don't hold the CONNECTING overlay on config/sessions.
         const conn = await desktop.getConnection()
 
         if (cancelled) {
@@ -305,14 +307,9 @@ export function useGatewayBoot({
         setDesktopBootStep({
           phase: 'renderer.gateway.connect',
           message: translateNow('boot.steps.connectingGateway'),
-          progress: 95
+          progress: 40
         })
         publish(conn)
-        // Mint a fresh WS URL right before connecting. For OAuth gateways the
-        // ticket is single-use with a short TTL, so the ticket baked into
-        // conn.wsUrl is stale; resolveGatewayWsUrl() re-mints it and, on
-        // failure, throws a reauth error rather than connecting with a dead
-        // ticket (which would surface as an opaque "connection closed").
         const wsUrl = await resolveGatewayWsUrl(desktop, conn)
         await gateway.connect(wsUrl)
 
@@ -320,9 +317,10 @@ export function useGatewayBoot({
           return
         }
 
-        // Record which profile the primary (window) backend booted as, so
-        // same-profile resumes are no-op swaps and any reconnect targets the
-        // right backend. Best-effort: a missing preference means "default".
+        // UI can paint now; remaining work continues without blocking the overlay.
+        completeDesktopBoot()
+        bootCompleted = true
+
         try {
           const pref = await desktop.profile?.get?.()
           const profileKey = (pref?.profile ?? '').trim() || 'default'
@@ -333,25 +331,13 @@ export function useGatewayBoot({
           $activeGatewayProfile.set('default')
         }
 
-        setDesktopBootStep({
-          phase: 'renderer.config',
-          message: translateNow('boot.steps.loadingSettings'),
-          progress: 97
-        })
-        await callbacksRef.current.refreshHermesConfig()
+        await callbacksRef.current.refreshHermesConfig().catch(() => undefined)
 
         if (cancelled) {
           return
         }
 
-        setDesktopBootStep({
-          phase: 'renderer.sessions',
-          message: translateNow('boot.steps.loadingSessions'),
-          progress: 99
-        })
-        await callbacksRef.current.refreshSessions()
-        completeDesktopBoot()
-        bootCompleted = true
+        await callbacksRef.current.refreshSessions().catch(() => undefined)
       } catch (err) {
         if (!cancelled) {
           const message = err instanceof Error ? err.message : String(err)

@@ -982,6 +982,27 @@ def _dashboard_path_is_lightweight(path: str) -> bool:
     return normalized in {"api/status", "api/config", "api/sessions", "api/models"}
 
 
+_ENSURE_TASKS: set[asyncio.Task[None]] = set()
+
+
+def _schedule_runtime_ensure(user: dict) -> None:
+    """Kick container ensure off the request path (status polls must stay instant)."""
+
+    async def _run() -> None:
+        try:
+            await start_runtime(
+                get_runtime_for_user(user),
+                extra_env=runtime_env_for_user(str(user["id"])),
+                wait_ready=False,
+            )
+        except Exception:
+            logger.exception("Background runtime ensure failed")
+
+    task = asyncio.create_task(_run())
+    _ENSURE_TASKS.add(task)
+    task.add_done_callback(_ENSURE_TASKS.discard)
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -991,27 +1012,39 @@ logger = logging.getLogger(__name__)
 )
 async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     user = require_user(request)
+    lightweight = _dashboard_request_is_read(request.method) and _dashboard_path_is_lightweight(path)
+
     # Reads must stay fast for boot polling. Bridge sync belongs on writes and
     # the websocket background task — never on every status/config/sessions GET.
     if not _dashboard_request_is_read(request.method):
         await _sync_composio_bridge_for_user(user)
         await _sync_inference_bridge_for_user(user)
-    runtime = await start_runtime(
-        get_runtime_for_user(user),
-        extra_env=runtime_env_for_user(str(user["id"])),
-        wait_ready=False,
-    )
+
+    # Lightweight GETs never call start_runtime. Refresh was paying a full
+    # ensure/health tax on every status poll and felt like a cold start.
+    if lightweight:
+        runtime = get_runtime_for_user(user)
+        if runtime.status != "running":
+            _schedule_runtime_ensure(user)
+            raise HTTPException(status_code=503, detail="Runtime dashboard is starting. Retry shortly.")
+    else:
+        runtime = await start_runtime(
+            get_runtime_for_user(user),
+            extra_env=runtime_env_for_user(str(user["id"])),
+            wait_ready=False,
+        )
+
     base = runtime_dashboard_base_url(runtime, ensure_network=False)
     if not base or runtime.status not in {"running"}:
+        if lightweight:
+            _schedule_runtime_ensure(user)
         raise HTTPException(status_code=503, detail="Runtime dashboard is starting. Retry shortly.")
 
-    # Status polls must stay cheap: DB token + short upstream timeout. Live
-    # docker inspect + 300s httpx was freezing the whole API on ECS refresh.
-    lightweight = _dashboard_request_is_read(request.method) and _dashboard_path_is_lightweight(path)
+    # Status polls must stay cheap: DB token + short upstream timeout.
     token = await _runtime_dashboard_token_async(runtime.id, runtime, prefer_live=False)
     target = f"{base.rstrip('/')}/{path}"
     body = await request.body()
-    timeout = httpx.Timeout(3.0 if lightweight else 300.0)
+    timeout = httpx.Timeout(2.0 if lightweight else 300.0)
     try:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
             upstream = await client.request(
@@ -1022,9 +1055,8 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
                 headers=_proxy_headers(request, token),
             )
     except (httpx.ConnectError, httpx.ConnectTimeout, httpx.RemoteProtocolError, httpx.ReadError, httpx.TimeoutException) as exc:
-        # The runtime container is still booting (or restarting): the dashboard
-        # socket isn't accepting yet. Return 503 so the web client keeps polling
-        # readiness cleanly instead of surfacing a 500 stack trace.
+        if lightweight:
+            _schedule_runtime_ensure(user)
         raise HTTPException(
             status_code=503,
             detail="Runtime dashboard is starting. Retry shortly.",
@@ -1032,6 +1064,8 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
 
     if upstream.status_code < 500:
         mark_runtime_healthy(runtime)
+    elif lightweight and upstream.status_code >= 500:
+        _schedule_runtime_ensure(user)
 
     response_headers = {
         key: value
