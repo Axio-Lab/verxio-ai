@@ -982,6 +982,17 @@ def _dashboard_path_is_lightweight(path: str) -> bool:
     return normalized in {"api/status", "api/config", "api/sessions", "api/models"}
 
 
+def _dashboard_path_needs_inference_sync(path: str) -> bool:
+    """Model reads need the hosted default written into Hermes config.yaml.
+
+    Fresh runtimes ship without a model section, so GET /api/model/info returns
+    empty until sync_inference_runtime_bridge runs. Status/config polls stay
+    lightweight; only model endpoints pay for this seed.
+    """
+    normalized = path.strip("/")
+    return normalized in {"api/model/info", "api/model/options"}
+
+
 _ENSURE_TASKS: set[asyncio.Task[None]] = set()
 
 
@@ -1016,9 +1027,13 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
 
     # Reads must stay fast for boot polling. Bridge sync belongs on writes and
     # the websocket background task — never on every status/config/sessions GET.
+    # Exception: model info/options must seed Hermes with the user's hosted
+    # default first, or the statusbar paints "No model" on a fresh runtime.
     if not _dashboard_request_is_read(request.method):
         await _sync_composio_bridge_for_user(user)
         await _sync_inference_bridge_for_user(user)
+    elif _dashboard_path_needs_inference_sync(path):
+        await _sync_inference_bridge_for_user(user, allow_restart=False)
 
     # Lightweight GETs never call start_runtime. Refresh was paying a full
     # ensure/health tax on every status poll and felt like a cold start.
