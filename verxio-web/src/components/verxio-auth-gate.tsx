@@ -55,6 +55,19 @@ function readableAuthError(error: unknown): string {
     return 'Password must be at least 8 characters.'
   }
 
+  if (
+    message.includes('Failed to fetch') ||
+    message.includes('NetworkError') ||
+    message.includes('Load failed') ||
+    message.includes('access control check')
+  ) {
+    return 'Could not reach the Verxio API (network or CORS). If you use Verxio Desktop against app.verxio.xyz, deploy the latest verxio-api on ECS, then retry. For local debugging, run npm run desktop:dev:prod or open DevTools (Cmd+Option+I).'
+  }
+
+  if (message.trim()) {
+    return message
+  }
+
   return 'Verxio could not complete this request. Check the API server and try again.'
 }
 

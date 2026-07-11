@@ -493,6 +493,21 @@ function createWindow() {
   mainWindow.on('restore', sendWindowState)
 
   mainWindow.loadURL(rendererUrl())
+
+  const devtoolsEnabled = process.env.VERXIO_DESKTOP_DEVTOOLS === '1' || process.env.VERXIO_DESKTOP_DEVTOOLS === 'true'
+
+  if (devtoolsEnabled) {
+    mainWindow.webContents.openDevTools({ mode: 'detach' })
+  }
+
+  mainWindow.webContents.on('before-input-event', (_event, input) => {
+    const toggleDevtools =
+      input.type === 'keyDown' && input.alt && input.code === 'KeyI' && (input.meta || input.control)
+
+    if (toggleDevtools) {
+      mainWindow?.webContents.toggleDevTools()
+    }
+  })
 }
 
 function supportsSystemAudioLoopback() {
