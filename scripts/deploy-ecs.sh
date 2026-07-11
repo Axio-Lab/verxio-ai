@@ -20,21 +20,51 @@ image_id() {
   docker image inspect -f '{{.Id}}' "$1" 2>/dev/null || echo "(missing)"
 }
 
-require_buildx() {
+# Aliyun/Ubuntu apt often lacks docker-buildx-plugin. Download the official
+# buildx binary into the Docker CLI plugins path when missing.
+BUILDX_VERSION="${VERXIO_BUILDX_VERSION:-v0.23.0}"
+
+ensure_buildx() {
   if docker buildx version >/dev/null 2>&1; then
     return 0
   fi
 
-  echo "ERROR: docker buildx is required to build ${HERMES_IMAGE}."
-  echo "       Hermes Dockerfile uses COPY --chmod, which the legacy builder rejects."
-  echo "       Install on Debian/Ubuntu ECS hosts:"
-  echo "         apt-get update && apt-get install -y docker-buildx-plugin"
-  echo "       Then re-run: bash scripts/deploy-ecs.sh"
-  exit 1
+  local arch plugin_dir plugin url
+  case "$(uname -m)" in
+    x86_64 | amd64) arch="amd64" ;;
+    aarch64 | arm64) arch="arm64" ;;
+    *)
+      echo "ERROR: unsupported architecture $(uname -m) for docker buildx auto-install."
+      exit 1
+      ;;
+  esac
+
+  if [[ "$(id -u)" -eq 0 ]]; then
+    plugin_dir="/usr/local/lib/docker/cli-plugins"
+  else
+    plugin_dir="${HOME}/.docker/cli-plugins"
+  fi
+  plugin="${plugin_dir}/docker-buildx"
+  url="https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.linux-${arch}"
+
+  echo "==> Installing docker buildx ${BUILDX_VERSION} (${arch}) into ${plugin}"
+  mkdir -p "${plugin_dir}"
+  curl -fsSL --retry 3 -o "${plugin}.tmp" "${url}"
+  chmod +x "${plugin}.tmp"
+  mv "${plugin}.tmp" "${plugin}"
+
+  if ! docker buildx version >/dev/null 2>&1; then
+    echo "ERROR: docker buildx is still unavailable after installing ${plugin}."
+    echo "       Hermes Dockerfile uses COPY --chmod and needs BuildKit/buildx."
+    echo "       Manual install: https://docs.docker.com/go/buildx/"
+    exit 1
+  fi
+
+  docker buildx version
 }
 
 build_hermes_image() {
-  require_buildx
+  ensure_buildx
   docker buildx build --load \
     -t "${HERMES_IMAGE}" \
     --build-arg "HERMES_GIT_SHA=${HERMES_SHA}" \
@@ -65,6 +95,8 @@ fi
 
 HERMES_SHA="$(git -C hermes-agent rev-parse --short HEAD)"
 echo "    hermes-agent @ ${HERMES_SHA}"
+
+ensure_buildx
 
 echo "==> Building verxio-api + verxio-web"
 "${COMPOSE[@]}" build --build-arg INSTALL_TURSO=1 verxio-api verxio-web
