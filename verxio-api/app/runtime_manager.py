@@ -43,13 +43,43 @@ def _docker_binary() -> str:
     return os.getenv("VERXIO_DOCKER_BIN", "docker")
 
 
+def _docker_timeout_seconds(args: list[str]) -> float:
+    """Bound docker.sock waits so a wedged daemon cannot hang the API forever."""
+    action = args[0] if args else ""
+    if action == "run":
+        raw = os.getenv("VERXIO_DOCKER_RUN_TIMEOUT_SECONDS", "180").strip()
+        default = 180.0
+    elif action in {"start", "stop", "restart", "rm", "network"}:
+        raw = os.getenv("VERXIO_DOCKER_MUTATE_TIMEOUT_SECONDS", "60").strip()
+        default = 60.0
+    else:
+        raw = os.getenv("VERXIO_DOCKER_INSPECT_TIMEOUT_SECONDS", "20").strip()
+        default = 20.0
+    try:
+        return max(5.0, float(raw))
+    except ValueError:
+        return default
+
+
 def _run_docker(args: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [_docker_binary(), *args],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    timeout = _docker_timeout_seconds(args)
+    try:
+        return subprocess.run(
+            [_docker_binary(), *args],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        stderr = exc.stderr if isinstance(exc.stderr, str) else (exc.stderr or b"").decode("utf-8", "replace")
+        stdout = exc.stdout if isinstance(exc.stdout, str) else (exc.stdout or b"").decode("utf-8", "replace")
+        return subprocess.CompletedProcess(
+            args=[_docker_binary(), *args],
+            returncode=124,
+            stdout=stdout,
+            stderr=stderr or f"docker {' '.join(args[:2])} timed out after {timeout:.0f}s",
+        )
 
 
 async def _run_docker_async(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -344,22 +374,21 @@ def runtime_dashboard_base_url(runtime: RuntimeInstance, *, ensure_network: bool
 
 
 def runtime_dashboard_ws_candidates(runtime: RuntimeInstance) -> list[str]:
-    """Ordered base URLs to try for Hermes WebSocket (never prefer docker-proxy)."""
-    _ensure_runtime_on_network(runtime)
+    """Compose-DNS only. Never docker-inspect or docker-proxy on the WS path.
+
+    IP inspect + network connect used to wedge docker.sock (and the API worker)
+    right when the browser opened the gateway socket.
+    """
     candidates: list[str] = []
-    name = _container_name(runtime)
-    network = _runtime_docker_network(allow_docker_probe=True)
+    # Env/cache only — no allow_docker_probe on the WS hot path.
+    network = _runtime_docker_network(allow_docker_probe=False)
     if network:
-        candidates.append(f"http://{name}:9119")
-        ip = _runtime_container_ip(runtime)
-        if ip:
-            candidates.append(f"http://{ip}:9119")
-        # Do not fall back to host-published dashboard_url — on Linux ECS that
-        # hairpins through docker-proxy and can black-hole the asyncio loop.
+        candidates.append(f"http://{_container_name(runtime)}:9119")
         return candidates
 
-    if runtime.dashboard_url:
-        candidates.append(runtime.dashboard_url)
+    preferred = runtime_dashboard_base_url(runtime, ensure_network=False)
+    if preferred:
+        candidates.append(preferred)
     return candidates
 
 
@@ -458,7 +487,8 @@ async def start_runtime(
     *,
     wait_ready: bool = True,
 ) -> RuntimeInstance:
-    ensure_runtime_directories(runtime)
+    # mkdir/config seed can touch a cold volume — keep it off the event loop.
+    await asyncio.to_thread(ensure_runtime_directories, runtime)
 
     async with _start_lock_for(runtime):
         return await _start_runtime_locked(runtime, extra_env=extra_env, wait_ready=wait_ready)
@@ -548,7 +578,10 @@ async def _start_runtime_locked(
         "-e",
         f"HERMES_GID={os.getenv('VERXIO_RUNTIME_GID', os.getenv('HERMES_GID', '10000'))}",
     ]
-    network = _runtime_docker_network()
+    # Cache/env only here — never sync-probe docker.sock on the event loop.
+    network = _runtime_docker_network(allow_docker_probe=False)
+    if not network:
+        network = await warm_runtime_docker_network()
     if network:
         # Same network as verxio-api → DNS name works for HTTP and WebSocket.
         cmd.extend(["--network", network])
