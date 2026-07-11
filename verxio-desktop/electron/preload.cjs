@@ -317,6 +317,7 @@ function staticBootstrapState() {
 contextBridge.exposeInMainWorld('hermesDesktop', {
   getConnection,
   revalidateConnection: getConnection,
+  verxioApiBaseUrl,
   touchBackend: async () => ({ ok: true }),
   getGatewayWsUrl: async () => {
     const conn = await getConnection()

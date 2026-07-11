@@ -29,6 +29,7 @@ declare global {
         set: (name: string | null) => Promise<DesktopActiveProfile>
       }
       api: <T>(request: HermesApiRequest) => Promise<T>
+      verxioApiBaseUrl: () => string
       notify: (payload: HermesNotification) => Promise<boolean>
       setTranslucency?: (payload: { intensity: number }) => void
       getRemoteDisplayReason?: () => Promise<string | null>

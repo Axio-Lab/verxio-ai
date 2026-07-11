@@ -567,6 +567,7 @@ export function installWebBridge(): void {
         return { profile: name }
       }
     },
+    verxioApiBaseUrl: () => verxioApiBaseUrl(),
     api: async <T>(request: HermesApiRequest) => {
       const url = buildApiUrl(request.path)
 
