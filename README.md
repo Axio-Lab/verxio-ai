@@ -12,6 +12,38 @@ Verxio is a hosted web product surface for Hermes Agent. Hermes remains the runt
 
 Hermes upstream stays untouched. Verxio changes live in `verxio-api`, `verxio-web`, and `verxio-desktop`.
 
+## Architecture
+
+Production runs on **Alibaba Cloud ECS**. The hosted default model is **Verxio Qwen** via Alibaba DashScope.
+
+```mermaid
+flowchart LR
+  subgraph Clients
+    U["Users<br/>Browser / mobile<br/>app.verxio.xyz"]
+  end
+
+  subgraph Edge
+    C["Caddy TLS"]
+    W["Frontend<br/>verxio-web<br/>Nginx + React"]
+  end
+
+  subgraph ECS["Alibaba Cloud ECS"]
+    API["Backend API<br/>verxio-api<br/>FastAPI / uvicorn"]
+    DB[("Turso / LibSQL<br/>users · workspaces<br/>runtimes · usage")]
+    R["Hermes runtime<br/>Docker per agent<br/>gateway :9119"]
+  end
+
+  subgraph QwenCloud["Alibaba Cloud · Qwen"]
+    DS["DashScope<br/>qwen3.6-plus<br/>dashscope-intl.aliyuncs.com"]
+  end
+
+  U -->|HTTPS| C --> W
+  W -->|"/api + WebSocket"| API
+  API <-->|SQL| DB
+  API -->|"HTTP/WS proxy<br/>injects DASHSCOPE_API_KEY"| R
+  R -->|model inference| DS
+```
+
 ## Production Shape
 
 Each workspace agent gets one isolated Hermes runtime container:
