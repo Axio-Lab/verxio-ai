@@ -168,6 +168,7 @@ from app.runtime_manager import (
     stop_runtime,
     sync_runtime_workspace,
     wait_for_runtime_ready,
+    warm_runtime_docker_network,
 )
 from app.store import AUDIT_LOG, PROFILE, RUNS, WORKSPACE
 
@@ -202,6 +203,11 @@ app.mount("/static", StaticFiles(directory=STATIC_ROOT), name="static")
 @app.on_event("startup")
 async def startup() -> None:
     db.run_migrations()
+    # Resolve compose network once off-thread so status/WS never sync-probe docker.sock.
+    try:
+        await warm_runtime_docker_network()
+    except Exception:
+        logging.getLogger(__name__).exception("Failed to warm runtime docker network cache")
 
 
 @app.get("/", include_in_schema=False)
@@ -1110,11 +1116,12 @@ def _ws_target_url(runtime_url: str, path: str, query: str, token: str) -> str:
 
 
 def _runtime_ws_open_timeout_seconds() -> float:
-    raw = os.getenv("VERXIO_RUNTIME_WS_OPEN_TIMEOUT_SECONDS", "45").strip()
+    # Keep this short: a hung docker-proxy/upstream must not stall the API worker.
+    raw = os.getenv("VERXIO_RUNTIME_WS_OPEN_TIMEOUT_SECONDS", "8").strip()
     try:
-        return max(8.0, float(raw))
+        return max(3.0, float(raw))
     except ValueError:
-        return 45.0
+        return 8.0
 
 
 async def _safe_websocket_close(websocket: WebSocket, code: int) -> None:
@@ -1137,6 +1144,10 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
     await websocket.accept()
 
     try:
+        # Warm compose-network cache off-thread so later health/status polls never
+        # pay for a sync docker inspect on the event loop.
+        await warm_runtime_docker_network()
+
         # Bridge Hermes immediately. Composio/inference sync can take tens of
         # seconds and was closing the browser socket before upstream connected.
         runtime = await start_runtime(
@@ -1144,11 +1155,13 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
             extra_env=runtime_env_for_user(str(user["id"])),
             wait_ready=False,
         )
+        # Brief ready wait only — long waits here used to freeze /api/health while
+        # docker-proxy or a cold Hermes dashboard black-holed the worker.
         if runtime.status != "running":
-            runtime = await wait_for_runtime_ready(runtime, timeout_seconds=25)
+            runtime = await wait_for_runtime_ready(runtime, timeout_seconds=5)
         base = runtime_dashboard_base_url(runtime, ensure_network=False)
         if not base or runtime.status != "running":
-            await _safe_websocket_close(websocket, 1011)
+            await _safe_websocket_close(websocket, 1013)
             return
 
         async def _sync_bridges_in_background() -> None:
@@ -1174,6 +1187,7 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
                     target,
                     additional_headers={"X-Hermes-Session-Token": token},
                     open_timeout=_runtime_ws_open_timeout_seconds(),
+                    close_timeout=2,
                 )
                 break
             except Exception as exc:
