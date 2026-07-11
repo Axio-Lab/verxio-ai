@@ -109,13 +109,16 @@ def workspace_from_row(row: dict[str, Any]) -> Workspace:
 
 
 def agent_from_row(row: dict[str, Any]) -> AgentProfile:
+    raw_status = str(row.get("status") or "active")
+    if raw_status not in {"active", "setup_required", "offline"}:
+        raw_status = "active"
     return AgentProfile(
         id=str(row["id"]),
         tenant_id=str(row["tenant_id"]),
         workspace_id=str(row["workspace_id"]),
         name=str(row["name"]),
         role=str(row["role"]),
-        status=str(row["status"]),  # type: ignore[arg-type]
+        status=raw_status,  # type: ignore[arg-type]
         description=str(row["description"]),
         capabilities=DEFAULT_CAPABILITIES,
         starters=DEFAULT_STARTERS,
@@ -213,7 +216,6 @@ def ensure_personal_workspace(user: dict[str, Any]) -> tuple[Workspace, AgentPro
 
     agent = agent_from_row(agent_row or {})
     runtime = ensure_runtime_instance(workspace, agent)
-    ensure_runtime_directories(runtime)
     return workspace, agent, runtime
 
 
