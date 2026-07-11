@@ -69,6 +69,19 @@ def test_bootstrap_contains_verxio_profile(client):
     assert payload["runtime"]["mode"] == "demo"
 
 
+def test_bootstrap_skips_local_hermes_on_hosted_control_plane(client, monkeypatch):
+    monkeypatch.setenv("VERXIO_RUNTIME_MANAGER", "local-docker")
+
+    response = client.get("/api/bootstrap")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["runtime"]["configured"] is True
+    assert payload["runtime"]["connected"] is True
+    assert "hosted control plane" in payload["runtime"]["detail"].lower()
+    assert payload["hermes"]["errors"] == []
+
+
 def test_create_run_uses_demo_runtime(client):
     response = client.post(
         "/api/runs",

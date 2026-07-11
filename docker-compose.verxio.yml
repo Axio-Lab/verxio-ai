@@ -14,6 +14,7 @@ services:
       TURSO_DATABASE_URL: ${TURSO_DATABASE_URL:-}
       TURSO_AUTH_TOKEN: ${TURSO_AUTH_TOKEN:-}
       VERXIO_RUNTIME_MANAGER: local-docker
+      VERXIO_AUTOSTART_HERMES: "false"
       VERXIO_RUNTIME_ROOT: /app/.verxio/runtimes
       VERXIO_RUNTIME_DOCKER_ROOT: ${VERXIO_RUNTIME_DOCKER_ROOT:-${VERXIO_STATE_DIR:-${PWD}/.verxio}/runtimes}
       VERXIO_HERMES_IMAGE: ${VERXIO_HERMES_IMAGE:-verxio-hermes-runtime:local}
