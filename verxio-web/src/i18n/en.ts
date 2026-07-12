@@ -1127,6 +1127,33 @@ export const en: Translations = {
       generateFailed: 'Could not generate Slack manifest',
       copyFailed: 'Could not copy manifest to clipboard'
     },
+    pairingRequests: {
+      title: 'Pairing requests',
+      description: platform => `Approve people who message Verxio from ${platform}.`,
+      refresh: 'Refresh',
+      retry: 'Retry',
+      loadRetryHelp: 'Check that the runtime is running, then try again.',
+      codeLabel: 'Pairing code',
+      codePlaceholder: platform => `Paste ${platform} code`,
+      codeRequired: 'Enter the pairing code from the message.',
+      approve: 'Approve',
+      approving: 'Approving...',
+      pendingTitle: count => `Pending requests (${count})`,
+      approvedTitle: count => `Approved users (${count})`,
+      emptyPending: 'No pending requests for this platform.',
+      emptyApproved: 'No approved users yet.',
+      pendingMeta: (code, age) => `Request ${code}, ${age}m old`,
+      approvedMeta: approvedAt => (approvedAt ? `Approved ${approvedAt}` : 'Approved'),
+      revoke: 'Revoke',
+      revokeAria: user => `Revoke ${user}`,
+      loadFailed: 'Could not load pairing requests',
+      approveFailed: 'Could not approve pairing code',
+      revokeFailed: 'Could not revoke paired user',
+      approvedToastTitle: 'User approved',
+      approvedToastMessage: (user, platform) => `${user} can now use ${platform}.`,
+      revokedToastTitle: 'User revoked',
+      revokedToastMessage: (user, platform) => `${user} can no longer use ${platform}.`
+    },
     whatsappPairing: {
       title: 'Pair WhatsApp',
       description:

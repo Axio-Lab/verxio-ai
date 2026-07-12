@@ -26,6 +26,7 @@ import { CREDENTIAL_CONTROL_CLASS } from '../settings/credential-key-ui'
 import { ListRow } from '../settings/primitives'
 import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 
+import { PairingRequestsPanel } from './pairing-requests-panel'
 import { PlatformAvatar } from './platform-icon'
 import { SlackManifestPanel } from './slack-manifest-panel'
 import { WhatsAppCloudSettingsPanel } from './whatsapp-cloud-settings-panel'
@@ -86,6 +87,23 @@ const FIELD_COPY: Record<string, { advanced?: boolean }> = {
   WHATSAPP_ENABLED: { advanced: true },
   WHATSAPP_MODE: { advanced: true }
 }
+
+const DM_PAIRING_PLATFORMS = new Set([
+  'bluebubbles',
+  'dingtalk',
+  'discord',
+  'feishu',
+  'mattermost',
+  'matrix',
+  'qqbot',
+  'signal',
+  'simplex',
+  'slack',
+  'sms',
+  'telegram',
+  'wecom_callback',
+  'weixin'
+])
 
 function fieldCopy(field: MessagingEnvVarInfo, m: Translations['messaging']) {
   const copy = FIELD_COPY[field.key] || {}
@@ -386,6 +404,7 @@ function PlatformDetail({
   const isWhatsApp = platform.id === 'whatsapp'
   const isWhatsAppCloud = platform.id === 'whatsapp_cloud'
   const isSlack = platform.id === 'slack'
+  const supportsDmPairing = DM_PAIRING_PLATFORMS.has(platform.id)
   const usesCustomSetup = isWhatsApp || isWhatsAppCloud
   const hasEdits = Object.keys(trimEdits(edits)).length > 0
   const requiredFields = platform.env_vars.filter(field => field.required)
@@ -393,9 +412,12 @@ function PlatformDetail({
   const advancedFields = platform.env_vars.filter(field => !field.required && fieldCopy(field, m).advanced)
   const hiddenCount = advancedFields.length
   const isSavingEnv = saving === `env:${platform.id}`
+
   const showWhatsAppPairingError =
     platform.error_message && !(isWhatsApp && (platform.error_code === 'whatsapp_not_paired' || !platform.configured))
+
   const gatewayEnabled = isWhatsApp ? platform.configured && platform.enabled : platform.enabled
+
   const gatewayToggleDisabled =
     isSavingEnv || saving === `enabled:${platform.id}` || (isWhatsApp && !platform.configured)
 
@@ -422,6 +444,8 @@ function PlatformDetail({
           </header>
 
           {isSlack && <SlackManifestPanel />}
+
+          {supportsDmPairing && <PairingRequestsPanel platform={platform} />}
 
           {isWhatsApp && <WhatsAppPairingPanel onChanged={onRefresh} platform={platform} />}
 

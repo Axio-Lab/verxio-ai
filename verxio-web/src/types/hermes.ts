@@ -203,6 +203,25 @@ export interface SlackManifestResponse {
   json: string
 }
 
+export interface PairingUser {
+  age_minutes?: number
+  approved_at?: number
+  code?: string
+  platform: string
+  user_id: string
+  user_name?: string
+}
+
+export interface PairingResponse {
+  approved: PairingUser[]
+  pending: PairingUser[]
+}
+
+export interface PairingApproveResponse {
+  ok: boolean
+  user: PairingUser
+}
+
 export interface WhatsAppPairingStartResponse {
   pairing_id: string | null
   status: string

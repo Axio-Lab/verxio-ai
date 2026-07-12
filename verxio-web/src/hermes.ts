@@ -32,6 +32,8 @@ import type {
   OAuthStartResponse,
   OAuthSubmitResponse,
   PaginatedSessions,
+  PairingApproveResponse,
+  PairingResponse,
   ProfileCreatePayload,
   ProfileSetupCommand,
   ProfileSoul,
@@ -91,6 +93,9 @@ export type {
   ModelOptionProvider,
   ModelOptionsResponse,
   PaginatedSessions,
+  PairingApproveResponse,
+  PairingResponse,
+  PairingUser,
   ProfileCreatePayload,
   ProfileInfo,
   ProfileSetupCommand,
@@ -542,6 +547,28 @@ export function getSlackManifest(
 
   return window.hermesDesktop.api<SlackManifestResponse>({
     path: `/api/messaging/slack/manifest${query ? `?${query}` : ''}`
+  })
+}
+
+export function getPairing(): Promise<PairingResponse> {
+  return window.hermesDesktop.api<PairingResponse>({
+    path: '/api/pairing'
+  })
+}
+
+export function approvePairing(platform: string, code: string): Promise<PairingApproveResponse> {
+  return window.hermesDesktop.api<PairingApproveResponse>({
+    path: '/api/pairing/approve',
+    method: 'POST',
+    body: { platform, code }
+  })
+}
+
+export function revokePairing(platform: string, userId: string): Promise<{ ok: boolean }> {
+  return window.hermesDesktop.api<{ ok: boolean }>({
+    path: '/api/pairing/revoke',
+    method: 'POST',
+    body: { platform, user_id: userId }
   })
 }
 

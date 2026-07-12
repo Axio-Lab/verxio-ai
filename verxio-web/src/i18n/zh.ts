@@ -1184,6 +1184,33 @@ export const zh: Translations = {
       generateFailed: '无法生成 Slack 清单',
       copyFailed: '无法将清单复制到剪贴板'
     },
+    pairingRequests: {
+      title: '配对请求',
+      description: platform => `批准通过 ${platform} 联系 Verxio 的用户。`,
+      refresh: '刷新',
+      retry: '重试',
+      loadRetryHelp: '确认运行时正在运行，然后重试。',
+      codeLabel: '配对代码',
+      codePlaceholder: platform => `粘贴 ${platform} 代码`,
+      codeRequired: '请输入消息中的配对代码。',
+      approve: '批准',
+      approving: '批准中...',
+      pendingTitle: count => `待处理请求 (${count})`,
+      approvedTitle: count => `已批准用户 (${count})`,
+      emptyPending: '此平台没有待处理请求。',
+      emptyApproved: '还没有已批准用户。',
+      pendingMeta: (code, age) => `请求 ${code}，${age} 分钟前`,
+      approvedMeta: approvedAt => (approvedAt ? `批准于 ${approvedAt}` : '已批准'),
+      revoke: '撤销',
+      revokeAria: user => `撤销 ${user}`,
+      loadFailed: '无法加载配对请求',
+      approveFailed: '无法批准配对代码',
+      revokeFailed: '无法撤销配对用户',
+      approvedToastTitle: '用户已批准',
+      approvedToastMessage: (user, platform) => `${user} 现在可以使用 ${platform}。`,
+      revokedToastTitle: '用户已撤销',
+      revokedToastMessage: (user, platform) => `${user} 不能再使用 ${platform}。`
+    },
     whatsappPairing: {
       title: 'Pair WhatsApp',
       description:
