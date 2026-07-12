@@ -1064,7 +1064,7 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     # Exception: model info/options must seed Hermes with the user's hosted
     # default first, or the statusbar paints "No model" on a fresh runtime.
     if not _dashboard_request_is_read(request.method):
-        await _sync_composio_bridge_for_user(user)
+        await _sync_composio_bridge_for_user(user, apply_live=True)
         await _sync_inference_bridge_for_user(user)
     elif _dashboard_path_needs_inference_sync(path):
         await _sync_inference_bridge_for_user(user, allow_restart=False)
@@ -1175,7 +1175,7 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
             try:
                 # Never restart the container from the WS path — a Docker bounce
                 # mid-handshake is what turns a green status into "Reconnecting".
-                await _sync_composio_bridge_for_user(user, allow_restart=False)
+                await _sync_composio_bridge_for_user(user, apply_live=True, allow_restart=False)
                 await _sync_inference_bridge_for_user(user, refresh_running=False, allow_restart=False)
             except Exception:
                 logger.exception("Background runtime bridge sync failed after websocket connect")
