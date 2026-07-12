@@ -187,14 +187,15 @@ export const ja = defineLocale({
       intro:
         'After changing providers, models, API keys, or custom endpoints, reload credentials or restart the agent so changes take effect.',
       statusTitle: 'Container status',
-      statusDescription: 'Your isolated Hermes runtime on Verxio.',
+      statusDescription: '分離された Verxio ランタイムです。',
       statusConnected: 'Connected',
       statusStarting: 'Starting…',
       statusStopped: 'Stopped',
       statusError: 'Unavailable',
       statusUnknown: 'Unknown',
       reloadTitle: 'Reload credentials',
-      reloadDescription: 'Re-read ~/.hermes/.env without restarting. Use after pasting API keys or env changes.',
+      reloadDescription:
+        '保存済みのランタイム認証情報を再起動せずに再読み込みします。API キーや環境変数を変更した後に使います。',
       reloadAction: 'Reload',
       reloadDoneTitle: 'Credentials reloaded',
       reloadDoneMessage: 'Start a new chat if the model or provider still looks stale.',
@@ -510,8 +511,7 @@ export const ja = defineLocale({
       remoteDesc:
         'このデスクトップシェルをリモートの Verxio バックエンドに接続します。ホスト型ゲートウェイは OAuth またはユーザー名とパスワードを使用します。自己ホスト型はセッショントークンを使用する場合があります。',
       remoteUrlTitle: 'リモート URL',
-      remoteUrlDesc:
-        'リモートダッシュボードバックエンドのベース URL。/hermes などのパスプレフィックスもサポートしています。',
+      remoteUrlDesc: 'リモートダッシュボードバックエンドのベース URL。パスプレフィックスもサポートしています。',
       probing: 'このゲートウェイの認証方法を確認中…',
       probeError: 'このゲートウェイにまだ到達できません。URL を確認してください。応答後に認証方法が表示されます。',
       signedIn: 'サインイン済み',
@@ -566,7 +566,7 @@ export const ja = defineLocale({
       empty: 'このカテゴリーにはまだ設定がありません。',
       custom: {
         addButton: 'カスタムツール API キーを追加',
-        hint: 'hermes config set と同じ — ~/.hermes/.env に保存。MY_VENDOR_API_KEY などの名前を使用。',
+        hint: 'Verxio ランタイム認証情報に保存します。MY_VENDOR_API_KEY などの名前を使用。',
         namePlaceholder: 'ENV_VAR_NAME',
         valuePlaceholder: 'API キーまたはトークンを貼り付け',
         nameRequired: '環境変数名を入力してください。',
@@ -705,7 +705,7 @@ export const ja = defineLocale({
         'Verxio サブスクリプションに含まれています。有効にするには Subscription portal にサインインしてください。',
       noApiKeyRequired: 'API キーは不要です。',
       postSetup: step =>
-        `このプロバイダーは追加のセットアップ手順 (${step}) が必要です。今は CLI で hermes tools を実行してください。`
+        `このプロバイダーは追加のセットアップ手順 (${step}) が必要です。Verxio のツール設定で完了してください。`
     }
   },
 
@@ -974,7 +974,7 @@ export const ja = defineLocale({
       },
       MATRIX_HOMESERVER: { label: 'ホームサーバー URL', placeholder: 'https://matrix.org' },
       MATRIX_ACCESS_TOKEN: { label: 'アクセストークン' },
-      MATRIX_USER_ID: { label: 'ボットユーザー ID', placeholder: '@hermes:example.org' },
+      MATRIX_USER_ID: { label: 'ボットユーザー ID', placeholder: '@verxio:example.org' },
       MATRIX_ALLOWED_USERS: {
         label: '許可する Matrix ユーザー ID',
         help: '推奨。@user:server 形式のカンマ区切りユーザー ID。'
@@ -1062,7 +1062,7 @@ export const ja = defineLocale({
     },
     whatsappSettings: {
       title: 'WhatsApp オプション',
-      description: 'Hermes WhatsApp ブリッジのアクセス制御、配信先、グループ動作。',
+      description: 'Verxio WhatsApp ブリッジのアクセス制御、配信先、グループ動作。',
       homeChannelHint: 'DM には電話番号/LID、グループには @g.us で終わる JID を使用。',
       groupsHint: 'グループ ID は 120363001234567890@g.us の形式です。',
       sections: {
@@ -1444,7 +1444,7 @@ export const ja = defineLocale({
       '/resume': '以前のセッションを再開',
       '/details': 'トランスクリプトの詳細レベルを制御',
       '/copy': '選択または最後のアシスタントメッセージをコピー',
-      '/quit': 'hermes を終了'
+      '/quit': 'Verxio を終了'
     },
     hotkeyDescs: {
       '@': 'ファイル、フォルダー、URL、Git を参照',
@@ -1950,7 +1950,7 @@ export const ja = defineLocale({
       reject: '拒否',
       alwaysTitle: 'このコマンドを常に許可しますか？',
       alwaysDescription: pattern =>
-        `これにより "${pattern}" パターンが永続的な許可リスト (~/.hermes/config.yaml) に追加されます。Verxio はこのセッションや将来のセッションで、このようなコマンドについて再度尋ねません。`,
+        `これにより "${pattern}" パターンが永続的な Verxio 許可リストに追加されます。Verxio はこのセッションや将来のセッションで、このようなコマンドについて再度尋ねません。`,
       alwaysAllow: '常に許可',
       jumpToApproval: '承認が必要です'
     },

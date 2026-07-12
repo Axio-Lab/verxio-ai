@@ -3,7 +3,7 @@ import { verxioApiEnabled } from '@/lib/verxio-api'
 
 export { isVerxioDesktop } from '@/lib/platform'
 
-/** Hermes runtime cwd inside Docker — not a real path on the user's machine. */
+/** Verxio runtime cwd inside Docker, not a real path on the user's machine. */
 export const RUNTIME_WORKSPACE_ROOT = '/workspace'
 
 let cachedDesktopWorkspaceRoot: string | null = null

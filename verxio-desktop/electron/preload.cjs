@@ -227,11 +227,11 @@ async function waitForDashboardReady() {
 
   if (verxioApiEnabled()) {
     throw new Error(
-      'Verxio agent runtime is not reachable. Sign in, then wait for verxio-api to start your isolated Hermes container.'
+      'Verxio agent runtime is not reachable. Sign in, then wait for Verxio to start your isolated runtime.'
     )
   }
 
-  throw new Error('Hermes dashboard is not reachable. Start it with: hermes dashboard --no-open')
+  throw new Error('Verxio runtime is not reachable. Start Verxio again, then retry.')
 }
 
 async function getConnection() {

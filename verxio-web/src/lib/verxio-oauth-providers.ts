@@ -1,7 +1,7 @@
 import { verxioApiEnabled } from '@/lib/verxio-api'
 import type { OAuthProvider } from '@/types/hermes'
 
-/** Hermes subscription portal — Verxio Hosted uses DashScope instead. */
+/** Runtime subscription portal. Verxio Hosted uses DashScope instead. */
 const VERXIO_EXCLUDED_OAUTH_PROVIDER_IDS = new Set(['nous'])
 
 export function oauthProvidersForProduct(providers: OAuthProvider[]): OAuthProvider[] {

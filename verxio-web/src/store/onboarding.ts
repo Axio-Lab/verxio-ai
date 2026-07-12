@@ -261,8 +261,8 @@ async function fetchProviderDefaultModel(
     return null
   }
 
-  // Prefer the backend's recommended default — it mirrors the curation
-  // `hermes model` does (for the subscription provider it honors the user's free/paid tier, so a
+  // Prefer the backend's recommended default. It mirrors runtime model curation
+  // (for the subscription provider it honors the user's free/paid tier, so a
   // free user gets a free model rather than a paid default like opus). Fall
   // back to the first curated model if the endpoint can't resolve one.
   let defaultModel = String(models[0])

@@ -1,7 +1,7 @@
 import { transcribeAudio } from '@/hermes'
 import { translateNow } from '@/i18n'
 
-/** Raw audio limit before base64 JSON overhead (~33%) and Hermes 25 MiB decode cap. */
+/** Raw audio limit before base64 JSON overhead (~33%) and the runtime 25 MiB decode cap. */
 export const MAX_TRANSCRIPTION_BYTES = 18 * 1024 * 1024
 
 export const NOTEPAD_RECORDING_BITS_PER_SECOND = 64_000

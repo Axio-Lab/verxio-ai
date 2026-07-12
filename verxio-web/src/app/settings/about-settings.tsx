@@ -18,7 +18,7 @@ import {
 
 import { ListRow, SectionHeading, SettingsContent } from './primitives'
 
-const RELEASE_NOTES_URL = 'https://github.com/NousResearch/hermes-agent/releases'
+const RELEASE_NOTES_URL = 'https://github.com/Axio-Lab/verxio-ai/releases'
 
 function relativeTime(ms: number | undefined, a: Translations['settings']['about']) {
   if (!ms) {

@@ -618,7 +618,7 @@ export function DesktopController() {
     }
   }, [gatewayState, refreshCronJobs, refreshCurrentModel, refreshSessions])
 
-  // Cross-device sync: devices share one Hermes state.db but have no push channel.
+  // Cross-device sync: devices share one runtime state DB but have no push channel.
   // Poll the newest session id and re-fetch when another device creates a chat,
   // or when this client still has an empty list after a cold-start miss.
   useEffect(() => {

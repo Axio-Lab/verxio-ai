@@ -326,7 +326,7 @@ async function fetchDashboardStatus(timeoutMs = 5_000): Promise<Response> {
 
 async function waitForDashboardReady(): Promise<void> {
   // Hosted runtimes can take longer after a container start/restart while the
-  // Hermes dashboard boots. Keep polling so a brief 503 does not surface as
+  // runtime dashboard boots. Keep polling so a brief 503 does not surface as
   // "Verxio couldn't start".
   const deadline = Date.now() + (verxioApiEnabled() ? 90_000 : 30_000)
   let delayMs = 250
@@ -935,14 +935,14 @@ export function installWebBridge(): void {
       check: async () =>
         ({
           supported: false,
-          reason: 'Updates are managed via hermes update on the host machine.'
+          reason: 'Updates are managed via Verxio update on the host machine.'
         }) satisfies DesktopUpdateStatus,
       apply: async () =>
         ({
           ok: false,
           manual: true,
-          command: 'hermes update',
-          message: 'Run hermes update on the machine hosting the Verxio runtime.'
+          command: 'verxio update',
+          message: 'Run Verxio update on the machine hosting the Verxio runtime.'
         }) satisfies DesktopUpdateApplyResult,
       getBranch: async () => ({ branch: 'main' }),
       setBranch: async (name: string) => ({ branch: name }),

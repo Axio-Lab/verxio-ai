@@ -11,7 +11,7 @@
       <header class="topbar">
         <div>
           <p class="eyebrow">Verxio</p>
-          <h1>Hermes runtime skin</h1>
+          <h1>Verxio agent workspace</h1>
         </div>
         <div id="runtime-status" class="runtime-pill" aria-live="polite"></div>
       </header>
@@ -38,26 +38,26 @@
               <section class="panel run-panel">
                 <div class="section-heading">
                   <span>Ask Verxio</span>
-                  <span id="model-label" class="count-pill">Hermes model</span>
+                  <span id="model-label" class="count-pill">Verxio model</span>
                 </div>
                 <form id="run-form" class="run-form">
                   <label id="task-label" for="task-input">Message</label>
                   <textarea id="task-input" name="task" rows="8" required minlength="1" maxlength="8000"></textarea>
                   <div class="starter-row" id="starter-row"></div>
                   <div class="run-actions">
-                    <button id="run-button" class="primary-button" type="submit">Send to Hermes</button>
+                    <button id="run-button" class="primary-button" type="submit">Send to Verxio</button>
                     <button id="stop-button" class="secondary-button hidden" type="button">Stop run</button>
                   </div>
                 </form>
                 <div id="run-result" class="result-box empty-state">
                   <p class="strong">No message yet</p>
-                  <p>Send a message to run the local Hermes Agent runtime through Verxio.</p>
+                  <p>Send a message to run the local Verxio agent runtime.</p>
                 </div>
               </section>
 
-              <aside class="panel runtime-panel" aria-label="Hermes runtime">
+              <aside class="panel runtime-panel" aria-label="Verxio runtime">
                 <div class="section-heading">
-                  <span>Hermes runtime</span>
+                  <span>Verxio runtime</span>
                   <button id="refresh-button" class="secondary-button" type="button">Refresh</button>
                 </div>
                 <dl id="runtime-list" class="identity-list"></dl>

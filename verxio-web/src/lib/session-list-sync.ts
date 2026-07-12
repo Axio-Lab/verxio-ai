@@ -1,7 +1,7 @@
 /**
  * Decide whether the sidebar session list should be re-fetched after a poll.
  *
- * Devices share one Hermes state.db but have no push channel, so we poll the
+ * Devices share one runtime state DB but have no push channel, so we poll the
  * newest session id. When it changes, another device (or tab) created a chat.
  *
  * Also refresh when this client has an empty list but the poll found sessions —
