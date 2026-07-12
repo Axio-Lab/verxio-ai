@@ -16,9 +16,9 @@ VERXIO_STATE_DIR = WORKSPACE_ROOT / ".verxio"
 RUNTIME_ROOT = Path(os.getenv("VERXIO_RUNTIME_ROOT", str(VERXIO_STATE_DIR / "runtimes"))).expanduser()
 
 DEFAULT_CAPABILITIES = [
-    "Use the model/provider configured in Hermes",
-    "Run Hermes tools, skills, MCP servers, and gateway connections through the runtime",
-    "Keep user-agent memory inside the isolated Hermes home",
+    "Use the model and provider configured in Verxio",
+    "Run connected tools, skills, apps, and messaging channels through the Verxio runtime",
+    "Keep user-agent memory inside the isolated Verxio workspace",
     "Write generated files to the workspace artifacts directory",
 ]
 
@@ -104,7 +104,7 @@ def workspace_from_row(row: dict[str, Any]) -> Workspace:
         slug=str(row["slug"]),
         kind=str(row["kind"]),
         region="Hosted",
-        plan="Hermes runtime workspace",
+        plan="Verxio runtime workspace",
     )
 
 
@@ -112,14 +112,22 @@ def agent_from_row(row: dict[str, Any]) -> AgentProfile:
     raw_status = str(row.get("status") or "active")
     if raw_status not in {"active", "setup_required", "offline"}:
         raw_status = "active"
+    role = str(row["role"])
+    if role == "Hermes-powered assistant":
+        role = "Verxio assistant"
+    description = str(row["description"])
+    description = description.replace(
+        "A Verxio interface over an isolated Hermes Agent runtime.",
+        "A Verxio AI agent with an isolated workspace and connected tools.",
+    )
     return AgentProfile(
         id=str(row["id"]),
         tenant_id=str(row["tenant_id"]),
         workspace_id=str(row["workspace_id"]),
         name=str(row["name"]),
-        role=str(row["role"]),
+        role=role,
         status=raw_status,  # type: ignore[arg-type]
-        description=str(row["description"]),
+        description=description,
         capabilities=DEFAULT_CAPABILITIES,
         starters=DEFAULT_STARTERS,
     )
@@ -203,8 +211,8 @@ def ensure_personal_workspace(user: dict[str, Any]) -> tuple[Workspace, AgentPro
                     workspace.tenant_id,
                     workspace.id,
                     "Verxio Agent",
-                    "Hermes-powered assistant",
-                    "A Verxio interface over an isolated Hermes Agent runtime.",
+                    "Verxio assistant",
+                    "A Verxio AI agent with an isolated workspace and connected tools.",
                     paths["hermes_home_path"],
                     paths["workspace_path"],
                     paths["artifact_path"],

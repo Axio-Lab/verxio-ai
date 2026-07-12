@@ -66,6 +66,9 @@ def test_bootstrap_contains_verxio_profile(client):
     payload = response.json()
     assert payload["workspace"]["id"] == "local-verxio"
     assert payload["profile"]["id"] == "verxio-agent"
+    assert "Hermes" not in payload["profile"]["role"]
+    assert "Hermes" not in payload["profile"]["description"]
+    assert all("Hermes" not in item for item in payload["profile"]["capabilities"])
     assert payload["runtime"]["mode"] == "demo"
 
 
