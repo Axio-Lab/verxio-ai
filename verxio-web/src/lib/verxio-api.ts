@@ -414,7 +414,14 @@ export function verxioApiBaseUrl(): string {
     return baked
   }
 
-  if (typeof window !== 'undefined' && typeof window.hermesDesktop?.verxioApiBaseUrl === 'function') {
+  // Electron preload exposes the runtime API URL. Skip on web — installWebBridge
+  // wires hermesDesktop.verxioApiBaseUrl back to this function, which would recurse
+  // forever when VITE_VERXIO_API_URL is empty (same-origin Docker/nginx builds).
+  if (
+    typeof window !== 'undefined' &&
+    window.__VERXIO_WEB__ !== true &&
+    typeof window.hermesDesktop?.verxioApiBaseUrl === 'function'
+  ) {
     return window.hermesDesktop.verxioApiBaseUrl().replace(/\/$/, '')
   }
 

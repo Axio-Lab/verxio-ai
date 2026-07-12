@@ -567,7 +567,9 @@ export function installWebBridge(): void {
         return { profile: name }
       }
     },
-    verxioApiBaseUrl: () => verxioApiBaseUrl(),
+    // Return the baked Vite URL only — never call verxioApiBaseUrl() here or
+    // Electron/desktop fallback logic can recurse into this bridge method.
+    verxioApiBaseUrl: () => import.meta.env.VITE_VERXIO_API_URL?.replace(/\/$/, '') ?? '',
     api: async <T>(request: HermesApiRequest) => {
       const url = buildApiUrl(request.path)
 
