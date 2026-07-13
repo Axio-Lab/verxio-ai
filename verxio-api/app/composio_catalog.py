@@ -397,7 +397,7 @@ def sync_composio_runtime_bridge(
             changed=changed,
             configured=True,
             enabled=False,
-            message="Connect an app to enable Composio tools in Verxio.",
+            message=None,
             serverName=COMPOSIO_MCP_SERVER_NAME,
         )
 

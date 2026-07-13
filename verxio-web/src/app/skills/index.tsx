@@ -28,12 +28,12 @@ import { ToolsetConfigPanel } from '../settings/toolset-config-panel'
 import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 
 import { ConnectionsPanel } from './connections-panel'
-import { WEB_SEARCH_TOOLSET_NAME, WebSearchToolsetPanel } from './web-search-toolset-panel'
 
 const SKILLS_MODES = ['skills', 'toolsets', 'connections'] as const
 type SkillsMode = (typeof SKILLS_MODES)[number]
 const SKILLS_PAGE_SIZE = 10
 const CONNECTIONS_PAGE_SIZE = 10
+const HIDDEN_TOOLSET_NAMES = new Set(['subscription'])
 
 function categoryFor(skill: SkillInfo): string {
   return asText(skill.category) || 'general'
@@ -57,13 +57,12 @@ function filteredSkills(skills: SkillInfo[], query: string, category: string | n
     .sort((a, b) => asText(a.name).localeCompare(asText(b.name)))
 }
 
-function filteredToolsets(toolsets: ToolsetInfo[], query: string, excludeNames: readonly string[] = []): ToolsetInfo[] {
+function filteredToolsets(toolsets: ToolsetInfo[], query: string): ToolsetInfo[] {
   const q = query.trim().toLowerCase()
-  const excluded = new Set(excludeNames)
 
   return toolsets
     .filter(toolset => {
-      if (excluded.has(toolset.name)) {
+      if (HIDDEN_TOOLSET_NAMES.has(toolset.name)) {
         return false
       }
 
@@ -154,15 +153,7 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
     [activeCategory, mode, query, skills]
   )
 
-  const visibleToolsets = useMemo(
-    () => (toolsets ? filteredToolsets(toolsets, query, [WEB_SEARCH_TOOLSET_NAME]) : []),
-    [query, toolsets]
-  )
-
-  const webSearchToolset = useMemo(
-    () => toolsets?.find(toolset => toolset.name === WEB_SEARCH_TOOLSET_NAME) ?? null,
-    [toolsets]
-  )
+  const visibleToolsets = useMemo(() => (toolsets ? filteredToolsets(toolsets, query) : []), [query, toolsets])
 
   const activeTotal = mode === 'skills' ? visibleSkills.length : mode === 'toolsets' ? visibleToolsets.length : 0
   const activePageCount = Math.max(1, Math.ceil(activeTotal / SKILLS_PAGE_SIZE))
@@ -418,21 +409,11 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
         </div>
       ) : (
         <div className={cn('flex h-full flex-col overflow-y-auto py-3')}>
-          <WebSearchToolsetPanel
-            onConfiguredChange={refreshToolsets}
-            onToggle={enabled => {
-              if (webSearchToolset) {
-                void handleToggleToolset(webSearchToolset, enabled)
-              }
-            }}
-            saving={webSearchToolset ? savingToolset === webSearchToolset.name : false}
-            toolset={webSearchToolset}
-          />
           <div className={cn(PAGE_INSET_X)}>
             {visibleToolsets.length === 0 ? (
               query.trim() ? (
                 <p className="pt-2 text-xs text-muted-foreground">{t.skills.noToolsetsDesc}</p>
-              ) : webSearchToolset ? null : (
+              ) : (
                 <EmptyState description={t.skills.noToolsetsDesc} title={t.skills.noToolsetsTitle} />
               )
             ) : (
