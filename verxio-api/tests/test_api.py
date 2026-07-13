@@ -495,6 +495,41 @@ def test_signup_creates_user_workspace_agent_and_runtime(client):
     assert runtime_rows[0]["artifact_path"].endswith("/workspace/artifacts")
 
 
+def test_runtime_volume_files_survive_runtime_record_recreation(client):
+    payload, _token = signup(client, "persistent-runtime@example.com")
+    workspace, agent, runtime = control_plane.ensure_personal_workspace(payload["user"])
+    control_plane.ensure_runtime_directories(runtime)
+
+    artifact_file = Path(runtime.artifact_path) / "saved-report.csv"
+    memory_file = Path(runtime.hermes_home_path) / "memories" / "customer-note.md"
+    workspace_file = Path(runtime.workspace_path) / "workspace-summary.md"
+    artifact_file.write_text("metric,value\nrevenue,100\n", encoding="utf-8")
+    memory_file.parent.mkdir(parents=True, exist_ok=True)
+    memory_file.write_text("Remember the customer prefers weekly reports.\n", encoding="utf-8")
+    workspace_file.write_text("# Workspace summary\n\nPersistent across deploys.\n", encoding="utf-8")
+
+    original_paths = (runtime.hermes_home_path, runtime.workspace_path, runtime.artifact_path)
+    assert {record.file_name for record in runtime_manager.index_artifacts(runtime)} >= {
+        "saved-report.csv",
+        "workspace-summary.md",
+    }
+
+    db.execute("DELETE FROM artifacts WHERE workspace_id = ? AND agent_id = ?", (workspace.id, agent.id))
+    db.execute("DELETE FROM runtime_instances WHERE id = ?", (runtime.id,))
+
+    restored = control_plane.ensure_runtime_instance(workspace, agent)
+    control_plane.ensure_runtime_directories(restored)
+
+    assert (restored.hermes_home_path, restored.workspace_path, restored.artifact_path) == original_paths
+    assert artifact_file.read_text(encoding="utf-8") == "metric,value\nrevenue,100\n"
+    assert memory_file.read_text(encoding="utf-8") == "Remember the customer prefers weekly reports.\n"
+    assert workspace_file.read_text(encoding="utf-8").startswith("# Workspace summary")
+    assert {record.file_name for record in runtime_manager.index_artifacts(restored)} >= {
+        "saved-report.csv",
+        "workspace-summary.md",
+    }
+
+
 def test_signup_requires_email_code_before_session_or_workspace(client):
     response = client.post(
         "/api/auth/signup",
