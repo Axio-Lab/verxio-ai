@@ -372,33 +372,20 @@ async function waitForDashboardReady(): Promise<void> {
 
   if (verxioApiEnabled()) {
     throw new Error(
-      'Verxio agent runtime is not reachable. Sign in, then wait for verxio-api to start your isolated Hermes container (docker ps --filter name=verxio-).'
+      'Verxio agent runtime is not reachable. Sign in, then wait for verxio-api to start your isolated agent container (docker ps --filter name=verxio-).'
     )
   }
 
-  throw new Error('Verxio backend is not reachable. Start it with: hermes dashboard --no-open')
+  throw new Error('Verxio backend is not reachable. Start Verxio again, then retry.')
 }
 
 async function getConnection(): Promise<HermesConnection> {
-  // Hosted Verxio: return proxy URLs immediately. Waiting on dashboard ready
-  // here made every refresh feel like a cold runtime start. WS connect (and
-  // its reconnect loop) owns readiness; status polls no longer call start_runtime.
-  if (verxioApiEnabled()) {
-    void fetchDashboardStatus(2_000)
-      .then(res => {
-        if (res.ok) {
-          dashboardReadyAt = Date.now()
-        }
-      })
-      .catch(() => undefined)
-  } else {
-    await waitForDashboardReady()
-  }
+  await waitForDashboardReady()
 
   const token = verxioApiEnabled() ? 'verxio-proxy' : getToken()
 
   if (!token) {
-    throw new Error('Missing Verxio session token. Restart hermes dashboard and reload.')
+    throw new Error('Missing Verxio session token. Restart Verxio and reload.')
   }
 
   const wsUrl = buildWsUrl('/api/ws', { token })
@@ -459,12 +446,14 @@ export function installWebBridge(): void {
     getConnection: async () => getConnection(),
     touchBackend: async () => ({ ok: true }),
     getGatewayWsUrl: async () => {
-      // Do not re-enter waitForDashboardReady — boot already waited, and a
-      // second blocked start_runtime call was racing the 30s abort timer.
+      if (verxioApiEnabled()) {
+        await waitForDashboardReady()
+      }
+
       const token = verxioApiEnabled() ? 'verxio-proxy' : getToken()
 
       if (!token) {
-        throw new Error('Missing Verxio session token. Restart hermes dashboard and reload.')
+        throw new Error('Missing Verxio session token. Restart Verxio and reload.')
       }
 
       return buildWsUrl('/api/ws', { token })
@@ -746,7 +735,7 @@ export function installWebBridge(): void {
           if (res.status === 404 && text.includes('No such API endpoint')) {
             return {
               entries: [],
-              error: 'Restart the Verxio backend (hermes dashboard) to enable file browsing, then refresh this page.'
+              error: 'Restart the Verxio backend to enable file browsing, then refresh this page.'
             } satisfies HermesReadDirResult
           }
 

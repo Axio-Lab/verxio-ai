@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from subprocess import CompletedProcess
@@ -7,10 +8,10 @@ from subprocess import CompletedProcess
 import pytest
 from fastapi.testclient import TestClient
 
-from app import composio_catalog, control_plane, db, emailer, inference, main
+from app import composio_catalog, control_plane, db, emailer, inference, main, runtime_manager
 from app.auth import SESSION_COOKIE
 from app.main import app
-from app.models import ComposioConnectedAccount, ComposioToolBridgeStatus
+from app.models import ComposioConnectedAccount, ComposioToolBridgeStatus, RuntimeInstance
 
 
 @pytest.fixture()
@@ -1248,6 +1249,97 @@ def test_runtime_start_updates_registry_without_real_docker(client, monkeypatch)
     run_call = next(call for call in calls if call[:1] == ["run"])
     assert "/host/verxio/runtimes" in " ".join(run_call)
     assert "/workspace" in " ".join(run_call)
+
+
+def _runtime_for_health(**overrides) -> RuntimeInstance:
+    data = {
+        "id": "rt_health",
+        "tenant_id": "tenant",
+        "workspace_id": "workspace",
+        "agent_id": "agent",
+        "mode": "local-docker",
+        "status": "starting",
+        "container_name": "verxio-health-test",
+        "dashboard_url": "http://runtime.local:9119",
+        "hermes_home_path": "/tmp/home",
+        "workspace_path": "/tmp/workspace",
+        "artifact_path": "/tmp/artifacts",
+    }
+    data.update(overrides)
+    return RuntimeInstance(**data)
+
+
+def test_gateway_status_normalizes_optional_unpaired_whatsapp():
+    payload = {
+        "gateway_running": True,
+        "gateway_platforms": {
+            "slack": {"state": "connected", "updated_at": "2026-07-13T00:00:00Z"},
+            "whatsapp": {
+                "state": "fatal",
+                "configured": True,
+                "enabled": True,
+                "error_code": "whatsapp_not_paired",
+                "error_message": "WhatsApp is enabled but not paired.",
+                "updated_at": "2026-07-13T00:00:00Z",
+            },
+        },
+    }
+
+    normalized = runtime_manager.normalize_gateway_status_payload(payload)
+
+    assert normalized["gateway_platforms"]["slack"]["state"] == "connected"
+    assert normalized["gateway_platforms"]["whatsapp"]["state"] == "not_configured"
+    assert normalized["gateway_platforms"]["whatsapp"]["configured"] is False
+    assert normalized["gateway_platforms"]["whatsapp"]["enabled"] is False
+    assert normalized["gateway_platforms"]["whatsapp"]["error_code"] is None
+    assert normalized["gateway_platforms"]["whatsapp"]["error_message"] is None
+
+
+def test_runtime_health_uses_recent_success_cache(monkeypatch):
+    runtime = _runtime_for_health(status="running", container_name="verxio-health-cache")
+    runtime_manager.mark_runtime_healthy(runtime, ttl=60)
+
+    class FailingClient:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("runtime_health should not hit the network while the healthy cache is fresh")
+
+    monkeypatch.setattr(runtime_manager.httpx, "AsyncClient", FailingClient)
+
+    connected, detail = asyncio.run(runtime_manager.runtime_health(runtime))
+
+    assert connected is True
+    assert "reachable recently" in detail
+
+
+def test_runtime_health_waits_until_gateway_is_running(monkeypatch):
+    runtime = _runtime_for_health(status="starting", container_name="verxio-health-gateway")
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"gateway_running": False, "gateway_state": "starting", "gateway_platforms": {}}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            return None
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def get(self, _url):
+            return FakeResponse()
+
+    monkeypatch.setattr(runtime_manager.httpx, "AsyncClient", FakeClient)
+
+    connected, detail = asyncio.run(runtime_manager.runtime_health(runtime))
+
+    assert connected is False
+    assert "gateway is starting" in detail
 
 
 def test_leash_agent_config_is_runtime_local_not_db(client):

@@ -158,6 +158,7 @@ from app.runtime_manager import (
     artifact_file,
     index_artifacts,
     mark_runtime_healthy,
+    normalize_gateway_status_content,
     restart_runtime,
     runtime_container_env_matches,
     runtime_dashboard_base_url,
@@ -1118,9 +1119,12 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     response_headers = {
         key: value
         for key, value in upstream.headers.items()
-        if key.lower() not in {"content-encoding", "set-cookie", "transfer-encoding"}
+        if key.lower() not in {"content-encoding", "content-length", "set-cookie", "transfer-encoding"}
     }
-    return Response(content=upstream.content, status_code=upstream.status_code, headers=response_headers)
+    content = upstream.content
+    if path.strip("/") == "api/status":
+        content = normalize_gateway_status_content(content)
+    return Response(content=content, status_code=upstream.status_code, headers=response_headers)
 
 
 def _ws_target_url(runtime_url: str, path: str, query: str, token: str) -> str:

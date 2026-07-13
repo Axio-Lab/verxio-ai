@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import mimetypes
 import os
 import secrets
@@ -8,6 +9,7 @@ import socket
 import subprocess
 import time
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -27,6 +29,64 @@ _HEALTHY_UNTIL: dict[str, float] = {}
 _START_LOCKS: dict[str, asyncio.Lock] = {}
 _CACHE_TTL_SECONDS = 60.0
 _HEALTHY_TTL_SECONDS = 45.0
+_OPTIONAL_UNPAIRED_PLATFORM_ERRORS = {
+    "whatsapp": {"whatsapp_not_paired"},
+}
+
+
+def normalize_gateway_status_payload(payload: Any) -> Any:
+    """Hide optional unpaired channel state from runtime health/status UI.
+
+    A user can connect Slack without pairing WhatsApp. The gateway still reports
+    WhatsApp as fatal when its platform config is present but no local pairing
+    session exists; that should not make the hosted Verxio runtime look down.
+    """
+
+    if not isinstance(payload, dict):
+        return payload
+
+    platforms = payload.get("gateway_platforms")
+    if not isinstance(platforms, dict):
+        return payload
+
+    normalized_platforms: dict[str, Any] = dict(platforms)
+    changed = False
+
+    for platform_id, optional_errors in _OPTIONAL_UNPAIRED_PLATFORM_ERRORS.items():
+        status = normalized_platforms.get(platform_id)
+        if not isinstance(status, dict):
+            continue
+        if status.get("error_code") not in optional_errors:
+            continue
+
+        next_status = dict(status)
+        next_status["state"] = "not_configured"
+        next_status["configured"] = False
+        next_status["enabled"] = False
+        next_status["error_code"] = None
+        next_status["error_message"] = None
+        normalized_platforms[platform_id] = next_status
+        changed = True
+
+    if not changed:
+        return payload
+
+    normalized = dict(payload)
+    normalized["gateway_platforms"] = normalized_platforms
+    return normalized
+
+
+def normalize_gateway_status_content(content: bytes) -> bytes:
+    try:
+        payload = json.loads(content.decode("utf-8"))
+    except Exception:
+        return content
+
+    normalized = normalize_gateway_status_payload(payload)
+    if normalized == payload:
+        return content
+
+    return json.dumps(normalized, separators=(",", ":")).encode("utf-8")
 
 
 def _sha256_file(path: Path) -> str:
@@ -409,6 +469,9 @@ def _docker_mount_path(path: str) -> str:
 
 
 async def runtime_health(runtime: RuntimeInstance) -> tuple[bool, str]:
+    if runtime.status == "running" and runtime_recently_healthy(runtime):
+        return True, "Verxio runtime was reachable recently."
+
     candidates: list[str] = []
     preferred = runtime_dashboard_base_url(runtime, ensure_network=False)
     if preferred:
@@ -422,16 +485,31 @@ async def runtime_health(runtime: RuntimeInstance) -> tuple[bool, str]:
 
     errors: list[str] = []
     # Keep this short — status polling must not pile up 5s+ waits per request.
-    async with httpx.AsyncClient(timeout=2.0) as client:
+    async with httpx.AsyncClient(timeout=_runtime_health_timeout_seconds()) as client:
         for base in candidates:
             try:
                 response = await client.get(f"{base.rstrip('/')}/api/status")
                 response.raise_for_status()
+                try:
+                    payload = normalize_gateway_status_payload(response.json())
+                except Exception:
+                    payload = None
+                if isinstance(payload, dict) and payload.get("gateway_running") is False:
+                    state = payload.get("gateway_state") or "not running"
+                    raise RuntimeError(f"runtime dashboard is reachable but gateway is {state}")
                 mark_runtime_healthy(runtime)
-                return True, "Hermes dashboard is reachable."
+                return True, "Verxio runtime is reachable."
             except Exception as exc:
                 errors.append(f"{base}: {exc}")
-    return False, f"Hermes dashboard is not reachable: {'; '.join(errors)}"
+    return False, f"Verxio runtime is not reachable: {'; '.join(errors)}"
+
+
+def _runtime_health_timeout_seconds() -> float:
+    raw = os.getenv("VERXIO_RUNTIME_HEALTH_TIMEOUT_SECONDS", "3").strip()
+    try:
+        return max(1.0, float(raw))
+    except ValueError:
+        return 3.0
 
 
 def _runtime_ready_timeout_seconds() -> float:
@@ -447,12 +525,12 @@ async def wait_for_runtime_ready(
     *,
     timeout_seconds: float | None = None,
 ) -> RuntimeInstance:
-    """Block until the Hermes dashboard answers, or the timeout elapses."""
+    """Block until the Verxio runtime answers, or the timeout elapses."""
     deadline = asyncio.get_running_loop().time() + (
         _runtime_ready_timeout_seconds() if timeout_seconds is None else max(1.0, timeout_seconds)
     )
     latest = runtime
-    detail = "Hermes dashboard is not reachable yet."
+    detail = "Verxio runtime is not reachable yet."
 
     while asyncio.get_running_loop().time() < deadline:
         connected, detail = await runtime_health(latest)
