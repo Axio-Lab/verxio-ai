@@ -85,6 +85,7 @@ _WORKSPACE_ARTIFACT_SKIP_DIRS = {
     "node_modules",
     "venv",
 }
+_TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
 
 
 def _is_optional_unpaired_exit_reason(reason: Any) -> bool:
@@ -92,6 +93,43 @@ def _is_optional_unpaired_exit_reason(reason: Any) -> bool:
         return False
     lower = reason.lower()
     return any(platform_id in lower and "not paired" in lower for platform_id in _OPTIONAL_UNPAIRED_PLATFORM_ERRORS)
+
+
+def _env_truthy(value: str | None) -> bool:
+    return (value or "").strip().lower() in _TRUTHY_ENV_VALUES
+
+
+def _runtime_whatsapp_paired(runtime: RuntimeInstance) -> bool:
+    hermes_home = Path(runtime.hermes_home_path)
+    return any(
+        path.is_file()
+        for path in (
+            hermes_home / "platforms" / "whatsapp" / "session" / "creds.json",
+            hermes_home / "whatsapp" / "session" / "creds.json",
+        )
+    )
+
+
+def _runtime_container_env(runtime: RuntimeInstance, extra_env: dict[str, str] | None = None) -> dict[str, str]:
+    env: dict[str, str] = {
+        "VERXIO_HOSTED": "1",
+        "WHATSAPP_BROWSER_NAME": "Verxio Agent",
+        "WHATSAPP_REPLY_PREFIX": "",
+    }
+
+    if not _runtime_whatsapp_paired(runtime):
+        env["WHATSAPP_ENABLED"] = "false"
+
+    for key, value in (extra_env or {}).items():
+        if key and value:
+            env[str(key)] = str(value)
+
+    # A stale config/.env can mark WhatsApp enabled before the QR/session exists.
+    # In hosted runtimes that must not take Slack, web chat, cron, or tools down.
+    if _env_truthy(env.get("WHATSAPP_ENABLED")) and not _runtime_whatsapp_paired(runtime):
+        env["WHATSAPP_ENABLED"] = "false"
+
+    return env
 
 
 def normalize_gateway_status_payload(payload: Any) -> Any:
@@ -758,18 +796,12 @@ async def _start_runtime_locked(
     if network:
         # Same network as verxio-api → DNS name works for HTTP and WebSocket.
         cmd.extend(["--network", network])
+    container_env = _runtime_container_env(runtime, extra_env)
     composio_api_key = os.getenv("COMPOSIO_API_KEY", "").strip()
     if composio_api_key:
-        cmd.extend(["-e", f"COMPOSIO_API_KEY={composio_api_key}"])
-    for key, value in {
-        "VERXIO_HOSTED": "1",
-        "WHATSAPP_BROWSER_NAME": "Verxio Agent",
-        "WHATSAPP_REPLY_PREFIX": "",
-    }.items():
+        container_env["COMPOSIO_API_KEY"] = composio_api_key
+    for key, value in sorted(container_env.items()):
         cmd.extend(["-e", f"{key}={value}"])
-    for key, value in sorted((extra_env or {}).items()):
-        if key and value:
-            cmd.extend(["-e", f"{key}={value}"])
 
     cmd.extend([image, "gateway", "run"])
 

@@ -80,6 +80,34 @@ def test_dashboard_port_for_start_reallocates_busy_stored_port(monkeypatch):
     assert runtime_manager._dashboard_port_for_start(runtime) == 19120
 
 
+def test_runtime_container_env_disables_unpaired_whatsapp(tmp_path):
+    runtime = _runtime().model_copy(update={"hermes_home_path": str(tmp_path)})
+
+    env = runtime_manager._runtime_container_env(
+        runtime,
+        {
+            "SLACK_BOT_TOKEN": "xoxb-test",
+            "WHATSAPP_ENABLED": "true",
+            "EMPTY_VALUE": "",
+        },
+    )
+
+    assert env["WHATSAPP_ENABLED"] == "false"
+    assert env["SLACK_BOT_TOKEN"] == "xoxb-test"
+    assert "EMPTY_VALUE" not in env
+
+
+def test_runtime_container_env_allows_paired_whatsapp(tmp_path):
+    runtime = _runtime().model_copy(update={"hermes_home_path": str(tmp_path)})
+    session_dir = tmp_path / "platforms" / "whatsapp" / "session"
+    session_dir.mkdir(parents=True)
+    (session_dir / "creds.json").write_text("{}", encoding="utf-8")
+
+    env = runtime_manager._runtime_container_env(runtime, {"WHATSAPP_ENABLED": "true"})
+
+    assert env["WHATSAPP_ENABLED"] == "true"
+
+
 def test_index_artifacts_includes_generated_workspace_outputs(monkeypatch, tmp_path):
     monkeypatch.setenv("VERXIO_DATABASE_MODE", "sqlite")
     monkeypatch.setenv("VERXIO_DATABASE_PATH", str(tmp_path / "verxio-control.sqlite3"))
