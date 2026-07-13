@@ -114,8 +114,18 @@ def _dump_config(config: dict[str, Any]) -> str:
     return yaml.dump(config, Dumper=SafeDumper, sort_keys=False, allow_unicode=True)
 
 
+def _whatsapp_session_paired(hermes_home: Path) -> bool:
+    return any(
+        path.is_file()
+        for path in (
+            hermes_home / "platforms" / "whatsapp" / "session" / "creds.json",
+            hermes_home / "whatsapp" / "session" / "creds.json",
+        )
+    )
+
+
 def ensure_verxio_agent_defaults(hermes_home: Path) -> None:
-    """Idempotently seed Verxio voice rules, empty WhatsApp prefix, and SOUL.md."""
+    """Idempotently seed Verxio voice rules, messaging defaults, and SOUL.md."""
     hermes_home.mkdir(parents=True, exist_ok=True)
 
     soul_path = hermes_home / "SOUL.md"
@@ -148,6 +158,11 @@ def ensure_verxio_agent_defaults(hermes_home: Path) -> None:
     if not isinstance(whatsapp, dict):
         whatsapp = {}
     whatsapp["reply_prefix"] = ""
+    if _whatsapp_session_paired(hermes_home):
+        if whatsapp.get("enabled") is False:
+            whatsapp.pop("enabled", None)
+    else:
+        whatsapp["enabled"] = False
     config["whatsapp"] = whatsapp
 
     config_path.write_text(_dump_config(config), encoding="utf-8")
