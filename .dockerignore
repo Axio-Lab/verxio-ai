@@ -1,0 +1,31 @@
+# The API image is built from the repository root but only copies
+# verxio-api plus the Hermes runtime source. Keep local state, builds,
+# dependencies, and desktop/web artifacts out of the Docker context.
+*
+
+!verxio-api/
+!verxio-api/Dockerfile
+!verxio-api/app/
+!verxio-api/app/**
+!verxio-api/migrations/
+!verxio-api/migrations/**
+!verxio-api/pyproject.toml
+!verxio-api/static/
+!verxio-api/static/**
+!verxio-api/uv.lock
+
+!hermes-agent/
+!hermes-agent/**
+
+hermes-agent/.git/
+hermes-agent/.mypy_cache/
+hermes-agent/.pytest_cache/
+hermes-agent/.ruff_cache/
+hermes-agent/.venv/
+hermes-agent/**/__pycache__/
+hermes-agent/**/node_modules/
+hermes-agent/**/*.pyc
+hermes-agent/build/
+hermes-agent/dist/
+hermes-agent/ui-tui/dist/
+hermes-agent/web/dist/
