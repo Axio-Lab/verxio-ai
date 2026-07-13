@@ -38,6 +38,7 @@ import {
   mediaPathFromMarkdownHref,
   mediaStreamUrl
 } from '@/lib/media'
+import { isVerxioDesktop } from '@/lib/platform'
 import { previewTargetFromMarkdownHref } from '@/lib/preview-targets'
 import { tailBoundedRemend } from '@/lib/remend-tail'
 import { cn } from '@/lib/utils'
@@ -323,6 +324,12 @@ function MarkdownPathLink({ children, className, href, ...props }: ComponentProp
             const verxioArtifactPreview = await verxioArtifactPreviewTarget(path)
 
             if (verxioArtifactPreview) {
+              if (!isVerxioDesktop()) {
+                openExternalLink(verxioArtifactPreview.url)
+
+                return
+              }
+
               setCurrentSessionPreviewTarget(verxioArtifactPreview, 'explicit-link', path)
 
               return
