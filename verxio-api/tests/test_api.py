@@ -1295,6 +1295,22 @@ def test_gateway_status_normalizes_optional_unpaired_whatsapp():
     assert normalized["gateway_platforms"]["whatsapp"]["error_message"] is None
 
 
+def test_gateway_status_normalizes_top_level_optional_unpaired_whatsapp_exit_reason():
+    payload = {
+        "gateway_running": False,
+        "gateway_state": "startup_failed",
+        "gateway_exit_reason": "whatsapp: WhatsApp enabled but not paired — run `hermes whatsapp` to pair.",
+        "gateway_platforms": {},
+    }
+
+    normalized = runtime_manager.normalize_gateway_status_payload(payload)
+
+    assert normalized["gateway_running"] is True
+    assert normalized["gateway_state"] == "ready"
+    assert normalized["gateway_exit_reason"] is None
+    assert "Hermes" not in json.dumps(normalized)
+
+
 def test_runtime_health_uses_recent_success_cache(monkeypatch):
     runtime = _runtime_for_health(status="running", container_name="verxio-health-cache")
     runtime_manager.mark_runtime_healthy(runtime, ttl=60)

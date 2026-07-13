@@ -87,6 +87,13 @@ _WORKSPACE_ARTIFACT_SKIP_DIRS = {
 }
 
 
+def _is_optional_unpaired_exit_reason(reason: Any) -> bool:
+    if not isinstance(reason, str):
+        return False
+    lower = reason.lower()
+    return any(platform_id in lower and "not paired" in lower for platform_id in _OPTIONAL_UNPAIRED_PLATFORM_ERRORS)
+
+
 def normalize_gateway_status_payload(payload: Any) -> Any:
     """Hide optional unpaired channel state from runtime health/status UI.
 
@@ -98,12 +105,20 @@ def normalize_gateway_status_payload(payload: Any) -> Any:
     if not isinstance(payload, dict):
         return payload
 
+    normalized = dict(payload)
+    changed = False
+
+    if _is_optional_unpaired_exit_reason(payload.get("gateway_exit_reason")):
+        normalized["gateway_running"] = True
+        normalized["gateway_state"] = "ready"
+        normalized["gateway_exit_reason"] = None
+        changed = True
+
     platforms = payload.get("gateway_platforms")
     if not isinstance(platforms, dict):
-        return payload
+        return normalized if changed else payload
 
     normalized_platforms: dict[str, Any] = dict(platforms)
-    changed = False
 
     for platform_id, optional_errors in _OPTIONAL_UNPAIRED_PLATFORM_ERRORS.items():
         status = normalized_platforms.get(platform_id)
@@ -121,12 +136,8 @@ def normalize_gateway_status_payload(payload: Any) -> Any:
         normalized_platforms[platform_id] = next_status
         changed = True
 
-    if not changed:
-        return payload
-
-    normalized = dict(payload)
     normalized["gateway_platforms"] = normalized_platforms
-    return normalized
+    return normalized if changed else payload
 
 
 def normalize_gateway_status_content(content: bytes) -> bytes:
