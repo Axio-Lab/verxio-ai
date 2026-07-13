@@ -68,6 +68,18 @@ def test_ensure_runtime_on_network_connects_once(monkeypatch):
     ]
 
 
+def test_dashboard_port_for_start_reallocates_busy_stored_port(monkeypatch):
+    runtime = _runtime().model_copy(update={"dashboard_url": "http://host.docker.internal:19119"})
+
+    def fake_runtime_publish_port_is_free(port: int) -> bool:
+        return port == 19120
+
+    monkeypatch.setenv("VERXIO_DASHBOARD_PORT_START", "19119")
+    monkeypatch.setattr(runtime_manager, "_runtime_publish_port_is_free", fake_runtime_publish_port_is_free)
+
+    assert runtime_manager._dashboard_port_for_start(runtime) == 19120
+
+
 def test_index_artifacts_includes_generated_workspace_outputs(monkeypatch, tmp_path):
     monkeypatch.setenv("VERXIO_DATABASE_MODE", "sqlite")
     monkeypatch.setenv("VERXIO_DATABASE_PATH", str(tmp_path / "verxio-control.sqlite3"))

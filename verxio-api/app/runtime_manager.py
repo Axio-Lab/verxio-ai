@@ -299,10 +299,23 @@ def _port_is_free(port: int) -> bool:
         return sock.connect_ex(("127.0.0.1", port)) != 0
 
 
+def _docker_published_port_in_use(port: int) -> bool:
+    result = _run_docker(["ps", "--format", "{{.Ports}}"])
+    if result.returncode != 0:
+        return False
+
+    needle = f":{port}->"
+    return any(needle in line for line in result.stdout.splitlines())
+
+
+def _runtime_publish_port_is_free(port: int) -> bool:
+    return _port_is_free(port) and not _docker_published_port_in_use(port)
+
+
 def _allocate_port() -> int:
     start = int(os.getenv("VERXIO_DASHBOARD_PORT_START", "19119"))
     for port in range(start, start + 1000):
-        if _port_is_free(port):
+        if _runtime_publish_port_is_free(port):
             return port
     raise RuntimeError("No free localhost dashboard port found for a Verxio runtime.")
 
@@ -312,6 +325,13 @@ def _dashboard_port(runtime: RuntimeInstance) -> int:
         parsed = urlparse(runtime.dashboard_url)
         if parsed.port:
             return parsed.port
+    return _allocate_port()
+
+
+def _dashboard_port_for_start(runtime: RuntimeInstance) -> int:
+    stored_port = _dashboard_port(runtime)
+    if _runtime_publish_port_is_free(stored_port):
+        return stored_port
     return _allocate_port()
 
 
@@ -680,7 +700,7 @@ async def _start_runtime_locked(
         await _run_docker_async(["rm", _container_name(runtime)])
         invalidate_runtime_caches(runtime)
 
-    port = _dashboard_port(runtime)
+    port = _dashboard_port_for_start(runtime)
     token_row = db.fetch_one("SELECT dashboard_token FROM runtime_instances WHERE id = ?", (runtime.id,))
     dashboard_token = str(token_row.get("dashboard_token") or "") if token_row else ""
     if not dashboard_token:
