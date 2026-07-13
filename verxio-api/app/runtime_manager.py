@@ -23,6 +23,7 @@ from app.models import ArtifactRecord, RuntimeInstance, new_id
 # whole uvicorn event loop on ECS (auth/me waits 20s+, boot spinner hangs).
 _NETWORK_CACHE: str | None = None
 _NETWORK_CACHE_LOADED = False
+_NETWORK_ATTACHED_CACHE: set[str] = set()
 _CONTAINER_IP_CACHE: dict[str, tuple[float, str]] = {}
 _LIVE_TOKEN_CACHE: dict[str, tuple[float, str]] = {}
 _HEALTHY_UNTIL: dict[str, float] = {}
@@ -355,6 +356,10 @@ def _ensure_runtime_on_network(runtime: RuntimeInstance) -> None:
         return
 
     name = _container_name(runtime)
+    cache_key = f"{network}:{name}"
+    if cache_key in _NETWORK_ATTACHED_CACHE:
+        return
+
     check = _run_docker(
         [
             "inspect",
@@ -366,9 +371,12 @@ def _ensure_runtime_on_network(runtime: RuntimeInstance) -> None:
     # Empty / <no value> means not attached.
     attached = check.returncode == 0 and check.stdout.strip() not in {"", "<no value>", "map[]"}
     if attached:
+        _NETWORK_ATTACHED_CACHE.add(cache_key)
         return
 
-    _run_docker(["network", "connect", network, name])
+    result = _run_docker(["network", "connect", network, name])
+    if result.returncode == 0 or "already exists" in result.stderr.lower():
+        _NETWORK_ATTACHED_CACHE.add(cache_key)
     invalidate_runtime_caches(runtime)
 
 
@@ -581,10 +589,14 @@ async def _start_runtime_locked(
     # Fast path for boot polling: skip docker + Hermes probes when we just
     # confirmed the dashboard is up. Prevents thundering-herd freezes on refresh.
     if not wait_ready and runtime.status == "running" and runtime_recently_healthy(runtime):
+        if _runtime_docker_network(allow_docker_probe=False):
+            await asyncio.to_thread(_ensure_runtime_on_network, runtime)
         return runtime
 
     current = await _run_docker_async(["inspect", "-f", "{{.State.Running}}", _container_name(runtime)])
     if current.returncode == 0 and current.stdout.strip() == "true":
+        if _runtime_docker_network(allow_docker_probe=False):
+            await asyncio.to_thread(_ensure_runtime_on_network, runtime)
         if not wait_ready and runtime_recently_healthy(runtime):
             return save_runtime(
                 runtime,

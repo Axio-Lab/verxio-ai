@@ -7,14 +7,14 @@ services:
       dockerfile: verxio-api/Dockerfile
     image: verxio-api:local
     ports:
-      - "127.0.0.1:8787:8787"
+      - '127.0.0.1:8787:8787'
     environment:
       VERXIO_DATABASE_MODE: ${VERXIO_DATABASE_MODE:-turso}
       VERXIO_DATABASE_PATH: /app/.verxio/verxio-control.sqlite3
       TURSO_DATABASE_URL: ${TURSO_DATABASE_URL:-}
       TURSO_AUTH_TOKEN: ${TURSO_AUTH_TOKEN:-}
       VERXIO_RUNTIME_MANAGER: local-docker
-      VERXIO_AUTOSTART_HERMES: "false"
+      VERXIO_AUTOSTART_HERMES: 'false'
       VERXIO_RUNTIME_ROOT: /app/.verxio/runtimes
       VERXIO_RUNTIME_DOCKER_ROOT: ${VERXIO_RUNTIME_DOCKER_ROOT:-${VERXIO_STATE_DIR:-${PWD}/.verxio}/runtimes}
       VERXIO_HERMES_IMAGE: ${VERXIO_HERMES_IMAGE:-verxio-hermes-runtime:local}
@@ -22,7 +22,7 @@ services:
       VERXIO_RUNTIME_PUBLISH_HOST: ${VERXIO_RUNTIME_PUBLISH_HOST:-127.0.0.1}
       # Shared with Hermes runtimes so API can reach them by container DNS (HTTP+WS).
       # On ECS set explicitly: VERXIO_RUNTIME_DOCKER_NETWORK=verxio-ai_default
-      VERXIO_RUNTIME_DOCKER_NETWORK: ${VERXIO_RUNTIME_DOCKER_NETWORK:-}
+      VERXIO_RUNTIME_DOCKER_NETWORK: ${VERXIO_RUNTIME_DOCKER_NETWORK:-verxio-ai_default}
       VERXIO_RUNTIME_UID: ${HERMES_UID:-10000}
       VERXIO_RUNTIME_GID: ${HERMES_GID:-10000}
       VERXIO_DASHBOARD_PORT_START: ${VERXIO_DASHBOARD_PORT_START:-19119}
@@ -62,13 +62,13 @@ services:
     build:
       context: ./verxio-web
       args:
-        VITE_VERXIO_API_ENABLED: "true"
-        VITE_VERXIO_API_URL: ""
+        VITE_VERXIO_API_ENABLED: 'true'
+        VITE_VERXIO_API_URL: ''
     image: verxio-web:local
     depends_on:
       - verxio-api
     ports:
-      - "127.0.0.1:8080:80"
+      - '127.0.0.1:8080:80'
 
   hermes-runtime-image:
     build:
@@ -76,4 +76,4 @@ services:
     image: ${VERXIO_HERMES_IMAGE:-verxio-hermes-runtime:local}
     profiles:
       - image
-    command: ["true"]
+    command: ['true']
