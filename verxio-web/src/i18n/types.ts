@@ -782,6 +782,33 @@ export interface Translations {
       generateFailed: string
       copyFailed: string
     }
+    pairingRequests: {
+      title: string
+      description: (platform: string) => string
+      refresh: string
+      retry: string
+      loadRetryHelp: string
+      codeLabel: string
+      codePlaceholder: (platform: string) => string
+      codeRequired: string
+      approve: string
+      approving: string
+      pendingTitle: (count: number) => string
+      approvedTitle: (count: number) => string
+      emptyPending: string
+      emptyApproved: string
+      pendingMeta: (code: string, age: number) => string
+      approvedMeta: (approvedAt: string) => string
+      revoke: string
+      revokeAria: (user: string) => string
+      loadFailed: string
+      approveFailed: string
+      revokeFailed: string
+      approvedToastTitle: string
+      approvedToastMessage: (user: string, platform: string) => string
+      revokedToastTitle: string
+      revokedToastMessage: (user: string, platform: string) => string
+    }
     whatsappPairing: {
       title: string
       description: string

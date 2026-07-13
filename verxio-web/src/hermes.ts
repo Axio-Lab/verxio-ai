@@ -32,6 +32,8 @@ import type {
   OAuthStartResponse,
   OAuthSubmitResponse,
   PaginatedSessions,
+  PairingApproveResponse,
+  PairingResponse,
   ProfileCreatePayload,
   ProfileSetupCommand,
   ProfileSoul,
@@ -91,6 +93,9 @@ export type {
   ModelOptionProvider,
   ModelOptionsResponse,
   PaginatedSessions,
+  PairingApproveResponse,
+  PairingResponse,
+  PairingUser,
   ProfileCreatePayload,
   ProfileInfo,
   ProfileSetupCommand,
@@ -545,6 +550,28 @@ export function getSlackManifest(
   })
 }
 
+export function getPairing(): Promise<PairingResponse> {
+  return window.hermesDesktop.api<PairingResponse>({
+    path: '/api/pairing'
+  })
+}
+
+export function approvePairing(platform: string, code: string): Promise<PairingApproveResponse> {
+  return window.hermesDesktop.api<PairingApproveResponse>({
+    path: '/api/pairing/approve',
+    method: 'POST',
+    body: { platform, code }
+  })
+}
+
+export function revokePairing(platform: string, userId: string): Promise<{ ok: boolean }> {
+  return window.hermesDesktop.api<{ ok: boolean }>({
+    path: '/api/pairing/revoke',
+    method: 'POST',
+    body: { platform, user_id: userId }
+  })
+}
+
 export function startWhatsAppPairing(body: { reset?: boolean } = {}): Promise<WhatsAppPairingStartResponse> {
   return window.hermesDesktop.api<WhatsAppPairingStartResponse>({
     path: '/api/messaging/whatsapp/pairing/start',
@@ -719,7 +746,7 @@ export interface RecommendedDefaultModel {
 }
 
 // Recommended default model for a freshly-authenticated provider. Mirrors the
-// curation `hermes model` does — for the subscription provider it honors the free/paid tier so a
+// runtime model curation does: for the subscription provider it honors the free/paid tier so a
 // free user gets a free model instead of a paid default.
 export function getRecommendedDefaultModel(provider: string): Promise<RecommendedDefaultModel> {
   return window.hermesDesktop.api<RecommendedDefaultModel>({

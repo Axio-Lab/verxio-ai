@@ -286,14 +286,14 @@ export const zh: Translations = {
       intro:
         'After changing providers, models, API keys, or custom endpoints, reload credentials or restart the agent so changes take effect.',
       statusTitle: 'Container status',
-      statusDescription: 'Your isolated Hermes runtime on Verxio.',
+      statusDescription: '你的隔离 Verxio 运行时。',
       statusConnected: 'Connected',
       statusStarting: 'Starting…',
       statusStopped: 'Stopped',
       statusError: 'Unavailable',
       statusUnknown: 'Unknown',
       reloadTitle: 'Reload credentials',
-      reloadDescription: 'Re-read ~/.hermes/.env without restarting. Use after pasting API keys or env changes.',
+      reloadDescription: '重新加载保存的运行时凭据，无需重启。适合在粘贴 API key 或环境变量变更后使用。',
       reloadAction: 'Reload',
       reloadDoneTitle: 'Credentials reloaded',
       reloadDoneMessage: 'Start a new chat if the model or provider still looks stale.',
@@ -643,7 +643,7 @@ export const zh: Translations = {
       remoteDesc:
         '将此桌面外壳连接到远程 Verxio 后端。托管网关使用 OAuth 或用户名密码；自托管网关也可能使用会话 token。',
       remoteUrlTitle: '远程 URL',
-      remoteUrlDesc: '远程 dashboard 后端的基础 URL。支持路径前缀，例如 /hermes。',
+      remoteUrlDesc: '远程 dashboard 后端的基础 URL。支持路径前缀。',
       probing: '正在检查此网关的认证方式…',
       probeError: '暂时无法访问此网关。请检查 URL；网关响应后会显示认证方式。',
       signedIn: '已登录',
@@ -693,7 +693,7 @@ export const zh: Translations = {
       empty: '此类别暂时没有配置项。',
       custom: {
         addButton: '添加自定义工具 API 密钥',
-        hint: '与 hermes config set 相同 — 保存到 ~/.hermes/.env。名称如 MY_VENDOR_API_KEY 或 GEMINI_API_KEY。',
+        hint: '保存到 Verxio 运行时凭据。名称如 MY_VENDOR_API_KEY 或 GEMINI_API_KEY。',
         namePlaceholder: 'ENV_VAR_NAME',
         valuePlaceholder: '粘贴 API 密钥或令牌',
         nameRequired: '请先输入环境变量名称。',
@@ -822,7 +822,7 @@ export const zh: Translations = {
       ready: '就绪',
       nousIncluded: '包含在 Verxio 订阅中；登录 Subscription portal 即可激活。',
       noApiKeyRequired: '不需要 API 密钥。',
-      postSetup: step => `此提供方需要额外设置步骤 (${step})。暂时请在 CLI 中运行 hermes tools。`
+      postSetup: step => `此提供方需要额外设置步骤 (${step})。请在 Verxio 工具设置中完成。`
     }
   },
 
@@ -1074,7 +1074,7 @@ export const zh: Translations = {
       MATTERMOST_ALLOWED_USERS: { label: '允许的用户 ID', help: '推荐。逗号分隔的 Mattermost 用户 ID。' },
       MATRIX_HOMESERVER: { label: 'Homeserver URL', placeholder: 'https://matrix.org' },
       MATRIX_ACCESS_TOKEN: { label: '访问令牌' },
-      MATRIX_USER_ID: { label: 'Bot 用户 ID', placeholder: '@hermes:example.org' },
+      MATRIX_USER_ID: { label: 'Bot 用户 ID', placeholder: '@verxio:example.org' },
       MATRIX_ALLOWED_USERS: { label: '允许的 Matrix 用户 ID', help: '推荐。@user:server 格式的逗号分隔用户 ID。' },
       SIGNAL_HTTP_URL: {
         label: 'Signal 桥接 URL',
@@ -1154,7 +1154,7 @@ export const zh: Translations = {
     },
     whatsappSettings: {
       title: 'WhatsApp 选项',
-      description: 'Hermes WhatsApp 桥接的访问控制、投递目标和群组行为。',
+      description: 'Verxio WhatsApp 桥接的访问控制、投递目标和群组行为。',
       homeChannelHint: '使用电话号码/LID 作为私信，或使用以 @g.us 结尾的群组 JID。',
       groupsHint: '群组 ID 形如 120363001234567890@g.us。启用提及门控可避免回复所有群消息。',
       sections: {
@@ -1183,6 +1183,33 @@ export const zh: Translations = {
       copied: '已复制',
       generateFailed: '无法生成 Slack 清单',
       copyFailed: '无法将清单复制到剪贴板'
+    },
+    pairingRequests: {
+      title: '配对请求',
+      description: platform => `批准通过 ${platform} 联系 Verxio 的用户。`,
+      refresh: '刷新',
+      retry: '重试',
+      loadRetryHelp: '确认运行时正在运行，然后重试。',
+      codeLabel: '配对代码',
+      codePlaceholder: platform => `粘贴 ${platform} 代码`,
+      codeRequired: '请输入消息中的配对代码。',
+      approve: '批准',
+      approving: '批准中...',
+      pendingTitle: count => `待处理请求 (${count})`,
+      approvedTitle: count => `已批准用户 (${count})`,
+      emptyPending: '此平台没有待处理请求。',
+      emptyApproved: '还没有已批准用户。',
+      pendingMeta: (code, age) => `请求 ${code}，${age} 分钟前`,
+      approvedMeta: approvedAt => (approvedAt ? `批准于 ${approvedAt}` : '已批准'),
+      revoke: '撤销',
+      revokeAria: user => `撤销 ${user}`,
+      loadFailed: '无法加载配对请求',
+      approveFailed: '无法批准配对代码',
+      revokeFailed: '无法撤销配对用户',
+      approvedToastTitle: '用户已批准',
+      approvedToastMessage: (user, platform) => `${user} 现在可以使用 ${platform}。`,
+      revokedToastTitle: '用户已撤销',
+      revokedToastMessage: (user, platform) => `${user} 不能再使用 ${platform}。`
     },
     whatsappPairing: {
       title: 'Pair WhatsApp',
@@ -1249,7 +1276,7 @@ export const zh: Translations = {
 
   pulse: {
     title: 'Pulse',
-    subtitle: '通过可视化流程和 Hermes AI 节点提升销售、互动和受众增长。',
+    subtitle: '通过可视化流程和 Verxio AI 节点提升销售、互动和受众增长。',
     search: '搜索 Pulse',
     loading: '正在加载 Pulse…',
     loadFailed: 'Pulse 加载失败。',
@@ -1639,7 +1666,7 @@ export const zh: Translations = {
       '/resume': '恢复之前的会话',
       '/details': '控制对话记录的详细程度',
       '/copy': '复制所选内容或最后一条助手消息',
-      '/quit': '退出 hermes'
+      '/quit': '退出 Verxio'
     },
     hotkeyDescs: {
       '@': '引用文件、文件夹、URL、git',
@@ -2135,7 +2162,7 @@ export const zh: Translations = {
       reject: '拒绝',
       alwaysTitle: '始终允许此命令？',
       alwaysDescription: pattern =>
-        `这会将“${pattern}”模式加入永久允许列表 (~/.hermes/config.yaml)。Verxio 对类似命令将不再询问，包括当前会话和未来会话。`,
+        `这会将“${pattern}”模式加入永久 Verxio 允许列表。Verxio 对类似命令将不再询问，包括当前会话和未来会话。`,
       alwaysAllow: '始终允许',
       jumpToApproval: '需要批准'
     },

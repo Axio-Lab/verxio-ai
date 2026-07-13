@@ -66,6 +66,9 @@ def test_bootstrap_contains_verxio_profile(client):
     payload = response.json()
     assert payload["workspace"]["id"] == "local-verxio"
     assert payload["profile"]["id"] == "verxio-agent"
+    assert "Hermes" not in payload["profile"]["role"]
+    assert "Hermes" not in payload["profile"]["description"]
+    assert all("Hermes" not in item for item in payload["profile"]["capabilities"])
     assert payload["runtime"]["mode"] == "demo"
 
 
@@ -818,6 +821,7 @@ def test_composio_bridge_writes_runtime_mcp_server(client, monkeypatch):
     assert status.connectedApps == ["gmail"]
     assert calls[0]["connected_accounts"] == {"gmail": ["ca_gmail"]}
     assert calls[0]["toolkits"] == {"enable": ["gmail"]}
+    assert "preload" not in calls[0]
 
     config_path = Path(runtime.hermes_home_path) / "config.yaml"
     config = config_path.read_text(encoding="utf-8")
@@ -829,6 +833,48 @@ def test_composio_bridge_writes_runtime_mcp_server(client, monkeypatch):
     assert "Gmail (`gmail`)" in config
     assert "/opt/data/google_token.json" in config
     assert "source of truth for Verxio" in config
+
+
+def test_composio_bridge_accepts_explicit_preload_allowlist(client, monkeypatch):
+    monkeypatch.setenv("COMPOSIO_API_KEY", "test-key")
+    monkeypatch.setenv(
+        "COMPOSIO_MCP_PRELOAD_TOOLS",
+        "GOOGLESHEETS_READ_ROWS, GOOGLEDRIVE_SEARCH_FILES",
+    )
+    payload, _token = signup(client, "composio-preload@example.com")
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    runtime = control_plane.runtime_from_row(runtime_row)
+
+    calls: list[dict] = []
+
+    def fake_post(url: str, body: dict, timeout: int = 30):
+        assert url.endswith("/tool_router/session")
+        calls.append(body)
+        return {"id": "session_123", "mcp": {"url": "https://mcp.composio.dev/session_123"}}
+
+    monkeypatch.setattr(composio_catalog, "_post", fake_post)
+
+    status = composio_catalog.sync_composio_runtime_bridge(
+        runtime,
+        payload["user"]["id"],
+        [
+            ComposioConnectedAccount(appSlug="googledrive", id="ca_drive", status="ACTIVE"),
+            ComposioConnectedAccount(appSlug="googlesheets", id="ca_sheets", status="ACTIVE"),
+        ],
+    )
+
+    assert status.enabled is True
+    assert calls[0]["preload"] == {
+        "tools": ["GOOGLESHEETS_READ_ROWS", "GOOGLEDRIVE_SEARCH_FILES"],
+    }
+
+    state_path = Path(runtime.hermes_home_path) / ".verxio" / "composio-tool-router-session.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["preload_tools"] == ["GOOGLESHEETS_READ_ROWS", "GOOGLEDRIVE_SEARCH_FILES"]
 
 
 def test_composio_connections_restart_stale_runtime_env(client, monkeypatch):

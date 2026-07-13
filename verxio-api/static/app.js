@@ -78,9 +78,9 @@ function renderRuntime() {
   el.runtime.className = "runtime-pill";
   if (runtime.connected) el.runtime.classList.add("connected");
   if (!runtime.connected) el.runtime.classList.add("demo");
-  el.runtime.textContent = runtime.connected ? "Hermes connected" : `${runtime.mode} runtime`;
+  el.runtime.textContent = runtime.connected ? "Verxio connected" : `${runtime.mode} runtime`;
   el.runtime.title = runtime.detail;
-  el.modelLabel.textContent = model || "Hermes model";
+  el.modelLabel.textContent = model || "Verxio model";
 
   const features = hermes.capabilities?.features || {};
   const gatewayPlatforms = platformRows(hermes);
@@ -88,8 +88,8 @@ function renderRuntime() {
     ["Base URL", runtime.base_url],
     ["Mode", runtime.mode],
     ["Gateway state", hermes.health?.gateway_state || (runtime.connected ? "running" : "offline")],
-    ["API model alias", model || "hermes-agent"],
-    ["Model source", "Hermes config via hermes model"],
+    ["Model alias", model || "verxio-agent"],
+    ["Model source", "Verxio runtime config"],
     ["Runs API", boolLabel(features.run_submission)],
     ["Run events", boolLabel(features.run_events_sse)],
     ["Sessions", boolLabel(features.session_resources)],
@@ -117,7 +117,7 @@ function renderProfile() {
   el.agentStatus.textContent = profile.status;
 
   if (!el.taskInput.value.trim()) {
-    el.taskInput.placeholder = profile.starters[0] || "Ask Hermes through Verxio...";
+    el.taskInput.placeholder = profile.starters[0] || "Ask Verxio...";
   }
 
   el.starterRow.innerHTML = "";
@@ -146,7 +146,7 @@ function renderConnections() {
 
   el.connectionCount.textContent = String(rows.length);
   if (!rows.length) {
-    el.connectionList.innerHTML = `<div class="empty-state queue-item"><strong>No metadata yet</strong><p>Hermes is connected, but this API surface did not return gateway platforms, models, jobs, skills, or toolsets.</p></div>`;
+    el.connectionList.innerHTML = `<div class="empty-state queue-item"><strong>No metadata yet</strong><p>Verxio is connected, but this API surface did not return gateway platforms, models, jobs, skills, or toolsets.</p></div>`;
     return;
   }
 
@@ -162,7 +162,7 @@ function renderRuns() {
   const runs = state.data.runs || [];
   el.runCount.textContent = String(runs.length);
   if (!runs.length) {
-    el.runList.innerHTML = `<div class="empty-state audit-item"><strong>No runs yet</strong><p>Messages you send through Hermes will appear here.</p></div>`;
+    el.runList.innerHTML = `<div class="empty-state audit-item"><strong>No runs yet</strong><p>Messages you send through Verxio will appear here.</p></div>`;
     return;
   }
 
@@ -189,7 +189,7 @@ async function runAgent(event) {
   el.runButton.textContent = "Starting...";
   el.form.setAttribute("aria-busy", "true");
   el.result.className = "result-box";
-  el.result.textContent = "Starting Hermes run...";
+  el.result.textContent = "Starting Verxio run...";
 
   try {
     const run = await fetchJson("/api/runs", {
@@ -205,7 +205,7 @@ async function runAgent(event) {
       finishRun();
     }
   } catch (error) {
-    state.error = error.message || "The Hermes run failed.";
+    state.error = error.message || "The Verxio run failed.";
     el.result.className = "result-box empty-state";
     el.result.innerHTML = `<p class="strong">Run failed</p><p>Review the error above and try again.</p>`;
     finishRun();
@@ -218,7 +218,7 @@ function startPolling(runId) {
   stopPolling();
   state.running = true;
   el.runButton.disabled = true;
-  el.runButton.textContent = "Hermes running";
+  el.runButton.textContent = "Verxio running";
   el.stopButton.classList.remove("hidden");
   el.form.setAttribute("aria-busy", "true");
 
@@ -232,7 +232,7 @@ function startPolling(runId) {
         render();
       }
     } catch (error) {
-      state.error = error.message || "Could not refresh the Hermes run.";
+      state.error = error.message || "Could not refresh the Verxio run.";
       finishRun();
       render();
     }
@@ -251,7 +251,7 @@ function finishRun() {
   state.running = false;
   state.activeRunId = "";
   el.runButton.disabled = false;
-  el.runButton.textContent = "Send to Hermes";
+  el.runButton.textContent = "Send to Verxio";
   el.stopButton.classList.add("hidden");
   el.form.removeAttribute("aria-busy");
 }
@@ -264,7 +264,7 @@ async function stopActiveRun() {
     const run = await fetchJson(`/api/runs/${state.activeRunId}/stop`, { method: "POST" });
     renderRunResult(run);
   } catch (error) {
-    state.error = error.message || "Could not stop the Hermes run.";
+    state.error = error.message || "Could not stop the Verxio run.";
   } finally {
     el.stopButton.disabled = false;
     el.stopButton.textContent = "Stop run";
@@ -275,8 +275,8 @@ async function stopActiveRun() {
 
 function renderRunResult(run) {
   const statusLabel = run.status.replaceAll("_", " ");
-  const hermesLine = run.hermes_run_id ? `Hermes run: ${run.hermes_run_id}` : `Runtime: ${run.provider}`;
-  const output = run.output || (isActiveStatus(run.status) ? "Hermes is working..." : "No visible output yet.");
+  const hermesLine = run.hermes_run_id ? `Verxio run: ${run.hermes_run_id}` : `Runtime: ${run.provider}`;
+  const output = run.output || (isActiveStatus(run.status) ? "Verxio is working..." : "No visible output yet.");
   el.result.className = `result-box run-status status-${run.status}`;
   el.result.innerHTML = `
     <div class="run-meta">
@@ -317,7 +317,7 @@ function summaryRows(kind, items, key) {
 
 function summaryDetail(kind, item) {
   if (kind === "Model") {
-    return "Hermes API alias; real provider/model is configured in Hermes.";
+    return "Verxio runtime alias; real provider/model is configured in Verxio.";
   }
   return item.description || item.status || item.path || JSON.stringify(item).slice(0, 160);
 }

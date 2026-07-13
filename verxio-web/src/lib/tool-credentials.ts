@@ -6,7 +6,7 @@ function envCategory(info?: EnvVarInfo): string {
   return typeof info?.category === 'string' ? info.category.trim() : ''
 }
 
-/** Credential-shaped env var names (matches Hermes dashboard discovery). */
+/** Credential-shaped env var names (matches runtime dashboard discovery). */
 export function looksLikeToolCredentialEnv(name: string): boolean {
   const trimmed = name.trim()
 

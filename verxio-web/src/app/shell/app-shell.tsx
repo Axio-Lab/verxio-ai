@@ -95,7 +95,7 @@ export function AppShell({
   // flush against each other. Modeled as N gaps (N - 1 inner + 1 trailing)
   // to keep the formula generic for any pane-tool count.
   // Static system tools — haptics, keybinds, settings, plus logout (web/hosted)
-  // and/or right-sidebar (desktop local Hermes).
+  // and/or right-sidebar (desktop local runtime).
   const SYSTEM_TOOL_COUNT = isVerxioWeb() ? 4 : verxioApiEnabled() ? 5 : 4
   const paneToolCount = titlebarTools?.filter(tool => !tool.hidden).length ?? 0
   const systemToolsWidth = `calc(${SYSTEM_TOOL_COUNT} * (var(--titlebar-control-size) + 0.25rem))`

@@ -5,7 +5,7 @@ export interface HostedDefaultModelSelection {
   provider: string
 }
 
-/** Pick the upstream Hermes model/provider for the user's hosted Verxio default. */
+/** Pick the upstream model/provider for the user's hosted Verxio default. */
 export function resolveHostedDefaultModel(
   settings: Pick<VerxioInferenceSettings, 'defaultModelId' | 'mode'>,
   catalog: Pick<VerxioInferenceCatalogResponse, 'defaultModelId' | 'models'>
@@ -29,7 +29,7 @@ export function resolveHostedDefaultModel(
   }
 }
 
-/** Decide what the statusbar should show after a Hermes /api/model/info read. */
+/** Decide what the statusbar should show after a runtime /api/model/info read. */
 export function resolveStatusbarModel(
   hermes: { model?: string | null; provider?: string | null },
   currentModel: string,

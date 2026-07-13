@@ -414,7 +414,7 @@ export function PulseView({ setStatusbarItemGroup }: PulseViewProps) {
                     <Zap aria-hidden className="size-4" />
                   </span>
                   <h1 className="text-lg font-semibold text-(--ui-text-primary)">{p.title}</h1>
-                  <Badge>Hermes + Composio</Badge>
+                  <Badge>Verxio + Composio</Badge>
                 </div>
                 <p className="max-w-3xl text-sm text-(--ui-text-secondary)">{p.subtitle}</p>
               </div>

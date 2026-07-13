@@ -290,14 +290,15 @@ export const en: Translations = {
       intro:
         'After changing providers, models, API keys, or custom endpoints, reload credentials or restart the agent so changes take effect.',
       statusTitle: 'Container status',
-      statusDescription: 'Your isolated Hermes runtime on Verxio.',
+      statusDescription: 'Your isolated Verxio runtime.',
       statusConnected: 'Connected',
       statusStarting: 'Starting…',
       statusStopped: 'Stopped',
       statusError: 'Unavailable',
       statusUnknown: 'Unknown',
       reloadTitle: 'Reload credentials',
-      reloadDescription: 'Re-read ~/.hermes/.env without restarting. Use after pasting API keys or env changes.',
+      reloadDescription:
+        'Reload saved runtime credentials without restarting. Use after pasting API keys or env changes.',
       reloadAction: 'Reload',
       reloadDoneTitle: 'Credentials reloaded',
       reloadDoneMessage: 'Start a new chat if the model or provider still looks stale.',
@@ -486,7 +487,7 @@ export const en: Translations = {
       remoteDesc:
         'Connect this desktop shell to a remote Verxio backend. Hosted gateways use OAuth or a username and password; self-hosted ones may use a session token.',
       remoteUrlTitle: 'Remote URL',
-      remoteUrlDesc: 'Base URL for the remote dashboard backend. Path prefixes are supported, for example /hermes.',
+      remoteUrlDesc: 'Base URL for the remote dashboard backend. Path prefixes are supported.',
       probing: 'Checking how this gateway authenticates…',
       probeError: 'Could not reach this gateway yet. Check the URL — the auth method will appear once it responds.',
       signedIn: 'Signed in',
@@ -537,7 +538,7 @@ export const en: Translations = {
       empty: 'Nothing configured in this category yet.',
       custom: {
         addButton: 'Add custom tool API key',
-        hint: 'Same as hermes config set — saves to ~/.hermes/.env. Use names like MY_VENDOR_API_KEY or GEMINI_API_KEY for tools/skills.',
+        hint: 'Saves to Verxio runtime credentials. Use names like MY_VENDOR_API_KEY or GEMINI_API_KEY for tools/skills.',
         namePlaceholder: 'ENV_VAR_NAME',
         valuePlaceholder: 'Paste API key or token',
         nameRequired: 'Enter the environment variable name first.',
@@ -670,8 +671,7 @@ export const en: Translations = {
       ready: 'Ready',
       nousIncluded: 'Included with a Verxio subscription — sign in to Subscription portal to activate.',
       noApiKeyRequired: 'No API key required.',
-      postSetup: step =>
-        `This provider needs an extra setup step (${step}). Run it from the CLI with hermes tools for now.`
+      postSetup: step => `This provider needs an extra setup step (${step}). Complete it in Verxio tools setup.`
     }
   },
 
@@ -942,7 +942,7 @@ export const en: Translations = {
       },
       MATRIX_HOMESERVER: { label: 'Homeserver URL', placeholder: 'https://matrix.org' },
       MATRIX_ACCESS_TOKEN: { label: 'Access token' },
-      MATRIX_USER_ID: { label: 'Bot user ID', placeholder: '@hermes:example.org' },
+      MATRIX_USER_ID: { label: 'Bot user ID', placeholder: '@verxio:example.org' },
       MATRIX_ALLOWED_USERS: {
         label: 'Allowed Matrix user IDs',
         help: 'Recommended. Comma-separated user IDs in @user:server format.'
@@ -1127,6 +1127,33 @@ export const en: Translations = {
       generateFailed: 'Could not generate Slack manifest',
       copyFailed: 'Could not copy manifest to clipboard'
     },
+    pairingRequests: {
+      title: 'Pairing requests',
+      description: platform => `Approve people who message Verxio from ${platform}.`,
+      refresh: 'Refresh',
+      retry: 'Retry',
+      loadRetryHelp: 'Check that the runtime is running, then try again.',
+      codeLabel: 'Pairing code',
+      codePlaceholder: platform => `Paste ${platform} code`,
+      codeRequired: 'Enter the pairing code from the message.',
+      approve: 'Approve',
+      approving: 'Approving...',
+      pendingTitle: count => `Pending requests (${count})`,
+      approvedTitle: count => `Approved users (${count})`,
+      emptyPending: 'No pending requests for this platform.',
+      emptyApproved: 'No approved users yet.',
+      pendingMeta: (code, age) => `Request ${code}, ${age}m old`,
+      approvedMeta: approvedAt => (approvedAt ? `Approved ${approvedAt}` : 'Approved'),
+      revoke: 'Revoke',
+      revokeAria: user => `Revoke ${user}`,
+      loadFailed: 'Could not load pairing requests',
+      approveFailed: 'Could not approve pairing code',
+      revokeFailed: 'Could not revoke paired user',
+      approvedToastTitle: 'User approved',
+      approvedToastMessage: (user, platform) => `${user} can now use ${platform}.`,
+      revokedToastTitle: 'User revoked',
+      revokedToastMessage: (user, platform) => `${user} can no longer use ${platform}.`
+    },
     whatsappPairing: {
       title: 'Pair WhatsApp',
       description:
@@ -1168,7 +1195,7 @@ export const en: Translations = {
 
   pulse: {
     title: 'Pulse',
-    subtitle: 'Sell more, engage better, and grow your audience with visual flows and Hermes AI nodes.',
+    subtitle: 'Sell more, engage better, and grow your audience with visual flows and Verxio AI nodes.',
     search: 'Search Pulse',
     loading: 'Loading Pulse…',
     loadFailed: 'Could not load Pulse.',
@@ -1559,7 +1586,7 @@ export const en: Translations = {
       '/resume': 'resume a prior session',
       '/details': 'control transcript detail level',
       '/copy': 'copy selection or last assistant message',
-      '/quit': 'exit hermes'
+      '/quit': 'exit Verxio'
     },
     hotkeyDescs: {
       '@': 'reference files, folders, urls, git',
@@ -2066,7 +2093,7 @@ export const en: Translations = {
       reject: 'Reject',
       alwaysTitle: 'Always allow this command?',
       alwaysDescription: pattern =>
-        `This adds the “${pattern}” pattern to your permanent allowlist (~/.hermes/config.yaml). Verxio won’t ask again for commands like this — in this session or any future one.`,
+        `This adds the “${pattern}” pattern to your permanent Verxio allowlist. Verxio won’t ask again for commands like this — in this session or any future one.`,
       alwaysAllow: 'Always allow',
       jumpToApproval: 'Approval needed'
     },

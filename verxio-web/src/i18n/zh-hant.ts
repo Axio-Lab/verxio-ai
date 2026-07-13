@@ -182,14 +182,14 @@ export const zhHant = defineLocale({
       intro:
         'After changing providers, models, API keys, or custom endpoints, reload credentials or restart the agent so changes take effect.',
       statusTitle: 'Container status',
-      statusDescription: 'Your isolated Hermes runtime on Verxio.',
+      statusDescription: '你的隔離 Verxio 執行環境。',
       statusConnected: 'Connected',
       statusStarting: 'Starting…',
       statusStopped: 'Stopped',
       statusError: 'Unavailable',
       statusUnknown: 'Unknown',
       reloadTitle: 'Reload credentials',
-      reloadDescription: 'Re-read ~/.hermes/.env without restarting. Use after pasting API keys or env changes.',
+      reloadDescription: '重新載入已儲存的執行環境憑證，不需重新啟動。適合在貼上 API key 或環境變數變更後使用。',
       reloadAction: 'Reload',
       reloadDoneTitle: 'Credentials reloaded',
       reloadDoneMessage: 'Start a new chat if the model or provider still looks stale.',
@@ -500,7 +500,7 @@ export const zhHant = defineLocale({
       remoteDesc:
         '將此桌面殼層連線至遠端 Verxio 後端。託管閘道使用 OAuth 或帳號密碼；自託管閘道也可使用工作階段 Token。',
       remoteUrlTitle: '遠端 URL',
-      remoteUrlDesc: '遠端儀表板後端的基礎 URL。支援路徑前綴，例如 /hermes。',
+      remoteUrlDesc: '遠端儀表板後端的基礎 URL。支援路徑前綴。',
       probing: '正在檢查此閘道的驗證方式…',
       probeError: '暫時無法連線此閘道。請檢查 URL；閘道回應後將顯示驗證方式。',
       signedIn: '已登入',
@@ -550,7 +550,7 @@ export const zhHant = defineLocale({
       empty: '此類別尚未有任何設定。',
       custom: {
         addButton: '新增自訂工具 API 金鑰',
-        hint: '與 hermes config set 相同 — 儲存至 ~/.hermes/.env。例如 MY_VENDOR_API_KEY 或 GEMINI_API_KEY。',
+        hint: '儲存至 Verxio 執行環境憑證。例如 MY_VENDOR_API_KEY 或 GEMINI_API_KEY。',
         namePlaceholder: 'ENV_VAR_NAME',
         valuePlaceholder: '貼上 API 金鑰或權杖',
         nameRequired: '請先輸入環境變數名稱。',
@@ -679,7 +679,7 @@ export const zhHant = defineLocale({
       ready: '就緒',
       nousIncluded: '包含在 Verxio 訂閱中；登入 Subscription portal 即可啟用。',
       noApiKeyRequired: '不需要 API 金鑰。',
-      postSetup: step => `此提供方需要額外設定步驟 (${step})。暫時請在 CLI 中執行 hermes tools。`
+      postSetup: step => `此提供方需要額外設定步驟 (${step})。請在 Verxio 工具設定中完成。`
     }
   },
 
@@ -934,7 +934,7 @@ export const zhHant = defineLocale({
       MATTERMOST_ALLOWED_USERS: { label: '允許的使用者 ID', help: '建議設定。逗號分隔的 Mattermost 使用者 ID。' },
       MATRIX_HOMESERVER: { label: 'Homeserver URL', placeholder: 'https://matrix.org' },
       MATRIX_ACCESS_TOKEN: { label: '存取 Token' },
-      MATRIX_USER_ID: { label: 'Bot 使用者 ID', placeholder: '@hermes:example.org' },
+      MATRIX_USER_ID: { label: 'Bot 使用者 ID', placeholder: '@verxio:example.org' },
       MATRIX_ALLOWED_USERS: {
         label: '允許的 Matrix 使用者 ID',
         help: '建議設定。@user:server 格式的逗號分隔使用者 ID。'
@@ -1013,7 +1013,7 @@ export const zhHant = defineLocale({
     },
     whatsappSettings: {
       title: 'WhatsApp 選項',
-      description: 'Hermes WhatsApp 橋接的存取控制、投遞目標與群組行為。',
+      description: 'Verxio WhatsApp 橋接的存取控制、投遞目標與群組行為。',
       homeChannelHint: '使用電話號碼/LID 作為私訊，或使用以 @g.us 結尾的群組 JID。',
       groupsHint: '群組 ID 形如 120363001234567890@g.us。',
       sections: {
@@ -1392,7 +1392,7 @@ export const zhHant = defineLocale({
       '/resume': '繼續之前的工作階段',
       '/details': '控制對話記錄的詳細程度',
       '/copy': '複製所選內容或最後一條助手訊息',
-      '/quit': '結束 hermes'
+      '/quit': '結束 Verxio'
     },
     hotkeyDescs: {
       '@': '參照檔案、資料夾、URL、git',
@@ -1886,7 +1886,7 @@ export const zhHant = defineLocale({
       reject: '拒絕',
       alwaysTitle: '一律允許此指令？',
       alwaysDescription: pattern =>
-        `這會將「${pattern}」模式加入永久允許清單（~/.hermes/config.yaml）。Verxio 對類似指令將不再詢問，包括目前工作階段和未來工作階段。`,
+        `這會將「${pattern}」模式加入永久 Verxio 允許清單。Verxio 對類似指令將不再詢問，包括目前工作階段和未來工作階段。`,
       alwaysAllow: '一律允許',
       jumpToApproval: '需要核准'
     },

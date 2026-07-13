@@ -397,11 +397,12 @@ def sync_composio_runtime_bridge(
             changed=changed,
             configured=True,
             enabled=False,
-            message="Connect an app to enable Composio tools in Hermes.",
+            message="Connect an app to enable Composio tools in Verxio.",
             serverName=COMPOSIO_MCP_SERVER_NAME,
         )
 
-    signature = _bridge_signature(user_id, connected_accounts)
+    preload_tools = _composio_preload_tools()
+    signature = _bridge_signature(user_id, connected_accounts, preload_tools)
     state = _read_bridge_state(runtime)
     mcp_url = str(state.get("mcp_url") or "").strip() if state.get("signature") == signature else ""
 
@@ -418,6 +419,7 @@ def sync_composio_runtime_bridge(
                 {
                     "connected_apps": connected_apps,
                     "mcp_url": mcp_url,
+                    "preload_tools": preload_tools,
                     "session_id": _pick_string(session, "id", "session_id", "sessionId"),
                     "signature": signature,
                 },
@@ -434,7 +436,7 @@ def sync_composio_runtime_bridge(
             connectedApps=connected_apps,
             configured=True,
             enabled=False,
-            message=f"Could not enable Composio tools in Hermes: {exc}",
+            message=f"Could not enable Composio tools in Verxio runtime: {exc}",
             serverName=COMPOSIO_MCP_SERVER_NAME,
         )
 
@@ -443,7 +445,7 @@ def sync_composio_runtime_bridge(
         connectedApps=connected_apps,
         configured=True,
         enabled=True,
-        message="Connected Composio tools are available to Hermes.",
+        message="Connected Composio tools are available to Verxio.",
         serverName=COMPOSIO_MCP_SERVER_NAME,
     )
 
@@ -650,8 +652,16 @@ def _connected_accounts_by_app(accounts: list[ComposioConnectedAccount]) -> dict
     return {slug: sorted(set(ids)) for slug, ids in rows.items() if ids}
 
 
-def _bridge_signature(user_id: str, connected_accounts: dict[str, list[str]]) -> str:
-    payload = {"connected_accounts": connected_accounts, "user_id": user_id}
+def _bridge_signature(
+    user_id: str,
+    connected_accounts: dict[str, list[str]],
+    preload_tools: str | list[str] | None = None,
+) -> str:
+    payload = {
+        "connected_accounts": connected_accounts,
+        "preload_tools": preload_tools,
+        "user_id": user_id,
+    }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 
@@ -682,7 +692,7 @@ def _write_bridge_state(runtime: RuntimeInstance, payload: dict[str, Any]) -> No
 
 def _create_tool_router_session(user_id: str, connected_accounts: dict[str, list[str]]) -> dict[str, Any]:
     toolkits = sorted(connected_accounts)
-    preload_tools = os.getenv("COMPOSIO_MCP_PRELOAD_TOOLS", "all").strip() or "all"
+    preload_tools = _composio_preload_tools()
     payload: dict[str, Any] = {
         "connected_accounts": connected_accounts,
         "manage_connections": {
@@ -696,11 +706,31 @@ def _create_tool_router_session(user_id: str, connected_accounts: dict[str, list
         "workbench": {"enable": False, "enable_proxy_execution": False},
     }
 
-    if preload_tools.lower() not in {"0", "false", "none", "off"}:
+    if preload_tools is not None:
         payload["preload"] = {"tools": preload_tools}
 
     response = _post(f"{_tools_api_base()}/tool_router/session", payload, timeout=30)
     return response if isinstance(response, dict) else {}
+
+
+def _composio_preload_tools() -> str | list[str] | None:
+    """Return the optional Composio Tool Router preload setting.
+
+    The Tool Router rejects ``preload.tools="all"`` once a user's connected
+    app scope exceeds 1000 tools. Large toolkits such as GitHub can cross that
+    limit by themselves, so Verxio defaults to no broad preload and relies on
+    the router's scoped search/execute tools instead.
+    """
+    raw = os.getenv("COMPOSIO_MCP_PRELOAD_TOOLS", "").strip()
+
+    if not raw or raw.lower() in {"0", "false", "none", "off"}:
+        return None
+
+    if "," in raw:
+        tools = [part.strip() for part in raw.split(",") if part.strip()]
+        return tools or None
+
+    return raw
 
 
 def _pick_mcp_url(payload: dict[str, Any]) -> str:
@@ -864,11 +894,11 @@ def _build_composio_context_prompt(connected_apps: list[str]) -> str:
             app_list,
             "",
             "Use the Composio MCP server (`mcp_servers.composio`) for these connected apps when the user asks to read, search, summarize, create, update, or schedule through them.",
-            "Hermes exposes Composio tools with the `mcp_composio_` prefix (for example `mcp_composio_GMAIL_FETCH_EMAILS` or `mcp_composio_COMPOSIO_SEARCH_TOOLS`). Use those callable tools directly; do not wait for bare `GMAIL_*` tool names.",
+            "Verxio exposes Composio tools with the `mcp_composio_` prefix (for example `mcp_composio_GMAIL_FETCH_EMAILS` or `mcp_composio_COMPOSIO_SEARCH_TOOLS`). Use those callable tools directly; do not wait for bare `GMAIL_*` tool names.",
             "If you need to discover a tool slug first, call `mcp_composio_COMPOSIO_SEARCH_TOOLS`, then execute with `mcp_composio_COMPOSIO_MULTI_EXECUTE_TOOL`.",
             "When the user asks whether Gmail, Google Calendar, Google Drive, Google Docs, Google Sheets, Notion, Slack, or another app is connected, treat this connected-app list as the source of truth for Verxio.",
-            "Do not report a connected Verxio app as disconnected just because legacy Hermes credential files or environment variables are missing, including `/opt/data/google_token.json`, `/opt/data/google_client_secret.json`, `NOTION_API_KEY`, or `NOTION_API_TOKEN`.",
-            "Only mention those legacy credential paths if the user explicitly asks about the legacy Hermes integration.",
+            "Do not report a connected Verxio app as disconnected just because legacy runtime credential files or environment variables are missing, including `/opt/data/google_token.json`, `/opt/data/google_client_secret.json`, `NOTION_API_KEY`, or `NOTION_API_TOKEN`.",
+            "Only mention those legacy credential paths if the user explicitly asks about legacy runtime integrations.",
             "If an app is not listed above, say it is not connected in Verxio and can be connected from Skills > Connections.",
             COMPOSIO_PROMPT_END,
         ]

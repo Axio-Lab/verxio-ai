@@ -274,7 +274,7 @@ function DefaultProjectDirSetting() {
             )}
           </div>
         }
-        description={dir || s.defaultsTo(fallback || '~/hermes-projects')}
+        description={dir || s.defaultsTo(fallback || '~/verxio-projects')}
         title={dir ? dir : s.notSet}
       />
     </div>
