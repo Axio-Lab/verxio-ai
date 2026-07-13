@@ -176,3 +176,73 @@ def test_index_artifacts_includes_generated_workspace_outputs(monkeypatch, tmp_p
     record, path = runtime_manager.artifact_file(runtime, by_path["workspace/summary.csv"].id)
     assert record.file_name == "summary.csv"
     assert path == (workspace / "summary.csv").resolve()
+
+
+def test_index_artifacts_includes_runtime_home_delivery_artifacts(monkeypatch, tmp_path):
+    monkeypatch.setenv("VERXIO_DATABASE_MODE", "sqlite")
+    monkeypatch.setenv("VERXIO_DATABASE_PATH", str(tmp_path / "verxio-control.sqlite3"))
+    db.run_migrations()
+
+    hermes_home = tmp_path / "home"
+    home_artifacts = hermes_home / "artifacts"
+    workspace = tmp_path / "workspace"
+    artifacts = workspace / "artifacts"
+    home_artifacts.mkdir(parents=True)
+    artifacts.mkdir(parents=True)
+    (home_artifacts / "product_launch_list.csv").write_text("item,category\nSolar Kit,Energy\n", encoding="utf-8")
+
+    now = datetime.now(UTC).isoformat()
+    db.execute(
+        """
+        INSERT INTO users (id, email, name, password_hash, email_verified, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("user-1", "owner@example.com", "Owner", "hash", 1, now, now),
+    )
+    db.execute(
+        """
+        INSERT INTO workspaces (id, tenant_id, name, slug, kind, created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("ws-1", "tenant-1", "Workspace", "workspace", "personal", "user-1", now, now),
+    )
+    db.execute(
+        """
+        INSERT INTO agents (
+            id, tenant_id, workspace_id, name, role, status, description,
+            hermes_home_path, workspace_path, artifact_path, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "agent-1",
+            "tenant-1",
+            "ws-1",
+            "Agent",
+            "operator",
+            "active",
+            "",
+            str(hermes_home),
+            str(workspace),
+            str(artifacts),
+            now,
+            now,
+        ),
+    )
+
+    runtime = _runtime().model_copy(
+        update={
+            "hermes_home_path": str(hermes_home),
+            "workspace_path": str(workspace),
+            "artifact_path": str(artifacts),
+        }
+    )
+    records = runtime_manager.index_artifacts(runtime)
+    by_path = {record.relative_path: record for record in records}
+
+    record = by_path["runtime-home/artifacts/product_launch_list.csv"]
+    assert record.source == "runtime_home"
+
+    public, path = runtime_manager.artifact_file(runtime, record.id)
+    assert public.file_name == "product_launch_list.csv"
+    assert path == (home_artifacts / "product_launch_list.csv").resolve()

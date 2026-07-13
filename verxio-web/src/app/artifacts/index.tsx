@@ -155,12 +155,14 @@ function verxioArtifactKind(record: VerxioArtifact): ArtifactKind {
 }
 
 function mapVerxioArtifact(record: VerxioArtifact): ArtifactRecord {
-  const workspaceRelativePath = record.relative_path.replace(/^workspace\//, '')
+  const workspaceRelativePath = record.relative_path
+    .replace(/^workspace\//, '')
+    .replace(/^runtime-home\/artifacts\//, '')
 
   const value =
     record.source === 'workspace_root'
       ? `/workspace/${workspaceRelativePath}`
-      : `/workspace/artifacts/${record.relative_path}`
+      : `/workspace/artifacts/${workspaceRelativePath}`
 
   const updated = Date.parse(record.updated_at || record.created_at)
 

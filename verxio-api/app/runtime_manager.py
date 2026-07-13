@@ -85,6 +85,7 @@ _WORKSPACE_ARTIFACT_SKIP_DIRS = {
     "node_modules",
     "venv",
 }
+_RUNTIME_HOME_ARTIFACT_PREFIX = "runtime-home/artifacts/"
 _TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
 
 
@@ -909,10 +910,15 @@ def _workspace_artifact_candidates(runtime: RuntimeInstance) -> list[tuple[Path,
     The primary contract is `/workspace/artifacts/*`, but generated files often
     land at `/workspace/report.csv` or `/workspace/reports/chart.png`. Keep this
     intentionally narrow so ordinary project source files do not flood Artifacts.
+
+    Some runtime delivery paths also save generated files under
+    `$HERMES_HOME/artifacts`. Index those as runtime-home artifacts so files that
+    the chat can deliver are still visible in Verxio's Artifacts page.
     """
 
     artifact_root = Path(runtime.artifact_path).resolve()
     workspace_root = Path(runtime.workspace_path).resolve()
+    runtime_home_artifact_root = (Path(runtime.hermes_home_path) / "artifacts").resolve()
     candidates: list[tuple[Path, str, str]] = []
 
     if artifact_root.exists():
@@ -952,6 +958,16 @@ def _workspace_artifact_candidates(runtime: RuntimeInstance) -> list[tuple[Path,
                     (resolved, f"workspace/{resolved.relative_to(workspace_root).as_posix()}", "workspace_root")
                 )
 
+    if runtime_home_artifact_root.exists():
+        for file_path in runtime_home_artifact_root.rglob("*"):
+            if not file_path.is_file() or file_path.suffix.lower() not in _ARTIFACT_FILE_EXTENSIONS:
+                continue
+            resolved = file_path.resolve()
+            if not _is_path_within(resolved, runtime_home_artifact_root):
+                continue
+            relative = resolved.relative_to(runtime_home_artifact_root).as_posix()
+            candidates.append((resolved, f"{_RUNTIME_HOME_ARTIFACT_PREFIX}{relative}", "runtime_home"))
+
     return candidates
 
 
@@ -979,6 +995,7 @@ def _cleanup_missing_artifacts(runtime: RuntimeInstance, allowed_roots: list[Pat
 def index_artifacts(runtime: RuntimeInstance) -> list[ArtifactRecord]:
     artifact_root = Path(runtime.artifact_path).resolve()
     workspace_root = Path(runtime.workspace_path).resolve()
+    runtime_home_artifact_root = (Path(runtime.hermes_home_path) / "artifacts").resolve()
     artifact_root.mkdir(parents=True, exist_ok=True)
     now = now_iso()
 
@@ -1033,7 +1050,7 @@ def index_artifacts(runtime: RuntimeInstance) -> list[ArtifactRecord]:
                 ),
             )
 
-    _cleanup_missing_artifacts(runtime, [artifact_root, workspace_root])
+    _cleanup_missing_artifacts(runtime, [artifact_root, workspace_root, runtime_home_artifact_root])
 
     rows = db.fetch_all(
         """
@@ -1063,8 +1080,12 @@ def artifact_file(runtime: RuntimeInstance, artifact_id: str) -> tuple[ArtifactR
 
     artifact_root = Path(runtime.artifact_path).resolve()
     workspace_root = Path(runtime.workspace_path).resolve()
+    runtime_home_artifact_root = (Path(runtime.hermes_home_path) / "artifacts").resolve()
     file_path = Path(str(row["absolute_path"])).resolve()
-    if not _is_path_within(file_path, artifact_root) and not _is_path_within(file_path, workspace_root):
+    if not any(
+        _is_path_within(file_path, root)
+        for root in (artifact_root, workspace_root, runtime_home_artifact_root)
+    ):
         raise KeyError("Artifact path is outside the runtime workspace.")
     if not file_path.exists() or not file_path.is_file():
         raise FileNotFoundError(str(file_path))
