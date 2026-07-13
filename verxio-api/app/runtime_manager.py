@@ -33,6 +33,58 @@ _HEALTHY_TTL_SECONDS = 45.0
 _OPTIONAL_UNPAIRED_PLATFORM_ERRORS = {
     "whatsapp": {"whatsapp_not_paired"},
 }
+_ARTIFACT_FILE_EXTENSIONS = {
+    ".bmp",
+    ".csv",
+    ".doc",
+    ".docx",
+    ".gif",
+    ".htm",
+    ".html",
+    ".jpeg",
+    ".jpg",
+    ".json",
+    ".jsonl",
+    ".md",
+    ".mov",
+    ".mp3",
+    ".mp4",
+    ".parquet",
+    ".pdf",
+    ".png",
+    ".ppt",
+    ".pptx",
+    ".svg",
+    ".tsv",
+    ".txt",
+    ".wav",
+    ".webp",
+    ".xls",
+    ".xlsx",
+    ".zip",
+}
+_WORKSPACE_ARTIFACT_DIR_NAMES = {
+    "artifacts",
+    "charts",
+    "downloads",
+    "exports",
+    "generated",
+    "images",
+    "output",
+    "outputs",
+    "reports",
+}
+_WORKSPACE_ARTIFACT_SKIP_DIRS = {
+    ".cache",
+    ".git",
+    ".hg",
+    ".next",
+    ".pytest_cache",
+    ".venv",
+    "dist",
+    "node_modules",
+    "venv",
+}
 
 
 def normalize_gateway_status_payload(payload: Any) -> Any:
@@ -784,18 +836,90 @@ async def sync_runtime_workspace(runtime: RuntimeInstance, workspace_path: str) 
     return await restart_runtime(updated)
 
 
+def _is_path_within(path: Path, root: Path) -> bool:
+    return path == root or root in path.parents
+
+
+def _workspace_artifact_candidates(runtime: RuntimeInstance) -> list[tuple[Path, str, str]]:
+    """Return host files that should appear in the user-facing Artifacts view.
+
+    The primary contract is `/workspace/artifacts/*`, but generated files often
+    land at `/workspace/report.csv` or `/workspace/reports/chart.png`. Keep this
+    intentionally narrow so ordinary project source files do not flood Artifacts.
+    """
+
+    artifact_root = Path(runtime.artifact_path).resolve()
+    workspace_root = Path(runtime.workspace_path).resolve()
+    candidates: list[tuple[Path, str, str]] = []
+
+    if artifact_root.exists():
+        for file_path in artifact_root.rglob("*"):
+            if not file_path.is_file():
+                continue
+            resolved = file_path.resolve()
+            if not _is_path_within(resolved, artifact_root):
+                continue
+            candidates.append((resolved, resolved.relative_to(artifact_root).as_posix(), "workspace"))
+
+    if workspace_root.exists():
+        for file_path in workspace_root.iterdir():
+            if not file_path.is_file() or file_path.suffix.lower() not in _ARTIFACT_FILE_EXTENSIONS:
+                continue
+            resolved = file_path.resolve()
+            if not _is_path_within(resolved, workspace_root):
+                continue
+            candidates.append(
+                (resolved, f"workspace/{resolved.relative_to(workspace_root).as_posix()}", "workspace_root")
+            )
+
+        for folder_name in sorted(_WORKSPACE_ARTIFACT_DIR_NAMES - {"artifacts"}):
+            folder = workspace_root / folder_name
+            if not folder.is_dir():
+                continue
+            for file_path in folder.rglob("*"):
+                if not file_path.is_file() or file_path.suffix.lower() not in _ARTIFACT_FILE_EXTENSIONS:
+                    continue
+                relative_to_folder = file_path.relative_to(folder)
+                if any(part in _WORKSPACE_ARTIFACT_SKIP_DIRS for part in relative_to_folder.parts[:-1]):
+                    continue
+                resolved = file_path.resolve()
+                if not _is_path_within(resolved, workspace_root):
+                    continue
+                candidates.append(
+                    (resolved, f"workspace/{resolved.relative_to(workspace_root).as_posix()}", "workspace_root")
+                )
+
+    return candidates
+
+
+def _cleanup_missing_artifacts(runtime: RuntimeInstance, allowed_roots: list[Path]) -> None:
+    rows = db.fetch_all(
+        """
+        SELECT id, absolute_path
+        FROM artifacts
+        WHERE workspace_id = ? AND agent_id = ?
+        """,
+        (runtime.workspace_id, runtime.agent_id),
+    )
+
+    for row in rows:
+        file_path = Path(str(row["absolute_path"])).resolve()
+        if (
+            file_path.exists()
+            and file_path.is_file()
+            and any(_is_path_within(file_path, root) for root in allowed_roots)
+        ):
+            continue
+        db.execute("DELETE FROM artifacts WHERE id = ?", (row["id"],))
+
+
 def index_artifacts(runtime: RuntimeInstance) -> list[ArtifactRecord]:
     artifact_root = Path(runtime.artifact_path).resolve()
+    workspace_root = Path(runtime.workspace_path).resolve()
     artifact_root.mkdir(parents=True, exist_ok=True)
     now = now_iso()
 
-    for file_path in artifact_root.rglob("*"):
-        if not file_path.is_file():
-            continue
-        resolved = file_path.resolve()
-        if artifact_root not in resolved.parents and resolved != artifact_root:
-            continue
-        relative = resolved.relative_to(artifact_root).as_posix()
+    for resolved, relative, source in _workspace_artifact_candidates(runtime):
         stat = resolved.stat()
         content_type = mimetypes.guess_type(str(resolved))[0] or "application/octet-stream"
         existing = db.fetch_one(
@@ -806,7 +930,7 @@ def index_artifacts(runtime: RuntimeInstance) -> list[ArtifactRecord]:
             db.execute(
                 """
                 UPDATE artifacts
-                SET file_name = ?, absolute_path = ?, content_type = ?, size_bytes = ?, sha256 = ?, updated_at = ?
+                SET file_name = ?, absolute_path = ?, content_type = ?, size_bytes = ?, sha256 = ?, source = ?, updated_at = ?
                 WHERE id = ?
                 """,
                 (
@@ -815,6 +939,7 @@ def index_artifacts(runtime: RuntimeInstance) -> list[ArtifactRecord]:
                     content_type,
                     stat.st_size,
                     _sha256_file(resolved),
+                    source,
                     now,
                     existing["id"],
                 ),
@@ -826,7 +951,7 @@ def index_artifacts(runtime: RuntimeInstance) -> list[ArtifactRecord]:
                     id, tenant_id, workspace_id, agent_id, file_name, relative_path, absolute_path,
                     content_type, size_bytes, sha256, source, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'workspace', ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     new_id("art"),
@@ -839,10 +964,13 @@ def index_artifacts(runtime: RuntimeInstance) -> list[ArtifactRecord]:
                     content_type,
                     stat.st_size,
                     _sha256_file(resolved),
+                    source,
                     now,
                     now,
                 ),
             )
+
+    _cleanup_missing_artifacts(runtime, [artifact_root, workspace_root])
 
     rows = db.fetch_all(
         """
@@ -871,9 +999,10 @@ def artifact_file(runtime: RuntimeInstance, artifact_id: str) -> tuple[ArtifactR
         raise KeyError("Artifact not found.")
 
     artifact_root = Path(runtime.artifact_path).resolve()
+    workspace_root = Path(runtime.workspace_path).resolve()
     file_path = Path(str(row["absolute_path"])).resolve()
-    if artifact_root not in file_path.parents:
-        raise KeyError("Artifact path is outside the runtime artifact directory.")
+    if not _is_path_within(file_path, artifact_root) and not _is_path_within(file_path, workspace_root):
+        raise KeyError("Artifact path is outside the runtime workspace.")
     if not file_path.exists() or not file_path.is_file():
         raise FileNotFoundError(str(file_path))
 

@@ -34,6 +34,7 @@ type SkillsMode = (typeof SKILLS_MODES)[number]
 const SKILLS_PAGE_SIZE = 10
 const CONNECTIONS_PAGE_SIZE = 10
 const HIDDEN_TOOLSET_NAMES = new Set(['subscription'])
+const HIDDEN_TOOLSET_LABELS = new Set(['nous subscription'])
 
 function categoryFor(skill: SkillInfo): string {
   return asText(skill.category) || 'general'
@@ -62,7 +63,7 @@ function filteredToolsets(toolsets: ToolsetInfo[], query: string): ToolsetInfo[]
 
   return toolsets
     .filter(toolset => {
-      if (HIDDEN_TOOLSET_NAMES.has(toolset.name)) {
+      if (isHiddenToolset(toolset)) {
         return false
       }
 
@@ -81,6 +82,13 @@ function filteredToolsets(toolsets: ToolsetInfo[], query: string): ToolsetInfo[]
       )
     })
     .sort((a, b) => toolsetDisplayLabel(a).localeCompare(toolsetDisplayLabel(b)))
+}
+
+function isHiddenToolset(toolset: ToolsetInfo): boolean {
+  const name = asText(toolset.name).toLowerCase()
+  const label = toolsetDisplayLabel(toolset).toLowerCase()
+
+  return HIDDEN_TOOLSET_NAMES.has(name) || HIDDEN_TOOLSET_LABELS.has(label)
 }
 
 interface SkillsViewProps extends React.ComponentProps<'section'> {
@@ -153,7 +161,12 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
     [activeCategory, mode, query, skills]
   )
 
-  const visibleToolsets = useMemo(() => (toolsets ? filteredToolsets(toolsets, query) : []), [query, toolsets])
+  const publicToolsets = useMemo(() => toolsets?.filter(toolset => !isHiddenToolset(toolset)) ?? null, [toolsets])
+
+  const visibleToolsets = useMemo(
+    () => (publicToolsets ? filteredToolsets(publicToolsets, query) : []),
+    [publicToolsets, query]
+  )
 
   const activeTotal = mode === 'skills' ? visibleSkills.length : mode === 'toolsets' ? visibleToolsets.length : 0
   const activePageCount = Math.max(1, Math.ceil(activeTotal / SKILLS_PAGE_SIZE))
@@ -174,8 +187,8 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
   }, [pagedSkills])
 
   const totalSkills = skills?.length || 0
-  const enabledToolsets = toolsets?.filter(toolset => toolset.enabled).length || 0
-  const totalToolsets = toolsets?.length || 0
+  const enabledToolsets = publicToolsets?.filter(toolset => toolset.enabled).length || 0
+  const totalToolsets = publicToolsets?.length || 0
 
   useEffect(() => {
     if (mode !== 'connections' && page > activePageCount) {
@@ -207,7 +220,11 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
   }
 
   const searchHidden =
-    mode === 'connections' ? true : mode === 'skills' ? (skills?.length ?? 0) === 0 : (toolsets?.length ?? 0) === 0
+    mode === 'connections'
+      ? true
+      : mode === 'skills'
+        ? (skills?.length ?? 0) === 0
+        : (publicToolsets?.length ?? 0) === 0
 
   const searchPlaceholder =
     mode === 'skills'
