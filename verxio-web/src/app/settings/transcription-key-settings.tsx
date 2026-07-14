@@ -7,6 +7,14 @@ import { Switch } from '@/components/ui/switch'
 import { getHermesConfigRecord, saveHermesConfig } from '@/hermes'
 import { ExternalLink, Loader2, Mic, RefreshCw, Save } from '@/lib/icons'
 import {
+  applyCloudTranscriptionConfig,
+  configValue,
+  REALTIME_TRANSCRIPTION_CONFIG_PATH,
+  selectedCloudTranscriptionModel,
+  selectedCloudTranscriptionProvider,
+  transcriptionModelSupportsRealtime
+} from '@/lib/transcription-config'
+import {
   CLOUD_TRANSCRIPTION_PROVIDERS,
   type CloudTranscriptionProvider,
   cloudTranscriptionProviderById,
@@ -20,52 +28,8 @@ import type { EnvVarInfo, HermesConfigRecord } from '@/types/hermes'
 
 import { CONTROL_TEXT } from './constants'
 import { CredentialKeyCard } from './credential-key-ui'
-import { getNested, setNested } from './helpers'
 import { ListRow, LoadingState, SectionHeading } from './primitives'
 import type { EnvRowProps } from './types'
-
-const MODEL_CONFIG_PATHS: Partial<Record<CloudTranscriptionProviderId, string>> = {
-  elevenlabs: 'stt.elevenlabs.model_id',
-  groq: 'stt.groq.model',
-  mistral: 'stt.mistral.model',
-  openai: 'stt.openai.model'
-}
-
-const REALTIME_CONFIG_PATH = 'notepad.realtime_transcription'
-
-function providerFromConfig(
-  config: HermesConfigRecord,
-  providers: CloudTranscriptionProvider[]
-): CloudTranscriptionProvider {
-  const configured = String(getNested(config, 'stt.provider') ?? '')
-
-  return cloudTranscriptionProviderById(configured, providers) ?? providers[0]
-}
-
-function modelFromConfig(config: HermesConfigRecord, provider: CloudTranscriptionProvider): string {
-  const path = MODEL_CONFIG_PATHS[provider.id]
-  const configured = path ? String(getNested(config, path) ?? '') : ''
-
-  return configured || provider.recommendedModel
-}
-
-function applyTranscriptionConfig(
-  config: HermesConfigRecord,
-  provider: CloudTranscriptionProvider,
-  model: string,
-  realtime: boolean
-): HermesConfigRecord {
-  let next = setNested(config, 'stt.enabled', true)
-  next = setNested(next, 'stt.provider', provider.id)
-
-  const path = MODEL_CONFIG_PATHS[provider.id]
-
-  if (path) {
-    next = setNested(next, path, model || provider.recommendedModel)
-  }
-
-  return setNested(next, REALTIME_CONFIG_PATH, realtime)
-}
 
 function transcriptionEnvInfo(provider: CloudTranscriptionProvider, existing?: EnvVarInfo): EnvVarInfo {
   return {
@@ -125,12 +89,12 @@ export function TranscriptionKeySettings({
         }
 
         const nextProviders = cloudTranscriptionProvidersFromCatalog(catalog)
-        const provider = providerFromConfig(loaded, nextProviders)
+        const provider = selectedCloudTranscriptionProvider(loaded, nextProviders)
         setProviders(nextProviders)
         setConfig(loaded)
         setSelectedProviderId(provider.id)
-        setSelectedModel(modelFromConfig(loaded, provider))
-        setRealtime(Boolean(getNested(loaded, REALTIME_CONFIG_PATH)))
+        setSelectedModel(selectedCloudTranscriptionModel(loaded, provider))
+        setRealtime(Boolean(configValue(loaded, REALTIME_TRANSCRIPTION_CONFIG_PATH)))
       } catch (error) {
         notifyError(error, 'Could not load transcription settings')
       } finally {
@@ -152,6 +116,8 @@ export function TranscriptionKeySettings({
     () => transcriptionModelOptions(selectedProvider, selectedModel),
     [selectedModel, selectedProvider]
   )
+
+  const realtimeSupported = transcriptionModelSupportsRealtime(selectedProvider, selectedModel)
 
   useEffect(() => {
     if (!selectedModel.trim()) {
@@ -193,7 +159,11 @@ export function TranscriptionKeySettings({
     }
   }
 
-  async function handleSaveConfig() {
+  async function persistConfig(
+    nextRealtime = realtime,
+    successMessage = 'Transcription settings saved',
+    rethrow = false
+  ) {
     if (!config) {
       return
     }
@@ -201,14 +171,40 @@ export function TranscriptionKeySettings({
     setSavingConfig(true)
 
     try {
-      const next = applyTranscriptionConfig(config, selectedProvider, selectedModel, realtime)
+      const next = applyCloudTranscriptionConfig(config, selectedProvider, selectedModel, nextRealtime)
       await saveHermesConfig(next)
       setConfig(next)
-      notify({ kind: 'success', message: 'Transcription settings saved' })
+      setRealtime(Boolean(configValue(next, REALTIME_TRANSCRIPTION_CONFIG_PATH)))
+      notify({ kind: 'success', message: successMessage })
     } catch (error) {
       notifyError(error, 'Could not save transcription settings')
+
+      if (rethrow) {
+        throw error
+      }
     } finally {
       setSavingConfig(false)
+    }
+  }
+
+  async function handleSaveConfig() {
+    await persistConfig()
+  }
+
+  async function handleRealtimeChange(value: boolean) {
+    const previous = realtime
+    const nextRealtime = value && realtimeSupported
+
+    setRealtime(nextRealtime)
+
+    try {
+      await persistConfig(
+        nextRealtime,
+        nextRealtime ? 'Realtime transcription enabled' : 'Realtime transcription disabled',
+        true
+      )
+    } catch {
+      setRealtime(previous)
     }
   }
 
@@ -290,12 +286,49 @@ export function TranscriptionKeySettings({
           <ListRow
             action={
               <div className="flex items-center justify-end">
-                <Switch checked={realtime} onCheckedChange={setRealtime} />
+                <Switch
+                  checked={realtime && realtimeSupported}
+                  disabled={savingConfig || !realtimeSupported}
+                  onCheckedChange={value => void handleRealtimeChange(value)}
+                />
               </div>
             }
-            description="When enabled, Notepad can transcribe audio chunks while recording instead of waiting until the end."
+            description={
+              realtimeSupported
+                ? 'When enabled, Notepad transcribes audio chunks while recording instead of waiting until the end.'
+                : 'Choose one of the supported models below to use realtime transcription.'
+            }
             title="Realtime transcription"
           />
+        </div>
+
+        <div className="mt-3 rounded-[6px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3">
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+            <p className="text-xs font-medium text-foreground">Supported models</p>
+            <p className="text-[0.6875rem] text-muted-foreground">
+              {selectedProvider.catalogSource === 'provider' ? 'Loaded from provider' : 'Fallback list'}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {selectedProvider.models.map(model => (
+              <span
+                className={`
+                  inline-flex items-center gap-1 rounded-[4px] border px-2 py-1 text-[0.6875rem]
+                  ${
+                    model === selectedModel
+                      ? 'border-primary/70 bg-primary/5 text-foreground'
+                      : 'border-(--ui-stroke-tertiary) bg-background/50 text-muted-foreground'
+                  }
+                `}
+                key={model}
+              >
+                {model}
+                <span className="text-[0.625rem] text-muted-foreground">
+                  {model === selectedProvider.recommendedModel ? 'Recommended' : 'Realtime'}
+                </span>
+              </span>
+            ))}
+          </div>
         </div>
 
         {catalogError ? (
@@ -306,7 +339,7 @@ export function TranscriptionKeySettings({
 
         <div className="mt-3 flex justify-end gap-2">
           <Button
-            disabled={catalogRefreshing}
+            disabled={catalogRefreshing || savingConfig}
             onClick={() => void refreshCatalog()}
             size="sm"
             type="button"

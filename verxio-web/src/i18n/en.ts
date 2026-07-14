@@ -106,7 +106,7 @@ export const en: Translations = {
     errors: {
       elevenLabsNeedsKey: 'ElevenLabs STT needs ELEVENLABS_API_KEY.',
       elevenLabsRejectedKey: 'ElevenLabs rejected the API key (401).',
-      methodNotAllowed: 'The desktop backend rejected that request (405 Method Not Allowed). Try restarting Verxio.',
+      methodNotAllowed: 'That action used an unsupported API method. Refresh Verxio and try again.',
       microphonePermission: 'Microphone permission was denied.',
       openaiRejectedApiKey: 'OpenAI rejected the API key.',
       openaiRejectedApiKeyWithStatus: status => `OpenAI rejected the API key (${status} invalid_api_key).`,
