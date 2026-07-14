@@ -9,10 +9,18 @@ import { FolderAccessDialog } from '@/components/folder-access-dialog'
 import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overlay'
 import { Pane, PaneMain } from '@/components/pane-shell'
 import { RemoteDisplayBanner } from '@/components/remote-display-banner'
+import { readVerxioAuthScope } from '@/lib/auth-scope'
 import { useSkinCommand } from '@/themes/use-skin-command'
 
 import { formatRefValue } from '../components/assistant-ui/directive-text'
-import { getCronJobs, getSessionMessages, listAllProfileSessions, type SessionInfo, triggerCronJob } from '../hermes'
+import {
+  getCronJobs,
+  getSessionMessages,
+  listAllProfileSessions,
+  type PaginatedSessions,
+  type SessionInfo,
+  triggerCronJob
+} from '../hermes'
 import { preserveLocalAssistantErrors, toChatMessages } from '../lib/chat-messages'
 import { storedSessionIdForNotification } from '../lib/session-ids'
 import { shouldRefreshSessions, withSessionListRetries } from '../lib/session-list-sync'
@@ -115,6 +123,43 @@ const PulseView = lazy(async () => ({ default: (await import('./pulse')).PulseVi
 const ProfilesView = lazy(async () => ({ default: (await import('./profiles')).ProfilesView }))
 const SettingsView = lazy(async () => ({ default: (await import('./settings')).SettingsView }))
 const SkillsView = lazy(async () => ({ default: (await import('./skills')).SkillsView }))
+const SESSIONS_CACHE_KEY = 'verxio.sessions.cache.v1'
+
+function sessionsCacheKey(): string {
+  return `${SESSIONS_CACHE_KEY}:${readVerxioAuthScope()}`
+}
+
+function readCachedSessions(): PaginatedSessions | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const raw = window.localStorage.getItem(sessionsCacheKey())
+
+    if (!raw) {
+      return null
+    }
+
+    const parsed = JSON.parse(raw) as PaginatedSessions
+
+    return Array.isArray(parsed.sessions) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function writeCachedSessions(result: PaginatedSessions): void {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    window.localStorage.setItem(sessionsCacheKey(), JSON.stringify(result))
+  } catch {
+    // Cache writes are best effort; live runtime data still drives the sidebar.
+  }
+}
 
 // Rows a session refresh must preserve even if the aggregator omits them:
 // in-flight first turns (message_count 0), pinned rows aged off the page, and
@@ -286,6 +331,7 @@ export function DesktopController() {
         setSessions(prev => mergeSessionPage(prev, result.sessions, sessionsToKeep()))
         setSessionsTotal(typeof result.total === 'number' ? result.total : result.sessions.length)
         setSessionProfileTotals(result.profile_totals ?? {})
+        writeCachedSessions(result)
       }
     } finally {
       if (refreshSessionsRequestRef.current === requestId) {
@@ -304,6 +350,19 @@ export function DesktopController() {
   // Another tab mutated the shared session list — re-pull so the sidebar reflects it.
   useEffect(() => {
     return onSessionsChanged(() => void refreshSessions().catch(() => undefined))
+  }, [refreshSessions])
+
+  useEffect(() => {
+    const cached = readCachedSessions()
+
+    if (cached && $sessions.get().length === 0) {
+      setSessions(cached.sessions)
+      setSessionsTotal(typeof cached.total === 'number' ? cached.total : cached.sessions.length)
+      setSessionProfileTotals(cached.profile_totals ?? {})
+      setSessionsLoading(false)
+    }
+
+    void refreshSessions().catch(() => undefined)
   }, [refreshSessions])
 
   // ALL-profiles view pages one profile at a time: fetch that profile's next

@@ -9,6 +9,7 @@ import { Switch } from '@/components/ui/switch'
 import type { HermesGateway } from '@/hermes'
 import { getGlobalModelOptions } from '@/hermes'
 import { useI18n } from '@/i18n'
+import { readCachedModelOptions, writeCachedModelOptions } from '@/lib/model-options-cache'
 import { displayModelName, modelDisplayParts } from '@/lib/model-status-label'
 import {
   $visibleModels,
@@ -38,17 +39,25 @@ export function ModelVisibilityDialog({
   const copy = t.modelVisibility
   const [search, setSearch] = useState('')
   const stored = useStore($visibleModels)
+  const modelOptionsScope = sessionId || 'global'
 
   const modelOptions = useQuery({
-    queryKey: ['model-options', sessionId || 'global'],
-    queryFn: (): Promise<ModelOptionsResponse> => {
+    queryKey: ['model-options', modelOptionsScope],
+    queryFn: async (): Promise<ModelOptionsResponse> => {
+      let next: ModelOptionsResponse
+
       if (gw && sessionId) {
-        return gw.request<ModelOptionsResponse>('model.options', { session_id: sessionId })
+        next = await gw.request<ModelOptionsResponse>('model.options', { session_id: sessionId })
+      } else {
+        next = await getGlobalModelOptions()
       }
 
-      return getGlobalModelOptions()
+      writeCachedModelOptions(modelOptionsScope, next)
+
+      return next
     },
-    enabled: open
+    enabled: open,
+    initialData: () => readCachedModelOptions(modelOptionsScope)
   })
 
   const providers = useMemo(

@@ -18,6 +18,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import type { HermesGateway } from '@/hermes'
 import { getGlobalModelOptions } from '@/hermes'
 import { useI18n } from '@/i18n'
+import { readCachedModelOptions, writeCachedModelOptions } from '@/lib/model-options-cache'
 import {
   currentPickerSelection,
   displayModelName,
@@ -71,16 +72,24 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
   const currentReasoningEffort = useStore($currentReasoningEffort)
   const modelPresets = useStore($modelPresets)
   const visibleModels = useStore($visibleModels)
+  const modelOptionsScope = activeSessionId || 'global'
 
   const modelOptions = useQuery({
-    queryKey: ['model-options', activeSessionId || 'global'],
-    queryFn: (): Promise<ModelOptionsResponse> => {
+    queryKey: ['model-options', modelOptionsScope],
+    queryFn: async (): Promise<ModelOptionsResponse> => {
+      let next: ModelOptionsResponse
+
       if (gateway && activeSessionId) {
-        return gateway.request<ModelOptionsResponse>('model.options', { session_id: activeSessionId })
+        next = await gateway.request<ModelOptionsResponse>('model.options', { session_id: activeSessionId })
+      } else {
+        next = await getGlobalModelOptions()
       }
 
-      return getGlobalModelOptions()
-    }
+      writeCachedModelOptions(modelOptionsScope, next)
+
+      return next
+    },
+    initialData: () => readCachedModelOptions(modelOptionsScope)
   })
 
   const { model: optionsModel, provider: optionsProvider } = currentPickerSelection(

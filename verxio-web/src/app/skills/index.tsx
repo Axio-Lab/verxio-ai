@@ -12,6 +12,7 @@ import { Switch } from '@/components/ui/switch'
 import { TextTab, TextTabMeta } from '@/components/ui/text-tab'
 import { getSkills, getToolsets, toggleSkill, toggleToolset } from '@/hermes'
 import { useI18n } from '@/i18n'
+import { readVerxioAuthScope } from '@/lib/auth-scope'
 import { Pencil } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
@@ -35,6 +36,44 @@ const SKILLS_PAGE_SIZE = 10
 const CONNECTIONS_PAGE_SIZE = 10
 const HIDDEN_TOOLSET_NAMES = new Set(['subscription'])
 const HIDDEN_TOOLSET_LABELS = new Set(['nous subscription'])
+const SKILLS_CACHE_KEY = 'verxio.skills.cache.v1'
+const TOOLSETS_CACHE_KEY = 'verxio.toolsets.cache.v1'
+
+function scopedCacheKey(key: string): string {
+  return `${key}:${readVerxioAuthScope()}`
+}
+
+function readCachedList<T>(key: string): T[] | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const raw = window.localStorage.getItem(scopedCacheKey(key))
+
+    if (!raw) {
+      return null
+    }
+
+    const parsed = JSON.parse(raw)
+
+    return Array.isArray(parsed) ? (parsed as T[]) : null
+  } catch {
+    return null
+  }
+}
+
+function writeCachedList<T>(key: string, rows: T[]): void {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    window.localStorage.setItem(scopedCacheKey(key), JSON.stringify(rows))
+  } catch {
+    // Cache writes are best effort; live runtime data still drives the page.
+  }
+}
 
 function categoryFor(skill: SkillInfo): string {
   return asText(skill.category) || 'general'
@@ -103,8 +142,8 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
   const navigate = useNavigate()
 
   const [query, setQuery] = useState('')
-  const [skills, setSkills] = useState<SkillInfo[] | null>(null)
-  const [toolsets, setToolsets] = useState<ToolsetInfo[] | null>(null)
+  const [skills, setSkills] = useState<SkillInfo[] | null>(() => readCachedList<SkillInfo>(SKILLS_CACHE_KEY))
+  const [toolsets, setToolsets] = useState<ToolsetInfo[] | null>(() => readCachedList<ToolsetInfo>(TOOLSETS_CACHE_KEY))
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [savingSkill, setSavingSkill] = useState<string | null>(null)
@@ -116,20 +155,33 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
   const refreshCapabilities = useCallback(async () => {
     setRefreshing(true)
 
-    try {
-      const [nextSkills, nextToolsets] = await Promise.all([getSkills(), getToolsets()])
+    const [skillsResult, toolsetsResult] = await Promise.allSettled([getSkills(), getToolsets()])
+
+    if (skillsResult.status === 'fulfilled') {
+      const nextSkills = skillsResult.value
       setSkills(nextSkills)
-      setToolsets(nextToolsets)
-    } catch (err) {
-      notifyError(err, t.skills.skillsLoadFailed)
-    } finally {
-      setRefreshing(false)
+      writeCachedList(SKILLS_CACHE_KEY, nextSkills)
+    } else if (!skills) {
+      notifyError(skillsResult.reason, t.skills.skillsLoadFailed)
     }
-  }, [t])
+
+    if (toolsetsResult.status === 'fulfilled') {
+      const nextToolsets = toolsetsResult.value
+      setToolsets(nextToolsets)
+      writeCachedList(TOOLSETS_CACHE_KEY, nextToolsets)
+    } else if (!toolsets) {
+      notifyError(toolsetsResult.reason, t.skills.toolsetsRefreshFailed)
+    }
+
+    setRefreshing(false)
+  }, [skills, t, toolsets])
 
   const refreshToolsets = useCallback(() => {
     getToolsets()
-      .then(setToolsets)
+      .then(nextToolsets => {
+        setToolsets(nextToolsets)
+        writeCachedList(TOOLSETS_CACHE_KEY, nextToolsets)
+      })
       .catch(err => notifyError(err, t.skills.toolsetsRefreshFailed))
   }, [t])
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +29,9 @@ DEFAULT_STARTERS = [
     "Create a useful report and save it as a Verxio artifact.",
     "Inspect the runtime setup and tell me what is ready.",
 ]
+CONTEXT_CACHE_TTL_SECONDS = max(0, int(os.getenv("VERXIO_CONTEXT_CACHE_TTL_SECONDS", "30")))
+CONTEXT_CACHE_MAX_ENTRIES = max(16, int(os.getenv("VERXIO_CONTEXT_CACHE_MAX_ENTRIES", "4096")))
+_CONTEXT_CACHE: OrderedDict[str, tuple[Workspace, AgentProfile, RuntimeInstance, float]] = OrderedDict()
 
 
 def now_iso() -> str:
@@ -40,6 +45,49 @@ def slugify(value: str) -> str:
 
 def safe_path_part(value: str) -> str:
     return re.sub(r"[^a-zA-Z0-9_.-]+", "_", value).strip("._") or "item"
+
+
+def _cache_context(user_id: str, workspace: Workspace, agent: AgentProfile, runtime: RuntimeInstance) -> None:
+    if CONTEXT_CACHE_TTL_SECONDS <= 0:
+        return
+
+    _CONTEXT_CACHE[user_id] = (workspace, agent, runtime, time.monotonic() + CONTEXT_CACHE_TTL_SECONDS)
+    _CONTEXT_CACHE.move_to_end(user_id)
+
+    while len(_CONTEXT_CACHE) > CONTEXT_CACHE_MAX_ENTRIES:
+        _CONTEXT_CACHE.popitem(last=False)
+
+
+def _cached_context(user_id: str) -> tuple[Workspace, AgentProfile, RuntimeInstance] | None:
+    cached = _CONTEXT_CACHE.get(user_id)
+    if not cached:
+        return None
+
+    workspace, agent, runtime, cached_until = cached
+    if cached_until <= time.monotonic():
+        _CONTEXT_CACHE.pop(user_id, None)
+        return None
+
+    _CONTEXT_CACHE.move_to_end(user_id)
+    return workspace, agent, runtime
+
+
+def _invalidate_context_cache(*, workspace_id: str | None = None, agent_id: str | None = None) -> None:
+    if not _CONTEXT_CACHE:
+        return
+
+    if workspace_id is None and agent_id is None:
+        _CONTEXT_CACHE.clear()
+        return
+
+    stale = [
+        user_id
+        for user_id, (workspace, agent, _runtime, _cached_until) in _CONTEXT_CACHE.items()
+        if (workspace_id and workspace.id == workspace_id) or (agent_id and agent.id == agent_id)
+    ]
+
+    for user_id in stale:
+        _CONTEXT_CACHE.pop(user_id, None)
 
 
 def runtime_base_path(workspace_id: str, agent_id: str) -> Path:
@@ -154,7 +202,13 @@ def runtime_from_row(row: dict[str, Any]) -> RuntimeInstance:
     )
 
 
-def ensure_personal_workspace(user: dict[str, Any]) -> tuple[Workspace, AgentProfile, RuntimeInstance]:
+def ensure_personal_workspace(
+    user: dict[str, Any], *, use_cache: bool = True
+) -> tuple[Workspace, AgentProfile, RuntimeInstance]:
+    cached = _cached_context(str(user["id"])) if use_cache else None
+    if cached:
+        return cached
+
     existing = db.fetch_one(
         """
         SELECT w.* FROM workspaces w
@@ -224,6 +278,7 @@ def ensure_personal_workspace(user: dict[str, Any]) -> tuple[Workspace, AgentPro
 
     agent = agent_from_row(agent_row or {})
     runtime = ensure_runtime_instance(workspace, agent)
+    _cache_context(str(user["id"]), workspace, agent, runtime)
     return workspace, agent, runtime
 
 
@@ -260,15 +315,18 @@ def ensure_runtime_instance(workspace: Workspace, agent: AgentProfile) -> Runtim
                 ),
             )
         row = db.fetch_one("SELECT * FROM runtime_instances WHERE id = ?", (runtime_id,))
+        _invalidate_context_cache(workspace_id=workspace.id, agent_id=agent.id)
     return runtime_from_row(row or {})
 
 
-def get_context_for_user(user: dict[str, Any]) -> tuple[Workspace, AgentProfile, RuntimeInstance]:
-    return ensure_personal_workspace(user)
+def get_context_for_user(user: dict[str, Any], *, fresh: bool = False) -> tuple[Workspace, AgentProfile, RuntimeInstance]:
+    return ensure_personal_workspace(user, use_cache=not fresh)
 
 
-def get_runtime_for_user(user: dict[str, Any], agent_id: str | None = None) -> RuntimeInstance:
-    workspace, agent, runtime = get_context_for_user(user)
+def get_runtime_for_user(
+    user: dict[str, Any], agent_id: str | None = None, *, fresh: bool = False
+) -> RuntimeInstance:
+    workspace, agent, runtime = get_context_for_user(user, fresh=fresh)
     if agent_id and agent_id != agent.id:
         raise KeyError("Agent not found in active workspace.")
     return runtime
@@ -294,7 +352,9 @@ def save_runtime(runtime: RuntimeInstance, **patch: Any) -> RuntimeInstance:
         (*fields.values(), runtime.id),
     )
     row = db.fetch_one("SELECT * FROM runtime_instances WHERE id = ?", (runtime.id,))
-    return runtime_from_row(row or {})
+    updated = runtime_from_row(row or {})
+    _invalidate_context_cache(workspace_id=updated.workspace_id, agent_id=updated.agent_id)
+    return updated
 
 
 def record_audit(

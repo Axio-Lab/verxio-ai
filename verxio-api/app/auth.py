@@ -5,6 +5,8 @@ import hashlib
 import hmac
 import os
 import secrets
+import time
+from collections import OrderedDict
 from datetime import timedelta
 from typing import Any
 
@@ -31,6 +33,9 @@ SESSION_COOKIE = os.getenv("VERXIO_SESSION_COOKIE", "verxio_session")
 SESSION_DAYS = int(os.getenv("VERXIO_SESSION_DAYS", "7"))
 PBKDF2_ITERATIONS = 210_000
 AUTH_CODE_MAX_ATTEMPTS = int(os.getenv("VERXIO_AUTH_CODE_MAX_ATTEMPTS", "5"))
+SESSION_CACHE_TTL_SECONDS = max(0, int(os.getenv("VERXIO_SESSION_CACHE_TTL_SECONDS", "60")))
+SESSION_CACHE_MAX_ENTRIES = max(16, int(os.getenv("VERXIO_SESSION_CACHE_MAX_ENTRIES", "4096")))
+_SESSION_USER_CACHE: OrderedDict[str, tuple[dict[str, Any], str, float]] = OrderedDict()
 
 
 def normalize_email(email: str) -> str:
@@ -64,6 +69,35 @@ def verify_password(password: str, stored: str) -> bool:
 
 def hash_session_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _cache_session_user(token_hash: str, user: dict[str, Any], expires_at: str) -> None:
+    if SESSION_CACHE_TTL_SECONDS <= 0:
+        return
+
+    _SESSION_USER_CACHE[token_hash] = (dict(user), expires_at, time.monotonic() + SESSION_CACHE_TTL_SECONDS)
+    _SESSION_USER_CACHE.move_to_end(token_hash)
+
+    while len(_SESSION_USER_CACHE) > SESSION_CACHE_MAX_ENTRIES:
+        _SESSION_USER_CACHE.popitem(last=False)
+
+
+def _cached_session_user(token_hash: str) -> dict[str, Any] | None:
+    cached = _SESSION_USER_CACHE.get(token_hash)
+    if not cached:
+        return None
+
+    user, expires_at, cached_until = cached
+    if cached_until <= time.monotonic() or expires_at <= now_iso():
+        _SESSION_USER_CACHE.pop(token_hash, None)
+        return None
+
+    _SESSION_USER_CACHE.move_to_end(token_hash)
+    return dict(user)
+
+
+def _invalidate_session_user(token_hash: str) -> None:
+    _SESSION_USER_CACHE.pop(token_hash, None)
 
 
 def _auth_code_ttl_minutes() -> int:
@@ -239,6 +273,7 @@ def create_session(user: dict[str, Any], request: Request, response: Response) -
         ),
     )
     set_session_cookie(response, token)
+    _cache_session_user(hash_session_token(token), user, expires_at)
 
 
 def get_current_user(request: Request) -> dict[str, Any] | None:
@@ -246,15 +281,24 @@ def get_current_user(request: Request) -> dict[str, Any] | None:
     if not token:
         return None
 
+    token_hash = hash_session_token(token)
+    cached = _cached_session_user(token_hash)
+    if cached:
+        return cached
+
     row = db.fetch_one(
         """
-        SELECT u.* FROM sessions s
+        SELECT u.*, s.expires_at AS session_expires_at FROM sessions s
         JOIN users u ON u.id = s.user_id
         WHERE s.token_hash = ? AND s.expires_at > ?
         LIMIT 1
         """,
-        (hash_session_token(token), now_iso()),
+        (token_hash, now_iso()),
     )
+    if row:
+        expires_at = str(row.pop("session_expires_at", "") or "")
+        _cache_session_user(token_hash, row, expires_at)
+
     return row
 
 
@@ -444,7 +488,9 @@ def reset_password(payload: PasswordResetRequest, request: Request, response: Re
 def logout(request: Request, response: Response) -> dict[str, bool]:
     token = request.cookies.get(SESSION_COOKIE)
     if token:
-        db.execute("DELETE FROM sessions WHERE token_hash = ?", (hash_session_token(token),))
+        token_hash = hash_session_token(token)
+        _invalidate_session_user(token_hash)
+        db.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
     clear_session_cookie(response)
     return {"ok": True}
 
