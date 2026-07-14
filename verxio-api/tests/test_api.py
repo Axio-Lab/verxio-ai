@@ -735,6 +735,18 @@ def test_artifacts_are_indexed_from_runtime_workspace_and_isolated(client):
     assert preview.status_code == 200
     assert blocked.status_code == 404
 
+    blocked_delete = client.delete(f"/api/artifacts/{artifact_id}", headers={"Cookie": f"{SESSION_COOKIE}={token_two}"})
+    deleted = client.delete(f"/api/artifacts/{artifact_id}", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
+
+    assert blocked_delete.status_code == 404
+    assert deleted.status_code == 200
+    assert deleted.json() == {"ok": True}
+    assert not (artifact_path / "daily-sales-dashboard.html").exists()
+
+    after_delete = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
+    assert after_delete.status_code == 200
+    assert after_delete.json()["artifacts"] == []
+
 
 def test_notepad_recording_upload_saves_audio_as_artifact(client):
     payload, token = signup(client, "recording-artifact@example.com")

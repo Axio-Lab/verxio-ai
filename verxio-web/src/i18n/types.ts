@@ -1052,6 +1052,12 @@ export interface Translations {
     noArtifactsDesc: string
     failedLoad: string
     openFailed: string
+    deleteAction: string
+    deleteTitle: (label: string) => string
+    deleteDescription: string
+    deleteConfirm: string
+    deleting: string
+    deleted: string
     itemsImage: string
     itemsLink: string
     itemsFile: string

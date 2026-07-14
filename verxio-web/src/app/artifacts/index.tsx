@@ -6,6 +6,7 @@ import { ZoomableImage } from '@/components/chat/zoomable-image'
 import { PageLoader } from '@/components/page-loader'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { CopyButton } from '@/components/ui/copy-button'
 import { PaginationControl } from '@/components/ui/pagination'
 import { TextTab, TextTabMeta } from '@/components/ui/text-tab'
@@ -16,8 +17,14 @@ import { sessionTitle } from '@/lib/chat-runtime'
 import { ExternalLink, ExternalLinkIcon, hostPathLabel, urlSlugTitleLabel, useLinkTitle } from '@/lib/external-link'
 import { FileImage, FileText, FolderOpen, Link2 } from '@/lib/icons'
 import { cn } from '@/lib/utils'
-import { listVerxioArtifacts, verxioApiEnabled, verxioApiUrl, type VerxioArtifact } from '@/lib/verxio-api'
-import { notifyError } from '@/store/notifications'
+import {
+  deleteVerxioArtifact,
+  listVerxioArtifacts,
+  verxioApiEnabled,
+  verxioApiUrl,
+  type VerxioArtifact
+} from '@/lib/verxio-api'
+import { notify, notifyError } from '@/store/notifications'
 import type { SessionInfo, SessionMessage } from '@/types/hermes'
 
 import { useRefreshHotkey } from '../hooks/use-refresh-hotkey'
@@ -32,6 +39,7 @@ type ArtifactFilter = 'all' | ArtifactKind
 const ARTIFACT_FILTERS: readonly ArtifactFilter[] = ['all', 'image', 'file', 'link']
 
 interface ArtifactRecord {
+  deletable?: boolean
   id: string
   kind: ArtifactKind
   value: string
@@ -172,6 +180,7 @@ function mapVerxioArtifact(record: VerxioArtifact): ArtifactRecord {
     value,
     href: verxioApiUrl(`/api/artifacts/${encodeURIComponent(record.id)}/preview`),
     label: record.file_name,
+    deletable: true,
     sessionId: '',
     sessionTitle: 'Workspace artifacts',
     timestamp: Number.isFinite(updated) ? updated : Date.now()
@@ -339,6 +348,7 @@ function formatArtifactTime(timestamp: number): string {
 }
 
 type CellCtx = {
+  onDelete: (artifact: ArtifactRecord) => void
   onOpen: (href: string) => void | Promise<void>
   onOpenChat: (sessionId: string) => void
 }
@@ -365,6 +375,7 @@ export function ArtifactsView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
   const [artifacts, setArtifacts] = useState<ArtifactRecord[] | null>(null)
   const [query, setQuery] = useState('')
   const [refreshing, setRefreshing] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<ArtifactRecord | null>(null)
 
   const [kindFilter, setKindFilter] = useRouteEnumParam('tab', ARTIFACT_FILTERS, 'all')
 
@@ -501,120 +512,146 @@ export function ArtifactsView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
     })
   }, [])
 
+  async function handleConfirmDelete() {
+    if (!pendingDelete) {
+      return
+    }
+
+    await deleteVerxioArtifact(pendingDelete.id)
+    setArtifacts(current => (current ? current.filter(artifact => artifact.id !== pendingDelete.id) : current))
+    notify({ kind: 'success', message: a.deleted })
+  }
+
   const cellCtx: CellCtx = {
+    onDelete: setPendingDelete,
     onOpen: openArtifact,
     onOpenChat: sessionId => navigate(sessionRoute(sessionId))
   }
 
   return (
-    <PageSearchShell
-      {...props}
-      onSearchChange={setQuery}
-      searchHidden={counts.all === 0}
-      searchPlaceholder={a.search}
-      searchTrailingAction={
-        <Button
-          aria-label={refreshing ? a.refreshing : a.refresh}
-          className="text-(--ui-text-tertiary) hover:bg-transparent hover:text-foreground"
-          disabled={refreshing}
-          onClick={() => void refreshArtifacts()}
-          size="icon-xs"
-          title={refreshing ? a.refreshing : a.refresh}
-          type="button"
-          variant="ghost"
-        >
-          <Codicon name="refresh" size="0.875rem" spinning={refreshing} />
-        </Button>
-      }
-      searchValue={query}
-      tabs={
-        <>
-          <TextTab active={kindFilter === 'all'} onClick={() => setKindFilter('all')}>
-            {a.tabAll} <TextTabMeta>({counts.all})</TextTabMeta>
-          </TextTab>
-          <TextTab active={kindFilter === 'image'} onClick={() => setKindFilter('image')}>
-            {a.tabImages} <TextTabMeta>({counts.image})</TextTabMeta>
-          </TextTab>
-          <TextTab active={kindFilter === 'file'} onClick={() => setKindFilter('file')}>
-            {a.tabFiles} <TextTabMeta>({counts.file})</TextTabMeta>
-          </TextTab>
-          <TextTab active={kindFilter === 'link'} onClick={() => setKindFilter('link')}>
-            {a.tabLinks} <TextTabMeta>({counts.link})</TextTabMeta>
-          </TextTab>
-        </>
-      }
-    >
-      {!artifacts ? (
-        <PageLoader label={a.indexing} />
-      ) : visibleArtifacts.length === 0 ? (
-        <div className="grid h-full place-items-center px-6 text-center">
-          <div>
-            <div className="text-sm font-medium">{a.noArtifactsTitle}</div>
-            <div className="mt-1 text-xs text-muted-foreground">{a.noArtifactsDesc}</div>
+    <>
+      <PageSearchShell
+        {...props}
+        onSearchChange={setQuery}
+        searchHidden={counts.all === 0}
+        searchPlaceholder={a.search}
+        searchTrailingAction={
+          <Button
+            aria-label={refreshing ? a.refreshing : a.refresh}
+            className="text-(--ui-text-tertiary) hover:bg-transparent hover:text-foreground"
+            disabled={refreshing}
+            onClick={() => void refreshArtifacts()}
+            size="icon-xs"
+            title={refreshing ? a.refreshing : a.refresh}
+            type="button"
+            variant="ghost"
+          >
+            <Codicon name="refresh" size="0.875rem" spinning={refreshing} />
+          </Button>
+        }
+        searchValue={query}
+        tabs={
+          <>
+            <TextTab active={kindFilter === 'all'} onClick={() => setKindFilter('all')}>
+              {a.tabAll} <TextTabMeta>({counts.all})</TextTabMeta>
+            </TextTab>
+            <TextTab active={kindFilter === 'image'} onClick={() => setKindFilter('image')}>
+              {a.tabImages} <TextTabMeta>({counts.image})</TextTabMeta>
+            </TextTab>
+            <TextTab active={kindFilter === 'file'} onClick={() => setKindFilter('file')}>
+              {a.tabFiles} <TextTabMeta>({counts.file})</TextTabMeta>
+            </TextTab>
+            <TextTab active={kindFilter === 'link'} onClick={() => setKindFilter('link')}>
+              {a.tabLinks} <TextTabMeta>({counts.link})</TextTabMeta>
+            </TextTab>
+          </>
+        }
+      >
+        {!artifacts ? (
+          <PageLoader label={a.indexing} />
+        ) : visibleArtifacts.length === 0 ? (
+          <div className="grid h-full place-items-center px-6 text-center">
+            <div>
+              <div className="text-sm font-medium">{a.noArtifactsTitle}</div>
+              <div className="mt-1 text-xs text-muted-foreground">{a.noArtifactsDesc}</div>
+            </div>
           </div>
-        </div>
-      ) : (
-        <div className="h-full overflow-y-auto">
-          <div className={cn('flex flex-col gap-3 pb-2', PAGE_INSET_X)}>
-            {visibleImageArtifacts.length > 0 && (
-              <section className="flex flex-col">
-                <div
-                  className={cn(
-                    'sticky top-0 z-10 flex h-7 items-center gap-3 overflow-x-auto bg-background',
-                    PAGE_INSET_NEG_X,
-                    PAGE_INSET_X
-                  )}
-                >
-                  <ArtifactsPagination
-                    className="ml-auto justify-end px-0"
-                    itemLabel={a.itemsImage}
-                    onPageChange={setImagePage}
-                    page={currentImagePage}
-                    pageSize={24}
-                    total={visibleImageArtifacts.length}
-                  />
-                </div>
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] items-start gap-2 pt-1.5">
-                  {pagedImageArtifacts.map(artifact => (
-                    <ArtifactImageCard
-                      artifact={artifact}
-                      failedImage={failedImageIds.has(artifact.id)}
-                      key={artifact.id}
-                      onImageError={markImageFailed}
-                      onOpenChat={sessionId => navigate(sessionRoute(sessionId))}
+        ) : (
+          <div className="h-full overflow-y-auto">
+            <div className={cn('flex flex-col gap-3 pb-2', PAGE_INSET_X)}>
+              {visibleImageArtifacts.length > 0 && (
+                <section className="flex flex-col">
+                  <div
+                    className={cn(
+                      'sticky top-0 z-10 flex h-7 items-center gap-3 overflow-x-auto bg-background',
+                      PAGE_INSET_NEG_X,
+                      PAGE_INSET_X
+                    )}
+                  >
+                    <ArtifactsPagination
+                      className="ml-auto justify-end px-0"
+                      itemLabel={a.itemsImage}
+                      onPageChange={setImagePage}
+                      page={currentImagePage}
+                      pageSize={24}
+                      total={visibleImageArtifacts.length}
                     />
-                  ))}
-                </div>
-              </section>
-            )}
+                  </div>
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(11rem,1fr))] items-start gap-2 pt-1.5">
+                    {pagedImageArtifacts.map(artifact => (
+                      <ArtifactImageCard
+                        artifact={artifact}
+                        failedImage={failedImageIds.has(artifact.id)}
+                        key={artifact.id}
+                        onDelete={setPendingDelete}
+                        onImageError={markImageFailed}
+                        onOpenChat={sessionId => navigate(sessionRoute(sessionId))}
+                      />
+                    ))}
+                  </div>
+                </section>
+              )}
 
-            {visibleFileArtifacts.length > 0 && (
-              <section className="flex flex-col">
-                <div
-                  className={cn(
-                    'sticky top-0 z-10 flex h-7 items-center gap-3 overflow-x-auto bg-background',
-                    PAGE_INSET_NEG_X,
-                    PAGE_INSET_X
-                  )}
-                >
-                  <ArtifactsPagination
-                    className="ml-auto justify-end px-0"
-                    itemLabel={itemsLabel(kindFilter, a)}
-                    onPageChange={setFilePage}
-                    page={currentFilePage}
-                    pageSize={100}
-                    total={visibleFileArtifacts.length}
-                  />
-                </div>
-                <div className="overflow-x-auto rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-chat-bubble-background)">
-                  <ArtifactTable artifacts={pagedFileArtifacts} ctx={cellCtx} filter={kindFilter} />
-                </div>
-              </section>
-            )}
+              {visibleFileArtifacts.length > 0 && (
+                <section className="flex flex-col">
+                  <div
+                    className={cn(
+                      'sticky top-0 z-10 flex h-7 items-center gap-3 overflow-x-auto bg-background',
+                      PAGE_INSET_NEG_X,
+                      PAGE_INSET_X
+                    )}
+                  >
+                    <ArtifactsPagination
+                      className="ml-auto justify-end px-0"
+                      itemLabel={itemsLabel(kindFilter, a)}
+                      onPageChange={setFilePage}
+                      page={currentFilePage}
+                      pageSize={100}
+                      total={visibleFileArtifacts.length}
+                    />
+                  </div>
+                  <div className="overflow-x-auto rounded-lg border border-(--ui-stroke-tertiary) bg-(--ui-chat-bubble-background)">
+                    <ArtifactTable artifacts={pagedFileArtifacts} ctx={cellCtx} filter={kindFilter} />
+                  </div>
+                </section>
+              )}
+            </div>
           </div>
-        </div>
-      )}
-    </PageSearchShell>
+        )}
+      </PageSearchShell>
+
+      <ConfirmDialog
+        busyLabel={a.deleting}
+        confirmLabel={a.deleteConfirm}
+        description={a.deleteDescription}
+        destructive
+        doneLabel={a.deleted}
+        onClose={() => setPendingDelete(null)}
+        onConfirm={handleConfirmDelete}
+        open={Boolean(pendingDelete)}
+        title={pendingDelete ? a.deleteTitle(pendingDelete.label) : a.deleteTitle('')}
+      />
+    </>
   )
 }
 
@@ -643,11 +680,12 @@ function ArtifactsPagination({ className, itemLabel, onPageChange, page, pageSiz
 interface ArtifactImageCardProps {
   artifact: ArtifactRecord
   failedImage: boolean
+  onDelete: (artifact: ArtifactRecord) => void
   onImageError: (id: string) => void
   onOpenChat: (sessionId: string) => void
 }
 
-function ArtifactImageCard({ artifact, failedImage, onImageError, onOpenChat }: ArtifactImageCardProps) {
+function ArtifactImageCard({ artifact, failedImage, onDelete, onImageError, onOpenChat }: ArtifactImageCardProps) {
   const { t } = useI18n()
   const a = t.artifacts
   const kindLabel = artifact.kind === 'image' ? a.kindImage : artifact.kind === 'file' ? a.kindFile : a.kindLink
@@ -707,6 +745,12 @@ function ArtifactImageCard({ artifact, failedImage, onImageError, onOpenChat }: 
               Open
             </Button>
           )}
+          {artifact.deletable ? (
+            <Button onClick={() => onDelete(artifact)} size="xs" type="button" variant="textStrong">
+              <Codicon name="trash" />
+              {a.deleteAction}
+            </Button>
+          ) : null}
         </div>
       </div>
     </article>
@@ -806,6 +850,8 @@ function LocationCell({ artifact }: { artifact: ArtifactRecord; ctx: CellCtx }) 
 }
 
 function SessionCell({ artifact, ctx }: { artifact: ArtifactRecord; ctx: CellCtx }) {
+  const { t } = useI18n()
+
   if (!artifact.sessionId) {
     return (
       <div className="flex h-full w-full min-w-0 items-center gap-2 px-2.5 py-1.5 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-secondary)">
@@ -815,6 +861,20 @@ function SessionCell({ artifact, ctx }: { artifact: ArtifactRecord; ctx: CellCtx
             {formatArtifactTime(artifact.timestamp)}
           </span>
         </span>
+        {artifact.deletable ? (
+          <Tip label={t.artifacts.deleteAction}>
+            <Button
+              aria-label={t.artifacts.deleteAction}
+              className="ml-auto text-muted-foreground hover:text-destructive"
+              onClick={() => ctx.onDelete(artifact)}
+              size="icon-sm"
+              type="button"
+              variant="ghost"
+            >
+              <Codicon name="trash" />
+            </Button>
+          </Tip>
+        ) : null}
       </div>
     )
   }

@@ -557,6 +557,32 @@ async def get_artifact(artifact_id: str, request: Request):
     return record
 
 
+@app.delete("/api/artifacts/{artifact_id}")
+async def delete_artifact(artifact_id: str, request: Request):
+    user = require_user(request)
+    runtime = get_runtime_for_user(user)
+    try:
+        _record, path = artifact_file(runtime, artifact_id)
+    except (FileNotFoundError, KeyError) as exc:
+        raise HTTPException(status_code=404, detail="Artifact not found.") from exc
+
+    try:
+        path.unlink()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Artifact not found.") from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail="Artifact file is not writable.") from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Could not delete artifact: {exc}") from exc
+
+    db.execute(
+        "DELETE FROM artifacts WHERE id = ? AND workspace_id = ? AND agent_id = ?",
+        (artifact_id, runtime.workspace_id, runtime.agent_id),
+    )
+
+    return {"ok": True}
+
+
 @app.get("/api/artifacts/{artifact_id}/preview")
 async def preview_artifact(artifact_id: str, request: Request) -> FileResponse:
     user = require_user(request)

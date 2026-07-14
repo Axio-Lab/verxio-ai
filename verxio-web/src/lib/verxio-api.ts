@@ -648,6 +648,12 @@ export function listVerxioArtifacts(): Promise<VerxioArtifactListResponse> {
   return verxioFetch<VerxioArtifactListResponse>('/api/artifacts')
 }
 
+export function deleteVerxioArtifact(artifactId: string): Promise<{ ok: boolean }> {
+  return verxioFetch<{ ok: boolean }>(`/api/artifacts/${encodeURIComponent(artifactId)}`, {
+    method: 'DELETE'
+  })
+}
+
 export function listNotepad(): Promise<VerxioNotepadListResponse> {
   return verxioFetch<VerxioNotepadListResponse>('/api/notepad')
 }
