@@ -1,5 +1,5 @@
 import { IconDownload, IconRefresh, IconUpload } from '@tabler/icons-react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import { Tip } from '@/components/ui/tooltip'
@@ -7,6 +7,7 @@ import { getHermesConfigDefaults, getHermesConfigRecord, saveHermesConfig } from
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
 import { Archive, Bell, Globe, Info, KeyRound, RefreshCw, Settings2, Sparkles, Wrench, Zap } from '@/lib/icons'
+import type { VerxioInferenceMode } from '@/lib/verxio-api'
 import { notifyError } from '@/store/notifications'
 
 import { useRouteEnumParam } from '../hooks/use-route-enum-param'
@@ -53,6 +54,7 @@ export function SettingsView({
   // Providers subnav (Accounts vs API keys) lives in its own param so each
   // sub-view is deep-linkable and survives a refresh.
   const [providerView, setProviderView] = useRouteEnumParam<ProviderView>('pview', PROVIDER_VIEWS, 'accounts')
+  const [providerMode, setProviderMode] = useState<VerxioInferenceMode | null>(null)
   const [keysView, setKeysView] = useRouteEnumParam<KeysView>('kview', KEYS_VIEWS, 'tools')
 
   useEffect(() => {
@@ -64,10 +66,18 @@ export function SettingsView({
     }
   }, [hash, navigate, pathname, search])
 
+  useEffect(() => {
+    if (activeView === 'providers' && providerMode === 'hosted' && providerView === 'keys') {
+      setProviderView('accounts')
+    }
+  }, [activeView, providerMode, providerView, setProviderView])
+
   const openProviderView = (view: ProviderView) => {
     setActiveView('providers')
     setProviderView(view)
   }
+
+  const showProviderApiKeys = providerMode === 'byok'
 
   const openKeysView = (view: KeysView) => {
     setActiveView('keys')
@@ -139,13 +149,15 @@ export function SettingsView({
                 nested
                 onClick={() => openProviderView('accounts')}
               />
-              <OverlayNavItem
-                active={providerView === 'keys'}
-                icon={KeyRound}
-                label={t.settings.nav.providerApiKeys}
-                nested
-                onClick={() => openProviderView('keys')}
-              />
+              {showProviderApiKeys && (
+                <OverlayNavItem
+                  active={providerView === 'keys'}
+                  icon={KeyRound}
+                  label={t.settings.nav.providerApiKeys}
+                  nested
+                  onClick={() => openProviderView('keys')}
+                />
+              )}
             </div>
           )}
           <OverlayNavItem
@@ -256,7 +268,12 @@ export function SettingsView({
               onMainModelChanged={onMainModelChanged}
             />
           ) : activeView === 'providers' ? (
-            <ProvidersSettings onViewChange={setProviderView} requestGateway={requestGateway} view={providerView} />
+            <ProvidersSettings
+              onInferenceModeChange={setProviderMode}
+              onViewChange={setProviderView}
+              requestGateway={requestGateway}
+              view={providerView}
+            />
           ) : activeView === 'keys' ? (
             <KeysSettings view={keysView} />
           ) : activeView === 'mcp' ? (
