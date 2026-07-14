@@ -60,16 +60,18 @@ export async function runGatewayRestart(): Promise<void> {
   }
 }
 
-export async function runRuntimeEnvReload(): Promise<boolean> {
+export async function runRuntimeEnvReload(options: { notifySuccess?: boolean } = {}): Promise<boolean> {
   try {
-    const result = await reloadRuntimeEnv()
+    await reloadRuntimeEnv()
 
-    notify({
-      kind: 'success',
-      title: translateNow('settings.runtime.reloadDoneTitle'),
-      message: result.message ?? translateNow('settings.runtime.reloadDoneMessage'),
-      durationMs: 5000
-    })
+    if (options.notifySuccess !== false) {
+      notify({
+        kind: 'success',
+        title: translateNow('settings.runtime.reloadDoneTitle'),
+        message: translateNow('settings.runtime.reloadDoneMessage'),
+        durationMs: 5000
+      })
+    }
 
     return true
   } catch (err) {

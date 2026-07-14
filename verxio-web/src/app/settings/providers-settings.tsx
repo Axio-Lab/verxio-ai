@@ -194,7 +194,7 @@ export function ProvidersSettings({
   view
 }: ProvidersSettingsProps) {
   const { t } = useI18n()
-  const { rowProps, vars } = useEnvCredentials()
+  const { confirmDialog, rowProps, vars } = useEnvCredentials()
   const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([])
   const [activeProviderId, setActiveProviderId] = useRouteStringParam('paccount')
   const [openProvider, setOpenProvider] = useState<null | string>(null)
@@ -279,60 +279,66 @@ export function ProvidersSettings({
 
   if (showApiKeys) {
     return (
-      <SettingsContent>
-        {keyGroups.length > 0 ? (
-          <div className="grid gap-2">
-            {visibleKeyGroups.map(group => (
-              <ProviderKeyRows
-                expanded={openProvider === group.name}
-                group={group}
-                key={group.name}
-                onExpand={() => setOpenProvider(group.name)}
-                onToggle={() => setOpenProvider(prev => (prev === group.name ? null : group.name))}
-                rowProps={rowProps}
+      <>
+        <SettingsContent>
+          {keyGroups.length > 0 ? (
+            <div className="grid gap-2">
+              {visibleKeyGroups.map(group => (
+                <ProviderKeyRows
+                  expanded={openProvider === group.name}
+                  group={group}
+                  key={group.name}
+                  onExpand={() => setOpenProvider(group.name)}
+                  onToggle={() => setOpenProvider(prev => (prev === group.name ? null : group.name))}
+                  rowProps={rowProps}
+                />
+              ))}
+              <PaginationControl
+                className="pt-2"
+                itemLabel="providers"
+                onPageChange={setPage}
+                page={currentPage}
+                pageSize={DEFAULT_LIST_PAGE_SIZE}
+                total={total}
               />
-            ))}
-            <PaginationControl
-              className="pt-2"
-              itemLabel="providers"
-              onPageChange={setPage}
-              page={currentPage}
-              pageSize={DEFAULT_LIST_PAGE_SIZE}
-              total={total}
-            />
-          </div>
-        ) : (
-          <NoProviderKeys />
-        )}
-      </SettingsContent>
+            </div>
+          ) : (
+            <NoProviderKeys />
+          )}
+        </SettingsContent>
+        {confirmDialog}
+      </>
     )
   }
 
   return (
-    <SettingsContent>
-      {canConfigureOwnProviders && activeProvider ? (
-        <ProviderAccountSetup
-          onBack={() => setActiveProviderId(null)}
-          onUpdated={refreshOAuthProviders}
-          provider={activeProvider}
-          requestGateway={requestGateway}
-        />
-      ) : (
-        <>
-          <InferenceProviderSettings
-            onInferenceModeChange={handleInferenceModeChange}
-            onOpenProviderKeys={() => onViewChange('keys')}
+    <>
+      <SettingsContent>
+        {canConfigureOwnProviders && activeProvider ? (
+          <ProviderAccountSetup
+            onBack={() => setActiveProviderId(null)}
+            onUpdated={refreshOAuthProviders}
+            provider={activeProvider}
+            requestGateway={requestGateway}
           />
-          {canConfigureOwnProviders && (
-            <OAuthPicker
-              onSelectProvider={provider => setActiveProviderId(provider.id)}
-              onWantApiKey={() => onViewChange('keys')}
-              providers={oauthProviders}
+        ) : (
+          <>
+            <InferenceProviderSettings
+              onInferenceModeChange={handleInferenceModeChange}
+              onOpenProviderKeys={() => onViewChange('keys')}
             />
-          )}
-        </>
-      )}
-    </SettingsContent>
+            {canConfigureOwnProviders && (
+              <OAuthPicker
+                onSelectProvider={provider => setActiveProviderId(provider.id)}
+                onWantApiKey={() => onViewChange('keys')}
+                providers={oauthProviders}
+              />
+            )}
+          </>
+        )}
+      </SettingsContent>
+      {confirmDialog}
+    </>
   )
 }
 

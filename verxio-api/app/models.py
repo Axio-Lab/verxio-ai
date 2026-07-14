@@ -148,6 +148,7 @@ class InferenceModelCatalogItem(BaseModel):
     description: str
     providerSlug: str
     upstreamModelId: str
+    availableModelIds: list[str] = Field(default_factory=list)
     requiredEnvVars: list[str]
     hostedAvailable: bool
     byokAvailable: bool

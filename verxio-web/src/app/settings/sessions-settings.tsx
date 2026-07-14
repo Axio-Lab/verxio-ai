@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Tip } from '@/components/ui/tooltip'
 import { deleteSession, listSessions, setSessionArchived } from '@/hermes'
 import { useI18n } from '@/i18n'
@@ -38,6 +39,7 @@ export function SessionsSettings() {
   const [sessions, setLocalSessions] = useState<SessionInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<SessionInfo | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -78,10 +80,6 @@ export function SessionsSettings() {
 
   const remove = useCallback(
     async (session: SessionInfo) => {
-      if (!window.confirm(s.deleteConfirm(sessionTitle(session)))) {
-        return
-      }
-
       setBusyId(session.id)
 
       try {
@@ -108,66 +106,81 @@ export function SessionsSettings() {
   }
 
   return (
-    <SettingsContent>
-      <DefaultProjectDirSetting />
+    <>
+      <SettingsContent>
+        <DefaultProjectDirSetting />
 
-      <SectionHeading
-        icon={Archive}
-        meta={sessions.length ? String(sessions.length) : undefined}
-        title={s.archivedTitle}
-      />
-      <p className="mb-2 text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)">
-        {s.archivedIntro}
-      </p>
+        <SectionHeading
+          icon={Archive}
+          meta={sessions.length ? String(sessions.length) : undefined}
+          title={s.archivedTitle}
+        />
+        <p className="mb-2 text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)">
+          {s.archivedIntro}
+        </p>
 
-      {sessions.length === 0 ? (
-        <EmptyState description={s.emptyArchivedDesc} title={s.emptyArchivedTitle} />
-      ) : (
-        <div className="grid gap-1">
-          {sessions.map(session => {
-            const label = workspaceLabel(session.cwd)
-            const busy = busyId === session.id
+        {sessions.length === 0 ? (
+          <EmptyState description={s.emptyArchivedDesc} title={s.emptyArchivedTitle} />
+        ) : (
+          <div className="grid gap-1">
+            {sessions.map(session => {
+              const label = workspaceLabel(session.cwd)
+              const busy = busyId === session.id
 
-            return (
-              <div className="scroll-mt-6 rounded-lg" id={`archived-session-${session.id}`} key={session.id}>
-                <ListRow
-                  action={
-                    <div className="flex items-center gap-1.5">
-                      <Button
-                        disabled={busy}
-                        onClick={() => void unarchive(session)}
-                        size="sm"
-                        type="button"
-                        variant="textStrong"
-                      >
-                        {busy ? <Loader2 className="size-3.5 animate-spin" /> : <ArchiveOff className="size-3.5" />}
-                        <span>{s.unarchive}</span>
-                      </Button>
-                      <Tip label={s.deletePermanently}>
+              return (
+                <div className="scroll-mt-6 rounded-lg" id={`archived-session-${session.id}`} key={session.id}>
+                  <ListRow
+                    action={
+                      <div className="flex items-center gap-1.5">
                         <Button
-                          aria-label={s.deletePermanently}
-                          className="text-muted-foreground hover:text-destructive"
                           disabled={busy}
-                          onClick={() => void remove(session)}
-                          size="icon"
+                          onClick={() => void unarchive(session)}
+                          size="sm"
                           type="button"
-                          variant="ghost"
+                          variant="textStrong"
                         >
-                          <Trash2 className="size-3.5" />
+                          {busy ? <Loader2 className="size-3.5 animate-spin" /> : <ArchiveOff className="size-3.5" />}
+                          <span>{s.unarchive}</span>
                         </Button>
-                      </Tip>
-                    </div>
-                  }
-                  description={session.preview || undefined}
-                  hint={label ? `${label} · ${s.messages(session.message_count)}` : s.messages(session.message_count)}
-                  title={sessionTitle(session)}
-                />
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </SettingsContent>
+                        <Tip label={s.deletePermanently}>
+                          <Button
+                            aria-label={s.deletePermanently}
+                            className="text-muted-foreground hover:text-destructive"
+                            disabled={busy}
+                            onClick={() => setPendingDelete(session)}
+                            size="icon"
+                            type="button"
+                            variant="ghost"
+                          >
+                            <Trash2 className="size-3.5" />
+                          </Button>
+                        </Tip>
+                      </div>
+                    }
+                    description={session.preview || undefined}
+                    hint={label ? `${label} · ${s.messages(session.message_count)}` : s.messages(session.message_count)}
+                    title={sessionTitle(session)}
+                  />
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </SettingsContent>
+      <ConfirmDialog
+        busyLabel={t.common.loading}
+        confirmLabel={t.common.delete}
+        destructive
+        onClose={() => setPendingDelete(null)}
+        onConfirm={async () => {
+          if (pendingDelete) {
+            await remove(pendingDelete)
+          }
+        }}
+        open={Boolean(pendingDelete)}
+        title={pendingDelete ? s.deleteConfirm(sessionTitle(pendingDelete)) : s.deletePermanently}
+      />
+    </>
   )
 }
 

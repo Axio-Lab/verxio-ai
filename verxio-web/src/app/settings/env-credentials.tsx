@@ -1,10 +1,12 @@
 import { useQueryClient } from '@tanstack/react-query'
+import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { deleteEnvVar, getEnvVars, revealEnvVar, setEnvVar } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { type IconComponent } from '@/lib/icons'
-import { clearCachedModelOptions } from '@/lib/model-options-cache'
+import { clearCachedModelOptions, refreshModelOptionsQueries } from '@/lib/model-options-cache'
 import { looksLikeToolCredentialEnv, shouldReloadToolCredential } from '@/lib/tool-credentials'
 import { notify, notifyError } from '@/store/notifications'
 import { runRuntimeEnvReload } from '@/store/system-actions'
@@ -54,6 +56,7 @@ export function useEnvCredentials(): UseEnvCredentials {
   const [edits, setEdits] = useState<Record<string, string>>({})
   const [revealed, setRevealed] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState<string | null>(null)
+  const [pendingClearKey, setPendingClearKey] = useState<string | null>(null)
 
   // Best-effort cleanup of a retired localStorage flag (global "Show
   // advanced" toggle) — everything in these views is configuration-level.
@@ -99,9 +102,9 @@ export function useEnvCredentials(): UseEnvCredentials {
       return
     }
 
-    await runRuntimeEnvReload()
+    await runRuntimeEnvReload({ notifySuccess: false })
     clearCachedModelOptions()
-    await queryClient.invalidateQueries({ queryKey: ['model-options'] })
+    await refreshModelOptionsQueries(queryClient)
   }
 
   async function handleSave(key: string) {
@@ -117,8 +120,8 @@ export function useEnvCredentials(): UseEnvCredentials {
       await setEnvVar(key, value)
       patchVar(key, { is_set: true, redacted_value: redactedValue(value) })
       clearLocalState(key)
-      notify({ kind: 'success', title: toolsets.savedTitle, message: toolsets.savedMessage(key) })
       await reloadIfToolCredential(key)
+      notify({ kind: 'success', title: toolsets.savedTitle, message: toolsets.savedMessage(key) })
     } catch (err) {
       notifyError(err, toolsets.failedSave(key))
     } finally {
@@ -160,8 +163,8 @@ export function useEnvCredentials(): UseEnvCredentials {
       )
       patchVar(key, { is_set: true, redacted_value: redactedValue(trimmed) })
       clearLocalState(key)
-      notify({ kind: 'success', message: toolsets.savedMessage(key), title: toolsets.savedTitle })
       await reloadIfToolCredential(key)
+      notify({ kind: 'success', message: toolsets.savedMessage(key), title: toolsets.savedTitle })
 
       return { ok: true }
     } catch (err) {
@@ -173,24 +176,32 @@ export function useEnvCredentials(): UseEnvCredentials {
     }
   }
 
-  async function handleClear(key: string) {
-    if (!window.confirm(toolsets.removeConfirm(key))) {
-      return
-    }
+  async function clearKey(key: string) {
+    const removeRow = Boolean(vars?.[key]?.custom)
 
     setSaving(key)
 
     try {
       await deleteEnvVar(key)
-      patchVar(key, { is_set: false, redacted_value: null })
+
+      if (removeRow) {
+        setVars(c => (c ? withoutKey(c, key) : c))
+      } else {
+        patchVar(key, { is_set: false, redacted_value: null })
+      }
+
       clearLocalState(key)
-      notify({ kind: 'success', title: toolsets.removedTitle, message: toolsets.removedMessage(key) })
       await reloadIfToolCredential(key)
+      notify({ kind: 'success', title: toolsets.removedTitle, message: toolsets.removedMessage(key) })
     } catch (err) {
       notifyError(err, toolsets.failedRemove(key))
     } finally {
       setSaving(null)
     }
+  }
+
+  function handleClear(key: string) {
+    setPendingClearKey(key)
   }
 
   async function handleReveal(key: string) {
@@ -209,6 +220,21 @@ export function useEnvCredentials(): UseEnvCredentials {
   }
 
   return {
+    confirmDialog: (
+      <ConfirmDialog
+        busyLabel={t.settings.credentials.removing}
+        confirmLabel={t.common.remove}
+        destructive
+        onClose={() => setPendingClearKey(null)}
+        onConfirm={async () => {
+          if (pendingClearKey) {
+            await clearKey(pendingClearKey)
+          }
+        }}
+        open={Boolean(pendingClearKey)}
+        title={pendingClearKey ? toolsets.removeConfirm(pendingClearKey) : toolsets.removeConfirm('')}
+      />
+    ),
     saveValue,
     vars,
     rowProps: {
@@ -230,6 +256,7 @@ interface CategoryHeadingProps {
 }
 
 interface UseEnvCredentials {
+  confirmDialog: ReactNode
   rowProps: Omit<EnvRowProps, 'varKey' | 'info'>
   saveValue: (key: string, value: string) => Promise<{ message?: string; ok: boolean }>
   vars: Record<string, EnvVarInfo> | null

@@ -19,6 +19,7 @@ const catalog: VerxioInferenceCatalogResponse = {
       displayName: 'Verxio Qwen',
       hostedAvailable: true,
       id: 'verxio-qwen',
+      availableModelIds: ['qwen3.6-plus', 'qwen3.6-coder'],
       pricing: { currency: 'USD', inputPerMillion: 0.8, outputPerMillion: 2.4 },
       providerSlug: 'alibaba',
       requiredEnvVars: [],
@@ -33,6 +34,7 @@ const catalog: VerxioInferenceCatalogResponse = {
       displayName: 'Verxio Gemini',
       hostedAvailable: true,
       id: 'verxio-gemini',
+      availableModelIds: ['gemini-flash-lite-latest', 'gemini-3.1-flash-lite', 'gemini-2.5-pro'],
       pricing: { currency: 'USD', inputPerMillion: 0.1, outputPerMillion: 0.4 },
       providerSlug: 'gemini',
       requiredEnvVars: [],
@@ -58,7 +60,7 @@ describe('hostedModelOptionsFromInference', () => {
     expect(result?.model).toBe('qwen3.6-plus')
     expect(result?.providers?.map(provider => provider.slug)).toEqual(['alibaba'])
     expect(result?.providers?.every(provider => provider.is_verxio_hosted)).toBe(true)
-    expect(result?.providers?.flatMap(provider => provider.models ?? [])).toEqual(['qwen3.6-plus'])
+    expect(result?.providers?.flatMap(provider => provider.models ?? [])).toEqual(['qwen3.6-plus', 'qwen3.6-coder'])
   })
 
   it('switches the selected Verxio hosted model group', () => {
@@ -76,6 +78,11 @@ describe('hostedModelOptionsFromInference', () => {
     expect(result?.provider).toBe('gemini')
     expect(result?.model).toBe('gemini-flash-lite-latest')
     expect(result?.providers?.map(provider => provider.slug)).toEqual(['gemini'])
+    expect(result?.providers?.[0]?.models).toEqual([
+      'gemini-flash-lite-latest',
+      'gemini-3.1-flash-lite',
+      'gemini-2.5-pro'
+    ])
   })
 
   it('lets BYOK mode use the runtime model catalog', () => {
@@ -130,7 +137,11 @@ describe('mergeHostedAndRuntimeModelOptions', () => {
     expect(result.provider).toBe('alibaba')
     expect(result.model).toBe('qwen3.6-plus')
     expect(result.providers?.map(provider => provider.slug)).toEqual(['alibaba', 'openai'])
-    expect(result.providers?.flatMap(provider => provider.models ?? [])).toEqual(['qwen3.6-plus', 'gpt-5-mini'])
+    expect(result.providers?.flatMap(provider => provider.models ?? [])).toEqual([
+      'qwen3.6-plus',
+      'qwen3.6-coder',
+      'gpt-5-mini'
+    ])
   })
 
   it('dedupes runtime models that already exist in the hosted catalog', () => {
@@ -194,7 +205,13 @@ describe('mergeHostedAndRuntimeModelOptions', () => {
     expect(result.providers?.[0]).toMatchObject({
       is_current: true,
       is_verxio_hosted: true,
-      models: ['gemini-flash-lite-latest', 'gemini-3.1-pro-preview', 'gemini-3-pro-preview'],
+      models: [
+        'gemini-flash-lite-latest',
+        'gemini-3.1-flash-lite',
+        'gemini-2.5-pro',
+        'gemini-3.1-pro-preview',
+        'gemini-3-pro-preview'
+      ],
       name: 'Verxio Gemini'
     })
     expect(result.providers?.[1]).toMatchObject({

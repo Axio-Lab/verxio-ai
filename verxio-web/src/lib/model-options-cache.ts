@@ -1,3 +1,5 @@
+import type { QueryClient } from '@tanstack/react-query'
+
 import { readVerxioAuthScope } from '@/lib/auth-scope'
 import type { ModelOptionsResponse } from '@/types/hermes'
 
@@ -57,4 +59,9 @@ export function clearCachedModelOptions(): void {
   } catch {
     // Cache clears are best effort.
   }
+}
+
+export async function refreshModelOptionsQueries(queryClient: QueryClient): Promise<void> {
+  await queryClient.invalidateQueries({ queryKey: ['model-options'] })
+  await queryClient.refetchQueries({ queryKey: ['model-options'], type: 'active' })
 }

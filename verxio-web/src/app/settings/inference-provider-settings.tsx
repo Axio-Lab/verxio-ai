@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Check, KeyRound, Loader2, Sparkles } from '@/lib/icons'
-import { clearCachedModelOptions } from '@/lib/model-options-cache'
+import { clearCachedModelOptions, refreshModelOptionsQueries } from '@/lib/model-options-cache'
 import {
   getInferenceCatalog,
   getInferenceUsage,
@@ -100,7 +100,7 @@ export function InferenceProviderSettings({
         const nextUsage = await getInferenceUsage()
         setUsage({ ...nextUsage, settings: nextSettings })
         clearCachedModelOptions()
-        void queryClient.invalidateQueries({ queryKey: ['model-options'] })
+        await refreshModelOptionsQueries(queryClient)
         onInferenceModeChange?.(nextSettings.mode)
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
@@ -125,7 +125,7 @@ export function InferenceProviderSettings({
         const nextUsage = await getInferenceUsage()
         setUsage({ ...nextUsage, settings: nextSettings })
         clearCachedModelOptions()
-        void queryClient.invalidateQueries({ queryKey: ['model-options'] })
+        await refreshModelOptionsQueries(queryClient)
         onInferenceModeChange?.(nextSettings.mode)
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))

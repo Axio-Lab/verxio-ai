@@ -218,6 +218,7 @@ export interface VerxioInferenceModel {
   description: string
   providerSlug: string
   upstreamModelId: string
+  availableModelIds?: string[]
   requiredEnvVars: string[]
   hostedAvailable: boolean
   byokAvailable: boolean

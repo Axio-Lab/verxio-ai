@@ -2,6 +2,7 @@ import { IconDownload, IconRefresh, IconUpload } from '@tabler/icons-react'
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Tip } from '@/components/ui/tooltip'
 import { getHermesConfigDefaults, getHermesConfigRecord, saveHermesConfig } from '@/hermes'
 import { useI18n } from '@/i18n'
@@ -50,6 +51,7 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
   const [providerView, setProviderView] = useRouteEnumParam<ProviderView>('pview', PROVIDER_VIEWS, 'accounts')
   const [providerMode, setProviderMode] = useState<VerxioInferenceMode | null>(null)
   const [keysView, setKeysView] = useRouteEnumParam<KeysView>('kview', KEYS_VIEWS, 'tools')
+  const [confirmResetOpen, setConfirmResetOpen] = useState(false)
 
   useEffect(() => {
     const params = new URLSearchParams(search)
@@ -97,10 +99,6 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
   }
 
   const resetConfig = async () => {
-    if (!window.confirm(t.settings.resetConfirm)) {
-      return
-    }
-
     try {
       await saveHermesConfig(await getHermesConfigDefaults())
       triggerHaptic('success')
@@ -243,7 +241,7 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
                 className="hover:text-destructive"
                 onClick={() => {
                   triggerHaptic('warning')
-                  void resetConfig()
+                  setConfirmResetOpen(true)
                 }}
               >
                 <IconRefresh className="size-3.5" />
@@ -285,6 +283,15 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
           )}
         </OverlayMain>
       </OverlaySplitLayout>
+      <ConfirmDialog
+        busyLabel={t.common.loading}
+        confirmLabel={t.settings.resetToDefaults}
+        destructive
+        onClose={() => setConfirmResetOpen(false)}
+        onConfirm={resetConfig}
+        open={confirmResetOpen}
+        title={t.settings.resetConfirm}
+      />
     </OverlayView>
   )
 }

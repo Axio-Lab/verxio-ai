@@ -40,6 +40,20 @@ function capabilitiesFor(model: VerxioInferenceModel): ModelCapabilities {
   }
 }
 
+function selectedHostedModelIds(model: VerxioInferenceModel): string[] {
+  const seen = new Set<string>()
+  const ordered: string[] = []
+
+  for (const modelId of [model.upstreamModelId, ...(model.availableModelIds ?? [])]) {
+    if (modelId && !seen.has(modelId)) {
+      seen.add(modelId)
+      ordered.push(modelId)
+    }
+  }
+
+  return ordered
+}
+
 function selectedHostedModel(
   settings: Pick<VerxioInferenceSettings, 'defaultModelId'>,
   catalog: Pick<VerxioInferenceCatalogResponse, 'defaultModelId' | 'models'>
@@ -62,7 +76,9 @@ export function hostedModelOptionsFromInference(
 
   const selected = selectedHostedModel(settings, catalog)
 
-  if (!selected?.upstreamModelId) {
+  const hostedModelIds = selected ? selectedHostedModelIds(selected) : []
+
+  if (!selected?.upstreamModelId || hostedModelIds.length === 0) {
     return {
       providers: []
     }
@@ -74,18 +90,14 @@ export function hostedModelOptionsFromInference(
     providers: [
       {
         authenticated: true,
-        capabilities: {
-          [selected.upstreamModelId]: capabilitiesFor(selected)
-        },
+        capabilities: Object.fromEntries(hostedModelIds.map(model => [model, capabilitiesFor(selected)])),
         is_current: true,
         is_verxio_hosted: true,
-        models: [selected.upstreamModelId],
+        models: hostedModelIds,
         name: selected.displayName,
-        pricing: {
-          [selected.upstreamModelId]: pricingFor(selected)
-        },
+        pricing: Object.fromEntries(hostedModelIds.map(model => [model, pricingFor(selected)])),
         slug: selected.providerSlug,
-        total_models: 1,
+        total_models: hostedModelIds.length,
         warning: selected.hostedAvailable
           ? undefined
           : `${selected.displayName} is not configured for hosted inference.`

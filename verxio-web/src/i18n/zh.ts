@@ -612,7 +612,8 @@ export const zh: Translations = {
       or: '或',
       escToCancel: '按 esc 取消',
       getKey: '获取密钥',
-      saving: '保存中'
+      saving: '保存中',
+      removing: '移除中'
     },
     envActions: {
       actionsFor: label => `${label} 的操作`,

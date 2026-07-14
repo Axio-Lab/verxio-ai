@@ -171,10 +171,16 @@ def test_inference_catalog_defaults_to_verxio_qwen(client):
     assert qwen_model["providerSlug"] == "alibaba"
     assert qwen_model["displayName"] == "Verxio Qwen"
     assert qwen_model["upstreamModelId"] == "qwen3.6-plus"
+    assert qwen_model["availableModelIds"][0] == "qwen3.6-plus"
     assert "DASHSCOPE_API_KEY" in qwen_model["requiredEnvVars"]
     assert gemini_model["providerSlug"] == "gemini"
     assert gemini_model["displayName"] == "Verxio Gemini"
     assert gemini_model["upstreamModelId"] == "gemini-flash-lite-latest"
+    assert gemini_model["availableModelIds"][:3] == [
+        "gemini-flash-lite-latest",
+        "gemini-3.1-flash-lite",
+        "gemini-2.5-pro",
+    ]
     assert gemini_model["default"] is False
     assert "GEMINI_API_KEY" in gemini_model["requiredEnvVars"]
 

@@ -301,8 +301,8 @@ export const en: Translations = {
       reloadDescription:
         'Reload saved runtime credentials without restarting. Use after pasting API keys or env changes.',
       reloadAction: 'Reload',
-      reloadDoneTitle: 'Credentials reloaded',
-      reloadDoneMessage: 'Start a new chat if the model or provider still looks stale.',
+      reloadDoneTitle: 'Credentials updated',
+      reloadDoneMessage: 'Model and tool credentials are refreshed.',
       reloadFailed: 'Could not reload credentials',
       agentRestartTitle: 'Restart agent',
       agentRestartDescription:
@@ -454,7 +454,8 @@ export const en: Translations = {
       or: 'or',
       escToCancel: 'esc to cancel',
       getKey: 'Get a key',
-      saving: 'Saving'
+      saving: 'Saving',
+      removing: 'Removing'
     },
     envActions: {
       actionsFor: label => `Actions for ${label}`,

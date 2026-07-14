@@ -13,6 +13,7 @@ const catalog = {
       displayName: 'Verxio Qwen',
       hostedAvailable: true,
       id: 'verxio-qwen',
+      availableModelIds: ['qwen3.6-plus', 'qwen3.6-coder'],
       pricing: { currency: 'USD', inputPerMillion: 1, outputPerMillion: 2 },
       providerSlug: 'alibaba',
       requiredEnvVars: [],

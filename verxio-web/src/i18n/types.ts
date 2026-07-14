@@ -348,6 +348,7 @@ export interface Translations {
       escToCancel: string
       getKey: string
       saving: string
+      removing: string
     }
     envActions: {
       actionsFor: (label: string) => string

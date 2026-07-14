@@ -36,7 +36,7 @@ const VIEW_CATEGORIES: Record<KeysView, readonly string[]> = {
 
 export function KeysSettings({ view }: KeysSettingsProps) {
   const { t } = useI18n()
-  const { rowProps, saveValue, vars } = useEnvCredentials()
+  const { confirmDialog, rowProps, saveValue, vars } = useEnvCredentials()
   const [openKey, setOpenKey] = useState<null | string>(null)
 
   useEffect(() => {
@@ -88,53 +88,59 @@ export function KeysSettings({ view }: KeysSettingsProps) {
 
   if (view === 'transcription') {
     return (
-      <SettingsContent>
-        <TranscriptionKeySettings rowProps={rowProps} vars={vars} />
-      </SettingsContent>
+      <>
+        <SettingsContent>
+          <TranscriptionKeySettings rowProps={rowProps} vars={vars} />
+        </SettingsContent>
+        {confirmDialog}
+      </>
     )
   }
 
   return (
-    <SettingsContent>
-      {showCustomForm && (
-        <div className="mb-4">
-          <CustomToolKeyForm busy={Boolean(rowProps.saving)} existingKeys={existingKeys} onSave={saveValue} />
-        </div>
-      )}
-      {pagedEntries.length > 0 ? (
-        <div className="grid gap-2">
-          {pagedEntries.map(([key, info]: [string, EnvVarInfo]) => {
-            const label = credentialRowLabel(key, info)
+    <>
+      <SettingsContent>
+        {showCustomForm && (
+          <div className="mb-4">
+            <CustomToolKeyForm busy={Boolean(rowProps.saving)} existingKeys={existingKeys} onSave={saveValue} />
+          </div>
+        )}
+        {pagedEntries.length > 0 ? (
+          <div className="grid gap-2">
+            {pagedEntries.map(([key, info]: [string, EnvVarInfo]) => {
+              const label = credentialRowLabel(key, info)
 
-            return (
-              <CredentialKeyCard
-                expanded={openKey === key}
-                info={info}
-                key={key}
-                label={label}
-                onExpand={() => setOpenKey(key)}
-                onToggle={() => setOpenKey(prev => (prev === key ? null : key))}
-                placeholder={credentialPlaceholder(key, info, label)}
-                rowProps={rowProps}
-                varKey={key}
-              />
-            )
-          })}
-          <PaginationControl
-            className="pt-2"
-            itemLabel="keys"
-            onPageChange={setPage}
-            page={currentPage}
-            pageSize={DEFAULT_LIST_PAGE_SIZE}
-            total={total}
-          />
-        </div>
-      ) : (
-        <div className="rounded-lg border border-dashed border-(--ui-stroke-tertiary) px-4 py-8 text-center text-[length:var(--conversation-caption-font-size)] text-muted-foreground">
-          {t.settings.keys.empty}
-        </div>
-      )}
-    </SettingsContent>
+              return (
+                <CredentialKeyCard
+                  expanded={openKey === key}
+                  info={info}
+                  key={key}
+                  label={label}
+                  onExpand={() => setOpenKey(key)}
+                  onToggle={() => setOpenKey(prev => (prev === key ? null : key))}
+                  placeholder={credentialPlaceholder(key, info, label)}
+                  rowProps={rowProps}
+                  varKey={key}
+                />
+              )
+            })}
+            <PaginationControl
+              className="pt-2"
+              itemLabel="keys"
+              onPageChange={setPage}
+              page={currentPage}
+              pageSize={DEFAULT_LIST_PAGE_SIZE}
+              total={total}
+            />
+          </div>
+        ) : (
+          <div className="rounded-lg border border-dashed border-(--ui-stroke-tertiary) px-4 py-8 text-center text-[length:var(--conversation-caption-font-size)] text-muted-foreground">
+            {t.settings.keys.empty}
+          </div>
+        )}
+      </SettingsContent>
+      {confirmDialog}
+    </>
   )
 }
 

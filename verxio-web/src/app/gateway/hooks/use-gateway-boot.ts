@@ -95,6 +95,7 @@ export function useGatewayBoot({
     let reconnecting = false
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
     let reconnectAttempt = 0
+    let lastReconnectNudgeAt = 0
     // Surface "sign in again" once per disconnect episode, not on every backoff
     // tick — a stale OAuth ticket fails every attempt and would otherwise stack
     // identical error toasts (and their haptics). Reset on the next clean open.
@@ -181,11 +182,18 @@ export function useGatewayBoot({
       }, delay)
     }
 
-    const reconnectNow = () => {
+    const reconnectNow = (force = false) => {
       if (cancelled || !bootCompleted) {
         return
       }
 
+      const now = Date.now()
+
+      if (!force && now - lastReconnectNudgeAt < 3_000) {
+        return
+      }
+
+      lastReconnectNudgeAt = now
       clearReconnectTimer()
       reconnectAttempt = 0
       reconnectSecondaryGateways()
@@ -233,9 +241,9 @@ export function useGatewayBoot({
 
     // Wake signals: power resume (macOS/Windows), network coming back, and the
     // window regaining focus/visibility. Each nudges an immediate reconnect.
-    const offPowerResume = desktop.onPowerResume?.(() => reconnectNow())
+    const offPowerResume = desktop.onPowerResume?.(() => reconnectNow(true))
 
-    const onOnline = () => reconnectNow()
+    const onOnline = () => reconnectNow(true)
 
     const onVisible = () => {
       if (document.visibilityState === 'visible') {

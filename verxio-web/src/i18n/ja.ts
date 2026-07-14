@@ -477,7 +477,8 @@ export const ja = defineLocale({
       or: 'または',
       escToCancel: 'Esc でキャンセル',
       getKey: 'キーを取得',
-      saving: '保存中'
+      saving: '保存中',
+      removing: '削除中'
     },
     envActions: {
       actionsFor: label => `${label} のアクション`,
