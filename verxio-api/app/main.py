@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode
 
@@ -178,10 +180,28 @@ from app.store import AUDIT_LOG, PROFILE, RUNS, WORKSPACE
 APP_ROOT = Path(__file__).resolve().parent.parent
 STATIC_ROOT = APP_ROOT / "static"
 
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    db.run_migrations()
+
+    # Never block accept() on docker.sock — a busy daemon after deploy would make
+    # /api/health connection-refused until the probe finishes (or hangs).
+    async def _warm() -> None:
+        try:
+            await warm_runtime_docker_network()
+        except Exception:
+            logging.getLogger(__name__).exception("Failed to warm runtime docker network cache")
+
+    asyncio.create_task(_warm())
+    yield
+
+
 app = FastAPI(
     title="Verxio API",
     version="0.1.0",
     description="Verxio control plane for isolated Hermes Agent runtimes.",
+    lifespan=lifespan,
 )
 
 cors_origins = [
@@ -204,21 +224,6 @@ app.add_middleware(
 )
 
 app.mount("/static", StaticFiles(directory=STATIC_ROOT), name="static")
-
-
-@app.on_event("startup")
-async def startup() -> None:
-    db.run_migrations()
-
-    # Never block accept() on docker.sock — a busy daemon after deploy would make
-    # /api/health connection-refused until the probe finishes (or hangs).
-    async def _warm() -> None:
-        try:
-            await warm_runtime_docker_network()
-        except Exception:
-            logging.getLogger(__name__).exception("Failed to warm runtime docker network cache")
-
-    asyncio.create_task(_warm())
 
 
 @app.get("/", include_in_schema=False)
