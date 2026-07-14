@@ -331,13 +331,10 @@ export function useGatewayBoot({
           $activeGatewayProfile.set('default')
         }
 
-        await callbacksRef.current.refreshHermesConfig().catch(() => undefined)
-
-        if (cancelled) {
-          return
-        }
-
-        await callbacksRef.current.refreshSessions().catch(() => undefined)
+        // Web shell data refreshes are staggered by DesktopController once the
+        // gateway is open. Keeping boot limited to connection setup prevents a
+        // route refresh from competing with config, session, model, profile,
+        // and cron reads all at once.
       } catch (err) {
         if (!cancelled) {
           const message = err instanceof Error ? err.message : String(err)

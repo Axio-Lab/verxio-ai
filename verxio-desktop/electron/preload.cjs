@@ -235,17 +235,7 @@ async function waitForDashboardReady() {
 }
 
 async function getConnection() {
-  if (verxioApiEnabled()) {
-    void fetchDashboardStatus(2_000)
-      .then(res => {
-        if (res.ok) {
-          dashboardReadyAt = Date.now()
-        }
-      })
-      .catch(() => undefined)
-  } else {
-    await waitForDashboardReady()
-  }
+  await waitForDashboardReady()
 
   emitBoot({
     phase: 'backend.ready',

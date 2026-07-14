@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 
 import { useI18n } from '@/i18n'
+import { readCachedModelOptions, writeCachedModelOptions } from '@/lib/model-options-cache'
 import type { ModelOptionProvider, ModelOptionsResponse, ModelPricing } from '@/types/hermes'
 
 import type { HermesGateway } from '../hermes'
@@ -52,19 +53,27 @@ export function ModelPickerDialog({
   // it and do a plain substring filter that preserves array order — matching
   // the runtime model picker, which shows the curated list verbatim.
   const [search, setSearch] = useState('')
+  const modelOptionsScope = sessionId || 'global'
 
   const modelOptions = useQuery({
-    queryKey: ['model-options', sessionId || 'global'],
-    queryFn: () => {
+    queryKey: ['model-options', modelOptionsScope],
+    queryFn: async () => {
+      let next: ModelOptionsResponse
+
       if (gw && sessionId) {
-        return gw.request<ModelOptionsResponse>('model.options', {
+        next = await gw.request<ModelOptionsResponse>('model.options', {
           session_id: sessionId
         })
+      } else {
+        next = await getGlobalModelOptions()
       }
 
-      return getGlobalModelOptions()
+      writeCachedModelOptions(modelOptionsScope, next)
+
+      return next
     },
-    enabled: open
+    enabled: open,
+    initialData: () => readCachedModelOptions(modelOptionsScope)
   })
 
   const providers = modelOptions.data?.providers ?? []

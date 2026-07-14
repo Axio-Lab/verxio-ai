@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from subprocess import CompletedProcess
@@ -7,10 +8,10 @@ from subprocess import CompletedProcess
 import pytest
 from fastapi.testclient import TestClient
 
-from app import composio_catalog, control_plane, db, emailer, inference, main
+from app import composio_catalog, control_plane, db, emailer, inference, main, runtime_manager
 from app.auth import SESSION_COOKIE
 from app.main import app
-from app.models import ComposioConnectedAccount, ComposioToolBridgeStatus
+from app.models import ComposioConnectedAccount, ComposioToolBridgeStatus, RuntimeInstance
 
 
 @pytest.fixture()
@@ -492,6 +493,41 @@ def test_signup_creates_user_workspace_agent_and_runtime(client):
     assert runtime_rows[0]["status"] == "stopped"
     assert runtime_rows[0]["hermes_home_path"].endswith("/hermes-home")
     assert runtime_rows[0]["artifact_path"].endswith("/workspace/artifacts")
+
+
+def test_runtime_volume_files_survive_runtime_record_recreation(client):
+    payload, _token = signup(client, "persistent-runtime@example.com")
+    workspace, agent, runtime = control_plane.ensure_personal_workspace(payload["user"])
+    control_plane.ensure_runtime_directories(runtime)
+
+    artifact_file = Path(runtime.artifact_path) / "saved-report.csv"
+    memory_file = Path(runtime.hermes_home_path) / "memories" / "customer-note.md"
+    workspace_file = Path(runtime.workspace_path) / "workspace-summary.md"
+    artifact_file.write_text("metric,value\nrevenue,100\n", encoding="utf-8")
+    memory_file.parent.mkdir(parents=True, exist_ok=True)
+    memory_file.write_text("Remember the customer prefers weekly reports.\n", encoding="utf-8")
+    workspace_file.write_text("# Workspace summary\n\nPersistent across deploys.\n", encoding="utf-8")
+
+    original_paths = (runtime.hermes_home_path, runtime.workspace_path, runtime.artifact_path)
+    assert {record.file_name for record in runtime_manager.index_artifacts(runtime)} >= {
+        "saved-report.csv",
+        "workspace-summary.md",
+    }
+
+    db.execute("DELETE FROM artifacts WHERE workspace_id = ? AND agent_id = ?", (workspace.id, agent.id))
+    db.execute("DELETE FROM runtime_instances WHERE id = ?", (runtime.id,))
+
+    restored = control_plane.ensure_runtime_instance(workspace, agent)
+    control_plane.ensure_runtime_directories(restored)
+
+    assert (restored.hermes_home_path, restored.workspace_path, restored.artifact_path) == original_paths
+    assert artifact_file.read_text(encoding="utf-8") == "metric,value\nrevenue,100\n"
+    assert memory_file.read_text(encoding="utf-8") == "Remember the customer prefers weekly reports.\n"
+    assert workspace_file.read_text(encoding="utf-8").startswith("# Workspace summary")
+    assert {record.file_name for record in runtime_manager.index_artifacts(restored)} >= {
+        "saved-report.csv",
+        "workspace-summary.md",
+    }
 
 
 def test_signup_requires_email_code_before_session_or_workspace(client):
@@ -1248,6 +1284,113 @@ def test_runtime_start_updates_registry_without_real_docker(client, monkeypatch)
     run_call = next(call for call in calls if call[:1] == ["run"])
     assert "/host/verxio/runtimes" in " ".join(run_call)
     assert "/workspace" in " ".join(run_call)
+
+
+def _runtime_for_health(**overrides) -> RuntimeInstance:
+    data = {
+        "id": "rt_health",
+        "tenant_id": "tenant",
+        "workspace_id": "workspace",
+        "agent_id": "agent",
+        "mode": "local-docker",
+        "status": "starting",
+        "container_name": "verxio-health-test",
+        "dashboard_url": "http://runtime.local:9119",
+        "hermes_home_path": "/tmp/home",
+        "workspace_path": "/tmp/workspace",
+        "artifact_path": "/tmp/artifacts",
+    }
+    data.update(overrides)
+    return RuntimeInstance(**data)
+
+
+def test_gateway_status_normalizes_optional_unpaired_whatsapp():
+    payload = {
+        "gateway_running": True,
+        "gateway_platforms": {
+            "slack": {"state": "connected", "updated_at": "2026-07-13T00:00:00Z"},
+            "whatsapp": {
+                "state": "fatal",
+                "configured": True,
+                "enabled": True,
+                "error_code": "whatsapp_not_paired",
+                "error_message": "WhatsApp is enabled but not paired.",
+                "updated_at": "2026-07-13T00:00:00Z",
+            },
+        },
+    }
+
+    normalized = runtime_manager.normalize_gateway_status_payload(payload)
+
+    assert normalized["gateway_platforms"]["slack"]["state"] == "connected"
+    assert normalized["gateway_platforms"]["whatsapp"]["state"] == "not_configured"
+    assert normalized["gateway_platforms"]["whatsapp"]["configured"] is False
+    assert normalized["gateway_platforms"]["whatsapp"]["enabled"] is False
+    assert normalized["gateway_platforms"]["whatsapp"]["error_code"] is None
+    assert normalized["gateway_platforms"]["whatsapp"]["error_message"] is None
+
+
+def test_gateway_status_normalizes_top_level_optional_unpaired_whatsapp_exit_reason():
+    payload = {
+        "gateway_running": False,
+        "gateway_state": "startup_failed",
+        "gateway_exit_reason": "whatsapp: WhatsApp enabled but not paired — run `hermes whatsapp` to pair.",
+        "gateway_platforms": {},
+    }
+
+    normalized = runtime_manager.normalize_gateway_status_payload(payload)
+
+    assert normalized["gateway_running"] is True
+    assert normalized["gateway_state"] == "ready"
+    assert normalized["gateway_exit_reason"] is None
+    assert "Hermes" not in json.dumps(normalized)
+
+
+def test_runtime_health_uses_recent_success_cache(monkeypatch):
+    runtime = _runtime_for_health(status="running", container_name="verxio-health-cache")
+    runtime_manager.mark_runtime_healthy(runtime, ttl=60)
+
+    class FailingClient:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("runtime_health should not hit the network while the healthy cache is fresh")
+
+    monkeypatch.setattr(runtime_manager.httpx, "AsyncClient", FailingClient)
+
+    connected, detail = asyncio.run(runtime_manager.runtime_health(runtime))
+
+    assert connected is True
+    assert "reachable recently" in detail
+
+
+def test_runtime_health_waits_until_gateway_is_running(monkeypatch):
+    runtime = _runtime_for_health(status="starting", container_name="verxio-health-gateway")
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"gateway_running": False, "gateway_state": "starting", "gateway_platforms": {}}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            return None
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def get(self, _url):
+            return FakeResponse()
+
+    monkeypatch.setattr(runtime_manager.httpx, "AsyncClient", FakeClient)
+
+    connected, detail = asyncio.run(runtime_manager.runtime_health(runtime))
+
+    assert connected is False
+    assert "gateway is starting" in detail
 
 
 def test_leash_agent_config_is_runtime_local_not_db(client):

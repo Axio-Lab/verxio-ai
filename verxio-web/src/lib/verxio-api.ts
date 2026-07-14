@@ -47,6 +47,7 @@ export interface VerxioArtifact {
   content_type: string
   size_bytes: number
   sha256: string | null
+  source: string
   created_at: string
   updated_at: string
 }

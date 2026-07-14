@@ -12,6 +12,7 @@ import { Switch } from '@/components/ui/switch'
 import { TextTab, TextTabMeta } from '@/components/ui/text-tab'
 import { getSkills, getToolsets, toggleSkill, toggleToolset } from '@/hermes'
 import { useI18n } from '@/i18n'
+import { readVerxioAuthScope } from '@/lib/auth-scope'
 import { Pencil } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
@@ -28,12 +29,78 @@ import { ToolsetConfigPanel } from '../settings/toolset-config-panel'
 import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 
 import { ConnectionsPanel } from './connections-panel'
-import { WEB_SEARCH_TOOLSET_NAME, WebSearchToolsetPanel } from './web-search-toolset-panel'
 
 const SKILLS_MODES = ['skills', 'toolsets', 'connections'] as const
 type SkillsMode = (typeof SKILLS_MODES)[number]
 const SKILLS_PAGE_SIZE = 10
 const CONNECTIONS_PAGE_SIZE = 10
+const HIDDEN_TOOLSET_NAMES = new Set(['subscription'])
+const HIDDEN_TOOLSET_LABELS = new Set(['nous subscription'])
+const TRANSIENT_REFRESH_DELAYS_MS = [300, 800, 1_500]
+const SKILLS_CACHE_KEY = 'verxio.skills.cache.v1'
+const TOOLSETS_CACHE_KEY = 'verxio.toolsets.cache.v1'
+
+function scopedCacheKey(key: string): string {
+  return `${key}:${readVerxioAuthScope()}`
+}
+
+function readCachedList<T>(key: string): T[] | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const raw = window.localStorage.getItem(scopedCacheKey(key))
+
+    if (!raw) {
+      return null
+    }
+
+    const parsed = JSON.parse(raw)
+
+    return Array.isArray(parsed) ? (parsed as T[]) : null
+  } catch {
+    return null
+  }
+}
+
+function writeCachedList<T>(key: string, rows: T[]): void {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    window.localStorage.setItem(scopedCacheKey(key), JSON.stringify(rows))
+  } catch {
+    // Cache writes are best effort; live runtime data still drives the page.
+  }
+}
+
+function transientRefreshError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+
+  return /\b(502|503|504)\b|starting|timed out|timeout|failed to fetch|network/i.test(message)
+}
+
+async function retryTransientRefresh<T>(load: () => Promise<T>): Promise<T> {
+  let lastError: unknown
+
+  for (let attempt = 0; attempt <= TRANSIENT_REFRESH_DELAYS_MS.length; attempt += 1) {
+    try {
+      return await load()
+    } catch (error) {
+      lastError = error
+
+      if (!transientRefreshError(error) || attempt >= TRANSIENT_REFRESH_DELAYS_MS.length) {
+        throw error
+      }
+
+      await new Promise(resolve => window.setTimeout(resolve, TRANSIENT_REFRESH_DELAYS_MS[attempt]))
+    }
+  }
+
+  throw lastError
+}
 
 function categoryFor(skill: SkillInfo): string {
   return asText(skill.category) || 'general'
@@ -57,13 +124,12 @@ function filteredSkills(skills: SkillInfo[], query: string, category: string | n
     .sort((a, b) => asText(a.name).localeCompare(asText(b.name)))
 }
 
-function filteredToolsets(toolsets: ToolsetInfo[], query: string, excludeNames: readonly string[] = []): ToolsetInfo[] {
+function filteredToolsets(toolsets: ToolsetInfo[], query: string): ToolsetInfo[] {
   const q = query.trim().toLowerCase()
-  const excluded = new Set(excludeNames)
 
   return toolsets
     .filter(toolset => {
-      if (excluded.has(toolset.name)) {
+      if (isHiddenToolset(toolset)) {
         return false
       }
 
@@ -84,6 +150,13 @@ function filteredToolsets(toolsets: ToolsetInfo[], query: string, excludeNames: 
     .sort((a, b) => toolsetDisplayLabel(a).localeCompare(toolsetDisplayLabel(b)))
 }
 
+function isHiddenToolset(toolset: ToolsetInfo): boolean {
+  const name = asText(toolset.name).toLowerCase()
+  const label = toolsetDisplayLabel(toolset).toLowerCase()
+
+  return HIDDEN_TOOLSET_NAMES.has(name) || HIDDEN_TOOLSET_LABELS.has(label)
+}
+
 interface SkillsViewProps extends React.ComponentProps<'section'> {
   setStatusbarItemGroup?: SetStatusbarItemGroup
 }
@@ -96,8 +169,8 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
   const navigate = useNavigate()
 
   const [query, setQuery] = useState('')
-  const [skills, setSkills] = useState<SkillInfo[] | null>(null)
-  const [toolsets, setToolsets] = useState<ToolsetInfo[] | null>(null)
+  const [skills, setSkills] = useState<SkillInfo[] | null>(() => readCachedList<SkillInfo>(SKILLS_CACHE_KEY))
+  const [toolsets, setToolsets] = useState<ToolsetInfo[] | null>(() => readCachedList<ToolsetInfo>(TOOLSETS_CACHE_KEY))
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [savingSkill, setSavingSkill] = useState<string | null>(null)
@@ -109,20 +182,36 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
   const refreshCapabilities = useCallback(async () => {
     setRefreshing(true)
 
-    try {
-      const [nextSkills, nextToolsets] = await Promise.all([getSkills(), getToolsets()])
+    const [skillsResult, toolsetsResult] = await Promise.allSettled([
+      retryTransientRefresh(getSkills),
+      retryTransientRefresh(getToolsets)
+    ])
+
+    if (skillsResult.status === 'fulfilled') {
+      const nextSkills = skillsResult.value
       setSkills(nextSkills)
-      setToolsets(nextToolsets)
-    } catch (err) {
-      notifyError(err, t.skills.skillsLoadFailed)
-    } finally {
-      setRefreshing(false)
+      writeCachedList(SKILLS_CACHE_KEY, nextSkills)
+    } else if (!skills) {
+      notifyError(skillsResult.reason, t.skills.skillsLoadFailed)
     }
-  }, [t])
+
+    if (toolsetsResult.status === 'fulfilled') {
+      const nextToolsets = toolsetsResult.value
+      setToolsets(nextToolsets)
+      writeCachedList(TOOLSETS_CACHE_KEY, nextToolsets)
+    } else if (!toolsets) {
+      notifyError(toolsetsResult.reason, t.skills.toolsetsRefreshFailed)
+    }
+
+    setRefreshing(false)
+  }, [skills, t, toolsets])
 
   const refreshToolsets = useCallback(() => {
     getToolsets()
-      .then(setToolsets)
+      .then(nextToolsets => {
+        setToolsets(nextToolsets)
+        writeCachedList(TOOLSETS_CACHE_KEY, nextToolsets)
+      })
       .catch(err => notifyError(err, t.skills.toolsetsRefreshFailed))
   }, [t])
 
@@ -154,14 +243,11 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
     [activeCategory, mode, query, skills]
   )
 
-  const visibleToolsets = useMemo(
-    () => (toolsets ? filteredToolsets(toolsets, query, [WEB_SEARCH_TOOLSET_NAME]) : []),
-    [query, toolsets]
-  )
+  const publicToolsets = useMemo(() => toolsets?.filter(toolset => !isHiddenToolset(toolset)) ?? null, [toolsets])
 
-  const webSearchToolset = useMemo(
-    () => toolsets?.find(toolset => toolset.name === WEB_SEARCH_TOOLSET_NAME) ?? null,
-    [toolsets]
+  const visibleToolsets = useMemo(
+    () => (publicToolsets ? filteredToolsets(publicToolsets, query) : []),
+    [publicToolsets, query]
   )
 
   const activeTotal = mode === 'skills' ? visibleSkills.length : mode === 'toolsets' ? visibleToolsets.length : 0
@@ -183,8 +269,8 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
   }, [pagedSkills])
 
   const totalSkills = skills?.length || 0
-  const enabledToolsets = toolsets?.filter(toolset => toolset.enabled).length || 0
-  const totalToolsets = toolsets?.length || 0
+  const enabledToolsets = publicToolsets?.filter(toolset => toolset.enabled).length || 0
+  const totalToolsets = publicToolsets?.length || 0
 
   useEffect(() => {
     if (mode !== 'connections' && page > activePageCount) {
@@ -216,7 +302,11 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
   }
 
   const searchHidden =
-    mode === 'connections' ? true : mode === 'skills' ? (skills?.length ?? 0) === 0 : (toolsets?.length ?? 0) === 0
+    mode === 'connections'
+      ? true
+      : mode === 'skills'
+        ? (skills?.length ?? 0) === 0
+        : (publicToolsets?.length ?? 0) === 0
 
   const searchPlaceholder =
     mode === 'skills'
@@ -418,21 +508,11 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
         </div>
       ) : (
         <div className={cn('flex h-full flex-col overflow-y-auto py-3')}>
-          <WebSearchToolsetPanel
-            onConfiguredChange={refreshToolsets}
-            onToggle={enabled => {
-              if (webSearchToolset) {
-                void handleToggleToolset(webSearchToolset, enabled)
-              }
-            }}
-            saving={webSearchToolset ? savingToolset === webSearchToolset.name : false}
-            toolset={webSearchToolset}
-          />
           <div className={cn(PAGE_INSET_X)}>
             {visibleToolsets.length === 0 ? (
               query.trim() ? (
                 <p className="pt-2 text-xs text-muted-foreground">{t.skills.noToolsetsDesc}</p>
-              ) : webSearchToolset ? null : (
+              ) : (
                 <EmptyState description={t.skills.noToolsetsDesc} title={t.skills.noToolsetsTitle} />
               )
             ) : (

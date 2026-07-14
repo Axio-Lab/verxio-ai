@@ -7,6 +7,7 @@ import { BrandMark } from '@/components/brand-mark'
 import { PageLoader } from '@/components/page-loader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { authScopeFromParts, clearVerxioAuthScope, writeVerxioAuthScope } from '@/lib/auth-scope'
 import { Eye, EyeOff, KeyRound, Lock, LogIn, RefreshCw } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import {
@@ -177,6 +178,10 @@ function modeSubtitle(mode: AuthMode, pendingPurpose: VerxioAuthCodePurpose | nu
   return 'Use an email code or your password.'
 }
 
+function persistAuthScope(result: VerxioAuthResponse): void {
+  writeVerxioAuthScope(authScopeFromParts(result.workspace.id, result.profile.id))
+}
+
 export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
   const enabled = verxioApiEnabled()
   const location = useLocation()
@@ -208,6 +213,7 @@ export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
           return
         }
 
+        persistAuthScope(result)
         setAuth(result)
         setStatus('authenticated')
 
@@ -220,6 +226,7 @@ export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
           return
         }
 
+        clearVerxioAuthScope()
         setStatus('guest')
       })
 
@@ -274,6 +281,7 @@ export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
           return
         }
 
+        clearVerxioAuthScope()
         setAuth(null)
         setStatus('guest')
         navigate(LOGIN_ROUTE, { replace: true })
@@ -332,6 +340,7 @@ export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
   }
 
   function completeAuth(result: VerxioAuthResponse) {
+    persistAuthScope(result)
     setAuth(result)
     setStatus('authenticated')
     navigate(NEW_CHAT_ROUTE, { replace: true })

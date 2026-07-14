@@ -224,6 +224,14 @@ function composioCallbackUrl(): string {
   return `${window.location.origin}${window.location.pathname}${hashRoute}`
 }
 
+function productMessage(message: string | null | undefined): string | null {
+  if (!message) {
+    return null
+  }
+
+  return message.replace(/\bHermes\b/g, 'Verxio')
+}
+
 function parseComposioCallbackFromHref(href: string): { status: string; connectedAccountId?: string } | null {
   try {
     const url = new URL(href)
@@ -548,6 +556,11 @@ export function ConnectionsPanel({
   const connectedPageStart = (currentConnectedPage - 1) * CONNECTED_PAGE_SIZE
   const visibleConnectedRows = connectedRows.slice(connectedPageStart, connectedPageStart + CONNECTED_PAGE_SIZE)
 
+  const bridgeNotice =
+    connectedRows.length > 0
+      ? productMessage(message || (configured && toolBridge && !toolBridge.enabled ? toolBridge.message : null))
+      : null
+
   useEffect(() => {
     if (page > pageCount) {
       onPageChange(pageCount)
@@ -701,10 +714,10 @@ export function ConnectionsPanel({
       ) : (
         <div className={cn('h-full min-w-0 overflow-y-auto overflow-x-hidden py-3', PAGE_INSET_X)}>
           <div className="min-w-0 space-y-3">
-            {(message || (configured && toolBridge && !toolBridge.enabled && toolBridge.message)) && (
+            {bridgeNotice && (
               <div className="flex items-start gap-2 rounded-[6px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-3 py-2 text-xs break-words text-muted-foreground">
                 <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-                <span>{message || toolBridge?.message}</span>
+                <span>{bridgeNotice}</span>
               </div>
             )}
 
@@ -712,9 +725,7 @@ export function ConnectionsPanel({
               <section className="space-y-2">
                 <div className="min-w-0">
                   <div className="text-sm font-medium">Connected tools</div>
-                  <div className="text-xs text-muted-foreground">
-                    Apps the agent can use through the Composio bridge.
-                  </div>
+                  <div className="text-xs text-muted-foreground">Connected apps available to Verxio agents.</div>
                 </div>
 
                 <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">

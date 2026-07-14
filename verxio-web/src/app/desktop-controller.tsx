@@ -9,10 +9,18 @@ import { FolderAccessDialog } from '@/components/folder-access-dialog'
 import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overlay'
 import { Pane, PaneMain } from '@/components/pane-shell'
 import { RemoteDisplayBanner } from '@/components/remote-display-banner'
+import { readVerxioAuthScope } from '@/lib/auth-scope'
 import { useSkinCommand } from '@/themes/use-skin-command'
 
 import { formatRefValue } from '../components/assistant-ui/directive-text'
-import { getCronJobs, getSessionMessages, listAllProfileSessions, type SessionInfo, triggerCronJob } from '../hermes'
+import {
+  getCronJobs,
+  getSessionMessages,
+  listAllProfileSessions,
+  type PaginatedSessions,
+  type SessionInfo,
+  triggerCronJob
+} from '../hermes'
 import { preserveLocalAssistantErrors, toChatMessages } from '../lib/chat-messages'
 import { storedSessionIdForNotification } from '../lib/session-ids'
 import { shouldRefreshSessions, withSessionListRetries } from '../lib/session-list-sync'
@@ -115,6 +123,43 @@ const PulseView = lazy(async () => ({ default: (await import('./pulse')).PulseVi
 const ProfilesView = lazy(async () => ({ default: (await import('./profiles')).ProfilesView }))
 const SettingsView = lazy(async () => ({ default: (await import('./settings')).SettingsView }))
 const SkillsView = lazy(async () => ({ default: (await import('./skills')).SkillsView }))
+const SESSIONS_CACHE_KEY = 'verxio.sessions.cache.v1'
+
+function sessionsCacheKey(): string {
+  return `${SESSIONS_CACHE_KEY}:${readVerxioAuthScope()}`
+}
+
+function readCachedSessions(): PaginatedSessions | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const raw = window.localStorage.getItem(sessionsCacheKey())
+
+    if (!raw) {
+      return null
+    }
+
+    const parsed = JSON.parse(raw) as PaginatedSessions
+
+    return Array.isArray(parsed.sessions) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function writeCachedSessions(result: PaginatedSessions): void {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    window.localStorage.setItem(sessionsCacheKey(), JSON.stringify(result))
+  } catch {
+    // Cache writes are best effort; live runtime data still drives the sidebar.
+  }
+}
 
 // Rows a session refresh must preserve even if the aggregator omits them:
 // in-flight first turns (message_count 0), pinned rows aged off the page, and
@@ -143,6 +188,9 @@ export function DesktopController() {
 
   const busyRef = useRef(false)
   const creatingSessionRef = useRef(false)
+  const lastSessionsRefreshAtRef = useRef(0)
+  const refreshCronJobsInFlightRef = useRef<Promise<void> | null>(null)
+  const refreshSessionsInFlightRef = useRef<Promise<void> | null>(null)
   const refreshSessionsRequestRef = useRef(0)
 
   const gatewayState = useStore($gatewayState)
@@ -261,40 +309,78 @@ export function DesktopController() {
   }, [])
 
   const refreshCronJobs = useCallback(async () => {
-    try {
-      const jobs = await getCronJobs()
+    if (refreshCronJobsInFlightRef.current) {
+      return refreshCronJobsInFlightRef.current
+    }
 
-      setCronJobs(jobs)
-    } catch {
-      // Non-fatal: the cron section keeps its last-known jobs.
+    const task = (async () => {
+      try {
+        const jobs = await getCronJobs()
+
+        setCronJobs(jobs)
+      } catch {
+        // Non-fatal: the cron section keeps its last-known jobs.
+      }
+    })()
+
+    refreshCronJobsInFlightRef.current = task
+
+    try {
+      await task
+    } finally {
+      if (refreshCronJobsInFlightRef.current === task) {
+        refreshCronJobsInFlightRef.current = null
+      }
     }
   }, [])
 
   const refreshSessions = useCallback(async () => {
-    const requestId = refreshSessionsRequestRef.current + 1
-    refreshSessionsRequestRef.current = requestId
-    setSessionsLoading(true)
+    const now = Date.now()
 
-    try {
-      const result = await withSessionListRetries(async () => {
-        const limit = $sessionsLimit.get()
-
-        return listAllProfileSessions(limit, 1)
-      })
-
-      if (refreshSessionsRequestRef.current === requestId) {
-        setSessions(prev => mergeSessionPage(prev, result.sessions, sessionsToKeep()))
-        setSessionsTotal(typeof result.total === 'number' ? result.total : result.sessions.length)
-        setSessionProfileTotals(result.profile_totals ?? {})
-      }
-    } finally {
-      if (refreshSessionsRequestRef.current === requestId) {
-        setSessionsLoading(false)
-      }
+    if (refreshSessionsInFlightRef.current) {
+      return refreshSessionsInFlightRef.current
     }
 
-    void refreshCronJobs()
-  }, [refreshCronJobs])
+    if ($sessions.get().length > 0 && now - lastSessionsRefreshAtRef.current < 2_000) {
+      return
+    }
+
+    const requestId = refreshSessionsRequestRef.current + 1
+    refreshSessionsRequestRef.current = requestId
+    setSessionsLoading($sessions.get().length === 0)
+
+    const task = (async () => {
+      try {
+        const result = await withSessionListRetries(async () => {
+          const limit = $sessionsLimit.get()
+
+          return listAllProfileSessions(limit, 1)
+        })
+
+        if (refreshSessionsRequestRef.current === requestId) {
+          setSessions(prev => mergeSessionPage(prev, result.sessions, sessionsToKeep()))
+          setSessionsTotal(typeof result.total === 'number' ? result.total : result.sessions.length)
+          setSessionProfileTotals(result.profile_totals ?? {})
+          writeCachedSessions(result)
+          lastSessionsRefreshAtRef.current = Date.now()
+        }
+      } finally {
+        if (refreshSessionsRequestRef.current === requestId) {
+          setSessionsLoading(false)
+        }
+      }
+    })()
+
+    refreshSessionsInFlightRef.current = task
+
+    try {
+      await task
+    } finally {
+      if (refreshSessionsInFlightRef.current === task) {
+        refreshSessionsInFlightRef.current = null
+      }
+    }
+  }, [])
 
   const loadMoreSessions = useCallback(() => {
     bumpSessionsLimit()
@@ -304,6 +390,19 @@ export function DesktopController() {
   // Another tab mutated the shared session list — re-pull so the sidebar reflects it.
   useEffect(() => {
     return onSessionsChanged(() => void refreshSessions().catch(() => undefined))
+  }, [refreshSessions])
+
+  useEffect(() => {
+    const cached = readCachedSessions()
+
+    if (cached && $sessions.get().length === 0) {
+      setSessions(cached.sessions)
+      setSessionsTotal(typeof cached.total === 'number' ? cached.total : cached.sessions.length)
+      setSessionProfileTotals(cached.profile_totals ?? {})
+      setSessionsLoading(false)
+    }
+
+    void refreshSessions().catch(() => undefined)
   }, [refreshSessions])
 
   // ALL-profiles view pages one profile at a time: fetch that profile's next
@@ -611,12 +710,19 @@ export function DesktopController() {
 
   useEffect(() => {
     if (gatewayState === 'open') {
-      void refreshCurrentModel()
-      void refreshActiveProfile()
-      void refreshSessions().catch(() => undefined)
-      void refreshCronJobs()
+      const timers = [
+        window.setTimeout(() => void refreshSessions().catch(() => undefined), 50),
+        window.setTimeout(() => void refreshHermesConfig().catch(() => undefined), 250),
+        window.setTimeout(() => void refreshCurrentModel().catch(() => undefined), 450),
+        window.setTimeout(() => void refreshActiveProfile().catch(() => undefined), 650),
+        window.setTimeout(() => void refreshCronJobs().catch(() => undefined), 1_200)
+      ]
+
+      return () => {
+        timers.forEach(timer => window.clearTimeout(timer))
+      }
     }
-  }, [gatewayState, refreshCronJobs, refreshCurrentModel, refreshSessions])
+  }, [gatewayState, refreshCronJobs, refreshCurrentModel, refreshHermesConfig, refreshSessions])
 
   // Cross-device sync: devices share one runtime state DB but have no push channel.
   // Poll the newest session id and re-fetch when another device creates a chat,
@@ -652,11 +758,12 @@ export function DesktopController() {
       }
     }
 
-    const intervalId = window.setInterval(() => void poll(), 8_000)
-    void poll()
+    const firstPollId = window.setTimeout(() => void poll(), 8_000)
+    const intervalId = window.setInterval(() => void poll(), 12_000)
 
     return () => {
       cancelled = true
+      window.clearTimeout(firstPollId)
       window.clearInterval(intervalId)
     }
   }, [gatewayState, refreshSessions])

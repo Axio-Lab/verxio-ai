@@ -158,6 +158,7 @@ from app.runtime_manager import (
     artifact_file,
     index_artifacts,
     mark_runtime_healthy,
+    normalize_gateway_status_content,
     restart_runtime,
     runtime_container_env_matches,
     runtime_dashboard_base_url,
@@ -383,7 +384,7 @@ async def sync_runtime_workspace_route(
     request: Request, body: RuntimeWorkspaceSyncRequest
 ) -> RuntimeControlResponse:
     user = require_user(request)
-    runtime = get_runtime_for_user(user)
+    runtime = get_runtime_for_user(user, fresh=True)
     try:
         runtime = await sync_runtime_workspace(runtime, body.workspace_path)
     except ValueError as exc:
@@ -774,7 +775,7 @@ async def _sync_composio_bridge_for_user(user: dict, *, apply_live: bool = False
     - Only Docker-restarts when COMPOSIO_API_KEY is missing from the container
       (cannot hot-inject env vars).
     """
-    runtime = get_runtime_for_user(user)
+    runtime = get_runtime_for_user(user, fresh=True)
 
     def _prepare() -> tuple:
         accounts = list_composio_accounts(str(user["id"]))
@@ -808,7 +809,7 @@ async def _sync_inference_bridge_for_user(
     refresh_running: bool = False,
     allow_restart: bool = True,
 ):
-    runtime = get_runtime_for_user(user)
+    runtime = get_runtime_for_user(user, fresh=True)
 
     def _prepare() -> tuple:
         bridge = sync_inference_runtime_bridge(runtime, str(user["id"]))
@@ -1010,7 +1011,14 @@ def _dashboard_request_is_read(method: str) -> bool:
 
 def _dashboard_path_is_lightweight(path: str) -> bool:
     normalized = path.strip("/")
-    return normalized in {"api/status", "api/config", "api/sessions", "api/models"}
+    return normalized in {
+        "api/status",
+        "api/config",
+        "api/sessions",
+        "api/models",
+        "api/model/info",
+        "api/model/options",
+    }
 
 
 def _dashboard_path_needs_inference_sync(path: str) -> bool:
@@ -1025,6 +1033,22 @@ def _dashboard_path_needs_inference_sync(path: str) -> bool:
 
 
 _ENSURE_TASKS: set[asyncio.Task[None]] = set()
+_BRIDGE_TASKS: set[asyncio.Task[None]] = set()
+
+
+def _track_background_task(task: asyncio.Task[None], bucket: set[asyncio.Task[None]]) -> None:
+    bucket.add(task)
+    task.add_done_callback(bucket.discard)
+
+
+def _schedule_inference_bridge_sync(user: dict) -> None:
+    async def _run() -> None:
+        try:
+            await _sync_inference_bridge_for_user(user, allow_restart=False)
+        except Exception:
+            logger.exception("Background inference bridge sync failed")
+
+    _track_background_task(asyncio.create_task(_run()), _BRIDGE_TASKS)
 
 
 def _schedule_runtime_ensure(user: dict) -> None:
@@ -1043,9 +1067,7 @@ def _schedule_runtime_ensure(user: dict) -> None:
         except Exception:
             logger.exception("Background runtime ensure failed")
 
-    task = asyncio.create_task(_run())
-    _ENSURE_TASKS.add(task)
-    task.add_done_callback(_ENSURE_TASKS.discard)
+    _track_background_task(asyncio.create_task(_run()), _ENSURE_TASKS)
 
 
 logger = logging.getLogger(__name__)
@@ -1067,7 +1089,10 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
         await _sync_composio_bridge_for_user(user, apply_live=True)
         await _sync_inference_bridge_for_user(user)
     elif _dashboard_path_needs_inference_sync(path):
-        await _sync_inference_bridge_for_user(user, allow_restart=False)
+        if lightweight:
+            _schedule_inference_bridge_sync(user)
+        else:
+            await _sync_inference_bridge_for_user(user, allow_restart=False)
 
     # Lightweight GETs never call start_runtime. Refresh was paying a full
     # ensure/health tax on every status poll and felt like a cold start.
@@ -1118,9 +1143,12 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     response_headers = {
         key: value
         for key, value in upstream.headers.items()
-        if key.lower() not in {"content-encoding", "set-cookie", "transfer-encoding"}
+        if key.lower() not in {"content-encoding", "content-length", "set-cookie", "transfer-encoding"}
     }
-    return Response(content=upstream.content, status_code=upstream.status_code, headers=response_headers)
+    content = upstream.content
+    if path.strip("/") == "api/status":
+        content = normalize_gateway_status_content(content)
+    return Response(content=content, status_code=upstream.status_code, headers=response_headers)
 
 
 def _ws_target_url(runtime_url: str, path: str, query: str, token: str) -> str:

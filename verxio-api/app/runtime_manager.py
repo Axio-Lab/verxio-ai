@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import mimetypes
 import os
 import secrets
@@ -8,6 +9,7 @@ import socket
 import subprocess
 import time
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -21,12 +23,173 @@ from app.models import ArtifactRecord, RuntimeInstance, new_id
 # whole uvicorn event loop on ECS (auth/me waits 20s+, boot spinner hangs).
 _NETWORK_CACHE: str | None = None
 _NETWORK_CACHE_LOADED = False
+_NETWORK_ATTACHED_CACHE: set[str] = set()
 _CONTAINER_IP_CACHE: dict[str, tuple[float, str]] = {}
 _LIVE_TOKEN_CACHE: dict[str, tuple[float, str]] = {}
 _HEALTHY_UNTIL: dict[str, float] = {}
 _START_LOCKS: dict[str, asyncio.Lock] = {}
 _CACHE_TTL_SECONDS = 60.0
 _HEALTHY_TTL_SECONDS = 45.0
+_OPTIONAL_UNPAIRED_PLATFORM_ERRORS = {
+    "whatsapp": {"whatsapp_not_paired"},
+}
+_ARTIFACT_FILE_EXTENSIONS = {
+    ".bmp",
+    ".csv",
+    ".doc",
+    ".docx",
+    ".gif",
+    ".htm",
+    ".html",
+    ".jpeg",
+    ".jpg",
+    ".json",
+    ".jsonl",
+    ".md",
+    ".mov",
+    ".mp3",
+    ".mp4",
+    ".parquet",
+    ".pdf",
+    ".png",
+    ".ppt",
+    ".pptx",
+    ".svg",
+    ".tsv",
+    ".txt",
+    ".wav",
+    ".webp",
+    ".xls",
+    ".xlsx",
+    ".zip",
+}
+_WORKSPACE_ARTIFACT_DIR_NAMES = {
+    "artifacts",
+    "charts",
+    "downloads",
+    "exports",
+    "generated",
+    "images",
+    "output",
+    "outputs",
+    "reports",
+}
+_WORKSPACE_ARTIFACT_SKIP_DIRS = {
+    ".cache",
+    ".git",
+    ".hg",
+    ".next",
+    ".pytest_cache",
+    ".venv",
+    "dist",
+    "node_modules",
+    "venv",
+}
+_RUNTIME_HOME_ARTIFACT_PREFIX = "runtime-home/artifacts/"
+_TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
+
+
+def _is_optional_unpaired_exit_reason(reason: Any) -> bool:
+    if not isinstance(reason, str):
+        return False
+    lower = reason.lower()
+    return any(platform_id in lower and "not paired" in lower for platform_id in _OPTIONAL_UNPAIRED_PLATFORM_ERRORS)
+
+
+def _env_truthy(value: str | None) -> bool:
+    return (value or "").strip().lower() in _TRUTHY_ENV_VALUES
+
+
+def _runtime_whatsapp_paired(runtime: RuntimeInstance) -> bool:
+    hermes_home = Path(runtime.hermes_home_path)
+    return any(
+        path.is_file()
+        for path in (
+            hermes_home / "platforms" / "whatsapp" / "session" / "creds.json",
+            hermes_home / "whatsapp" / "session" / "creds.json",
+        )
+    )
+
+
+def _runtime_container_env(runtime: RuntimeInstance, extra_env: dict[str, str] | None = None) -> dict[str, str]:
+    env: dict[str, str] = {
+        "VERXIO_HOSTED": "1",
+        "WHATSAPP_BROWSER_NAME": "Verxio Agent",
+        "WHATSAPP_REPLY_PREFIX": "",
+    }
+
+    if not _runtime_whatsapp_paired(runtime):
+        env["WHATSAPP_ENABLED"] = "false"
+
+    for key, value in (extra_env or {}).items():
+        if key and value:
+            env[str(key)] = str(value)
+
+    # A stale config/.env can mark WhatsApp enabled before the QR/session exists.
+    # In hosted runtimes that must not take Slack, web chat, cron, or tools down.
+    if _env_truthy(env.get("WHATSAPP_ENABLED")) and not _runtime_whatsapp_paired(runtime):
+        env["WHATSAPP_ENABLED"] = "false"
+
+    return env
+
+
+def normalize_gateway_status_payload(payload: Any) -> Any:
+    """Hide optional unpaired channel state from runtime health/status UI.
+
+    A user can connect Slack without pairing WhatsApp. The gateway still reports
+    WhatsApp as fatal when its platform config is present but no local pairing
+    session exists; that should not make the hosted Verxio runtime look down.
+    """
+
+    if not isinstance(payload, dict):
+        return payload
+
+    normalized = dict(payload)
+    changed = False
+
+    if _is_optional_unpaired_exit_reason(payload.get("gateway_exit_reason")):
+        normalized["gateway_running"] = True
+        normalized["gateway_state"] = "ready"
+        normalized["gateway_exit_reason"] = None
+        changed = True
+
+    platforms = payload.get("gateway_platforms")
+    if not isinstance(platforms, dict):
+        return normalized if changed else payload
+
+    normalized_platforms: dict[str, Any] = dict(platforms)
+
+    for platform_id, optional_errors in _OPTIONAL_UNPAIRED_PLATFORM_ERRORS.items():
+        status = normalized_platforms.get(platform_id)
+        if not isinstance(status, dict):
+            continue
+        if status.get("error_code") not in optional_errors:
+            continue
+
+        next_status = dict(status)
+        next_status["state"] = "not_configured"
+        next_status["configured"] = False
+        next_status["enabled"] = False
+        next_status["error_code"] = None
+        next_status["error_message"] = None
+        normalized_platforms[platform_id] = next_status
+        changed = True
+
+    normalized["gateway_platforms"] = normalized_platforms
+    return normalized if changed else payload
+
+
+def normalize_gateway_status_content(content: bytes) -> bytes:
+    try:
+        payload = json.loads(content.decode("utf-8"))
+    except Exception:
+        return content
+
+    normalized = normalize_gateway_status_payload(payload)
+    if normalized == payload:
+        return content
+
+    return json.dumps(normalized, separators=(",", ":")).encode("utf-8")
 
 
 def _sha256_file(path: Path) -> str:
@@ -186,10 +349,23 @@ def _port_is_free(port: int) -> bool:
         return sock.connect_ex(("127.0.0.1", port)) != 0
 
 
+def _docker_published_port_in_use(port: int) -> bool:
+    result = _run_docker(["ps", "--format", "{{.Ports}}"])
+    if result.returncode != 0:
+        return False
+
+    needle = f":{port}->"
+    return any(needle in line for line in result.stdout.splitlines())
+
+
+def _runtime_publish_port_is_free(port: int) -> bool:
+    return _port_is_free(port) and not _docker_published_port_in_use(port)
+
+
 def _allocate_port() -> int:
     start = int(os.getenv("VERXIO_DASHBOARD_PORT_START", "19119"))
     for port in range(start, start + 1000):
-        if _port_is_free(port):
+        if _runtime_publish_port_is_free(port):
             return port
     raise RuntimeError("No free localhost dashboard port found for a Verxio runtime.")
 
@@ -199,6 +375,13 @@ def _dashboard_port(runtime: RuntimeInstance) -> int:
         parsed = urlparse(runtime.dashboard_url)
         if parsed.port:
             return parsed.port
+    return _allocate_port()
+
+
+def _dashboard_port_for_start(runtime: RuntimeInstance) -> int:
+    stored_port = _dashboard_port(runtime)
+    if _runtime_publish_port_is_free(stored_port):
+        return stored_port
     return _allocate_port()
 
 
@@ -295,6 +478,10 @@ def _ensure_runtime_on_network(runtime: RuntimeInstance) -> None:
         return
 
     name = _container_name(runtime)
+    cache_key = f"{network}:{name}"
+    if cache_key in _NETWORK_ATTACHED_CACHE:
+        return
+
     check = _run_docker(
         [
             "inspect",
@@ -306,9 +493,12 @@ def _ensure_runtime_on_network(runtime: RuntimeInstance) -> None:
     # Empty / <no value> means not attached.
     attached = check.returncode == 0 and check.stdout.strip() not in {"", "<no value>", "map[]"}
     if attached:
+        _NETWORK_ATTACHED_CACHE.add(cache_key)
         return
 
-    _run_docker(["network", "connect", network, name])
+    result = _run_docker(["network", "connect", network, name])
+    if result.returncode == 0 or "already exists" in result.stderr.lower():
+        _NETWORK_ATTACHED_CACHE.add(cache_key)
     invalidate_runtime_caches(runtime)
 
 
@@ -409,6 +599,9 @@ def _docker_mount_path(path: str) -> str:
 
 
 async def runtime_health(runtime: RuntimeInstance) -> tuple[bool, str]:
+    if runtime.status == "running" and runtime_recently_healthy(runtime):
+        return True, "Verxio runtime was reachable recently."
+
     candidates: list[str] = []
     preferred = runtime_dashboard_base_url(runtime, ensure_network=False)
     if preferred:
@@ -422,16 +615,31 @@ async def runtime_health(runtime: RuntimeInstance) -> tuple[bool, str]:
 
     errors: list[str] = []
     # Keep this short — status polling must not pile up 5s+ waits per request.
-    async with httpx.AsyncClient(timeout=2.0) as client:
+    async with httpx.AsyncClient(timeout=_runtime_health_timeout_seconds()) as client:
         for base in candidates:
             try:
                 response = await client.get(f"{base.rstrip('/')}/api/status")
                 response.raise_for_status()
+                try:
+                    payload = normalize_gateway_status_payload(response.json())
+                except Exception:
+                    payload = None
+                if isinstance(payload, dict) and payload.get("gateway_running") is False:
+                    state = payload.get("gateway_state") or "not running"
+                    raise RuntimeError(f"runtime dashboard is reachable but gateway is {state}")
                 mark_runtime_healthy(runtime)
-                return True, "Hermes dashboard is reachable."
+                return True, "Verxio runtime is reachable."
             except Exception as exc:
                 errors.append(f"{base}: {exc}")
-    return False, f"Hermes dashboard is not reachable: {'; '.join(errors)}"
+    return False, f"Verxio runtime is not reachable: {'; '.join(errors)}"
+
+
+def _runtime_health_timeout_seconds() -> float:
+    raw = os.getenv("VERXIO_RUNTIME_HEALTH_TIMEOUT_SECONDS", "3").strip()
+    try:
+        return max(1.0, float(raw))
+    except ValueError:
+        return 3.0
 
 
 def _runtime_ready_timeout_seconds() -> float:
@@ -447,12 +655,12 @@ async def wait_for_runtime_ready(
     *,
     timeout_seconds: float | None = None,
 ) -> RuntimeInstance:
-    """Block until the Hermes dashboard answers, or the timeout elapses."""
+    """Block until the Verxio runtime answers, or the timeout elapses."""
     deadline = asyncio.get_running_loop().time() + (
         _runtime_ready_timeout_seconds() if timeout_seconds is None else max(1.0, timeout_seconds)
     )
     latest = runtime
-    detail = "Hermes dashboard is not reachable yet."
+    detail = "Verxio runtime is not reachable yet."
 
     while asyncio.get_running_loop().time() < deadline:
         connected, detail = await runtime_health(latest)
@@ -503,10 +711,14 @@ async def _start_runtime_locked(
     # Fast path for boot polling: skip docker + Hermes probes when we just
     # confirmed the dashboard is up. Prevents thundering-herd freezes on refresh.
     if not wait_ready and runtime.status == "running" and runtime_recently_healthy(runtime):
+        if _runtime_docker_network(allow_docker_probe=False):
+            await asyncio.to_thread(_ensure_runtime_on_network, runtime)
         return runtime
 
     current = await _run_docker_async(["inspect", "-f", "{{.State.Running}}", _container_name(runtime)])
     if current.returncode == 0 and current.stdout.strip() == "true":
+        if _runtime_docker_network(allow_docker_probe=False):
+            await asyncio.to_thread(_ensure_runtime_on_network, runtime)
         if not wait_ready and runtime_recently_healthy(runtime):
             return save_runtime(
                 runtime,
@@ -538,7 +750,7 @@ async def _start_runtime_locked(
         await _run_docker_async(["rm", _container_name(runtime)])
         invalidate_runtime_caches(runtime)
 
-    port = _dashboard_port(runtime)
+    port = _dashboard_port_for_start(runtime)
     token_row = db.fetch_one("SELECT dashboard_token FROM runtime_instances WHERE id = ?", (runtime.id,))
     dashboard_token = str(token_row.get("dashboard_token") or "") if token_row else ""
     if not dashboard_token:
@@ -585,18 +797,12 @@ async def _start_runtime_locked(
     if network:
         # Same network as verxio-api → DNS name works for HTTP and WebSocket.
         cmd.extend(["--network", network])
+    container_env = _runtime_container_env(runtime, extra_env)
     composio_api_key = os.getenv("COMPOSIO_API_KEY", "").strip()
     if composio_api_key:
-        cmd.extend(["-e", f"COMPOSIO_API_KEY={composio_api_key}"])
-    for key, value in {
-        "VERXIO_HOSTED": "1",
-        "WHATSAPP_BROWSER_NAME": "Verxio Agent",
-        "WHATSAPP_REPLY_PREFIX": "",
-    }.items():
+        container_env["COMPOSIO_API_KEY"] = composio_api_key
+    for key, value in sorted(container_env.items()):
         cmd.extend(["-e", f"{key}={value}"])
-    for key, value in sorted((extra_env or {}).items()):
-        if key and value:
-            cmd.extend(["-e", f"{key}={value}"])
 
     cmd.extend([image, "gateway", "run"])
 
@@ -694,18 +900,106 @@ async def sync_runtime_workspace(runtime: RuntimeInstance, workspace_path: str) 
     return await restart_runtime(updated)
 
 
+def _is_path_within(path: Path, root: Path) -> bool:
+    return path == root or root in path.parents
+
+
+def _workspace_artifact_candidates(runtime: RuntimeInstance) -> list[tuple[Path, str, str]]:
+    """Return host files that should appear in the user-facing Artifacts view.
+
+    The primary contract is `/workspace/artifacts/*`, but generated files often
+    land at `/workspace/report.csv` or `/workspace/reports/chart.png`. Keep this
+    intentionally narrow so ordinary project source files do not flood Artifacts.
+
+    Some runtime delivery paths also save generated files under
+    `$HERMES_HOME/artifacts`. Index those as runtime-home artifacts so files that
+    the chat can deliver are still visible in Verxio's Artifacts page.
+    """
+
+    artifact_root = Path(runtime.artifact_path).resolve()
+    workspace_root = Path(runtime.workspace_path).resolve()
+    runtime_home_artifact_root = (Path(runtime.hermes_home_path) / "artifacts").resolve()
+    candidates: list[tuple[Path, str, str]] = []
+
+    if artifact_root.exists():
+        for file_path in artifact_root.rglob("*"):
+            if not file_path.is_file():
+                continue
+            resolved = file_path.resolve()
+            if not _is_path_within(resolved, artifact_root):
+                continue
+            candidates.append((resolved, resolved.relative_to(artifact_root).as_posix(), "workspace"))
+
+    if workspace_root.exists():
+        for file_path in workspace_root.iterdir():
+            if not file_path.is_file() or file_path.suffix.lower() not in _ARTIFACT_FILE_EXTENSIONS:
+                continue
+            resolved = file_path.resolve()
+            if not _is_path_within(resolved, workspace_root):
+                continue
+            candidates.append(
+                (resolved, f"workspace/{resolved.relative_to(workspace_root).as_posix()}", "workspace_root")
+            )
+
+        for folder_name in sorted(_WORKSPACE_ARTIFACT_DIR_NAMES - {"artifacts"}):
+            folder = workspace_root / folder_name
+            if not folder.is_dir():
+                continue
+            for file_path in folder.rglob("*"):
+                if not file_path.is_file() or file_path.suffix.lower() not in _ARTIFACT_FILE_EXTENSIONS:
+                    continue
+                relative_to_folder = file_path.relative_to(folder)
+                if any(part in _WORKSPACE_ARTIFACT_SKIP_DIRS for part in relative_to_folder.parts[:-1]):
+                    continue
+                resolved = file_path.resolve()
+                if not _is_path_within(resolved, workspace_root):
+                    continue
+                candidates.append(
+                    (resolved, f"workspace/{resolved.relative_to(workspace_root).as_posix()}", "workspace_root")
+                )
+
+    if runtime_home_artifact_root.exists():
+        for file_path in runtime_home_artifact_root.rglob("*"):
+            if not file_path.is_file() or file_path.suffix.lower() not in _ARTIFACT_FILE_EXTENSIONS:
+                continue
+            resolved = file_path.resolve()
+            if not _is_path_within(resolved, runtime_home_artifact_root):
+                continue
+            relative = resolved.relative_to(runtime_home_artifact_root).as_posix()
+            candidates.append((resolved, f"{_RUNTIME_HOME_ARTIFACT_PREFIX}{relative}", "runtime_home"))
+
+    return candidates
+
+
+def _cleanup_missing_artifacts(runtime: RuntimeInstance, allowed_roots: list[Path]) -> None:
+    rows = db.fetch_all(
+        """
+        SELECT id, absolute_path
+        FROM artifacts
+        WHERE workspace_id = ? AND agent_id = ?
+        """,
+        (runtime.workspace_id, runtime.agent_id),
+    )
+
+    for row in rows:
+        file_path = Path(str(row["absolute_path"])).resolve()
+        if (
+            file_path.exists()
+            and file_path.is_file()
+            and any(_is_path_within(file_path, root) for root in allowed_roots)
+        ):
+            continue
+        db.execute("DELETE FROM artifacts WHERE id = ?", (row["id"],))
+
+
 def index_artifacts(runtime: RuntimeInstance) -> list[ArtifactRecord]:
     artifact_root = Path(runtime.artifact_path).resolve()
+    workspace_root = Path(runtime.workspace_path).resolve()
+    runtime_home_artifact_root = (Path(runtime.hermes_home_path) / "artifacts").resolve()
     artifact_root.mkdir(parents=True, exist_ok=True)
     now = now_iso()
 
-    for file_path in artifact_root.rglob("*"):
-        if not file_path.is_file():
-            continue
-        resolved = file_path.resolve()
-        if artifact_root not in resolved.parents and resolved != artifact_root:
-            continue
-        relative = resolved.relative_to(artifact_root).as_posix()
+    for resolved, relative, source in _workspace_artifact_candidates(runtime):
         stat = resolved.stat()
         content_type = mimetypes.guess_type(str(resolved))[0] or "application/octet-stream"
         existing = db.fetch_one(
@@ -716,7 +1010,7 @@ def index_artifacts(runtime: RuntimeInstance) -> list[ArtifactRecord]:
             db.execute(
                 """
                 UPDATE artifacts
-                SET file_name = ?, absolute_path = ?, content_type = ?, size_bytes = ?, sha256 = ?, updated_at = ?
+                SET file_name = ?, absolute_path = ?, content_type = ?, size_bytes = ?, sha256 = ?, source = ?, updated_at = ?
                 WHERE id = ?
                 """,
                 (
@@ -725,6 +1019,7 @@ def index_artifacts(runtime: RuntimeInstance) -> list[ArtifactRecord]:
                     content_type,
                     stat.st_size,
                     _sha256_file(resolved),
+                    source,
                     now,
                     existing["id"],
                 ),
@@ -736,7 +1031,7 @@ def index_artifacts(runtime: RuntimeInstance) -> list[ArtifactRecord]:
                     id, tenant_id, workspace_id, agent_id, file_name, relative_path, absolute_path,
                     content_type, size_bytes, sha256, source, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'workspace', ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     new_id("art"),
@@ -749,10 +1044,13 @@ def index_artifacts(runtime: RuntimeInstance) -> list[ArtifactRecord]:
                     content_type,
                     stat.st_size,
                     _sha256_file(resolved),
+                    source,
                     now,
                     now,
                 ),
             )
+
+    _cleanup_missing_artifacts(runtime, [artifact_root, workspace_root, runtime_home_artifact_root])
 
     rows = db.fetch_all(
         """
@@ -781,9 +1079,14 @@ def artifact_file(runtime: RuntimeInstance, artifact_id: str) -> tuple[ArtifactR
         raise KeyError("Artifact not found.")
 
     artifact_root = Path(runtime.artifact_path).resolve()
+    workspace_root = Path(runtime.workspace_path).resolve()
+    runtime_home_artifact_root = (Path(runtime.hermes_home_path) / "artifacts").resolve()
     file_path = Path(str(row["absolute_path"])).resolve()
-    if artifact_root not in file_path.parents:
-        raise KeyError("Artifact path is outside the runtime artifact directory.")
+    if not any(
+        _is_path_within(file_path, root)
+        for root in (artifact_root, workspace_root, runtime_home_artifact_root)
+    ):
+        raise KeyError("Artifact path is outside the runtime workspace.")
     if not file_path.exists() or not file_path.is_file():
         raise FileNotFoundError(str(file_path))
 

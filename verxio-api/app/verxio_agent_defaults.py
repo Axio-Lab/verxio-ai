@@ -36,7 +36,9 @@ Identity:
 Workspace:
 - Treat `/workspace` as the working directory.
 - Put generated reports, dashboards, documents, images, and exports in `/workspace/artifacts`.
-- When you mention a generated file, give its `/workspace/artifacts/...` path so Verxio can index it.
+- When using file tools such as `write_file` or `patch`, write with relative paths such as `artifacts/report.csv`, not absolute `/workspace/...` paths.
+- Terminal commands may use absolute `/workspace/...` paths.
+- When you mention a generated file to the user, give its `/workspace/artifacts/...` path so Verxio can index and display it.
 
 Integrations:
 - For Slack, tell users to open Verxio Web/Desktop, go to Messaging or Connections, select Slack, generate or copy the Verxio Slack manifest, create the Slack app from that manifest, paste the bot token and app-level token into Verxio, save, enable Slack, restart the Verxio runtime if prompted, and invite Verxio to channels.
@@ -64,6 +66,13 @@ Identity and product boundary:
 Integration guidance:
 - For Slack setup, direct users to Verxio Web/Desktop > Messaging or Connections > Slack. Tell them to generate or copy the Verxio Slack manifest, create the Slack app from that manifest, paste the bot token and app-level token into Verxio, save, enable Slack, restart the Verxio runtime if prompted, and invite Verxio to channels.
 - For connected apps through Composio, use the connected Verxio/Composio tools directly when available. Do not suggest manual import/upload or missing CLI tools unless the connected tool call actually fails.
+
+Workspace and artifacts:
+- Treat `/workspace` as the working directory.
+- Put generated reports, dashboards, documents, images, and exports in `/workspace/artifacts`.
+- When using file tools such as `write_file` or `patch`, write with relative paths such as `artifacts/report.csv`, not absolute `/workspace/...` paths.
+- Terminal commands may use absolute `/workspace/...` paths.
+- When you mention a generated file to the user, give its `/workspace/artifacts/...` path so Verxio can index and display it.
 
 Voice and formatting (always follow, including WhatsApp and other messaging):
 - Sound natural and human, like a capable person texting. Warm, direct, not robotic.
@@ -114,8 +123,18 @@ def _dump_config(config: dict[str, Any]) -> str:
     return yaml.dump(config, Dumper=SafeDumper, sort_keys=False, allow_unicode=True)
 
 
+def _whatsapp_session_paired(hermes_home: Path) -> bool:
+    return any(
+        path.is_file()
+        for path in (
+            hermes_home / "platforms" / "whatsapp" / "session" / "creds.json",
+            hermes_home / "whatsapp" / "session" / "creds.json",
+        )
+    )
+
+
 def ensure_verxio_agent_defaults(hermes_home: Path) -> None:
-    """Idempotently seed Verxio voice rules, empty WhatsApp prefix, and SOUL.md."""
+    """Idempotently seed Verxio voice rules, messaging defaults, and SOUL.md."""
     hermes_home.mkdir(parents=True, exist_ok=True)
 
     soul_path = hermes_home / "SOUL.md"
@@ -148,6 +167,11 @@ def ensure_verxio_agent_defaults(hermes_home: Path) -> None:
     if not isinstance(whatsapp, dict):
         whatsapp = {}
     whatsapp["reply_prefix"] = ""
+    if _whatsapp_session_paired(hermes_home):
+        if whatsapp.get("enabled") is False:
+            whatsapp.pop("enabled", None)
+    else:
+        whatsapp["enabled"] = False
     config["whatsapp"] = whatsapp
 
     config_path.write_text(_dump_config(config), encoding="utf-8")

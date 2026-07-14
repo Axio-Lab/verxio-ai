@@ -38,11 +38,13 @@ import {
   mediaPathFromMarkdownHref,
   mediaStreamUrl
 } from '@/lib/media'
+import { isVerxioDesktop } from '@/lib/platform'
 import { previewTargetFromMarkdownHref } from '@/lib/preview-targets'
 import { tailBoundedRemend } from '@/lib/remend-tail'
 import { cn } from '@/lib/utils'
+import { listVerxioArtifacts, verxioApiEnabled, verxioApiUrl, type VerxioArtifact } from '@/lib/verxio-api'
 import { notifyError } from '@/store/notifications'
-import { setCurrentSessionPreviewTarget } from '@/store/preview'
+import { type PreviewTarget, setCurrentSessionPreviewTarget } from '@/store/preview'
 import { $currentCwd } from '@/store/session'
 
 // Math rendering plugin (KaTeX). Configured once at module scope — the
@@ -227,6 +229,82 @@ function childrenToText(children: unknown): string {
   return ''
 }
 
+function basename(value: string): string {
+  return value.split(/[\\/]/).filter(Boolean).pop() || value
+}
+
+function workspaceArtifactRelativePath(path: string): string | null {
+  const raw = path.trim().replace(/^`|`$/g, '')
+
+  if (raw.startsWith('/workspace/artifacts/')) {
+    return raw.slice('/workspace/artifacts/'.length)
+  }
+
+  if (raw.startsWith('/artifacts/')) {
+    return raw.slice('/artifacts/'.length)
+  }
+
+  if (raw.startsWith('artifacts/')) {
+    return raw.slice('artifacts/'.length)
+  }
+
+  return null
+}
+
+function artifactPreviewKind(record: VerxioArtifact): PreviewTarget['previewKind'] {
+  if (record.content_type.startsWith('image/')) {
+    return 'image'
+  }
+
+  if (/\.html?$/i.test(record.file_name)) {
+    return 'html'
+  }
+
+  if (
+    record.content_type.startsWith('text/') ||
+    /(?:json|xml|csv|markdown|yaml|toml|javascript|typescript|sql|shell)/i.test(record.content_type)
+  ) {
+    return 'text'
+  }
+
+  return 'binary'
+}
+
+async function verxioArtifactPreviewTarget(path: string): Promise<PreviewTarget | null> {
+  if (!verxioApiEnabled()) {
+    return null
+  }
+
+  const relative = workspaceArtifactRelativePath(path)
+
+  if (!relative) {
+    return null
+  }
+
+  const normalized = relative.replace(/^\/+/, '')
+  const response = await listVerxioArtifacts()
+
+  const record = response.artifacts.find(artifact => {
+    const artifactPath = artifact.relative_path.replace(/^workspace\//, '')
+    const runtimeHomePath = artifact.relative_path.replace(/^runtime-home\/artifacts\//, '')
+
+    return artifactPath === normalized || runtimeHomePath === normalized
+  })
+
+  if (!record) {
+    return null
+  }
+
+  return {
+    kind: 'url',
+    label: record.file_name || basename(path),
+    mimeType: record.content_type,
+    previewKind: artifactPreviewKind(record),
+    source: path,
+    url: verxioApiUrl(`/api/artifacts/${encodeURIComponent(record.id)}/preview`)
+  }
+}
+
 function MarkdownPathLink({ children, className, href, ...props }: ComponentProps<'a'>) {
   const cwd = useStore($currentCwd)
   const path = (href || '').trim()
@@ -243,6 +321,20 @@ function MarkdownPathLink({ children, className, href, ...props }: ComponentProp
 
         void (async () => {
           try {
+            const verxioArtifactPreview = await verxioArtifactPreviewTarget(path)
+
+            if (verxioArtifactPreview) {
+              if (!isVerxioDesktop()) {
+                openExternalLink(verxioArtifactPreview.url)
+
+                return
+              }
+
+              setCurrentSessionPreviewTarget(verxioArtifactPreview, 'explicit-link', path)
+
+              return
+            }
+
             const resolvedPath = resolvePathForDesktopPreview(path, cwd || undefined)
             const preview = await normalizeOrLocalPreviewTarget(resolvedPath, cwd || undefined)
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,6 +12,7 @@ from typing import Any, Iterable, Iterator
 WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
 VERXIO_STATE_DIR = WORKSPACE_ROOT / ".verxio"
 MIGRATIONS_DIR = WORKSPACE_ROOT / "migrations"
+_THREAD_LOCAL = threading.local()
 
 
 @dataclass(frozen=True)
@@ -481,16 +483,62 @@ def _connect_turso(settings: DatabaseSettings):
     return libsql.connect(**kwargs)
 
 
+def _persistent_connections_enabled(settings: DatabaseSettings) -> bool:
+    raw = os.getenv("VERXIO_DB_PERSISTENT_CONNECTIONS", "").strip().lower()
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+
+    # Turso/libSQL connection setup is expensive over the network. Reusing one
+    # connection per worker thread keeps authenticated page refreshes from
+    # paying a new TLS/session setup cost on every tiny SELECT.
+    return settings.mode == "turso"
+
+
+def _settings_key(settings: DatabaseSettings) -> tuple[str, str, str]:
+    return (settings.mode, settings.turso_url, str(settings.local_path))
+
+
+def _close_connection(conn: Any) -> None:
+    if hasattr(conn, "close"):
+        conn.close()
+
+
+def _get_persistent_connection(settings: DatabaseSettings) -> Any:
+    key = _settings_key(settings)
+    existing_key = getattr(_THREAD_LOCAL, "connection_key", None)
+    existing = getattr(_THREAD_LOCAL, "connection", None)
+
+    if existing is not None and existing_key == key:
+        return existing
+
+    if existing is not None:
+        _close_connection(existing)
+
+    conn = _connect_turso(settings) if settings.mode == "turso" else _connect_sqlite(settings.local_path)
+    _THREAD_LOCAL.connection_key = key
+    _THREAD_LOCAL.connection = conn
+    return conn
+
+
 @contextmanager
 def connection() -> Iterator[Any]:
     settings = get_database_settings()
-    conn = _connect_turso(settings) if settings.mode == "turso" else _connect_sqlite(settings.local_path)
+    persistent = _persistent_connections_enabled(settings)
+    conn = (
+        _get_persistent_connection(settings)
+        if persistent
+        else _connect_turso(settings)
+        if settings.mode == "turso"
+        else _connect_sqlite(settings.local_path)
+    )
     try:
         yield conn
         if hasattr(conn, "commit"):
             conn.commit()
     finally:
-        if hasattr(conn, "close"):
+        if not persistent and hasattr(conn, "close"):
             conn.close()
 
 
