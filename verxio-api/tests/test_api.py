@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 from pathlib import Path
 from subprocess import CompletedProcess
@@ -733,6 +734,42 @@ def test_artifacts_are_indexed_from_runtime_workspace_and_isolated(client):
 
     assert preview.status_code == 200
     assert blocked.status_code == 404
+
+
+def test_notepad_recording_upload_saves_audio_as_artifact(client):
+    payload, token = signup(client, "recording-artifact@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+    audio_bytes = b"verxio-recording"
+    data_url = f"data:audio/webm;base64,{base64.b64encode(audio_bytes).decode('ascii')}"
+
+    response = client.post(
+        "/api/notepad/recordings",
+        json={
+            "file_name": "../Weekly Planning?.wav",
+            "data_url": data_url,
+            "mime_type": "audio/webm",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    artifact = response.json()["artifact"]
+    assert artifact["file_name"] == "Weekly Planning.webm"
+    assert artifact["relative_path"] == "notepad-recordings/Weekly Planning.webm"
+    assert artifact["content_type"] in {"audio/webm", "video/webm"}
+    assert artifact["size_bytes"] == len(audio_bytes)
+
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ? AND agent_id = ?",
+        (payload["workspace"]["id"], payload["profile"]["id"]),
+    )
+    assert runtime_row
+    saved = Path(str(runtime_row["artifact_path"])) / artifact["relative_path"]
+    assert saved.read_bytes() == audio_bytes
+
+    artifacts = client.get("/api/artifacts", headers=headers)
+    assert artifacts.status_code == 200
+    assert artifact["relative_path"] in {item["relative_path"] for item in artifacts.json()["artifacts"]}
 
 
 def test_notepad_notes_folders_and_public_shares(client):

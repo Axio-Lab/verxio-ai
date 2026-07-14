@@ -250,6 +250,16 @@ class ArtifactListResponse(BaseModel):
     artifacts: list[ArtifactRecord]
 
 
+class NotepadRecordingUploadRequest(BaseModel):
+    file_name: str = Field(default="notepad-recording.webm", min_length=1, max_length=180)
+    data_url: str = Field(min_length=1)
+    mime_type: str | None = Field(default=None, max_length=120)
+
+
+class NotepadRecordingUploadResponse(BaseModel):
+    artifact: ArtifactRecord
+
+
 class NotepadFolderRecord(BaseModel):
     id: str
     tenant_id: str

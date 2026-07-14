@@ -1,8 +1,6 @@
 import type { CloudTranscriptionProvider, CloudTranscriptionProviderId } from '@/lib/transcription-providers'
 import type { HermesConfigRecord } from '@/types/hermes'
 
-export const REALTIME_TRANSCRIPTION_CONFIG_PATH = 'notepad.realtime_transcription'
-
 export const STT_MODEL_CONFIG_PATHS: Partial<Record<CloudTranscriptionProviderId, string>> = {
   elevenlabs: 'stt.elevenlabs.model_id',
   groq: 'stt.groq.model',
@@ -76,24 +74,12 @@ export function selectedCloudTranscriptionModel(
   return configured || provider.recommendedModel
 }
 
-export function transcriptionModelSupportsRealtime(provider: CloudTranscriptionProvider, model: string): boolean {
-  const selected = model.trim()
-
-  if (!selected) {
-    return false
-  }
-
-  return provider.models.includes(selected)
-}
-
 export function applyCloudTranscriptionConfig(
   config: HermesConfigRecord,
   provider: CloudTranscriptionProvider,
-  model: string,
-  realtime: boolean
+  model: string
 ): HermesConfigRecord {
-  const selectedModel = model || provider.recommendedModel
-  const realtimeEnabled = realtime && transcriptionModelSupportsRealtime(provider, selectedModel)
+  const selectedModel = model.trim() || provider.recommendedModel
   let next = setConfigValue(config, 'stt.enabled', true)
   next = setConfigValue(next, 'stt.provider', provider.id)
 
@@ -103,5 +89,5 @@ export function applyCloudTranscriptionConfig(
     next = setConfigValue(next, path, selectedModel)
   }
 
-  return setConfigValue(next, REALTIME_TRANSCRIPTION_CONFIG_PATH, realtimeEnabled)
+  return next
 }

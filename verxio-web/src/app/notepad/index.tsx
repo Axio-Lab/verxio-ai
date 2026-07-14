@@ -15,20 +15,22 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
 import { Tip } from '@/components/ui/tooltip'
 import { VerxioWordmark } from '@/components/verxio-wordmark'
 import type { DesktopCaptureSource } from '@/global'
 import { getEnvVars, getHermesConfigRecord, reloadRuntimeEnv, saveHermesConfig, setEnvVar } from '@/hermes'
-import { NOTEPAD_RECORDING_BITS_PER_SECOND, transcribeAudioBlob } from '@/lib/audio'
+import {
+  assertTranscriptionSize,
+  blobToDataUrl,
+  NOTEPAD_MAX_RECORDING_SECONDS,
+  NOTEPAD_RECORDING_BITS_PER_SECOND,
+  transcribeAudioDataUrl
+} from '@/lib/audio'
 import { isVerxioDesktop } from '@/lib/platform'
 import {
   applyCloudTranscriptionConfig,
-  configValue,
-  REALTIME_TRANSCRIPTION_CONFIG_PATH,
   selectedCloudTranscriptionModel,
-  selectedCloudTranscriptionProvider,
-  transcriptionModelSupportsRealtime
+  selectedCloudTranscriptionProvider
 } from '@/lib/transcription-config'
 import {
   CLOUD_TRANSCRIPTION_PROVIDERS,
@@ -51,6 +53,7 @@ import {
   shareNotepadNote,
   summarizeNotepadNote,
   updateNotepadNote,
+  uploadNotepadRecording,
   verxioApiBaseUrl,
   type VerxioNotepadFolder,
   type VerxioNotepadNote,
@@ -85,7 +88,6 @@ const ALL_FOLDER = '__all__'
 const DEFAULT_FOLDER = '__default__'
 const DEFAULT_FOLDER_LABEL = 'Default'
 const NOTES_PER_PAGE = 10
-const REALTIME_TRANSCRIPTION_CHUNK_MS = 15_000
 
 const NOTEPAD_MIC_COPY = {
   microphoneAccessDenied: 'Microphone access was denied.',
@@ -106,6 +108,34 @@ function noteTime(value: string) {
   const parsed = Date.parse(value)
 
   return Number.isFinite(parsed) ? NOTE_TIME.format(parsed) : ''
+}
+
+function safeFilePart(value: string): string {
+  return value.replace(/[^A-Za-z0-9._ -]+/g, '-').replace(/^[ ._-]+|[ ._-]+$/g, '') || 'notepad-recording'
+}
+
+function recordingFileName(title: string, source: RecordingSource): string {
+  const stamp = new Date()
+    .toISOString()
+    .replace(/\.\d+Z$/, 'Z')
+    .replace(/[:]/g, '-')
+
+  const channel = source === 'desktop-audio' ? 'device' : 'microphone'
+
+  return `${safeFilePart(title).slice(0, 80)}-${channel}-${stamp}.webm`
+}
+
+function formatRecordingDuration(seconds: number): string {
+  const safeSeconds = Math.max(0, seconds)
+  const hours = Math.floor(safeSeconds / 3600)
+  const minutes = Math.floor((safeSeconds % 3600) / 60)
+  const remainder = safeSeconds % 60
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
+  }
+
+  return `${minutes}:${String(remainder).padStart(2, '0')}`
 }
 
 function noteBody(note: VerxioNotepadNote): string {
@@ -198,9 +228,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
 
   const [transcriptionModel, setTranscriptionModel] = useState(CLOUD_TRANSCRIPTION_PROVIDERS[0].recommendedModel)
   const [transcriptionApiKey, setTranscriptionApiKey] = useState('')
-  const [transcriptionRealtime, setTranscriptionRealtime] = useState(false)
   const [pendingRecordingIntent, setPendingRecordingIntent] = useState<RecordingIntent | null>(null)
-  const [realtimeTranscriptionEnabled, setRealtimeTranscriptionEnabled] = useState(false)
 
   const [systemAudioSupported, setSystemAudioSupported] = useState(
     () =>
@@ -223,18 +251,12 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   const systemRecorderRef = useRef<MediaRecorder | null>(null)
   const systemStreamRef = useRef<MediaStream | null>(null)
   const systemChunksRef = useRef<Blob[]>([])
-  const draftRef = useRef<NoteDraft | null>(null)
-  const selectedNoteRef = useRef<VerxioNotepadNote | null>(null)
-  const realtimeEnabledRef = useRef(false)
-  const realtimeBaseContentRef = useRef('')
-  const realtimeBlockHeadingRef = useRef('')
-  const realtimeTranscriptRef = useRef('')
-  const realtimeQueueRef = useRef<Array<{ audio: Blob; source: RecordingSource }>>([])
-  const realtimeProcessingRef = useRef(false)
-  const realtimeFlushRef = useRef<Promise<void> | null>(null)
-  const realtimeErrorShownRef = useRef(false)
   const recordingStartedAtRef = useRef(0)
+  const recordingAutoStopRequestedRef = useRef(false)
   const micRecorderRef = useRef(micRecorder)
+  const stopRecordingRef = useRef<() => Promise<void>>(async () => undefined)
+
+  stopRecordingRef.current = () => handleStopRecording()
 
   const folderById = useMemo(() => new Map(folders.map(folder => [folder.id, folder])), [folders])
   const trimmedQuery = query.trim().toLowerCase()
@@ -280,8 +302,6 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     () => transcriptionModelOptions(transcriptionProvider, transcriptionModel),
     [transcriptionModel, transcriptionProvider]
   )
-
-  const transcriptionRealtimeSupported = transcriptionModelSupportsRealtime(transcriptionProvider, transcriptionModel)
 
   const pendingDeleteBusy = pendingDelete
     ? pendingDelete.kind === 'note'
@@ -333,14 +353,9 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
         const provider = selectedCloudTranscriptionProvider(config, providers)
         const model = selectedCloudTranscriptionModel(config, provider)
 
-        const realtime =
-          Boolean(configValue(config, REALTIME_TRANSCRIPTION_CONFIG_PATH)) &&
-          transcriptionModelSupportsRealtime(provider, model)
-
         setTranscriptionProviders(providers)
         setTranscriptionProviderId(provider.id)
         setTranscriptionModel(model)
-        setRealtimeTranscriptionEnabled(realtime)
       } catch (error) {
         notifyError(error, 'Could not load transcription settings')
       } finally {
@@ -398,10 +413,18 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     }
 
     recordingStartedAtRef.current = Date.now()
+    recordingAutoStopRequestedRef.current = false
     setRecordingSeconds(0)
 
     const timer = window.setInterval(() => {
-      setRecordingSeconds(Math.floor((Date.now() - recordingStartedAtRef.current) / 1000))
+      const elapsedSeconds = Math.floor((Date.now() - recordingStartedAtRef.current) / 1000)
+      setRecordingSeconds(Math.min(elapsedSeconds, NOTEPAD_MAX_RECORDING_SECONDS))
+
+      if (elapsedSeconds >= NOTEPAD_MAX_RECORDING_SECONDS && !recordingAutoStopRequestedRef.current) {
+        recordingAutoStopRequestedRef.current = true
+        notify({ kind: 'warning', message: 'Recording limit reached. Saving and transcribing the audio now.' })
+        void stopRecordingRef.current()
+      }
     }, 250)
 
     return () => window.clearInterval(timer)
@@ -412,28 +435,10 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   }, [micRecorder])
 
   useEffect(() => {
-    draftRef.current = draft
-  }, [draft])
-
-  useEffect(() => {
-    selectedNoteRef.current = selectedNote
-  }, [selectedNote])
-
-  useEffect(() => {
-    realtimeEnabledRef.current = realtimeTranscriptionEnabled
-  }, [realtimeTranscriptionEnabled])
-
-  useEffect(() => {
     if (!transcriptionModel.trim()) {
       setTranscriptionModel(transcriptionProvider.recommendedModel)
     }
   }, [transcriptionModel, transcriptionProvider])
-
-  useEffect(() => {
-    if (realtimeTranscriptionEnabled && !transcriptionRealtimeSupported) {
-      setRealtimeTranscriptionEnabled(false)
-    }
-  }, [realtimeTranscriptionEnabled, transcriptionRealtimeSupported])
 
   useEffect(
     () => () => {
@@ -627,21 +632,18 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   async function saveTranscriptionPreference(
     provider: CloudTranscriptionProvider,
     model: string,
-    realtime: boolean,
     successMessage?: string
   ): Promise<boolean> {
     const selectedModel = model.trim() || provider.recommendedModel
-    const nextRealtime = realtime && transcriptionModelSupportsRealtime(provider, selectedModel)
 
     setTranscriptionConfigSaving(true)
 
     try {
       const config = await getHermesConfigRecord()
-      const nextConfig = applyCloudTranscriptionConfig(config, provider, selectedModel, nextRealtime)
+      const nextConfig = applyCloudTranscriptionConfig(config, provider, selectedModel)
       await saveHermesConfig(nextConfig)
       setTranscriptionProviderId(provider.id)
       setTranscriptionModel(selectedModel)
-      setRealtimeTranscriptionEnabled(Boolean(configValue(nextConfig, REALTIME_TRANSCRIPTION_CONFIG_PATH)))
 
       if (successMessage) {
         notify({ kind: 'success', message: successMessage })
@@ -660,41 +662,17 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   async function handleNoteTranscriptionProviderChange(value: string) {
     const provider = cloudTranscriptionProviderById(value, transcriptionProviders) ?? transcriptionProviders[0]
     const model = provider.recommendedModel
-    const nextRealtime = realtimeTranscriptionEnabled && transcriptionModelSupportsRealtime(provider, model)
 
     setTranscriptionProviderId(provider.id)
     setTranscriptionModel(model)
-    setRealtimeTranscriptionEnabled(nextRealtime)
-    await saveTranscriptionPreference(provider, model, nextRealtime)
+    await saveTranscriptionPreference(provider, model)
   }
 
   async function handleNoteTranscriptionModelChange(value: string) {
     const model = value || transcriptionProvider.recommendedModel
 
-    const nextRealtime =
-      realtimeTranscriptionEnabled && transcriptionModelSupportsRealtime(transcriptionProvider, model)
-
     setTranscriptionModel(model)
-    setRealtimeTranscriptionEnabled(nextRealtime)
-    await saveTranscriptionPreference(transcriptionProvider, model, nextRealtime)
-  }
-
-  async function handleNoteRealtimeChange(value: boolean) {
-    const previous = realtimeTranscriptionEnabled
-    const nextRealtime = value && transcriptionRealtimeSupported
-
-    setRealtimeTranscriptionEnabled(nextRealtime)
-
-    const saved = await saveTranscriptionPreference(
-      transcriptionProvider,
-      transcriptionModel,
-      nextRealtime,
-      nextRealtime ? 'Realtime transcription enabled' : 'Realtime transcription disabled'
-    )
-
-    if (!saved) {
-      setRealtimeTranscriptionEnabled(previous)
-    }
+    await saveTranscriptionPreference(transcriptionProvider, model)
   }
 
   async function ensureTranscriptionReady(intent: RecordingIntent): Promise<boolean> {
@@ -712,24 +690,16 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
         selectedCloudTranscriptionProvider(config, providers)
 
       const model = transcriptionModel.trim() || selectedCloudTranscriptionModel(config, provider)
-      const realtime = realtimeTranscriptionEnabled && transcriptionModelSupportsRealtime(provider, model)
 
-      const providerAlreadyCloud = Boolean(
-        cloudTranscriptionProviderById(String(configValue(config, 'stt.provider') ?? ''), providers)
-      )
+      const providerAlreadyCloud = selectedCloudTranscriptionProvider(config, providers).id === provider.id
 
       setTranscriptionProviders(providers)
       setTranscriptionProviderId(provider.id)
       setTranscriptionModel(model)
-      setRealtimeTranscriptionEnabled(realtime)
 
       if (vars[provider.envKey]?.is_set || provider.configured) {
-        if (
-          !providerAlreadyCloud ||
-          selectedCloudTranscriptionModel(config, provider) !== model ||
-          Boolean(configValue(config, REALTIME_TRANSCRIPTION_CONFIG_PATH)) !== realtime
-        ) {
-          await saveHermesConfig(applyCloudTranscriptionConfig(config, provider, model, realtime))
+        if (!providerAlreadyCloud || selectedCloudTranscriptionModel(config, provider) !== model) {
+          await saveHermesConfig(applyCloudTranscriptionConfig(config, provider, model))
         }
 
         return true
@@ -739,7 +709,6 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       setTranscriptionProviderId(provider.id)
       setTranscriptionModel(model)
       setTranscriptionApiKey('')
-      setTranscriptionRealtime(realtime)
       setTranscriptionSetupError(null)
       setTranscriptionDialogOpen(true)
 
@@ -748,109 +717,6 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       notifyError(error, 'Could not check transcription setup')
 
       return false
-    }
-  }
-
-  function resetRealtimeState(source: RecordingSource) {
-    const stamp = NOTE_TIME.format(new Date())
-    realtimeBaseContentRef.current = draftRef.current?.content.trim() ?? ''
-    realtimeBlockHeadingRef.current = `### ${source === 'desktop-audio' ? 'Device recording' : 'Mic recording'} - ${stamp}`
-    realtimeTranscriptRef.current = ''
-    realtimeQueueRef.current = []
-    realtimeProcessingRef.current = false
-    realtimeFlushRef.current = null
-    realtimeErrorShownRef.current = false
-  }
-
-  async function persistRealtimeTranscript(source: RecordingSource) {
-    const note = selectedNoteRef.current
-    const currentDraft = draftRef.current
-    const text = realtimeTranscriptRef.current.trim()
-
-    if (!note || !currentDraft || !text) {
-      return
-    }
-
-    const block = `${realtimeBlockHeadingRef.current}\n\n${text}`
-
-    const nextDraft = {
-      ...currentDraft,
-      content: [realtimeBaseContentRef.current, block].filter(Boolean).join('\n\n')
-    }
-
-    draftRef.current = nextDraft
-    setDraft(nextDraft)
-
-    const updated = await updateNotepadNote(note.id, {
-      ...payloadFromDraft(nextDraft),
-      source
-    })
-
-    setNotes(current => replaceNote(current, updated))
-  }
-
-  async function processRealtimeQueue() {
-    if (realtimeProcessingRef.current) {
-      return realtimeFlushRef.current
-    }
-
-    realtimeProcessingRef.current = true
-
-    const flush = (async () => {
-      while (realtimeQueueRef.current.length > 0) {
-        const chunk = realtimeQueueRef.current.shift()
-
-        if (!chunk) {
-          continue
-        }
-
-        try {
-          const transcript = (await transcribeAudioBlob(chunk.audio)).trim()
-
-          if (!transcript) {
-            continue
-          }
-
-          realtimeTranscriptRef.current = [realtimeTranscriptRef.current.trim(), transcript]
-            .filter(Boolean)
-            .join('\n\n')
-          await persistRealtimeTranscript(chunk.source)
-        } catch (error) {
-          if (!realtimeErrorShownRef.current) {
-            realtimeErrorShownRef.current = true
-            notifyError(error, 'Realtime transcription paused')
-          }
-        }
-      }
-    })()
-      .catch(error => {
-        if (!realtimeErrorShownRef.current) {
-          realtimeErrorShownRef.current = true
-          notifyError(error, 'Realtime transcription paused')
-        }
-      })
-      .finally(() => {
-        realtimeProcessingRef.current = false
-        realtimeFlushRef.current = null
-      })
-
-    realtimeFlushRef.current = flush
-
-    return flush
-  }
-
-  function enqueueRealtimeChunk(audio: Blob, source: RecordingSource) {
-    if (!realtimeEnabledRef.current || !audio.size) {
-      return
-    }
-
-    realtimeQueueRef.current.push({ audio, source })
-    void processRealtimeQueue()
-  }
-
-  async function waitForRealtimeTranscription() {
-    while (realtimeFlushRef.current || realtimeQueueRef.current.length > 0) {
-      await (realtimeFlushRef.current ?? processRealtimeQueue())
     }
   }
 
@@ -902,12 +768,10 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     recorder.ondataavailable = event => {
       if (event.data.size > 0) {
         systemChunksRef.current.push(event.data)
-        enqueueRealtimeChunk(event.data, 'desktop-audio')
       }
     }
 
-    resetRealtimeState('desktop-audio')
-    recorder.start(realtimeEnabledRef.current ? REALTIME_TRANSCRIPTION_CHUNK_MS : 1000)
+    recorder.start(1000)
     setRecordingMode('system')
   }
 
@@ -966,22 +830,24 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       return
     }
 
-    if (realtimeEnabledRef.current) {
-      setRecordingMode('transcribing')
-      await waitForRealtimeTranscription()
-
-      if (realtimeTranscriptRef.current.trim()) {
-        notify({ kind: 'success', message: 'Live transcript saved' })
-        setRecordingMode('idle')
-
-        return
-      }
-    }
-
     setRecordingMode('transcribing')
 
     try {
-      const transcript = (await transcribeAudioBlob(audio)).trim()
+      const dataUrl = await blobToDataUrl(audio)
+
+      try {
+        await uploadNotepadRecording({
+          data_url: dataUrl,
+          file_name: recordingFileName(selectedNote?.title ?? draft?.title ?? 'notepad-recording', source),
+          mime_type: audio.type
+        })
+        notify({ kind: 'success', message: 'Recording saved to artifacts' })
+      } catch (error) {
+        notifyError(error, 'Could not save recording artifact')
+      }
+
+      assertTranscriptionSize(audio)
+      const transcript = (await transcribeAudioDataUrl(dataUrl, audio.type)).trim()
 
       if (!transcript) {
         notify({ kind: 'warning', message: 'No speech detected' })
@@ -1104,18 +970,13 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
 
     try {
       const config = await getHermesConfigRecord()
-
-      const realtime =
-        transcriptionRealtime && transcriptionModelSupportsRealtime(transcriptionProvider, transcriptionModel)
-
-      const nextConfig = applyCloudTranscriptionConfig(config, transcriptionProvider, transcriptionModel, realtime)
+      const nextConfig = applyCloudTranscriptionConfig(config, transcriptionProvider, transcriptionModel)
 
       await setEnvVar(transcriptionProvider.envKey, apiKey)
       await saveHermesConfig(nextConfig)
       await reloadRuntimeEnv()
       setTranscriptionProviderId(transcriptionProvider.id)
       setTranscriptionModel(transcriptionModel || transcriptionProvider.recommendedModel)
-      setRealtimeTranscriptionEnabled(realtime)
       setTranscriptionDialogOpen(false)
       setPendingRecordingIntent(null)
       setTranscriptionApiKey('')
@@ -1141,11 +1002,9 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     }
 
     try {
-      resetRealtimeState('microphone')
       await micRecorder.start({
         audioBitsPerSecond: NOTEPAD_RECORDING_BITS_PER_SECOND,
-        onChunk: chunk => enqueueRealtimeChunk(chunk, 'microphone'),
-        timesliceMs: realtimeEnabledRef.current ? REALTIME_TRANSCRIPTION_CHUNK_MS : undefined
+        timesliceMs: 1000
       })
       setRecordingMode('mic')
     } catch (error) {
@@ -1162,7 +1021,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     await beginMicRecording()
   }
 
-  async function handleStopRecording() {
+  async function handleStopRecording(_options?: { automatic?: boolean }) {
     if (recordingMode === 'system') {
       await transcribeRecording(await stopSystemRecording(), 'desktop-audio')
 
@@ -1520,20 +1379,6 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                       ))}
                     </SelectContent>
                   </Select>
-                  <div className="flex h-7 items-center gap-1.5 px-1.5 text-xs text-muted-foreground">
-                    <span>Realtime</span>
-                    <Switch
-                      aria-label="Realtime transcription"
-                      checked={realtimeTranscriptionEnabled && transcriptionRealtimeSupported}
-                      disabled={
-                        transcriptionConfigLoading ||
-                        transcriptionConfigSaving ||
-                        recordingMode !== 'idle' ||
-                        !transcriptionRealtimeSupported
-                      }
-                      onCheckedChange={value => void handleNoteRealtimeChange(value)}
-                    />
-                  </div>
                   {transcriptionConfigSaving ? (
                     <Codicon className="text-muted-foreground" name="loading" spinning />
                   ) : null}
@@ -1566,14 +1411,14 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                     Transcribing
                   </Button>
                 ) : (
-                  <Button onClick={handleStopRecording} size="sm" type="button" variant="destructive">
+                  <Button onClick={() => void handleStopRecording()} size="sm" type="button" variant="destructive">
                     <Codicon name="debug-stop" />
                     <span
                       aria-hidden="true"
                       className="h-2 w-2 rounded-full bg-current opacity-80"
                       style={{ transform: `scale(${0.75 + recordingLevel * 0.7})` }}
                     />
-                    {recordingMode === 'system' ? 'Device' : 'Mic'} {recordingSeconds}s
+                    {recordingMode === 'system' ? 'Device' : 'Mic'} {formatRecordingDuration(recordingSeconds)}
                   </Button>
                 )}
                 <Button
@@ -1913,30 +1758,6 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                   {transcriptionSetupError}
                 </p>
               ) : null}
-            </div>
-
-            <div className="flex items-center justify-between gap-3 rounded-[6px] border border-(--ui-stroke-secondary) px-3 py-2 text-sm">
-              <span>
-                <span className="block font-medium">Realtime transcription</span>
-                <span className="block text-xs text-muted-foreground">
-                  Transcribe chunks while recording. This uses your selected API key.
-                </span>
-              </span>
-              <Switch
-                aria-label="Enable realtime transcription"
-                checked={
-                  transcriptionRealtime && transcriptionModelSupportsRealtime(transcriptionProvider, transcriptionModel)
-                }
-                disabled={
-                  transcriptionSetupSaving ||
-                  !transcriptionModelSupportsRealtime(transcriptionProvider, transcriptionModel)
-                }
-                onCheckedChange={value =>
-                  setTranscriptionRealtime(
-                    value && transcriptionModelSupportsRealtime(transcriptionProvider, transcriptionModel)
-                  )
-                }
-              />
             </div>
 
             <DialogFooter>

@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import logging
+import mimetypes
 import os
+import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -84,6 +88,8 @@ from app.models import (
     NotepadNoteCreateRequest,
     NotepadNoteRecord,
     NotepadNoteUpdateRequest,
+    NotepadRecordingUploadRequest,
+    NotepadRecordingUploadResponse,
     NotepadShareResponse,
     PasswordResetRequest,
     PulseAnalyticsResponse,
@@ -181,6 +187,65 @@ from app.transcription_catalog import list_transcription_catalog
 
 APP_ROOT = Path(__file__).resolve().parent.parent
 STATIC_ROOT = APP_ROOT / "static"
+NOTEPAD_RECORDING_MAX_BYTES = int(os.getenv("VERXIO_NOTEPAD_RECORDING_MAX_BYTES", str(50 * 1024 * 1024)))
+_AUDIO_MIME_EXTENSIONS = {
+    "audio/aac": ".aac",
+    "audio/flac": ".flac",
+    "audio/m4a": ".m4a",
+    "audio/mp3": ".mp3",
+    "audio/mp4": ".m4a",
+    "audio/mpeg": ".mp3",
+    "audio/ogg": ".ogg",
+    "audio/wav": ".wav",
+    "audio/wave": ".wav",
+    "audio/webm": ".webm",
+    "audio/x-m4a": ".m4a",
+    "audio/x-wav": ".wav",
+    "video/webm": ".webm",
+}
+
+
+def _audio_extension_for_mime(mime_type: str) -> str:
+    normalized = (mime_type or "").split(";", 1)[0].strip().lower()
+    if normalized in _AUDIO_MIME_EXTENSIONS:
+        return _AUDIO_MIME_EXTENSIONS[normalized]
+    guessed = mimetypes.guess_extension(normalized)
+    return guessed if guessed in {".aac", ".flac", ".m4a", ".mp3", ".mp4", ".ogg", ".wav", ".webm"} else ".webm"
+
+
+def _safe_recording_filename(file_name: str, mime_type: str) -> str:
+    requested = Path(file_name or "notepad-recording").name
+    stem = Path(requested).stem or "notepad-recording"
+    safe_stem = re.sub(r"[^A-Za-z0-9._ -]+", "-", stem).strip(" ._-") or "notepad-recording"
+    safe_stem = safe_stem[:120]
+    return f"{safe_stem}{_audio_extension_for_mime(mime_type)}"
+
+
+def _decode_recording_payload(payload: NotepadRecordingUploadRequest) -> tuple[bytes, str]:
+    data_url = payload.data_url.strip()
+    if not data_url.startswith("data:") or "," not in data_url:
+        raise HTTPException(status_code=400, detail="Invalid audio payload.")
+
+    header, encoded = data_url.split(",", 1)
+    if ";base64" not in header:
+        raise HTTPException(status_code=400, detail="Audio payload must be base64 encoded.")
+
+    header_mime_type = header[5:].split(";", 1)[0].strip().lower()
+    mime_type = (payload.mime_type or header_mime_type or "audio/webm").split(";", 1)[0].strip().lower()
+    if not (mime_type.startswith("audio/") or mime_type == "video/webm"):
+        raise HTTPException(status_code=400, detail="Payload must be an audio recording.")
+
+    try:
+        audio_bytes = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Audio payload is not valid base64.") from exc
+
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Audio recording is empty.")
+    if len(audio_bytes) > NOTEPAD_RECORDING_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Audio recording is too large to save.")
+
+    return audio_bytes, mime_type
 
 
 @asynccontextmanager
@@ -440,6 +505,45 @@ async def list_artifacts(request: Request) -> ArtifactListResponse:
     user = require_user(request)
     runtime = get_runtime_for_user(user)
     return ArtifactListResponse(artifacts=index_artifacts(runtime))
+
+
+@app.post("/api/notepad/recordings", response_model=NotepadRecordingUploadResponse)
+async def upload_notepad_recording(
+    payload: NotepadRecordingUploadRequest, request: Request
+) -> NotepadRecordingUploadResponse:
+    user = require_user(request)
+    runtime = get_runtime_for_user(user)
+    ensure_runtime_directories(runtime)
+
+    audio_bytes, mime_type = _decode_recording_payload(payload)
+    artifact_root = Path(runtime.artifact_path).resolve()
+    recording_dir = (artifact_root / "notepad-recordings").resolve()
+    recording_dir.mkdir(parents=True, exist_ok=True)
+
+    file_name = _safe_recording_filename(payload.file_name, mime_type)
+    target = (recording_dir / file_name).resolve()
+    if not (target == recording_dir or recording_dir in target.parents):
+        raise HTTPException(status_code=400, detail="Invalid recording path.")
+
+    if target.exists():
+        stem = target.stem
+        suffix = target.suffix
+        counter = 2
+        while target.exists():
+            target = (recording_dir / f"{stem}-{counter}{suffix}").resolve()
+            counter += 1
+
+    temp_path = target.with_name(f".{target.name}.tmp")
+    temp_path.write_bytes(audio_bytes)
+    temp_path.replace(target)
+
+    relative_path = target.relative_to(artifact_root).as_posix()
+    artifacts = index_artifacts(runtime)
+    artifact = next((record for record in artifacts if record.relative_path == relative_path), None)
+    if artifact is None:
+        raise HTTPException(status_code=500, detail="Recording was saved but could not be indexed.")
+
+    return NotepadRecordingUploadResponse(artifact=artifact)
 
 
 @app.get("/api/artifacts/{artifact_id}")

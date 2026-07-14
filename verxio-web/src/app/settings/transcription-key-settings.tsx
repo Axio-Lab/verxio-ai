@@ -3,16 +3,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Switch } from '@/components/ui/switch'
 import { getHermesConfigRecord, saveHermesConfig } from '@/hermes'
 import { ExternalLink, Loader2, Mic, RefreshCw, Save } from '@/lib/icons'
 import {
   applyCloudTranscriptionConfig,
-  configValue,
-  REALTIME_TRANSCRIPTION_CONFIG_PATH,
   selectedCloudTranscriptionModel,
-  selectedCloudTranscriptionProvider,
-  transcriptionModelSupportsRealtime
+  selectedCloudTranscriptionProvider
 } from '@/lib/transcription-config'
 import {
   CLOUD_TRANSCRIPTION_PROVIDERS,
@@ -61,7 +57,6 @@ export function TranscriptionKeySettings({
   )
 
   const [selectedModel, setSelectedModel] = useState(CLOUD_TRANSCRIPTION_PROVIDERS[0].recommendedModel)
-  const [realtime, setRealtime] = useState(false)
   const [openKey, setOpenKey] = useState<null | string>(null)
   const [savingConfig, setSavingConfig] = useState(false)
   const [catalogLoading, setCatalogLoading] = useState(true)
@@ -94,7 +89,6 @@ export function TranscriptionKeySettings({
         setConfig(loaded)
         setSelectedProviderId(provider.id)
         setSelectedModel(selectedCloudTranscriptionModel(loaded, provider))
-        setRealtime(Boolean(configValue(loaded, REALTIME_TRANSCRIPTION_CONFIG_PATH)))
       } catch (error) {
         notifyError(error, 'Could not load transcription settings')
       } finally {
@@ -116,8 +110,6 @@ export function TranscriptionKeySettings({
     () => transcriptionModelOptions(selectedProvider, selectedModel),
     [selectedModel, selectedProvider]
   )
-
-  const realtimeSupported = transcriptionModelSupportsRealtime(selectedProvider, selectedModel)
 
   useEffect(() => {
     if (!selectedModel.trim()) {
@@ -159,11 +151,7 @@ export function TranscriptionKeySettings({
     }
   }
 
-  async function persistConfig(
-    nextRealtime = realtime,
-    successMessage = 'Transcription settings saved',
-    rethrow = false
-  ) {
+  async function persistConfig(successMessage = 'Transcription settings saved') {
     if (!config) {
       return
     }
@@ -171,17 +159,12 @@ export function TranscriptionKeySettings({
     setSavingConfig(true)
 
     try {
-      const next = applyCloudTranscriptionConfig(config, selectedProvider, selectedModel, nextRealtime)
+      const next = applyCloudTranscriptionConfig(config, selectedProvider, selectedModel)
       await saveHermesConfig(next)
       setConfig(next)
-      setRealtime(Boolean(configValue(next, REALTIME_TRANSCRIPTION_CONFIG_PATH)))
       notify({ kind: 'success', message: successMessage })
     } catch (error) {
       notifyError(error, 'Could not save transcription settings')
-
-      if (rethrow) {
-        throw error
-      }
     } finally {
       setSavingConfig(false)
     }
@@ -189,23 +172,6 @@ export function TranscriptionKeySettings({
 
   async function handleSaveConfig() {
     await persistConfig()
-  }
-
-  async function handleRealtimeChange(value: boolean) {
-    const previous = realtime
-    const nextRealtime = value && realtimeSupported
-
-    setRealtime(nextRealtime)
-
-    try {
-      await persistConfig(
-        nextRealtime,
-        nextRealtime ? 'Realtime transcription enabled' : 'Realtime transcription disabled',
-        true
-      )
-    } catch {
-      setRealtime(previous)
-    }
   }
 
   if (!config) {
@@ -283,23 +249,6 @@ export function TranscriptionKeySettings({
             }
             title="Model"
           />
-          <ListRow
-            action={
-              <div className="flex items-center justify-end">
-                <Switch
-                  checked={realtime && realtimeSupported}
-                  disabled={savingConfig || !realtimeSupported}
-                  onCheckedChange={value => void handleRealtimeChange(value)}
-                />
-              </div>
-            }
-            description={
-              realtimeSupported
-                ? 'When enabled, Notepad transcribes audio chunks while recording instead of waiting until the end.'
-                : 'Choose one of the supported models below to use realtime transcription.'
-            }
-            title="Realtime transcription"
-          />
         </div>
 
         <div className="mt-3 rounded-[6px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) p-3">
@@ -324,7 +273,7 @@ export function TranscriptionKeySettings({
               >
                 {model}
                 <span className="text-[0.625rem] text-muted-foreground">
-                  {model === selectedProvider.recommendedModel ? 'Recommended' : 'Realtime'}
+                  {model === selectedProvider.recommendedModel ? 'Recommended' : 'Supported'}
                 </span>
               </span>
             ))}

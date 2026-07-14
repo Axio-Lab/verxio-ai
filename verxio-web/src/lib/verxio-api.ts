@@ -56,6 +56,16 @@ export interface VerxioArtifactListResponse {
   artifacts: VerxioArtifact[]
 }
 
+export interface VerxioNotepadRecordingUploadInput {
+  file_name: string
+  data_url: string
+  mime_type?: string
+}
+
+export interface VerxioNotepadRecordingUploadResponse {
+  artifact: VerxioArtifact
+}
+
 export interface VerxioNotepadFolder {
   id: string
   tenant_id: string
@@ -640,6 +650,16 @@ export function listVerxioArtifacts(): Promise<VerxioArtifactListResponse> {
 
 export function listNotepad(): Promise<VerxioNotepadListResponse> {
   return verxioFetch<VerxioNotepadListResponse>('/api/notepad')
+}
+
+export function uploadNotepadRecording(
+  input: VerxioNotepadRecordingUploadInput
+): Promise<VerxioNotepadRecordingUploadResponse> {
+  return verxioFetch<VerxioNotepadRecordingUploadResponse>('/api/notepad/recordings', {
+    body: JSON.stringify(input),
+    method: 'POST',
+    timeoutMs: 300_000
+  })
 }
 
 export function createNotepadFolder(name: string): Promise<VerxioNotepadFolder> {
