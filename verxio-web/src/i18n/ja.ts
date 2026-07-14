@@ -175,6 +175,7 @@ export const ja = defineLocale({
       gateway: 'ゲートウェイ',
       apiKeys: 'ツールとキー',
       keysTools: 'ツール',
+      keysTranscription: 'Transcription',
       keysSettings: '設定',
       mcp: 'MCP',
       archivedChats: 'アーカイブ済みチャット',

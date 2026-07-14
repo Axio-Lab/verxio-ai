@@ -278,6 +278,7 @@ export const en: Translations = {
       gateway: 'Gateway',
       apiKeys: 'Tools & Keys',
       keysTools: 'Tools',
+      keysTranscription: 'Transcription',
       keysSettings: 'Settings',
       mcp: 'MCP',
       archivedChats: 'Archived Chats',

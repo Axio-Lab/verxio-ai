@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { PaginationControl } from '@/components/ui/pagination'
 import { useI18n } from '@/i18n'
+import { CLOUD_TRANSCRIPTION_ENV_KEYS } from '@/lib/transcription-providers'
 import type { EnvVarInfo } from '@/types/hermes'
 
 import { DEFAULT_LIST_PAGE_SIZE, usePaginatedList } from '../hooks/use-paginated-list'
@@ -11,9 +12,10 @@ import { CustomToolKeyForm } from './custom-tool-key-form'
 import { useEnvCredentials } from './env-credentials'
 import { asText } from './helpers'
 import { LoadingState, SettingsContent } from './primitives'
+import { TranscriptionKeySettings } from './transcription-key-settings'
 
 // Sub-views surfaced as sidebar subnav under Tools & Keys (see settings/index.tsx).
-export const KEYS_VIEWS = ['tools', 'settings'] as const
+export const KEYS_VIEWS = ['tools', 'transcription', 'settings'] as const
 
 export type KeysView = (typeof KEYS_VIEWS)[number]
 
@@ -27,6 +29,7 @@ export type KeysView = (typeof KEYS_VIEWS)[number]
 // the Messaging page; only gateway-wide ``messaging`` rows (e.g. GATEWAY_PROXY)
 // appear here alongside ``setting``.
 const VIEW_CATEGORIES: Record<KeysView, readonly string[]> = {
+  transcription: [],
   settings: ['setting', 'messaging'],
   tools: ['tool', 'skill']
 }
@@ -49,7 +52,10 @@ export function KeysSettings({ view }: KeysSettingsProps) {
       const cats = VIEW_CATEGORIES[v]
 
       const entries = Object.entries(vars)
-        .filter(([, info]) => !info.channel_managed && cats.includes(asText(info.category)))
+        .filter(
+          ([key, info]) =>
+            !info.channel_managed && cats.includes(asText(info.category)) && !CLOUD_TRANSCRIPTION_ENV_KEYS.includes(key)
+        )
         .sort(([a], [b]) => a.localeCompare(b))
 
       return entries.length === 0 ? [] : [{ category: v, entries }]
@@ -79,6 +85,14 @@ export function KeysSettings({ view }: KeysSettingsProps) {
 
   const existingKeys = new Set(Object.keys(vars))
   const showCustomForm = view === 'tools'
+
+  if (view === 'transcription') {
+    return (
+      <SettingsContent>
+        <TranscriptionKeySettings rowProps={rowProps} vars={vars} />
+      </SettingsContent>
+    )
+  }
 
   return (
     <SettingsContent>

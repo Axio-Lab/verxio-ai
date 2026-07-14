@@ -216,6 +216,7 @@ export interface Translations {
       gateway: string
       apiKeys: string
       keysTools: string
+      keysTranscription: string
       keysSettings: string
       mcp: string
       archivedChats: string

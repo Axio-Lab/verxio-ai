@@ -170,6 +170,7 @@ export const zhHant = defineLocale({
       gateway: '閘道',
       apiKeys: '工具與金鑰',
       keysTools: '工具',
+      keysTranscription: 'Transcription',
       keysSettings: '設定',
       mcp: 'MCP',
       archivedChats: '已封存聊天',

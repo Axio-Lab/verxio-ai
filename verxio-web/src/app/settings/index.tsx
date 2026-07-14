@@ -6,7 +6,7 @@ import { Tip } from '@/components/ui/tooltip'
 import { getHermesConfigDefaults, getHermesConfigRecord, saveHermesConfig } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
-import { Archive, Bell, Globe, Info, KeyRound, RefreshCw, Settings2, Sparkles, Wrench, Zap } from '@/lib/icons'
+import { Archive, Bell, Globe, Info, KeyRound, Mic, RefreshCw, Settings2, Sparkles, Wrench, Zap } from '@/lib/icons'
 import type { VerxioInferenceMode } from '@/lib/verxio-api'
 import { notifyError } from '@/store/notifications'
 
@@ -186,6 +186,13 @@ export function SettingsView({
                 label={t.settings.nav.keysTools}
                 nested
                 onClick={() => openKeysView('tools')}
+              />
+              <OverlayNavItem
+                active={keysView === 'transcription'}
+                icon={Mic}
+                label={t.settings.nav.keysTranscription}
+                nested
+                onClick={() => openKeysView('transcription')}
               />
               <OverlayNavItem
                 active={keysView === 'settings'}

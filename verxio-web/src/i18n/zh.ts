@@ -274,6 +274,7 @@ export const zh: Translations = {
       gateway: '网关',
       apiKeys: '工具与密钥',
       keysTools: '工具',
+      keysTranscription: 'Transcription',
       keysSettings: '设置',
       mcp: 'MCP',
       archivedChats: '已归档对话',
