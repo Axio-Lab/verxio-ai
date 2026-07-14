@@ -68,41 +68,29 @@ export function hostedModelOptionsFromInference(
     }
   }
 
-  const selectedId = selected.id
-
-  const hostedModels = catalog.models
-    .filter(model => model.upstreamModelId)
-    .sort((a, b) => {
-      if (a.id === selectedId) {
-        return -1
-      }
-
-      if (b.id === selectedId) {
-        return 1
-      }
-
-      return 0
-    })
-
   return {
     model: selected.upstreamModelId,
     provider: selected.providerSlug,
-    providers: hostedModels.map(model => ({
-      authenticated: true,
-      capabilities: {
-        [model.upstreamModelId]: capabilitiesFor(model)
-      },
-      is_current: model.id === selectedId,
-      is_verxio_hosted: true,
-      models: [model.upstreamModelId],
-      name: model.displayName,
-      pricing: {
-        [model.upstreamModelId]: pricingFor(model)
-      },
-      slug: model.providerSlug,
-      total_models: 1,
-      warning: model.hostedAvailable ? undefined : `${model.displayName} is not configured for hosted inference.`
-    }))
+    providers: [
+      {
+        authenticated: true,
+        capabilities: {
+          [selected.upstreamModelId]: capabilitiesFor(selected)
+        },
+        is_current: true,
+        is_verxio_hosted: true,
+        models: [selected.upstreamModelId],
+        name: selected.displayName,
+        pricing: {
+          [selected.upstreamModelId]: pricingFor(selected)
+        },
+        slug: selected.providerSlug,
+        total_models: 1,
+        warning: selected.hostedAvailable
+          ? undefined
+          : `${selected.displayName} is not configured for hosted inference.`
+      }
+    ]
   }
 }
 

@@ -1,9 +1,11 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 
 import { deleteEnvVar, getEnvVars, revealEnvVar, setEnvVar } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { type IconComponent } from '@/lib/icons'
-import { shouldReloadToolCredential } from '@/lib/tool-credentials'
+import { clearCachedModelOptions } from '@/lib/model-options-cache'
+import { looksLikeToolCredentialEnv, shouldReloadToolCredential } from '@/lib/tool-credentials'
 import { notify, notifyError } from '@/store/notifications'
 import { runRuntimeEnvReload } from '@/store/system-actions'
 import type { EnvVarInfo } from '@/types/hermes'
@@ -45,6 +47,7 @@ export function SettingsCategoryHeading({ count, icon: Icon, title }: CategoryHe
 // mutation handlers instead of duplicating the plumbing.
 export function useEnvCredentials(): UseEnvCredentials {
   const { t } = useI18n()
+  const queryClient = useQueryClient()
   const credentials = t.settings.credentials
   const toolsets = t.settings.toolsets
   const [vars, setVars] = useState<Record<string, EnvVarInfo> | null>(null)
@@ -92,11 +95,13 @@ export function useEnvCredentials(): UseEnvCredentials {
   async function reloadIfToolCredential(key: string) {
     const info = vars?.[key]
 
-    if (!shouldReloadToolCredential(key, info)) {
+    if (!shouldReloadToolCredential(key, info) && !looksLikeToolCredentialEnv(key)) {
       return
     }
 
     await runRuntimeEnvReload()
+    clearCachedModelOptions()
+    await queryClient.invalidateQueries({ queryKey: ['model-options'] })
   }
 
   async function handleSave(key: string) {

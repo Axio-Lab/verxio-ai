@@ -43,6 +43,7 @@ describe('transcription provider catalog', () => {
     const groq = cloudTranscriptionProviderById('groq', providers)
 
     expect(groq).toBeTruthy()
+    expect(groq?.envKey).toBe('GROQ_API_KEY')
     expect(transcriptionModelOptions(groq!, 'whisper-future')).toContain('whisper-future')
   })
 })

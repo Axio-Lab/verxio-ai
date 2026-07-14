@@ -204,6 +204,7 @@ def test_transcription_catalog_uses_fallback_without_keys(client):
     body = response.json()
     groq = next(provider for provider in body["providers"] if provider["id"] == "groq")
     assert groq["configured"] is False
+    assert groq["envKey"] == "GROQ_API_KEY"
     assert groq["source"] == "fallback"
     assert groq["recommendedModel"] == "whisper-large-v3-turbo"
     assert [model["id"] for model in groq["models"]][:2] == ["whisper-large-v3-turbo", "whisper-large-v3"]

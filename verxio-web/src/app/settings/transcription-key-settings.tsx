@@ -75,7 +75,7 @@ function transcriptionEnvInfo(provider: CloudTranscriptionProvider, existing?: E
     custom: existing?.custom,
     description: provider.description,
     is_password: true,
-    is_set: Boolean(existing?.is_set),
+    is_set: Boolean(existing?.is_set || provider.configured),
     redacted_value: existing?.redacted_value ?? null,
     tools: ['voice_transcription'],
     url: provider.docsUrl

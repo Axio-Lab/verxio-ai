@@ -42,7 +42,7 @@ export const FALLBACK_CLOUD_TRANSCRIPTION_PROVIDERS: CloudTranscriptionProvider[
   {
     id: 'groq',
     label: 'Groq',
-    envKey: 'STT_GROQ_API_KEY',
+    envKey: 'GROQ_API_KEY',
     recommendedModel: 'whisper-large-v3-turbo',
     models: ['whisper-large-v3-turbo', 'whisper-large-v3'],
     docsUrl: 'https://console.groq.com/keys',
@@ -60,7 +60,7 @@ export const FALLBACK_CLOUD_TRANSCRIPTION_PROVIDERS: CloudTranscriptionProvider[
   {
     id: 'mistral',
     label: 'Mistral',
-    envKey: 'STT_MISTRAL_API_KEY',
+    envKey: 'MISTRAL_API_KEY',
     recommendedModel: 'voxtral-mini-latest',
     models: ['voxtral-mini-latest', 'voxtral-mini-2602'],
     docsUrl: 'https://console.mistral.ai/api-keys',
@@ -69,7 +69,7 @@ export const FALLBACK_CLOUD_TRANSCRIPTION_PROVIDERS: CloudTranscriptionProvider[
   {
     id: 'elevenlabs',
     label: 'ElevenLabs',
-    envKey: 'STT_ELEVENLABS_API_KEY',
+    envKey: 'ELEVENLABS_API_KEY',
     recommendedModel: 'scribe_v2',
     models: ['scribe_v2', 'scribe_v1'],
     docsUrl: 'https://elevenlabs.io/app/settings/api-keys',
@@ -78,7 +78,7 @@ export const FALLBACK_CLOUD_TRANSCRIPTION_PROVIDERS: CloudTranscriptionProvider[
   {
     id: 'xai',
     label: 'xAI',
-    envKey: 'STT_XAI_API_KEY',
+    envKey: 'XAI_API_KEY',
     recommendedModel: 'grok-stt',
     models: ['grok-stt'],
     docsUrl: 'https://console.x.ai/',
