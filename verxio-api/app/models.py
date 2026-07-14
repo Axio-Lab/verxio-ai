@@ -191,6 +191,34 @@ class InferenceUsageResponse(BaseModel):
     usage: InferenceUsageSummary
 
 
+TranscriptionProviderId = Literal["elevenlabs", "groq", "mistral", "openai", "xai"]
+TranscriptionCatalogSource = Literal["fallback", "provider"]
+
+
+class TranscriptionModelOption(BaseModel):
+    id: str
+    source: TranscriptionCatalogSource = "provider"
+
+
+class TranscriptionProviderCatalogItem(BaseModel):
+    id: TranscriptionProviderId
+    label: str
+    envKey: str
+    docsUrl: str
+    description: str
+    configured: bool = False
+    recommendedModel: str
+    models: list[TranscriptionModelOption]
+    source: TranscriptionCatalogSource = "fallback"
+    error: str | None = None
+    fetchedAt: str | None = None
+
+
+class TranscriptionCatalogResponse(BaseModel):
+    providers: list[TranscriptionProviderCatalogItem]
+    cacheTtlSeconds: int
+
+
 class InferenceRuntimeBridgeStatus(BaseModel):
     configured: bool
     enabled: bool

@@ -8,7 +8,7 @@ from subprocess import CompletedProcess
 import pytest
 from fastapi.testclient import TestClient
 
-from app import composio_catalog, control_plane, db, emailer, inference, main, runtime_manager
+from app import composio_catalog, control_plane, db, emailer, inference, main, runtime_manager, transcription_catalog
 from app.auth import SESSION_COOKIE
 from app.main import app
 from app.models import ComposioConnectedAccount, ComposioToolBridgeStatus, RuntimeInstance
@@ -187,6 +187,56 @@ def test_inference_settings_are_hosted_verxio_qwen_by_default(client):
     assert response.status_code == 200
     assert response.json()["mode"] == "hosted"
     assert response.json()["defaultModelId"] == "verxio-qwen"
+
+
+def test_transcription_catalog_rejects_anonymous_users(client):
+    response = client.get("/api/transcription/catalog")
+
+    assert response.status_code == 401
+
+
+def test_transcription_catalog_uses_fallback_without_keys(client):
+    _payload, token = signup(client, "transcription-catalog@example.com")
+
+    response = client.get("/api/transcription/catalog", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+
+    assert response.status_code == 200
+    body = response.json()
+    groq = next(provider for provider in body["providers"] if provider["id"] == "groq")
+    assert groq["configured"] is False
+    assert groq["source"] == "fallback"
+    assert groq["recommendedModel"] == "whisper-large-v3-turbo"
+    assert [model["id"] for model in groq["models"]][:2] == ["whisper-large-v3-turbo", "whisper-large-v3"]
+
+
+def test_transcription_catalog_fetches_live_models_with_runtime_key(client, monkeypatch):
+    payload, token = signup(client, "transcription-live@example.com")
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    env_path = Path(str(runtime_row["hermes_home_path"])) / ".env"
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    env_path.write_text("VOICE_TOOLS_OPENAI_KEY=op-secret\n", encoding="utf-8")
+
+    async def fake_fetch_provider_models(_client, spec, api_key, _env):
+        assert api_key == "op-secret"
+        if spec.id == "openai":
+            return ["gpt-4o-mini-transcribe", "gpt-new-transcribe"]
+        return []
+
+    monkeypatch.setattr(transcription_catalog, "_fetch_provider_models", fake_fetch_provider_models)
+
+    response = client.get("/api/transcription/catalog", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+
+    assert response.status_code == 200
+    openai = next(provider for provider in response.json()["providers"] if provider["id"] == "openai")
+    assert openai["configured"] is True
+    assert openai["source"] == "provider"
+    assert openai["recommendedModel"] == "gpt-4o-mini-transcribe"
+    assert [model["id"] for model in openai["models"]] == ["gpt-4o-mini-transcribe", "gpt-new-transcribe"]
+    assert "op-secret" not in response.text
 
 
 def test_dashboard_model_paths_need_inference_sync():

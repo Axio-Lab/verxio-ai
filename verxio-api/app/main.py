@@ -117,6 +117,7 @@ from app.models import (
     RuntimeControlResponse,
     RuntimeWorkspaceSyncRequest,
     SignupRequest,
+    TranscriptionCatalogResponse,
 )
 from app.notepad import (
     create_folder,
@@ -175,6 +176,7 @@ from app.runtime_manager import (
     warm_runtime_docker_network,
 )
 from app.store import AUDIT_LOG, PROFILE, RUNS, WORKSPACE
+from app.transcription_catalog import list_transcription_catalog
 
 
 APP_ROOT = Path(__file__).resolve().parent.parent
@@ -424,6 +426,13 @@ async def put_inference_settings_route(
 async def get_inference_usage_route(request: Request) -> InferenceUsageResponse:
     user = require_user(request)
     return inference_usage(str(user["id"]))
+
+
+@app.get("/api/transcription/catalog", response_model=TranscriptionCatalogResponse)
+async def get_transcription_catalog_route(request: Request, refresh: bool = False) -> TranscriptionCatalogResponse:
+    user = require_user(request)
+    runtime = get_runtime_for_user(user)
+    return await list_transcription_catalog(runtime, refresh=refresh)
 
 
 @app.get("/api/artifacts", response_model=ArtifactListResponse)
