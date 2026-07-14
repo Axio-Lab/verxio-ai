@@ -609,8 +609,6 @@ export const ja = defineLocale({
     },
     model: {
       loading: 'モデル設定を読み込み中...',
-      appliesDesc:
-        '新しいセッションに適用されます。コンポーザーのモデルピッカーを使ってアクティブなチャットをホットスワップできます。',
       provider: 'プロバイダー',
       model: 'モデル',
       applying: '適用中...',

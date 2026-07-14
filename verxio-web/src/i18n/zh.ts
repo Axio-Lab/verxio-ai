@@ -735,7 +735,6 @@ export const zh: Translations = {
     },
     model: {
       loading: '正在加载模型配置...',
-      appliesDesc: '应用于新会话。可在输入框的模型选择器中临时切换当前对话。',
       provider: '提供方',
       model: '模型',
       applying: '应用中...',

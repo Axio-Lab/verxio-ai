@@ -26,6 +26,7 @@ import {
   reasoningEffortLabel
 } from '@/lib/model-status-label'
 import { cn } from '@/lib/utils'
+import { getScopedModelOptions } from '@/lib/verxio-model-options'
 import { $modelPresets, applyModelPreset, modelPresetKey } from '@/store/model-presets'
 import {
   $visibleModels,
@@ -79,11 +80,11 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
     queryFn: async (): Promise<ModelOptionsResponse> => {
       let next: ModelOptionsResponse
 
-      if (gateway && activeSessionId) {
-        next = await gateway.request<ModelOptionsResponse>('model.options', { session_id: activeSessionId })
-      } else {
-        next = await getGlobalModelOptions()
-      }
+      next = await getScopedModelOptions(() =>
+        gateway && activeSessionId
+          ? gateway.request<ModelOptionsResponse>('model.options', { session_id: activeSessionId })
+          : getGlobalModelOptions()
+      )
 
       writeCachedModelOptions(modelOptionsScope, next)
 

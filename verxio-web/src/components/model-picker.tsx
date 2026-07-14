@@ -3,6 +3,7 @@ import { useState } from 'react'
 
 import { useI18n } from '@/i18n'
 import { readCachedModelOptions, writeCachedModelOptions } from '@/lib/model-options-cache'
+import { getScopedModelOptions } from '@/lib/verxio-model-options'
 import type { ModelOptionProvider, ModelOptionsResponse, ModelPricing } from '@/types/hermes'
 
 import type { HermesGateway } from '../hermes'
@@ -60,13 +61,13 @@ export function ModelPickerDialog({
     queryFn: async () => {
       let next: ModelOptionsResponse
 
-      if (gw && sessionId) {
-        next = await gw.request<ModelOptionsResponse>('model.options', {
-          session_id: sessionId
-        })
-      } else {
-        next = await getGlobalModelOptions()
-      }
+      next = await getScopedModelOptions(() =>
+        gw && sessionId
+          ? gw.request<ModelOptionsResponse>('model.options', {
+              session_id: sessionId
+            })
+          : getGlobalModelOptions()
+      )
 
       writeCachedModelOptions(modelOptionsScope, next)
 

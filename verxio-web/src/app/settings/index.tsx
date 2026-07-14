@@ -40,13 +40,7 @@ const SETTINGS_VIEWS: readonly SettingsViewId[] = [
   'about'
 ]
 
-export function SettingsView({
-  gateway,
-  onClose,
-  onConfigSaved,
-  onMainModelChanged,
-  requestGateway
-}: SettingsPageProps) {
+export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }: SettingsPageProps) {
   const { t } = useI18n()
   const { hash, pathname, search } = useLocation()
   const navigate = useNavigate()
@@ -272,7 +266,6 @@ export function SettingsView({
               activeSectionId={activeView.slice('config:'.length)}
               importInputRef={importInputRef}
               onConfigSaved={onConfigSaved}
-              onMainModelChanged={onMainModelChanged}
             />
           ) : activeView === 'providers' ? (
             <ProvidersSettings
