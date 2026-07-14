@@ -42,8 +42,8 @@ PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
     ProviderSpec(
         id="groq",
         label="Groq",
-        env_key="GROQ_API_KEY",
-        key_envs=("GROQ_API_KEY",),
+        env_key="STT_GROQ_API_KEY",
+        key_envs=("STT_GROQ_API_KEY", "GROQ_API_KEY"),
         base_url="https://api.groq.com/openai/v1",
         base_url_envs=("GROQ_BASE_URL",),
         docs_url="https://console.groq.com/keys",
@@ -66,8 +66,8 @@ PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
     ProviderSpec(
         id="mistral",
         label="Mistral",
-        env_key="MISTRAL_API_KEY",
-        key_envs=("MISTRAL_API_KEY",),
+        env_key="STT_MISTRAL_API_KEY",
+        key_envs=("STT_MISTRAL_API_KEY", "MISTRAL_API_KEY"),
         base_url="https://api.mistral.ai/v1",
         base_url_envs=("MISTRAL_BASE_URL",),
         docs_url="https://console.mistral.ai/api-keys",
@@ -78,8 +78,8 @@ PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
     ProviderSpec(
         id="elevenlabs",
         label="ElevenLabs",
-        env_key="ELEVENLABS_API_KEY",
-        key_envs=("ELEVENLABS_API_KEY",),
+        env_key="STT_ELEVENLABS_API_KEY",
+        key_envs=("STT_ELEVENLABS_API_KEY", "ELEVENLABS_API_KEY"),
         base_url="https://api.elevenlabs.io/v1",
         base_url_envs=("ELEVENLABS_STT_BASE_URL", "ELEVENLABS_BASE_URL"),
         docs_url="https://elevenlabs.io/app/settings/api-keys",
@@ -90,8 +90,8 @@ PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
     ProviderSpec(
         id="xai",
         label="xAI",
-        env_key="XAI_API_KEY",
-        key_envs=("XAI_API_KEY",),
+        env_key="STT_XAI_API_KEY",
+        key_envs=("STT_XAI_API_KEY", "XAI_API_KEY"),
         base_url="https://api.x.ai/v1",
         base_url_envs=("XAI_STT_BASE_URL", "XAI_BASE_URL"),
         docs_url="https://console.x.ai/",
