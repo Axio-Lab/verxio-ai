@@ -64,6 +64,15 @@ export function selectedCloudTranscriptionProvider(
   return providers.find(provider => provider.id === configured) ?? providers[0]
 }
 
+export function configuredCloudTranscriptionProvider(
+  config: HermesConfigRecord,
+  providers: CloudTranscriptionProvider[]
+): CloudTranscriptionProvider | undefined {
+  const configured = String(configValue(config, 'stt.provider') ?? '')
+
+  return providers.find(provider => provider.id === configured)
+}
+
 export function selectedCloudTranscriptionModel(
   config: HermesConfigRecord,
   provider: CloudTranscriptionProvider

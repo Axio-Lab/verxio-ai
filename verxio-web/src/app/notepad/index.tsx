@@ -29,6 +29,7 @@ import {
 import { isVerxioDesktop } from '@/lib/platform'
 import {
   applyCloudTranscriptionConfig,
+  configuredCloudTranscriptionProvider,
   selectedCloudTranscriptionModel,
   selectedCloudTranscriptionProvider
 } from '@/lib/transcription-config'
@@ -691,7 +692,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
 
       const model = transcriptionModel.trim() || selectedCloudTranscriptionModel(config, provider)
 
-      const providerAlreadyCloud = selectedCloudTranscriptionProvider(config, providers).id === provider.id
+      const providerAlreadyCloud = configuredCloudTranscriptionProvider(config, providers)?.id === provider.id
 
       setTranscriptionProviders(providers)
       setTranscriptionProviderId(provider.id)
