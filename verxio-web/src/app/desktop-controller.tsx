@@ -9,8 +9,6 @@ import { FolderAccessDialog } from '@/components/folder-access-dialog'
 import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overlay'
 import { Pane, PaneMain } from '@/components/pane-shell'
 import { RemoteDisplayBanner } from '@/components/remote-display-banner'
-import { Button } from '@/components/ui/button'
-import { ErrorState } from '@/components/ui/error-state'
 import { readVerxioAuthScope } from '@/lib/auth-scope'
 import { useSkinCommand } from '@/themes/use-skin-command'
 
@@ -1079,21 +1077,12 @@ function LegacySessionRedirect() {
 }
 
 function NotFoundView() {
-  const navigate = useNavigate()
-
   return (
     <div className="grid h-full min-h-0 place-items-center bg-(--ui-chat-surface-background) px-6 py-10 pt-[calc(var(--titlebar-height)+2.5rem)]">
-      <ErrorState
-        className="max-w-md"
-        description="This page does not exist in Verxio. Check the address, or return to a new chat."
-        title="Page not found"
-      >
-        <div className="flex justify-center">
-          <Button onClick={() => navigate(NEW_CHAT_ROUTE)} size="sm" variant="secondary">
-            New chat
-          </Button>
-        </div>
-      </ErrorState>
+      <div className="grid max-w-md gap-2 text-center">
+        <h2 className="text-xl font-semibold tracking-tight">Page not found</h2>
+        <p className="text-sm leading-5 text-muted-foreground">This page does not exist in Verxio.</p>
+      </div>
     </div>
   )
 }

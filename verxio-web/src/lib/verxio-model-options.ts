@@ -70,9 +70,19 @@ export function hostedModelOptionsFromInference(
 
   const selectedId = selected.id
 
-  const hostedModels = catalog.models.filter(
-    model => model.upstreamModelId && (model.hostedAvailable || model.id === selectedId || model.default)
-  )
+  const hostedModels = catalog.models
+    .filter(model => model.upstreamModelId)
+    .sort((a, b) => {
+      if (a.id === selectedId) {
+        return -1
+      }
+
+      if (b.id === selectedId) {
+        return 1
+      }
+
+      return 0
+    })
 
   return {
     model: selected.upstreamModelId,
@@ -83,6 +93,7 @@ export function hostedModelOptionsFromInference(
         [model.upstreamModelId]: capabilitiesFor(model)
       },
       is_current: model.id === selectedId,
+      is_verxio_hosted: true,
       models: [model.upstreamModelId],
       name: model.displayName,
       pricing: {

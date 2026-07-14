@@ -58,6 +58,7 @@ interface ModelMenuPanelProps {
 
 interface ProviderGroup {
   families: ModelFamily[]
+  order: number
   provider: ModelOptionProvider
 }
 
@@ -276,11 +277,11 @@ function groupModels(
   const q = search.trim().toLowerCase()
   const groups: ProviderGroup[] = []
 
-  for (const provider of providers) {
+  providers.forEach((provider, order) => {
     const allFamilies = collapseModelFamilies(provider.models ?? [])
 
     if (allFamilies.length === 0) {
-      continue
+      return
     }
 
     const matches = (family: ModelFamily) =>
@@ -294,6 +295,11 @@ function groupModels(
     if (q) {
       // Search spans every family, regardless of visibility.
       shown = new Set(allFamilies.filter(matches).map(family => family.id))
+    } else if (provider.is_verxio_hosted) {
+      // Hosted Verxio rows are intentionally tiny, curated groups. Show the
+      // full selected Gemini/Qwen list directly instead of hiding rows behind
+      // the default per-provider cap.
+      shown = new Set(allFamilies.map(family => family.id))
     } else if (visible) {
       // User has customized which models show — honor their selection exactly.
       shown = new Set(
@@ -319,13 +325,27 @@ function groupModels(
     }
 
     if (families.length > 0) {
-      groups.push({ families, provider })
+      groups.push({ families, order, provider })
     }
-  }
+  })
 
-  // Stable, logical group order: alphabetical by provider name. (The backend
-  // floats the current provider first, which would reshuffle on every switch.)
-  groups.sort((a, b) => a.provider.name.localeCompare(b.provider.name))
+  // Verxio-hosted rows are deliberately composed at the top of the scoped
+  // catalog. Keep that order, then sort the rest alphabetically so connected
+  // BYOK providers stay stable.
+  groups.sort((a, b) => {
+    const hostedA = !!a.provider.is_verxio_hosted
+    const hostedB = !!b.provider.is_verxio_hosted
+
+    if (hostedA !== hostedB) {
+      return hostedA ? -1 : 1
+    }
+
+    if (hostedA && hostedB) {
+      return a.order - b.order
+    }
+
+    return a.provider.name.localeCompare(b.provider.name)
+  })
 
   return groups
 }
