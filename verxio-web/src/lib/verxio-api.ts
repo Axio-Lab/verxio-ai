@@ -254,6 +254,30 @@ export interface VerxioInferenceUsageResponse {
   usage: VerxioInferenceUsageSummary
 }
 
+export interface VerxioTranscriptionCatalogModel {
+  id: string
+  source: 'fallback' | 'provider'
+}
+
+export interface VerxioTranscriptionCatalogProvider {
+  id: 'elevenlabs' | 'groq' | 'mistral' | 'openai' | 'xai'
+  label: string
+  envKey: string
+  docsUrl: string
+  description: string
+  configured: boolean
+  recommendedModel: string
+  models: VerxioTranscriptionCatalogModel[]
+  source: 'fallback' | 'provider'
+  error?: string | null
+  fetchedAt?: string | null
+}
+
+export interface VerxioTranscriptionCatalogResponse {
+  providers: VerxioTranscriptionCatalogProvider[]
+  cacheTtlSeconds: number
+}
+
 export type PulseChannelType = 'instagram' | 'messenger' | 'whatsapp' | 'tiktok' | 'linkedin'
 export type PulseConversationState = 'automated' | 'human' | 'paused'
 
@@ -745,6 +769,15 @@ export function updateInferenceSettings(input: {
 
 export function getInferenceUsage(): Promise<VerxioInferenceUsageResponse> {
   return verxioFetch<VerxioInferenceUsageResponse>('/api/inference/usage')
+}
+
+export function listVerxioTranscriptionCatalog(refresh = false): Promise<VerxioTranscriptionCatalogResponse> {
+  return verxioFetch<VerxioTranscriptionCatalogResponse>(
+    `/api/transcription/catalog${refresh ? '?refresh=true' : ''}`,
+    {
+      timeoutMs: 12_000
+    }
+  )
 }
 
 export function listPulseChannels(): Promise<PulseChannelsResponse> {

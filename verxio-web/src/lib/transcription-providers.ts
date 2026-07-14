@@ -1,16 +1,44 @@
 export type CloudTranscriptionProviderId = 'elevenlabs' | 'groq' | 'mistral' | 'openai' | 'xai'
 
 export interface CloudTranscriptionProvider {
+  catalogError?: string | null
+  catalogSource?: 'fallback' | 'provider'
+  configured?: boolean
   description: string
   docsUrl: string
   envKey: string
+  fetchedAt?: string | null
   id: CloudTranscriptionProviderId
   label: string
   models: string[]
   recommendedModel: string
 }
 
-export const CLOUD_TRANSCRIPTION_PROVIDERS: CloudTranscriptionProvider[] = [
+export interface CloudTranscriptionCatalogModel {
+  id: string
+  source: 'fallback' | 'provider'
+}
+
+export interface CloudTranscriptionCatalogProvider {
+  configured: boolean
+  description: string
+  docsUrl: string
+  envKey: string
+  error?: string | null
+  fetchedAt?: string | null
+  id: CloudTranscriptionProviderId
+  label: string
+  models: CloudTranscriptionCatalogModel[]
+  recommendedModel: string
+  source: 'fallback' | 'provider'
+}
+
+export interface CloudTranscriptionCatalogResponse {
+  cacheTtlSeconds: number
+  providers: CloudTranscriptionCatalogProvider[]
+}
+
+export const FALLBACK_CLOUD_TRANSCRIPTION_PROVIDERS: CloudTranscriptionProvider[] = [
   {
     id: 'groq',
     label: 'Groq',
@@ -58,12 +86,63 @@ export const CLOUD_TRANSCRIPTION_PROVIDERS: CloudTranscriptionProvider[] = [
   }
 ]
 
+export const CLOUD_TRANSCRIPTION_PROVIDERS = FALLBACK_CLOUD_TRANSCRIPTION_PROVIDERS
+
 export const CLOUD_TRANSCRIPTION_ENV_KEYS = CLOUD_TRANSCRIPTION_PROVIDERS.map(provider => provider.envKey)
 
-export function cloudTranscriptionProviderById(id: string | null | undefined): CloudTranscriptionProvider | undefined {
-  return CLOUD_TRANSCRIPTION_PROVIDERS.find(provider => provider.id === id)
+export function cloudTranscriptionProviderById(
+  id: string | null | undefined,
+  providers: CloudTranscriptionProvider[] = CLOUD_TRANSCRIPTION_PROVIDERS
+): CloudTranscriptionProvider | undefined {
+  return providers.find(provider => provider.id === id)
 }
 
-export function cloudTranscriptionProviderForEnvKey(envKey: string): CloudTranscriptionProvider | undefined {
-  return CLOUD_TRANSCRIPTION_PROVIDERS.find(provider => provider.envKey === envKey)
+export function cloudTranscriptionProviderForEnvKey(
+  envKey: string,
+  providers: CloudTranscriptionProvider[] = CLOUD_TRANSCRIPTION_PROVIDERS
+): CloudTranscriptionProvider | undefined {
+  return providers.find(provider => provider.envKey === envKey)
+}
+
+export function cloudTranscriptionProvidersFromCatalog(
+  catalog: CloudTranscriptionCatalogResponse | null | undefined
+): CloudTranscriptionProvider[] {
+  if (!catalog?.providers?.length) {
+    return CLOUD_TRANSCRIPTION_PROVIDERS
+  }
+
+  return CLOUD_TRANSCRIPTION_PROVIDERS.map(fallback => {
+    const live = catalog.providers.find(provider => provider.id === fallback.id)
+
+    if (!live) {
+      return fallback
+    }
+
+    const models = live.models.map(model => model.id).filter(Boolean)
+
+    return {
+      catalogError: live.error ?? null,
+      catalogSource: live.source,
+      configured: live.configured,
+      description: live.description || fallback.description,
+      docsUrl: live.docsUrl || fallback.docsUrl,
+      envKey: live.envKey || fallback.envKey,
+      fetchedAt: live.fetchedAt ?? null,
+      id: live.id,
+      label: live.label || fallback.label,
+      models: models.length > 0 ? models : fallback.models,
+      recommendedModel: live.recommendedModel || models[0] || fallback.recommendedModel
+    }
+  })
+}
+
+export function transcriptionModelOptions(provider: CloudTranscriptionProvider, selectedModel?: string): string[] {
+  const selected = selectedModel?.trim()
+  const options = [...provider.models]
+
+  if (selected && !options.includes(selected)) {
+    options.unshift(selected)
+  }
+
+  return Array.from(new Set(options))
 }

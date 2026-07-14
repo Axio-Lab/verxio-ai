@@ -26,7 +26,9 @@ import {
   CLOUD_TRANSCRIPTION_PROVIDERS,
   type CloudTranscriptionProvider,
   cloudTranscriptionProviderById,
-  type CloudTranscriptionProviderId
+  type CloudTranscriptionProviderId,
+  cloudTranscriptionProvidersFromCatalog,
+  transcriptionModelOptions
 } from '@/lib/transcription-providers'
 import { cn } from '@/lib/utils'
 import {
@@ -36,6 +38,7 @@ import {
   deleteNotepadNote,
   getPublicNotepadShare,
   listNotepad,
+  listVerxioTranscriptionCatalog,
   revokeNotepadShare,
   shareNotepadNote,
   summarizeNotepadNote,
@@ -135,17 +138,20 @@ function setConfigValue(config: HermesConfigRecord, path: string, value: unknown
   return next
 }
 
-function selectedCloudTranscriptionProvider(config: HermesConfigRecord): CloudTranscriptionProvider {
+function selectedCloudTranscriptionProvider(
+  config: HermesConfigRecord,
+  providers: CloudTranscriptionProvider[]
+): CloudTranscriptionProvider {
   const configured = String(configValue(config, 'stt.provider') ?? '')
 
-  return cloudTranscriptionProviderById(configured) ?? CLOUD_TRANSCRIPTION_PROVIDERS[0]
+  return cloudTranscriptionProviderById(configured, providers) ?? providers[0]
 }
 
 function selectedCloudTranscriptionModel(config: HermesConfigRecord, provider: CloudTranscriptionProvider): string {
   const path = STT_MODEL_CONFIG_PATHS[provider.id]
   const configured = path ? String(configValue(config, path) ?? '') : ''
 
-  return provider.models.includes(configured) ? configured : provider.recommendedModel
+  return configured || provider.recommendedModel
 }
 
 function applyCloudTranscriptionConfig(
@@ -252,6 +258,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   const [transcriptionDialogOpen, setTranscriptionDialogOpen] = useState(false)
   const [transcriptionSetupSaving, setTranscriptionSetupSaving] = useState(false)
   const [transcriptionSetupError, setTranscriptionSetupError] = useState<string | null>(null)
+  const [transcriptionProviders, setTranscriptionProviders] = useState(CLOUD_TRANSCRIPTION_PROVIDERS)
 
   const [transcriptionProviderId, setTranscriptionProviderId] = useState<CloudTranscriptionProviderId>(
     CLOUD_TRANSCRIPTION_PROVIDERS[0].id
@@ -335,7 +342,12 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   const recordingLevel = recordingMode === 'mic' ? micLevel : recordingMode === 'system' ? 0.65 : 0
 
   const transcriptionProvider =
-    cloudTranscriptionProviderById(transcriptionProviderId) ?? CLOUD_TRANSCRIPTION_PROVIDERS[0]
+    cloudTranscriptionProviderById(transcriptionProviderId, transcriptionProviders) ?? transcriptionProviders[0]
+
+  const transcriptionModelSuggestions = useMemo(
+    () => transcriptionModelOptions(transcriptionProvider, transcriptionModel),
+    [transcriptionModel, transcriptionProvider]
+  )
 
   const pendingDeleteBusy = pendingDelete
     ? pendingDelete.kind === 'note'
@@ -438,7 +450,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   }, [realtimeTranscriptionEnabled])
 
   useEffect(() => {
-    if (!transcriptionProvider.models.includes(transcriptionModel)) {
+    if (!transcriptionModel.trim()) {
       setTranscriptionModel(transcriptionProvider.recommendedModel)
     }
   }, [transcriptionModel, transcriptionProvider])
@@ -634,15 +646,22 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
 
   async function ensureTranscriptionReady(intent: RecordingIntent): Promise<boolean> {
     try {
-      const [vars, config] = await Promise.all([getEnvVars(), getHermesConfigRecord()])
-      const provider = selectedCloudTranscriptionProvider(config)
+      const [vars, config, catalog] = await Promise.all([
+        getEnvVars(),
+        getHermesConfigRecord(),
+        listVerxioTranscriptionCatalog().catch(() => null)
+      ])
+
+      const providers = cloudTranscriptionProvidersFromCatalog(catalog)
+      const provider = selectedCloudTranscriptionProvider(config, providers)
       const model = selectedCloudTranscriptionModel(config, provider)
       const realtime = Boolean(configValue(config, REALTIME_TRANSCRIPTION_CONFIG_PATH))
 
       const providerAlreadyCloud = Boolean(
-        cloudTranscriptionProviderById(String(configValue(config, 'stt.provider') ?? ''))
+        cloudTranscriptionProviderById(String(configValue(config, 'stt.provider') ?? ''), providers)
       )
 
+      setTranscriptionProviders(providers)
       setRealtimeTranscriptionEnabled(realtime)
 
       if (vars[provider.envKey]?.is_set) {
@@ -1676,14 +1695,20 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
               </label>
               <Select
                 disabled={transcriptionSetupSaving}
-                onValueChange={value => setTranscriptionProviderId(value as CloudTranscriptionProviderId)}
+                onValueChange={value => {
+                  const provider =
+                    cloudTranscriptionProviderById(value, transcriptionProviders) ?? transcriptionProviders[0]
+
+                  setTranscriptionProviderId(provider.id)
+                  setTranscriptionModel(provider.recommendedModel)
+                }}
                 value={transcriptionProvider.id}
               >
                 <SelectTrigger id="notepad-transcription-provider">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {CLOUD_TRANSCRIPTION_PROVIDERS.map(provider => (
+                  {transcriptionProviders.map(provider => (
                     <SelectItem key={provider.id} value={provider.id}>
                       {provider.label}
                     </SelectItem>
@@ -1697,22 +1722,23 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
               <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-transcription-model">
                 Model
               </label>
-              <Select
+              <Input
                 disabled={transcriptionSetupSaving}
-                onValueChange={setTranscriptionModel}
+                id="notepad-transcription-model"
+                list="notepad-transcription-model-options"
+                onChange={event => setTranscriptionModel(event.target.value)}
+                placeholder={transcriptionProvider.recommendedModel}
+                spellCheck={false}
                 value={transcriptionModel}
-              >
-                <SelectTrigger id="notepad-transcription-model">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {transcriptionProvider.models.map(model => (
-                    <SelectItem key={model} value={model}>
-                      {model}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              />
+              <datalist id="notepad-transcription-model-options">
+                {transcriptionModelSuggestions.map(model => (
+                  <option key={model} value={model} />
+                ))}
+              </datalist>
+              {transcriptionProvider.catalogError ? (
+                <p className="text-xs text-muted-foreground">{transcriptionProvider.catalogError}</p>
+              ) : null}
             </div>
 
             <div className="grid gap-1.5">
