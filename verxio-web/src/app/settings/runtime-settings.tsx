@@ -21,9 +21,11 @@ export function RuntimeSettings() {
   const hosted = verxioApiEnabled()
   const restarting = useStore($runtimeRestarting)
   const [loadingStatus, setLoadingStatus] = useState(hosted)
+
   const [runtimeStatus, setRuntimeStatus] = useState<'connected' | 'error' | 'starting' | 'stopped' | 'unknown'>(
     'unknown'
   )
+
   const [reloadBusy, setReloadBusy] = useState(false)
 
   const refreshStatus = useCallback(async () => {
