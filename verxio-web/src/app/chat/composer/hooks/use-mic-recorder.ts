@@ -4,9 +4,11 @@ type BrowserAudioContext = typeof AudioContext
 
 export interface MicRecorderOptions {
   audioBitsPerSecond?: number
+  onChunk?: (chunk: Blob) => void
   onLevel?: (level: number) => void
   onError?: (error: Error) => void
   onSilence?: () => void
+  timesliceMs?: number
   silenceLevel?: number
   silenceMs?: number
   idleSilenceMs?: number
@@ -227,6 +229,7 @@ export function useMicRecorder(copy: MicRecorderErrorCopy): {
     recorder.ondataavailable = event => {
       if (event.data.size > 0) {
         chunksRef.current.push(event.data)
+        options.onChunk?.(event.data)
       }
     }
 
@@ -264,7 +267,7 @@ export function useMicRecorder(copy: MicRecorderErrorCopy): {
       resolver?.(null)
     }
 
-    recorder.start()
+    recorder.start(options.timesliceMs)
     setRecording(true)
     startMeter(stream, options)
   }

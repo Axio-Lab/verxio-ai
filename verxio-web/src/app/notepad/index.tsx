@@ -14,11 +14,20 @@ import {
   DialogTitle
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { Tip } from '@/components/ui/tooltip'
 import { VerxioWordmark } from '@/components/verxio-wordmark'
 import type { DesktopCaptureSource } from '@/global'
+import { getEnvVars, getHermesConfigRecord, reloadRuntimeEnv, saveHermesConfig, setEnvVar } from '@/hermes'
 import { NOTEPAD_RECORDING_BITS_PER_SECOND, transcribeAudioBlob } from '@/lib/audio'
 import { isVerxioDesktop } from '@/lib/platform'
+import {
+  CLOUD_TRANSCRIPTION_PROVIDERS,
+  type CloudTranscriptionProvider,
+  cloudTranscriptionProviderById,
+  type CloudTranscriptionProviderId
+} from '@/lib/transcription-providers'
 import { cn } from '@/lib/utils'
 import {
   createNotepadFolder,
@@ -38,6 +47,7 @@ import {
   type VerxioPublicNotepadShareResponse
 } from '@/lib/verxio-api'
 import { notify, notifyError } from '@/store/notifications'
+import type { HermesConfigRecord } from '@/types/hermes'
 
 import { useMicRecorder } from '../chat/composer/hooks/use-mic-recorder'
 import { TITLEBAR_CLEARANCE_RIGHT, TITLEBAR_CLEARANCE_TOP } from '../layout-constants'
@@ -65,6 +75,15 @@ const ALL_FOLDER = '__all__'
 const DEFAULT_FOLDER = '__default__'
 const DEFAULT_FOLDER_LABEL = 'Default'
 const NOTES_PER_PAGE = 10
+const REALTIME_TRANSCRIPTION_CHUNK_MS = 15_000
+const REALTIME_TRANSCRIPTION_CONFIG_PATH = 'notepad.realtime_transcription'
+
+const STT_MODEL_CONFIG_PATHS: Partial<Record<CloudTranscriptionProviderId, string>> = {
+  elevenlabs: 'stt.elevenlabs.model_id',
+  groq: 'stt.groq.model',
+  mistral: 'stt.mistral.model',
+  openai: 'stt.openai.model'
+}
 
 const NOTEPAD_MIC_COPY = {
   microphoneAccessDenied: 'Microphone access was denied.',
@@ -77,7 +96,75 @@ const NOTEPAD_MIC_COPY = {
 }
 
 type RecordingMode = 'idle' | 'mic' | 'system' | 'transcribing'
+type RecordingSource = 'desktop-audio' | 'microphone'
+type RecordingIntent = 'mic' | 'system'
 type PendingDelete = { folder: VerxioNotepadFolder; kind: 'folder' } | { kind: 'note'; note: VerxioNotepadNote }
+
+function configValue(config: HermesConfigRecord, path: string): unknown {
+  let current: unknown = config
+
+  for (const part of path.split('.')) {
+    if (!current || typeof current !== 'object' || !Object.prototype.hasOwnProperty.call(current, part)) {
+      return undefined
+    }
+
+    current = (current as Record<string, unknown>)[part]
+  }
+
+  return current
+}
+
+function setConfigValue(config: HermesConfigRecord, path: string, value: unknown): HermesConfigRecord {
+  const next = structuredClone(config)
+  const parts = path.split('.')
+  let current: Record<string, unknown> = next
+
+  for (let index = 0; index < parts.length - 1; index += 1) {
+    const part = parts[index]
+    const existing = current[part]
+
+    if (!existing || typeof existing !== 'object' || Array.isArray(existing)) {
+      current[part] = {}
+    }
+
+    current = current[part] as Record<string, unknown>
+  }
+
+  current[parts[parts.length - 1]] = value
+
+  return next
+}
+
+function selectedCloudTranscriptionProvider(config: HermesConfigRecord): CloudTranscriptionProvider {
+  const configured = String(configValue(config, 'stt.provider') ?? '')
+
+  return cloudTranscriptionProviderById(configured) ?? CLOUD_TRANSCRIPTION_PROVIDERS[0]
+}
+
+function selectedCloudTranscriptionModel(config: HermesConfigRecord, provider: CloudTranscriptionProvider): string {
+  const path = STT_MODEL_CONFIG_PATHS[provider.id]
+  const configured = path ? String(configValue(config, path) ?? '') : ''
+
+  return provider.models.includes(configured) ? configured : provider.recommendedModel
+}
+
+function applyCloudTranscriptionConfig(
+  config: HermesConfigRecord,
+  provider: CloudTranscriptionProvider,
+  model: string,
+  realtime: boolean
+): HermesConfigRecord {
+  let next = setConfigValue(config, 'stt.enabled', true)
+  next = setConfigValue(next, 'stt.provider', provider.id)
+
+  const path = STT_MODEL_CONFIG_PATHS[provider.id]
+
+  if (path) {
+    next = setConfigValue(next, path, model || provider.recommendedModel)
+  }
+
+  return setConfigValue(next, REALTIME_TRANSCRIPTION_CONFIG_PATH, realtime)
+}
 
 function noteTime(value: string) {
   const parsed = Date.parse(value)
@@ -162,6 +249,19 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
   const [recordingMode, setRecordingMode] = useState<RecordingMode>('idle')
   const [recordingSeconds, setRecordingSeconds] = useState(0)
+  const [transcriptionDialogOpen, setTranscriptionDialogOpen] = useState(false)
+  const [transcriptionSetupSaving, setTranscriptionSetupSaving] = useState(false)
+  const [transcriptionSetupError, setTranscriptionSetupError] = useState<string | null>(null)
+
+  const [transcriptionProviderId, setTranscriptionProviderId] = useState<CloudTranscriptionProviderId>(
+    CLOUD_TRANSCRIPTION_PROVIDERS[0].id
+  )
+
+  const [transcriptionModel, setTranscriptionModel] = useState(CLOUD_TRANSCRIPTION_PROVIDERS[0].recommendedModel)
+  const [transcriptionApiKey, setTranscriptionApiKey] = useState('')
+  const [transcriptionRealtime, setTranscriptionRealtime] = useState(false)
+  const [pendingRecordingIntent, setPendingRecordingIntent] = useState<RecordingIntent | null>(null)
+  const [realtimeTranscriptionEnabled, setRealtimeTranscriptionEnabled] = useState(false)
 
   const [systemAudioSupported, setSystemAudioSupported] = useState(
     () =>
@@ -184,6 +284,16 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   const systemRecorderRef = useRef<MediaRecorder | null>(null)
   const systemStreamRef = useRef<MediaStream | null>(null)
   const systemChunksRef = useRef<Blob[]>([])
+  const draftRef = useRef<NoteDraft | null>(null)
+  const selectedNoteRef = useRef<VerxioNotepadNote | null>(null)
+  const realtimeEnabledRef = useRef(false)
+  const realtimeBaseContentRef = useRef('')
+  const realtimeBlockHeadingRef = useRef('')
+  const realtimeTranscriptRef = useRef('')
+  const realtimeQueueRef = useRef<Array<{ audio: Blob; source: RecordingSource }>>([])
+  const realtimeProcessingRef = useRef(false)
+  const realtimeFlushRef = useRef<Promise<void> | null>(null)
+  const realtimeErrorShownRef = useRef(false)
   const recordingStartedAtRef = useRef(0)
   const micRecorderRef = useRef(micRecorder)
 
@@ -223,6 +333,9 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   const dirty = Boolean(selectedNote && draft && draftChanged(selectedNote, draft))
 
   const recordingLevel = recordingMode === 'mic' ? micLevel : recordingMode === 'system' ? 0.65 : 0
+
+  const transcriptionProvider =
+    cloudTranscriptionProviderById(transcriptionProviderId) ?? CLOUD_TRANSCRIPTION_PROVIDERS[0]
 
   const pendingDeleteBusy = pendingDelete
     ? pendingDelete.kind === 'note'
@@ -311,6 +424,24 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   useEffect(() => {
     micRecorderRef.current = micRecorder
   }, [micRecorder])
+
+  useEffect(() => {
+    draftRef.current = draft
+  }, [draft])
+
+  useEffect(() => {
+    selectedNoteRef.current = selectedNote
+  }, [selectedNote])
+
+  useEffect(() => {
+    realtimeEnabledRef.current = realtimeTranscriptionEnabled
+  }, [realtimeTranscriptionEnabled])
+
+  useEffect(() => {
+    if (!transcriptionProvider.models.includes(transcriptionModel)) {
+      setTranscriptionModel(transcriptionProvider.recommendedModel)
+    }
+  }, [transcriptionModel, transcriptionProvider])
 
   useEffect(
     () => () => {
@@ -501,6 +632,146 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     }
   }
 
+  async function ensureTranscriptionReady(intent: RecordingIntent): Promise<boolean> {
+    try {
+      const [vars, config] = await Promise.all([getEnvVars(), getHermesConfigRecord()])
+      const provider = selectedCloudTranscriptionProvider(config)
+      const model = selectedCloudTranscriptionModel(config, provider)
+      const realtime = Boolean(configValue(config, REALTIME_TRANSCRIPTION_CONFIG_PATH))
+
+      const providerAlreadyCloud = Boolean(
+        cloudTranscriptionProviderById(String(configValue(config, 'stt.provider') ?? ''))
+      )
+
+      setRealtimeTranscriptionEnabled(realtime)
+
+      if (vars[provider.envKey]?.is_set) {
+        if (!providerAlreadyCloud) {
+          await saveHermesConfig(applyCloudTranscriptionConfig(config, provider, model, realtime))
+        }
+
+        return true
+      }
+
+      setPendingRecordingIntent(intent)
+      setTranscriptionProviderId(provider.id)
+      setTranscriptionModel(model)
+      setTranscriptionApiKey('')
+      setTranscriptionRealtime(realtime)
+      setTranscriptionSetupError(null)
+      setTranscriptionDialogOpen(true)
+
+      return false
+    } catch (error) {
+      notifyError(error, 'Could not check transcription setup')
+
+      return false
+    }
+  }
+
+  function resetRealtimeState(source: RecordingSource) {
+    const stamp = NOTE_TIME.format(new Date())
+    realtimeBaseContentRef.current = draftRef.current?.content.trim() ?? ''
+    realtimeBlockHeadingRef.current = `### ${source === 'desktop-audio' ? 'Device recording' : 'Mic recording'} - ${stamp}`
+    realtimeTranscriptRef.current = ''
+    realtimeQueueRef.current = []
+    realtimeProcessingRef.current = false
+    realtimeFlushRef.current = null
+    realtimeErrorShownRef.current = false
+  }
+
+  async function persistRealtimeTranscript(source: RecordingSource) {
+    const note = selectedNoteRef.current
+    const currentDraft = draftRef.current
+    const text = realtimeTranscriptRef.current.trim()
+
+    if (!note || !currentDraft || !text) {
+      return
+    }
+
+    const block = `${realtimeBlockHeadingRef.current}\n\n${text}`
+
+    const nextDraft = {
+      ...currentDraft,
+      content: [realtimeBaseContentRef.current, block].filter(Boolean).join('\n\n')
+    }
+
+    draftRef.current = nextDraft
+    setDraft(nextDraft)
+
+    const updated = await updateNotepadNote(note.id, {
+      ...payloadFromDraft(nextDraft),
+      source
+    })
+
+    setNotes(current => replaceNote(current, updated))
+  }
+
+  async function processRealtimeQueue() {
+    if (realtimeProcessingRef.current) {
+      return realtimeFlushRef.current
+    }
+
+    realtimeProcessingRef.current = true
+
+    const flush = (async () => {
+      while (realtimeQueueRef.current.length > 0) {
+        const chunk = realtimeQueueRef.current.shift()
+
+        if (!chunk) {
+          continue
+        }
+
+        try {
+          const transcript = (await transcribeAudioBlob(chunk.audio)).trim()
+
+          if (!transcript) {
+            continue
+          }
+
+          realtimeTranscriptRef.current = [realtimeTranscriptRef.current.trim(), transcript]
+            .filter(Boolean)
+            .join('\n\n')
+          await persistRealtimeTranscript(chunk.source)
+        } catch (error) {
+          if (!realtimeErrorShownRef.current) {
+            realtimeErrorShownRef.current = true
+            notifyError(error, 'Realtime transcription paused')
+          }
+        }
+      }
+    })()
+      .catch(error => {
+        if (!realtimeErrorShownRef.current) {
+          realtimeErrorShownRef.current = true
+          notifyError(error, 'Realtime transcription paused')
+        }
+      })
+      .finally(() => {
+        realtimeProcessingRef.current = false
+        realtimeFlushRef.current = null
+      })
+
+    realtimeFlushRef.current = flush
+
+    return flush
+  }
+
+  function enqueueRealtimeChunk(audio: Blob, source: RecordingSource) {
+    if (!realtimeEnabledRef.current || !audio.size) {
+      return
+    }
+
+    realtimeQueueRef.current.push({ audio, source })
+    void processRealtimeQueue()
+  }
+
+  async function waitForRealtimeTranscription() {
+    while (realtimeFlushRef.current || realtimeQueueRef.current.length > 0) {
+      await (realtimeFlushRef.current ?? processRealtimeQueue())
+    }
+  }
+
   function cleanupSystemRecording() {
     systemStreamRef.current?.getTracks().forEach(track => track.stop())
     systemStreamRef.current = null
@@ -549,10 +820,12 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     recorder.ondataavailable = event => {
       if (event.data.size > 0) {
         systemChunksRef.current.push(event.data)
+        enqueueRealtimeChunk(event.data, 'desktop-audio')
       }
     }
 
-    recorder.start(1000)
+    resetRealtimeState('desktop-audio')
+    recorder.start(realtimeEnabledRef.current ? REALTIME_TRANSCRIPTION_CHUNK_MS : 1000)
     setRecordingMode('system')
   }
 
@@ -611,6 +884,18 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       return
     }
 
+    if (realtimeEnabledRef.current) {
+      setRecordingMode('transcribing')
+      await waitForRealtimeTranscription()
+
+      if (realtimeTranscriptRef.current.trim()) {
+        notify({ kind: 'success', message: 'Live transcript saved' })
+        setRecordingMode('idle')
+
+        return
+      }
+    }
+
     setRecordingMode('transcribing')
 
     try {
@@ -628,7 +913,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     }
   }
 
-  async function handleStartSystemRecording() {
+  async function beginSystemRecording() {
     if (!selectedNote || !draft) {
       return
     }
@@ -667,6 +952,14 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     }
   }
 
+  async function handleStartSystemRecording() {
+    if (!(await ensureTranscriptionReady('system'))) {
+      return
+    }
+
+    await beginSystemRecording()
+  }
+
   async function handleConfirmCaptureSource() {
     if (!selectedCaptureSourceId) {
       return
@@ -698,18 +991,93 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     }
   }
 
-  async function handleStartMicRecording() {
+  function handleTranscriptionDialogOpenChange(open: boolean) {
+    if (transcriptionSetupSaving) {
+      return
+    }
+
+    setTranscriptionDialogOpen(open)
+
+    if (!open) {
+      setPendingRecordingIntent(null)
+      setTranscriptionApiKey('')
+      setTranscriptionSetupError(null)
+    }
+  }
+
+  async function handleSaveTranscriptionSetup(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    const apiKey = transcriptionApiKey.trim()
+
+    if (!apiKey) {
+      setTranscriptionSetupError(`Paste your ${transcriptionProvider.label} API key first.`)
+
+      return
+    }
+
+    const intent = pendingRecordingIntent
+    setTranscriptionSetupSaving(true)
+    setTranscriptionSetupError(null)
+
+    try {
+      const config = await getHermesConfigRecord()
+
+      const nextConfig = applyCloudTranscriptionConfig(
+        config,
+        transcriptionProvider,
+        transcriptionModel,
+        transcriptionRealtime
+      )
+
+      await setEnvVar(transcriptionProvider.envKey, apiKey)
+      await saveHermesConfig(nextConfig)
+      await reloadRuntimeEnv()
+      setRealtimeTranscriptionEnabled(transcriptionRealtime)
+      setTranscriptionDialogOpen(false)
+      setPendingRecordingIntent(null)
+      setTranscriptionApiKey('')
+      notify({ kind: 'success', message: 'Transcription setup saved' })
+
+      if (intent === 'system') {
+        await beginSystemRecording()
+      } else if (intent === 'mic') {
+        await beginMicRecording()
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not save transcription setup'
+      setTranscriptionSetupError(message)
+      notifyError(error, 'Could not save transcription setup')
+    } finally {
+      setTranscriptionSetupSaving(false)
+    }
+  }
+
+  async function beginMicRecording() {
     if (!selectedNote || !draft) {
       return
     }
 
     try {
-      await micRecorder.start({ audioBitsPerSecond: NOTEPAD_RECORDING_BITS_PER_SECOND })
+      resetRealtimeState('microphone')
+      await micRecorder.start({
+        audioBitsPerSecond: NOTEPAD_RECORDING_BITS_PER_SECOND,
+        onChunk: chunk => enqueueRealtimeChunk(chunk, 'microphone'),
+        timesliceMs: realtimeEnabledRef.current ? REALTIME_TRANSCRIPTION_CHUNK_MS : undefined
+      })
       setRecordingMode('mic')
     } catch (error) {
       notifyError(error, 'Could not start microphone recording')
       setRecordingMode('idle')
     }
+  }
+
+  async function handleStartMicRecording() {
+    if (!(await ensureTranscriptionReady('mic'))) {
+      return
+    }
+
+    await beginMicRecording()
   }
 
   async function handleStopRecording() {
@@ -1288,6 +1656,130 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
               Delete
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog onOpenChange={handleTranscriptionDialogOpenChange} open={transcriptionDialogOpen}>
+        <DialogContent className="max-w-md" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Set up transcription</DialogTitle>
+            <DialogDescription>
+              Choose the cloud provider Verxio should use for this recording. Your key is saved to your runtime
+              credentials.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form aria-busy={transcriptionSetupSaving} className="grid gap-4" onSubmit={handleSaveTranscriptionSetup}>
+            <div className="grid gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-transcription-provider">
+                Provider
+              </label>
+              <Select
+                disabled={transcriptionSetupSaving}
+                onValueChange={value => setTranscriptionProviderId(value as CloudTranscriptionProviderId)}
+                value={transcriptionProvider.id}
+              >
+                <SelectTrigger id="notepad-transcription-provider">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CLOUD_TRANSCRIPTION_PROVIDERS.map(provider => (
+                    <SelectItem key={provider.id} value={provider.id}>
+                      {provider.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{transcriptionProvider.description}</p>
+            </div>
+
+            <div className="grid gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-transcription-model">
+                Model
+              </label>
+              <Select
+                disabled={transcriptionSetupSaving}
+                onValueChange={setTranscriptionModel}
+                value={transcriptionModel}
+              >
+                <SelectTrigger id="notepad-transcription-model">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {transcriptionProvider.models.map(model => (
+                    <SelectItem key={model} value={model}>
+                      {model}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-transcription-key">
+                {transcriptionProvider.label} API key
+              </label>
+              <Input
+                aria-describedby={transcriptionSetupError ? 'notepad-transcription-error' : undefined}
+                aria-invalid={transcriptionSetupError ? 'true' : undefined}
+                autoComplete="off"
+                autoFocus
+                disabled={transcriptionSetupSaving}
+                id="notepad-transcription-key"
+                onChange={event => {
+                  setTranscriptionApiKey(event.target.value)
+                  setTranscriptionSetupError(null)
+                }}
+                placeholder={`Paste ${transcriptionProvider.envKey}`}
+                spellCheck={false}
+                type="password"
+                value={transcriptionApiKey}
+              />
+              <a
+                className="inline-flex w-fit items-center gap-1 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                href={transcriptionProvider.docsUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Get a {transcriptionProvider.label} API key
+                <Codicon name="link-external" />
+              </a>
+              {transcriptionSetupError ? (
+                <p className="text-xs text-destructive" id="notepad-transcription-error">
+                  {transcriptionSetupError}
+                </p>
+              ) : null}
+            </div>
+
+            <label className="flex items-center justify-between gap-3 rounded-[6px] border border-(--ui-stroke-secondary) px-3 py-2 text-sm">
+              <span>
+                <span className="block font-medium">Realtime transcription</span>
+                <span className="block text-xs text-muted-foreground">
+                  Transcribe chunks while recording. This uses your selected API key.
+                </span>
+              </span>
+              <Switch
+                checked={transcriptionRealtime}
+                disabled={transcriptionSetupSaving}
+                onCheckedChange={setTranscriptionRealtime}
+              />
+            </label>
+
+            <DialogFooter>
+              <Button
+                disabled={transcriptionSetupSaving}
+                onClick={() => handleTranscriptionDialogOpenChange(false)}
+                type="button"
+                variant="ghost"
+              >
+                Cancel
+              </Button>
+              <Button disabled={transcriptionSetupSaving} type="submit">
+                {transcriptionSetupSaving ? <Codicon name="loading" spinning /> : <Codicon name="record" />}
+                Save and start recording
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

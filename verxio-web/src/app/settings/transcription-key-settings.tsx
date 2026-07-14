@@ -7,8 +7,8 @@ import { getHermesConfigRecord, saveHermesConfig } from '@/hermes'
 import { ExternalLink, Mic, Save } from '@/lib/icons'
 import {
   CLOUD_TRANSCRIPTION_PROVIDERS,
-  cloudTranscriptionProviderById,
   type CloudTranscriptionProvider,
+  cloudTranscriptionProviderById,
   type CloudTranscriptionProviderId
 } from '@/lib/transcription-providers'
 import { notify, notifyError } from '@/store/notifications'
@@ -83,9 +83,11 @@ export function TranscriptionKeySettings({
   vars: Record<string, EnvVarInfo>
 }) {
   const [config, setConfig] = useState<HermesConfigRecord | null>(null)
+
   const [selectedProviderId, setSelectedProviderId] = useState<CloudTranscriptionProviderId>(
     CLOUD_TRANSCRIPTION_PROVIDERS[0].id
   )
+
   const [selectedModel, setSelectedModel] = useState(CLOUD_TRANSCRIPTION_PROVIDERS[0].recommendedModel)
   const [realtime, setRealtime] = useState(false)
   const [openKey, setOpenKey] = useState<null | string>(null)
