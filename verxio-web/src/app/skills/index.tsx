@@ -36,6 +36,7 @@ const SKILLS_PAGE_SIZE = 10
 const CONNECTIONS_PAGE_SIZE = 10
 const HIDDEN_TOOLSET_NAMES = new Set(['subscription'])
 const HIDDEN_TOOLSET_LABELS = new Set(['nous subscription'])
+const TRANSIENT_REFRESH_DELAYS_MS = [300, 800, 1_500]
 const SKILLS_CACHE_KEY = 'verxio.skills.cache.v1'
 const TOOLSETS_CACHE_KEY = 'verxio.toolsets.cache.v1'
 
@@ -73,6 +74,32 @@ function writeCachedList<T>(key: string, rows: T[]): void {
   } catch {
     // Cache writes are best effort; live runtime data still drives the page.
   }
+}
+
+function transientRefreshError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+
+  return /\b(502|503|504)\b|starting|timed out|timeout|failed to fetch|network/i.test(message)
+}
+
+async function retryTransientRefresh<T>(load: () => Promise<T>): Promise<T> {
+  let lastError: unknown
+
+  for (let attempt = 0; attempt <= TRANSIENT_REFRESH_DELAYS_MS.length; attempt += 1) {
+    try {
+      return await load()
+    } catch (error) {
+      lastError = error
+
+      if (!transientRefreshError(error) || attempt >= TRANSIENT_REFRESH_DELAYS_MS.length) {
+        throw error
+      }
+
+      await new Promise(resolve => window.setTimeout(resolve, TRANSIENT_REFRESH_DELAYS_MS[attempt]))
+    }
+  }
+
+  throw lastError
 }
 
 function categoryFor(skill: SkillInfo): string {
@@ -155,7 +182,10 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
   const refreshCapabilities = useCallback(async () => {
     setRefreshing(true)
 
-    const [skillsResult, toolsetsResult] = await Promise.allSettled([getSkills(), getToolsets()])
+    const [skillsResult, toolsetsResult] = await Promise.allSettled([
+      retryTransientRefresh(getSkills),
+      retryTransientRefresh(getToolsets)
+    ])
 
     if (skillsResult.status === 'fulfilled') {
       const nextSkills = skillsResult.value

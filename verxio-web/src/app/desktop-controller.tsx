@@ -188,6 +188,9 @@ export function DesktopController() {
 
   const busyRef = useRef(false)
   const creatingSessionRef = useRef(false)
+  const lastSessionsRefreshAtRef = useRef(0)
+  const refreshCronJobsInFlightRef = useRef<Promise<void> | null>(null)
+  const refreshSessionsInFlightRef = useRef<Promise<void> | null>(null)
   const refreshSessionsRequestRef = useRef(0)
 
   const gatewayState = useStore($gatewayState)
@@ -306,41 +309,78 @@ export function DesktopController() {
   }, [])
 
   const refreshCronJobs = useCallback(async () => {
-    try {
-      const jobs = await getCronJobs()
+    if (refreshCronJobsInFlightRef.current) {
+      return refreshCronJobsInFlightRef.current
+    }
 
-      setCronJobs(jobs)
-    } catch {
-      // Non-fatal: the cron section keeps its last-known jobs.
+    const task = (async () => {
+      try {
+        const jobs = await getCronJobs()
+
+        setCronJobs(jobs)
+      } catch {
+        // Non-fatal: the cron section keeps its last-known jobs.
+      }
+    })()
+
+    refreshCronJobsInFlightRef.current = task
+
+    try {
+      await task
+    } finally {
+      if (refreshCronJobsInFlightRef.current === task) {
+        refreshCronJobsInFlightRef.current = null
+      }
     }
   }, [])
 
   const refreshSessions = useCallback(async () => {
-    const requestId = refreshSessionsRequestRef.current + 1
-    refreshSessionsRequestRef.current = requestId
-    setSessionsLoading(true)
+    const now = Date.now()
 
-    try {
-      const result = await withSessionListRetries(async () => {
-        const limit = $sessionsLimit.get()
-
-        return listAllProfileSessions(limit, 1)
-      })
-
-      if (refreshSessionsRequestRef.current === requestId) {
-        setSessions(prev => mergeSessionPage(prev, result.sessions, sessionsToKeep()))
-        setSessionsTotal(typeof result.total === 'number' ? result.total : result.sessions.length)
-        setSessionProfileTotals(result.profile_totals ?? {})
-        writeCachedSessions(result)
-      }
-    } finally {
-      if (refreshSessionsRequestRef.current === requestId) {
-        setSessionsLoading(false)
-      }
+    if (refreshSessionsInFlightRef.current) {
+      return refreshSessionsInFlightRef.current
     }
 
-    void refreshCronJobs()
-  }, [refreshCronJobs])
+    if ($sessions.get().length > 0 && now - lastSessionsRefreshAtRef.current < 2_000) {
+      return
+    }
+
+    const requestId = refreshSessionsRequestRef.current + 1
+    refreshSessionsRequestRef.current = requestId
+    setSessionsLoading($sessions.get().length === 0)
+
+    const task = (async () => {
+      try {
+        const result = await withSessionListRetries(async () => {
+          const limit = $sessionsLimit.get()
+
+          return listAllProfileSessions(limit, 1)
+        })
+
+        if (refreshSessionsRequestRef.current === requestId) {
+          setSessions(prev => mergeSessionPage(prev, result.sessions, sessionsToKeep()))
+          setSessionsTotal(typeof result.total === 'number' ? result.total : result.sessions.length)
+          setSessionProfileTotals(result.profile_totals ?? {})
+          writeCachedSessions(result)
+          lastSessionsRefreshAtRef.current = Date.now()
+        }
+      } finally {
+        if (refreshSessionsRequestRef.current === requestId) {
+          setSessionsLoading(false)
+        }
+      }
+    })()
+
+    refreshSessionsInFlightRef.current = task
+
+    try {
+      await task
+    } finally {
+      if (refreshSessionsInFlightRef.current === task) {
+        refreshSessionsInFlightRef.current = null
+      }
+    }
+  }, [])
 
   const loadMoreSessions = useCallback(() => {
     bumpSessionsLimit()
@@ -670,12 +710,19 @@ export function DesktopController() {
 
   useEffect(() => {
     if (gatewayState === 'open') {
-      void refreshCurrentModel()
-      void refreshActiveProfile()
-      void refreshSessions().catch(() => undefined)
-      void refreshCronJobs()
+      const timers = [
+        window.setTimeout(() => void refreshSessions().catch(() => undefined), 50),
+        window.setTimeout(() => void refreshHermesConfig().catch(() => undefined), 250),
+        window.setTimeout(() => void refreshCurrentModel().catch(() => undefined), 450),
+        window.setTimeout(() => void refreshActiveProfile().catch(() => undefined), 650),
+        window.setTimeout(() => void refreshCronJobs().catch(() => undefined), 1_200)
+      ]
+
+      return () => {
+        timers.forEach(timer => window.clearTimeout(timer))
+      }
     }
-  }, [gatewayState, refreshCronJobs, refreshCurrentModel, refreshSessions])
+  }, [gatewayState, refreshCronJobs, refreshCurrentModel, refreshHermesConfig, refreshSessions])
 
   // Cross-device sync: devices share one runtime state DB but have no push channel.
   // Poll the newest session id and re-fetch when another device creates a chat,
@@ -711,11 +758,12 @@ export function DesktopController() {
       }
     }
 
-    const intervalId = window.setInterval(() => void poll(), 8_000)
-    void poll()
+    const firstPollId = window.setTimeout(() => void poll(), 8_000)
+    const intervalId = window.setInterval(() => void poll(), 12_000)
 
     return () => {
       cancelled = true
+      window.clearTimeout(firstPollId)
       window.clearInterval(intervalId)
     }
   }, [gatewayState, refreshSessions])
