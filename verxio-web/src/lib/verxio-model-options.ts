@@ -7,7 +7,7 @@ import {
   type VerxioInferenceModel,
   type VerxioInferenceSettings
 } from '@/lib/verxio-api'
-import type { ModelCapabilities, ModelOptionsResponse, ModelPricing } from '@/types/hermes'
+import type { ModelCapabilities, ModelOptionProvider, ModelOptionsResponse, ModelPricing } from '@/types/hermes'
 
 type RuntimeModelOptionsLoader = () => Promise<ModelOptionsResponse>
 
@@ -95,6 +95,93 @@ export function hostedModelOptionsFromInference(
   }
 }
 
+function configuredRuntimeProviders(options: ModelOptionsResponse): ModelOptionProvider[] {
+  return (options.providers ?? []).filter(
+    provider => provider.authenticated !== false && (provider.models ?? []).length > 0
+  )
+}
+
+export function mergeHostedAndRuntimeModelOptions(
+  hosted: ModelOptionsResponse,
+  runtime: ModelOptionsResponse | null | undefined
+): ModelOptionsResponse {
+  const providers: ModelOptionProvider[] = []
+  const providerIndex = new Map<string, number>()
+  const seenModels = new Set<string>()
+
+  const appendProvider = (provider: ModelOptionProvider, current = false) => {
+    const nextModels = (provider.models ?? []).filter(model => {
+      const key = `${provider.slug}:${model}`
+
+      if (seenModels.has(key)) {
+        return false
+      }
+
+      seenModels.add(key)
+
+      return true
+    })
+
+    if (nextModels.length === 0) {
+      return
+    }
+
+    const existingIndex = providerIndex.get(provider.slug)
+
+    if (existingIndex === undefined) {
+      providerIndex.set(provider.slug, providers.length)
+      providers.push({
+        ...provider,
+        is_current: current ? provider.is_current : false,
+        models: nextModels,
+        total_models: Math.max(provider.total_models ?? 0, nextModels.length)
+      })
+
+      return
+    }
+
+    const existing = providers[existingIndex]
+
+    providers[existingIndex] = {
+      ...existing,
+      capabilities: {
+        ...(existing.capabilities ?? {}),
+        ...(provider.capabilities ?? {})
+      },
+      is_current: existing.is_current || (current && provider.is_current),
+      models: [...(existing.models ?? []), ...nextModels],
+      pricing: {
+        ...(existing.pricing ?? {}),
+        ...(provider.pricing ?? {})
+      },
+      total_models: Math.max(
+        existing.total_models ?? 0,
+        provider.total_models ?? 0,
+        (existing.models ?? []).length + nextModels.length
+      ),
+      unavailable_models: Array.from(
+        new Set([...(existing.unavailable_models ?? []), ...(provider.unavailable_models ?? [])])
+      ),
+      warning: existing.warning ?? provider.warning
+    }
+  }
+
+  for (const provider of hosted.providers ?? []) {
+    appendProvider(provider, true)
+  }
+
+  for (const provider of configuredRuntimeProviders(runtime ?? {})) {
+    appendProvider({ ...provider, is_current: false })
+  }
+
+  return {
+    ...runtime,
+    model: hosted.model,
+    provider: hosted.provider,
+    providers
+  }
+}
+
 export async function getScopedModelOptions(
   loadRuntimeOptions: RuntimeModelOptionsLoader = getGlobalModelOptions
 ): Promise<ModelOptionsResponse> {
@@ -102,16 +189,22 @@ export async function getScopedModelOptions(
     return loadRuntimeOptions()
   }
 
+  const runtimeOptionsPromise = loadRuntimeOptions()
+
   try {
     const [settings, catalog] = await Promise.all([getInferenceSettings(), getInferenceCatalog()])
     const hosted = hostedModelOptionsFromInference(settings, catalog)
 
     if (hosted) {
-      return hosted
+      try {
+        return mergeHostedAndRuntimeModelOptions(hosted, await runtimeOptionsPromise)
+      } catch {
+        return hosted
+      }
     }
   } catch {
     // If the Verxio control-plane call hiccups, keep the model picker usable.
   }
 
-  return loadRuntimeOptions()
+  return runtimeOptionsPromise
 }

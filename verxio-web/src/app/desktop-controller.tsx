@@ -9,6 +9,8 @@ import { FolderAccessDialog } from '@/components/folder-access-dialog'
 import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overlay'
 import { Pane, PaneMain } from '@/components/pane-shell'
 import { RemoteDisplayBanner } from '@/components/remote-display-banner'
+import { Button } from '@/components/ui/button'
+import { ErrorState } from '@/components/ui/error-state'
 import { readVerxioAuthScope } from '@/lib/auth-scope'
 import { useSkinCommand } from '@/themes/use-skin-command'
 
@@ -92,7 +94,15 @@ import { ModelVisibilityOverlay } from './model-visibility-overlay'
 import { RightSidebarPane } from './right-sidebar'
 import { $terminalTakeover } from './right-sidebar/store'
 import { PersistentTerminal, TerminalSlot } from './right-sidebar/terminal/persistent'
-import { CRON_ROUTE, NEW_CHAT_ROUTE, routeSessionId, sessionRoute, SETTINGS_ROUTE, SKILLS_ROUTE } from './routes'
+import {
+  CRON_ROUTE,
+  NEW_CHAT_ROUTE,
+  NOT_FOUND_ROUTE,
+  routeSessionId,
+  sessionRoute,
+  SETTINGS_ROUTE,
+  SKILLS_ROUTE
+} from './routes'
 import { SessionPickerOverlay } from './session-picker-overlay'
 import { useContextSuggestions } from './session/hooks/use-context-suggestions'
 import { useCwdActions } from './session/hooks/use-cwd-actions'
@@ -1046,7 +1056,8 @@ export function DesktopController() {
           <Route element={<Navigate replace to={NEW_CHAT_ROUTE} />} path="login" />
           <Route element={<Navigate replace to={NEW_CHAT_ROUTE} />} path="new" />
           <Route element={<LegacySessionRedirect />} path="sessions/:sessionId" />
-          <Route element={<Navigate replace to={NEW_CHAT_ROUTE} />} path="*" />
+          <Route element={<NotFoundView />} path={NOT_FOUND_ROUTE.slice(1)} />
+          <Route element={<NotFoundView />} path="*" />
         </Routes>
       </PaneMain>
       {/*
@@ -1065,4 +1076,24 @@ function LegacySessionRedirect() {
   const { sessionId } = useParams()
 
   return <Navigate replace to={sessionId ? sessionRoute(sessionId) : NEW_CHAT_ROUTE} />
+}
+
+function NotFoundView() {
+  const navigate = useNavigate()
+
+  return (
+    <div className="grid h-full min-h-0 place-items-center bg-(--ui-chat-surface-background) px-6 py-10 pt-[calc(var(--titlebar-height)+2.5rem)]">
+      <ErrorState
+        className="max-w-md"
+        description="This page does not exist in Verxio. Check the address, or return to a new chat."
+        title="Page not found"
+      >
+        <div className="flex justify-center">
+          <Button onClick={() => navigate(NEW_CHAT_ROUTE)} size="sm" variant="secondary">
+            New chat
+          </Button>
+        </div>
+      </ErrorState>
+    </div>
+  )
 }

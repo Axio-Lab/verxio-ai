@@ -18,13 +18,13 @@ export function reasoningEffortLabel(effort: string): string {
 }
 
 export function currentPickerSelection(
-  hasSession: boolean,
+  _hasSession: boolean,
   store: { model: string; provider: string },
   options?: { model?: string; provider?: string }
 ): { model: string; provider: string } {
   return {
-    model: String((hasSession && options?.model) || store.model || options?.model || ''),
-    provider: String((hasSession && options?.provider) || store.provider || options?.provider || '')
+    model: String(options?.model || store.model || ''),
+    provider: String(options?.provider || store.provider || '')
   }
 }
 

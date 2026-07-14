@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
+import type { ModelOptionsResponse } from '@/types/hermes'
+
 import type { VerxioInferenceCatalogResponse, VerxioInferenceSettings } from './verxio-api'
-import { hostedModelOptionsFromInference } from './verxio-model-options'
+import { hostedModelOptionsFromInference, mergeHostedAndRuntimeModelOptions } from './verxio-model-options'
 
 const catalog: VerxioInferenceCatalogResponse = {
   defaultModelId: 'verxio-qwen',
@@ -74,5 +76,77 @@ describe('hostedModelOptionsFromInference', () => {
         catalog
       )
     ).toBeNull()
+  })
+})
+
+describe('mergeHostedAndRuntimeModelOptions', () => {
+  it('keeps the hosted default selected while appending configured runtime providers', () => {
+    const settings: VerxioInferenceSettings = {
+      defaultModelId: 'verxio-qwen',
+      mode: 'hosted',
+      monthlyCreditUsd: 0,
+      overageEnabled: false,
+      spendingLimitUsd: null
+    }
+
+    const hosted = hostedModelOptionsFromInference(settings, catalog)
+
+    const runtime: ModelOptionsResponse = {
+      model: 'gpt-5-mini',
+      provider: 'openai',
+      providers: [
+        {
+          authenticated: true,
+          models: ['gpt-5-mini'],
+          name: 'OpenAI',
+          slug: 'openai'
+        },
+        {
+          authenticated: false,
+          models: ['claude-sonnet-4'],
+          name: 'Anthropic',
+          slug: 'anthropic'
+        }
+      ]
+    }
+
+    const result = mergeHostedAndRuntimeModelOptions(hosted!, runtime)
+
+    expect(result.provider).toBe('alibaba')
+    expect(result.model).toBe('qwen3.6-plus')
+    expect(result.providers?.map(provider => provider.slug)).toEqual(['alibaba', 'gemini', 'openai'])
+    expect(result.providers?.flatMap(provider => provider.models ?? [])).toEqual([
+      'qwen3.6-plus',
+      'gemini-flash-lite-latest',
+      'gpt-5-mini'
+    ])
+  })
+
+  it('dedupes runtime models that already exist in the hosted catalog', () => {
+    const settings: VerxioInferenceSettings = {
+      defaultModelId: 'verxio-qwen',
+      mode: 'hosted',
+      monthlyCreditUsd: 0,
+      overageEnabled: false,
+      spendingLimitUsd: null
+    }
+
+    const hosted = hostedModelOptionsFromInference(settings, catalog)
+
+    const result = mergeHostedAndRuntimeModelOptions(hosted!, {
+      providers: [
+        {
+          authenticated: true,
+          models: ['qwen3.6-plus', 'qwen3.6-coder'],
+          name: 'Alibaba Cloud',
+          slug: 'alibaba'
+        }
+      ]
+    })
+
+    expect(result.providers?.find(provider => provider.slug === 'alibaba')?.models).toEqual([
+      'qwen3.6-plus',
+      'qwen3.6-coder'
+    ])
   })
 })

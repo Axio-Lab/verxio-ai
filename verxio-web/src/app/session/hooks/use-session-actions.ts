@@ -47,7 +47,7 @@ import { broadcastSessionsChanged } from '@/store/session-sync'
 import { reportBackendContract } from '@/store/updates'
 import type { SessionCreateResponse, SessionInfo, SessionResumeResponse, UsageStats } from '@/types/hermes'
 
-import { NEW_CHAT_ROUTE, sessionRoute, SETTINGS_ROUTE } from '../../routes'
+import { NEW_CHAT_ROUTE, NOT_FOUND_ROUTE, sessionRoute, SETTINGS_ROUTE } from '../../routes'
 import type { ClientSessionState, SidebarNavItem } from '../../types'
 
 interface SessionActionsOptions {
@@ -213,6 +213,12 @@ function patchSessionWorkspace(sessionId: string, cwd: string | undefined) {
 
 function sessionMatchesStoredId(session: SessionInfo, storedSessionId: string): boolean {
   return session.id === storedSessionId || session._lineage_root_id === storedSessionId
+}
+
+function isSessionNotFoundError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+
+  return /session not found|not found/i.test(message)
 }
 
 function upsertResolvedSession(session: SessionInfo, storedSessionId: string) {
@@ -643,14 +649,28 @@ export function useSessionActions({
           return
         }
 
-        const fallback = await getSessionMessages(storedSessionId, sessionProfile)
+        try {
+          const fallback = await getSessionMessages(storedSessionId, sessionProfile)
 
-        if (!isCurrentResume()) {
-          return
+          if (!isCurrentResume()) {
+            return
+          }
+
+          setMessages(preserveLocalAssistantErrors(toChatMessages(fallback.messages), $messages.get()))
+          notifyError(err, copy.resumeFailed)
+        } catch (fallbackErr) {
+          if (!isCurrentResume()) {
+            return
+          }
+
+          if (isSessionNotFoundError(err) || isSessionNotFoundError(fallbackErr)) {
+            navigate(NOT_FOUND_ROUTE, { replace: true })
+
+            return
+          }
+
+          notifyError(err, copy.resumeFailed)
         }
-
-        setMessages(preserveLocalAssistantErrors(toChatMessages(fallback.messages), $messages.get()))
-        notifyError(err, copy.resumeFailed)
       } finally {
         if (isCurrentResume()) {
           busyRef.current = false
@@ -663,6 +683,7 @@ export function useSessionActions({
       activeSessionIdRef,
       busyRef,
       copy,
+      navigate,
       requestGateway,
       runtimeIdByStoredSessionIdRef,
       selectedStoredSessionIdRef,
