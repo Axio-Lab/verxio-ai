@@ -84,7 +84,7 @@ import { useEnterAnimation } from '@/lib/use-enter-animation'
 import { cn } from '@/lib/utils'
 import { playSpeechText, stopVoicePlayback } from '@/lib/voice-playback'
 import { $compactionActive } from '@/store/compaction'
-import { notifyError } from '@/store/notifications'
+import { notify, notifyError } from '@/store/notifications'
 import { notifyThreadEditClose, notifyThreadEditOpen } from '@/store/thread-scroll'
 import { $voicePlayback } from '@/store/voice-playback'
 
@@ -663,6 +663,18 @@ const ReadAloudItem: FC<{ messageId: string; text: string }> = ({ messageId, tex
     try {
       await playSpeechText(text, { messageId, source: 'read-aloud' })
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || '')
+
+      if (/no tts provider available|edge-tts|neutts/i.test(message)) {
+        notify({
+          kind: 'warning',
+          message: 'Text-to-speech is not configured for this runtime.',
+          title: copy.readAloudFailed
+        })
+
+        return
+      }
+
       notifyError(error, copy.readAloudFailed)
     }
   }, [copy.readAloudFailed, messageId, text])

@@ -291,10 +291,10 @@ async function verxioArtifactPreviewTarget(path: string): Promise<PreviewTarget 
 
 interface ResolvedArtifact {
   path: string
-  record: VerxioArtifact
-  target: PreviewTarget
-  previewUrl: string
-  downloadUrl: string
+  record: VerxioArtifact | null
+  target: PreviewTarget | null
+  previewUrl: string | null
+  downloadUrl: string | null
 }
 
 function recordMatchesArtifactPath(record: VerxioArtifact, path: string): boolean {
@@ -321,13 +321,29 @@ function artifactTargetForRecord(record: VerxioArtifact, path: string): PreviewT
   }
 }
 
+function unresolvedArtifact(path: string): ResolvedArtifact {
+  return {
+    downloadUrl: null,
+    path,
+    previewUrl: null,
+    record: null,
+    target: null
+  }
+}
+
 function useResolvedArtifacts(text: string): ResolvedArtifact[] {
   const paths = useMemo(() => extractWorkspaceArtifactPaths(text), [text])
   const [items, setItems] = useState<ResolvedArtifact[]>([])
 
   useEffect(() => {
-    if (!verxioApiEnabled() || paths.length === 0) {
+    if (paths.length === 0) {
       setItems([])
+
+      return
+    }
+
+    if (!verxioApiEnabled()) {
+      setItems(paths.map(unresolvedArtifact))
 
       return
     }
@@ -344,7 +360,7 @@ function useResolvedArtifacts(text: string): ResolvedArtifact[] {
           const record = response.artifacts.find(artifact => recordMatchesArtifactPath(artifact, path))
 
           if (!record) {
-            return []
+            return [unresolvedArtifact(path)]
           }
 
           const target = artifactTargetForRecord(record, path)
@@ -364,7 +380,7 @@ function useResolvedArtifacts(text: string): ResolvedArtifact[] {
       })
       .catch(() => {
         if (!cancelled) {
-          setItems([])
+          setItems(paths.map(unresolvedArtifact))
         }
       })
 
@@ -398,18 +414,24 @@ function GeneratedArtifactStrip({ text }: { text: string }) {
   return (
     <div className="mt-2 grid gap-2">
       {artifacts.map(artifact => (
-        <GeneratedArtifactCard artifact={artifact} key={`${artifact.record.id}:${artifact.path}`} />
+        <GeneratedArtifactCard artifact={artifact} key={`${artifact.record?.id || 'unresolved'}:${artifact.path}`} />
       ))}
     </div>
   )
 }
 
 function GeneratedArtifactCard({ artifact }: { artifact: ResolvedArtifact }) {
-  const isImage = artifact.target.previewKind === 'image'
+  const isImage = artifact.target?.previewKind === 'image'
   const Icon = isImage ? FileImage : FileText
-  const size = formatArtifactSize(artifact.record.size_bytes)
+  const size = artifact.record ? formatArtifactSize(artifact.record.size_bytes) : ''
+  const fileName = artifact.record?.file_name || basename(artifact.path)
+  const unresolved = !artifact.record || !artifact.target || !artifact.previewUrl || !artifact.downloadUrl
 
   const openPreview = () => {
+    if (!artifact.target || !artifact.previewUrl) {
+      return
+    }
+
     if (!isVerxioDesktop()) {
       openExternalLink(artifact.previewUrl)
 
@@ -428,12 +450,12 @@ function GeneratedArtifactCard({ artifact }: { artifact: ResolvedArtifact }) {
           type="button"
         >
           <ZoomableImage
-            alt={artifact.record.file_name}
+            alt={fileName}
             className="max-h-56 w-full rounded-md object-contain"
             containerClassName="max-h-56"
             decoding="async"
             loading="lazy"
-            src={artifact.previewUrl}
+            src={artifact.previewUrl || ''}
           />
         </button>
       ) : null}
@@ -442,28 +464,35 @@ function GeneratedArtifactCard({ artifact }: { artifact: ResolvedArtifact }) {
           <Icon className="size-4" />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[0.8125rem] font-medium text-foreground">{artifact.record.file_name}</div>
+          <div className="truncate text-[0.8125rem] font-medium text-foreground">{fileName}</div>
           <div className="truncate text-[0.6875rem] text-muted-foreground">
-            {artifact.path}
+            {unresolved ? 'Not found in artifacts yet' : artifact.path}
             {size ? ` · ${size}` : ''}
           </div>
         </div>
         <button
-          aria-label={`Preview ${artifact.record.file_name}`}
+          aria-label={`Preview ${fileName}`}
           className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+          disabled={unresolved}
           onClick={openPreview}
           type="button"
         >
           <Eye className="size-4" />
         </button>
-        <a
-          aria-label={`Download ${artifact.record.file_name}`}
-          className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-          download={artifact.record.file_name}
-          href={artifact.downloadUrl}
-        >
-          <Download className="size-4" />
-        </a>
+        {artifact.downloadUrl ? (
+          <a
+            aria-label={`Download ${fileName}`}
+            className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+            download={fileName}
+            href={artifact.downloadUrl}
+          >
+            <Download className="size-4" />
+          </a>
+        ) : (
+          <span className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground/40">
+            <Download className="size-4" />
+          </span>
+        )}
       </div>
     </div>
   )

@@ -47,6 +47,8 @@ Workspace:
 - Treat `/workspace` as the working directory.
 - Put generated reports, dashboards, documents, images, and exports in `/workspace/artifacts`.
 - When using file tools such as `write_file` or `patch`, write with relative paths such as `artifacts/report.csv`, not absolute `/workspace/...` paths.
+- Never call file-writing tools with an empty path. Choose a clear filename under `artifacts/` first.
+- After creating an artifact, verify the file exists and has a non-zero size before telling the user it was generated.
 - Terminal commands may use absolute `/workspace/...` paths.
 - When you mention a generated file to the user, give its `/workspace/artifacts/...` path so Verxio can index and display it.
 
@@ -83,6 +85,8 @@ Workspace and artifacts:
 - Treat `/workspace` as the working directory.
 - Put generated reports, dashboards, documents, images, and exports in `/workspace/artifacts`.
 - When using file tools such as `write_file` or `patch`, write with relative paths such as `artifacts/report.csv`, not absolute `/workspace/...` paths.
+- Never call file-writing tools with an empty path. Choose a clear filename under `artifacts/` first.
+- After creating an artifact, verify the file exists and has a non-zero size before telling the user it was generated.
 - Terminal commands may use absolute `/workspace/...` paths.
 - When you mention a generated file to the user, give its `/workspace/artifacts/...` path so Verxio can index and display it.
 
