@@ -61,11 +61,18 @@ export interface SendCommandDispatchResponse {
   message: string
 }
 
+export interface PrefillCommandDispatchResponse {
+  type: 'prefill'
+  message: string
+  notice?: string
+}
+
 export type CommandDispatchResponse =
   | ExecCommandDispatchResponse
   | AliasCommandDispatchResponse
   | SkillCommandDispatchResponse
   | SendCommandDispatchResponse
+  | PrefillCommandDispatchResponse
 
 export type SidebarNavId =
   | 'artifacts'
