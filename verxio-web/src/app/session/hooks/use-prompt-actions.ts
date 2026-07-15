@@ -853,7 +853,8 @@ export function usePromptActions({
       if (isSessionNotFoundError(err) && selectedStoredSessionIdRef.current) {
         try {
           const resumed = await requestGateway<{ session_id: string }>('session.resume', {
-            session_id: selectedStoredSessionIdRef.current
+            session_id: selectedStoredSessionIdRef.current,
+            use_current_model: true
           })
 
           const recoveredId = resumed?.session_id
