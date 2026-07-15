@@ -26,6 +26,7 @@ import { chunkByLines, SyntaxHighlighter } from '@/components/chat/shiki-highlig
 import { ZoomableImage } from '@/components/chat/zoomable-image'
 import { resolvePathForDesktopPreview } from '@/lib/desktop-workspace'
 import { ExternalLink, normalizeExternalUrl, openExternalLink, PrettyLink } from '@/lib/external-link'
+import { Download, Eye, FileImage, FileText } from '@/lib/icons'
 import { createMemoizedMathPlugin } from '@/lib/katex-memo'
 import { normalizeOrLocalPreviewTarget } from '@/lib/local-preview'
 import { looksLikeFilePath } from '@/lib/markdown-paths'
@@ -42,6 +43,7 @@ import { isVerxioDesktop } from '@/lib/platform'
 import { previewTargetFromMarkdownHref } from '@/lib/preview-targets'
 import { tailBoundedRemend } from '@/lib/remend-tail'
 import { cn } from '@/lib/utils'
+import { extractWorkspaceArtifactPaths, workspaceArtifactRelativePath } from '@/lib/verxio-artifact-paths'
 import { listVerxioArtifacts, verxioApiEnabled, verxioApiUrl, type VerxioArtifact } from '@/lib/verxio-api'
 import { notifyError } from '@/store/notifications'
 import { type PreviewTarget, setCurrentSessionPreviewTarget } from '@/store/preview'
@@ -233,24 +235,6 @@ function basename(value: string): string {
   return value.split(/[\\/]/).filter(Boolean).pop() || value
 }
 
-function workspaceArtifactRelativePath(path: string): string | null {
-  const raw = path.trim().replace(/^`|`$/g, '')
-
-  if (raw.startsWith('/workspace/artifacts/')) {
-    return raw.slice('/workspace/artifacts/'.length)
-  }
-
-  if (raw.startsWith('/artifacts/')) {
-    return raw.slice('/artifacts/'.length)
-  }
-
-  if (raw.startsWith('artifacts/')) {
-    return raw.slice('artifacts/'.length)
-  }
-
-  return null
-}
-
 function artifactPreviewKind(record: VerxioArtifact): PreviewTarget['previewKind'] {
   if (record.content_type.startsWith('image/')) {
     return 'image'
@@ -303,6 +287,186 @@ async function verxioArtifactPreviewTarget(path: string): Promise<PreviewTarget 
     source: path,
     url: verxioApiUrl(`/api/artifacts/${encodeURIComponent(record.id)}/preview`)
   }
+}
+
+interface ResolvedArtifact {
+  path: string
+  record: VerxioArtifact
+  target: PreviewTarget
+  previewUrl: string
+  downloadUrl: string
+}
+
+function recordMatchesArtifactPath(record: VerxioArtifact, path: string): boolean {
+  const relative = workspaceArtifactRelativePath(path)?.replace(/^\/+/, '')
+
+  if (!relative) {
+    return false
+  }
+
+  const artifactPath = record.relative_path.replace(/^workspace\//, '')
+  const runtimeHomePath = record.relative_path.replace(/^runtime-home\/artifacts\//, '')
+
+  return artifactPath === relative || runtimeHomePath === relative
+}
+
+function artifactTargetForRecord(record: VerxioArtifact, path: string): PreviewTarget {
+  return {
+    kind: 'url',
+    label: record.file_name || basename(path),
+    mimeType: record.content_type,
+    previewKind: artifactPreviewKind(record),
+    source: path,
+    url: verxioApiUrl(`/api/artifacts/${encodeURIComponent(record.id)}/preview`)
+  }
+}
+
+function useResolvedArtifacts(text: string): ResolvedArtifact[] {
+  const paths = useMemo(() => extractWorkspaceArtifactPaths(text), [text])
+  const [items, setItems] = useState<ResolvedArtifact[]>([])
+
+  useEffect(() => {
+    if (!verxioApiEnabled() || paths.length === 0) {
+      setItems([])
+
+      return
+    }
+
+    let cancelled = false
+
+    void listVerxioArtifacts()
+      .then(response => {
+        if (cancelled) {
+          return
+        }
+
+        const resolved = paths.flatMap(path => {
+          const record = response.artifacts.find(artifact => recordMatchesArtifactPath(artifact, path))
+
+          if (!record) {
+            return []
+          }
+
+          const target = artifactTargetForRecord(record, path)
+
+          return [
+            {
+              path,
+              record,
+              target,
+              previewUrl: target.url,
+              downloadUrl: verxioApiUrl(`/api/artifacts/${encodeURIComponent(record.id)}/download`)
+            }
+          ]
+        })
+
+        setItems(resolved)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setItems([])
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [paths])
+
+  return items
+}
+
+function formatArtifactSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return ''
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${Math.round(bytes / 1024)} KB`
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function GeneratedArtifactStrip({ text }: { text: string }) {
+  const artifacts = useResolvedArtifacts(text)
+
+  if (!artifacts.length) {
+    return null
+  }
+
+  return (
+    <div className="mt-2 grid gap-2">
+      {artifacts.map(artifact => (
+        <GeneratedArtifactCard artifact={artifact} key={`${artifact.record.id}:${artifact.path}`} />
+      ))}
+    </div>
+  )
+}
+
+function GeneratedArtifactCard({ artifact }: { artifact: ResolvedArtifact }) {
+  const isImage = artifact.target.previewKind === 'image'
+  const Icon = isImage ? FileImage : FileText
+  const size = formatArtifactSize(artifact.record.size_bytes)
+
+  const openPreview = () => {
+    if (!isVerxioDesktop()) {
+      openExternalLink(artifact.previewUrl)
+
+      return
+    }
+
+    setCurrentSessionPreviewTarget(artifact.target, 'explicit-link', artifact.path)
+  }
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-border bg-muted/20">
+      {isImage ? (
+        <button
+          className="block w-full border-b border-border bg-background/55 p-1.5"
+          onClick={openPreview}
+          type="button"
+        >
+          <ZoomableImage
+            alt={artifact.record.file_name}
+            className="max-h-56 w-full rounded-md object-contain"
+            containerClassName="max-h-56"
+            decoding="async"
+            loading="lazy"
+            src={artifact.previewUrl}
+          />
+        </button>
+      ) : null}
+      <div className="flex min-w-0 items-center gap-2 px-2.5 py-2">
+        <span className="grid size-7 shrink-0 place-items-center rounded-md bg-background text-muted-foreground">
+          <Icon className="size-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[0.8125rem] font-medium text-foreground">{artifact.record.file_name}</div>
+          <div className="truncate text-[0.6875rem] text-muted-foreground">
+            {artifact.path}
+            {size ? ` · ${size}` : ''}
+          </div>
+        </div>
+        <button
+          aria-label={`Preview ${artifact.record.file_name}`}
+          className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+          onClick={openPreview}
+          type="button"
+        >
+          <Eye className="size-4" />
+        </button>
+        <a
+          aria-label={`Download ${artifact.record.file_name}`}
+          className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+          download={artifact.record.file_name}
+          href={artifact.downloadUrl}
+        >
+          <Download className="size-4" />
+        </a>
+      </div>
+    </div>
+  )
 }
 
 function MarkdownPathLink({ children, className, href, ...props }: ComponentProps<'a'>) {
@@ -704,25 +868,28 @@ function MarkdownTextSurface({ containerClassName, containerProps }: MarkdownTex
   }
 
   return (
-    <StreamdownTextPrimitive
-      components={components}
-      containerClassName={cn(MARKDOWN_CONTAINER_CLASS_NAME, containerClassName)}
-      containerProps={containerProps}
-      lineNumbers={false}
-      mode="streaming"
-      // Always auto-close incomplete fences — even during streaming.
-      // Without this, an unclosed ```python ... ``` whose body contains
-      // `$` (very common: shell snippets, JS template strings, dollar
-      // amounts) leaks those dollars out to the math parser and they
-      // get rendered as broken inline math until the closing fence
-      // arrives. Shiki is independently deferred via `defer={isStreaming}`
-      // on the SyntaxHighlighter component, so we don't pay code-block
-      // tokenization on every token even with this set.
-      parseIncompleteMarkdown={false}
-      parseMarkdownIntoBlocksFn={parseMarkdownIntoBlocksCached}
-      plugins={plugins}
-      preprocess={preprocessWithTailRepair}
-    />
+    <div className={containerClassName}>
+      <StreamdownTextPrimitive
+        components={components}
+        containerClassName={MARKDOWN_CONTAINER_CLASS_NAME}
+        containerProps={containerProps}
+        lineNumbers={false}
+        mode="streaming"
+        // Always auto-close incomplete fences — even during streaming.
+        // Without this, an unclosed ```python ... ``` whose body contains
+        // `$` (very common: shell snippets, JS template strings, dollar
+        // amounts) leaks those dollars out to the math parser and they
+        // get rendered as broken inline math until the closing fence
+        // arrives. Shiki is independently deferred via `defer={isStreaming}`
+        // on the SyntaxHighlighter component, so we don't pay code-block
+        // tokenization on every token even with this set.
+        parseIncompleteMarkdown={false}
+        parseMarkdownIntoBlocksFn={parseMarkdownIntoBlocksCached}
+        plugins={plugins}
+        preprocess={preprocessWithTailRepair}
+      />
+      {!isStreaming ? <GeneratedArtifactStrip text={text} /> : null}
+    </div>
   )
 }
 
