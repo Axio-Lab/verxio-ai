@@ -31,6 +31,7 @@ const DESKTOP_COMMAND_META = [
   ['/goal', 'Manage the standing goal for this session'],
   ['/help', 'Show desktop slash commands'],
   ['/new', 'Start a new desktop chat'],
+  ['/plan', 'Toggle Plan mode or write an execution plan'],
   ['/profile', 'Switch the active Verxio profile'],
   ['/queue', 'Queue a prompt for the next turn'],
   ['/resume', 'Resume a saved session'],
@@ -228,7 +229,16 @@ export function desktopSlashDescription(command: string, fallback = ''): string 
   return DESKTOP_COMMAND_DESCRIPTIONS.get(canonical) || fallback
 }
 
-const ARG_TAKING_COMMANDS = new Set(['/handoff', '/personality', '/resume', '/sessions', '/skin', '/switch', '/tools'])
+const ARG_TAKING_COMMANDS = new Set([
+  '/handoff',
+  '/personality',
+  '/plan',
+  '/resume',
+  '/sessions',
+  '/skin',
+  '/switch',
+  '/tools'
+])
 
 /**
  * True when picking the bare command should expand to its inline argument

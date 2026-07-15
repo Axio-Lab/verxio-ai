@@ -1,6 +1,7 @@
 import type { AppendMessage, ThreadMessage } from '@assistant-ui/react'
 import { type MutableRefObject, useCallback } from 'react'
 
+import { requestComposerFocus } from '@/app/chat/composer/focus'
 import { getProfiles } from '@/hermes'
 import { type Translations, useI18n } from '@/i18n'
 import { transcribeAudioBlob } from '@/lib/audio'
@@ -32,6 +33,7 @@ import {
   addComposerAttachment,
   clearComposerAttachments,
   type ComposerAttachment,
+  setComposerDraft,
   terminalContextBlocksFromDraft
 } from '@/store/composer'
 import { clearNotifications, notify, notifyError } from '@/store/notifications'
@@ -733,6 +735,14 @@ export function usePromptActions({
             return
           }
 
+          if (dispatch.type === 'prefill') {
+            setComposerDraft(dispatch.message)
+            requestComposerFocus('main')
+            renderSlashOutput(dispatch.notice || `/${name}: loaded into composer`)
+
+            return
+          }
+
           const message = ('message' in dispatch ? dispatch.message : '')?.trim() ?? ''
 
           if (!message) {
@@ -853,7 +863,8 @@ export function usePromptActions({
       if (isSessionNotFoundError(err) && selectedStoredSessionIdRef.current) {
         try {
           const resumed = await requestGateway<{ session_id: string }>('session.resume', {
-            session_id: selectedStoredSessionIdRef.current
+            session_id: selectedStoredSessionIdRef.current,
+            use_current_model: true
           })
 
           const recoveredId = resumed?.session_id

@@ -590,6 +590,7 @@ export function useSessionActions({
         const resumed = await requestGateway<SessionResumeResponse>('session.resume', {
           session_id: storedSessionId,
           cols: 96,
+          use_current_model: true,
           // Owning profile: in app-global remote mode one backend serves every
           // profile, so the gateway opens this profile's state.db + home to
           // resume + persist the right session (no-op for single/launch profile).
