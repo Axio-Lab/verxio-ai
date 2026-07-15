@@ -28,10 +28,31 @@ from app.models import (
 DEFAULT_MODEL_ID = "verxio-qwen"
 DEFAULT_QWEN_UPSTREAM_MODEL = "qwen3.6-plus"
 HOSTED_QWEN_MODEL_ENV = "VERXIO_HOSTED_QWEN_MODEL"
+HOSTED_QWEN_MODELS_ENV = "VERXIO_HOSTED_QWEN_MODELS"
 DEFAULT_GEMINI_UPSTREAM_MODEL = "gemini-flash-lite-latest"
 HOSTED_GEMINI_MODEL_ENV = "VERXIO_HOSTED_GEMINI_MODEL"
+HOSTED_GEMINI_MODELS_ENV = "VERXIO_HOSTED_GEMINI_MODELS"
 CATALOG_VERSION = "2026-07-01"
 BRIDGE_STATE_FILE = "inference-runtime-bridge.json"
+
+DEFAULT_QWEN_AVAILABLE_MODELS = (
+    DEFAULT_QWEN_UPSTREAM_MODEL,
+    "qwen3.6-coder",
+    "qwen3.6-max",
+    "qwen3.6-flash",
+)
+DEFAULT_GEMINI_AVAILABLE_MODELS = (
+    DEFAULT_GEMINI_UPSTREAM_MODEL,
+    "gemini-3.1-flash-lite",
+    "gemini-2.5-pro",
+    "gemini-2.5-flash",
+    "gemini-3.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-3.1-pro",
+    "gemini-3-pro",
+    "gemini-3-flash",
+    "gemini-flash",
+)
 
 # Verxio GPT hosted injected these into runtime containers. Strip them when Qwen
 # hosted is active so the model picker does not keep showing OpenAI API.
@@ -48,6 +69,8 @@ class HostedModelDefinition:
     provider_slug: str
     upstream_model_default: str
     upstream_model_env: str | None
+    available_models_default: tuple[str, ...]
+    available_models_env: str | None
     hosted_secret_env: tuple[str, ...]
     runtime_env_var: str
     byok_env_vars: tuple[str, ...]
@@ -67,6 +90,26 @@ def _upstream_model_id(model: HostedModelDefinition) -> str:
     return model.upstream_model_default
 
 
+def _csv_env_values(name: str | None) -> tuple[str, ...]:
+    if not name:
+        return ()
+
+    return tuple(item.strip() for item in os.getenv(name, "").split(",") if item.strip())
+
+
+def _available_model_ids(model: HostedModelDefinition) -> list[str]:
+    upstream = _upstream_model_id(model)
+    seen: set[str] = set()
+    ordered: list[str] = []
+
+    for model_id in (upstream, *_csv_env_values(model.available_models_env), *model.available_models_default):
+        if model_id and model_id not in seen:
+            seen.add(model_id)
+            ordered.append(model_id)
+
+    return ordered
+
+
 MODEL_CATALOG: tuple[HostedModelDefinition, ...] = (
     HostedModelDefinition(
         id="verxio-qwen",
@@ -75,6 +118,8 @@ MODEL_CATALOG: tuple[HostedModelDefinition, ...] = (
         provider_slug="alibaba",
         upstream_model_default=DEFAULT_QWEN_UPSTREAM_MODEL,
         upstream_model_env=HOSTED_QWEN_MODEL_ENV,
+        available_models_default=DEFAULT_QWEN_AVAILABLE_MODELS,
+        available_models_env=HOSTED_QWEN_MODELS_ENV,
         hosted_secret_env=("VERXIO_HOSTED_QWEN_API_KEY", "VERXIO_DASHSCOPE_API_KEY"),
         runtime_env_var="DASHSCOPE_API_KEY",
         byok_env_vars=("DASHSCOPE_API_KEY",),
@@ -90,6 +135,8 @@ MODEL_CATALOG: tuple[HostedModelDefinition, ...] = (
         provider_slug="gemini",
         upstream_model_default=DEFAULT_GEMINI_UPSTREAM_MODEL,
         upstream_model_env=HOSTED_GEMINI_MODEL_ENV,
+        available_models_default=DEFAULT_GEMINI_AVAILABLE_MODELS,
+        available_models_env=HOSTED_GEMINI_MODELS_ENV,
         hosted_secret_env=("VERXIO_HOSTED_GEMINI_API_KEY", "VERXIO_GOOGLE_API_KEY"),
         runtime_env_var="GEMINI_API_KEY",
         byok_env_vars=("GEMINI_API_KEY", "GOOGLE_API_KEY"),
@@ -129,6 +176,7 @@ def _catalog_item(model: HostedModelDefinition) -> InferenceModelCatalogItem:
         description=model.description,
         providerSlug=model.provider_slug,
         upstreamModelId=_upstream_model_id(model),
+        availableModelIds=_available_model_ids(model),
         requiredEnvVars=list(model.byok_env_vars),
         hostedAvailable=bool(secret_value),
         byokAvailable=True,

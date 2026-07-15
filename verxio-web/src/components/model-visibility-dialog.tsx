@@ -11,6 +11,7 @@ import { getGlobalModelOptions } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { readCachedModelOptions, writeCachedModelOptions } from '@/lib/model-options-cache'
 import { displayModelName, modelDisplayParts } from '@/lib/model-status-label'
+import { getScopedModelOptions } from '@/lib/verxio-model-options'
 import {
   $visibleModels,
   collapseModelFamilies,
@@ -46,11 +47,11 @@ export function ModelVisibilityDialog({
     queryFn: async (): Promise<ModelOptionsResponse> => {
       let next: ModelOptionsResponse
 
-      if (gw && sessionId) {
-        next = await gw.request<ModelOptionsResponse>('model.options', { session_id: sessionId })
-      } else {
-        next = await getGlobalModelOptions()
-      }
+      next = await getScopedModelOptions(() =>
+        gw && sessionId
+          ? gw.request<ModelOptionsResponse>('model.options', { session_id: sessionId })
+          : getGlobalModelOptions()
+      )
 
       writeCachedModelOptions(modelOptionsScope, next)
 

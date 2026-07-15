@@ -170,6 +170,7 @@ export const zhHant = defineLocale({
       gateway: '閘道',
       apiKeys: '工具與金鑰',
       keysTools: '工具',
+      keysTranscription: 'Transcription',
       keysSettings: '設定',
       mcp: 'MCP',
       archivedChats: '已封存聊天',
@@ -468,7 +469,8 @@ export const zhHant = defineLocale({
       or: '或',
       escToCancel: '按 esc 取消',
       getKey: '取得金鑰',
-      saving: '儲存中'
+      saving: '儲存中',
+      removing: '移除中'
     },
     envActions: {
       actionsFor: label => `${label} 的動作`,
@@ -591,7 +593,6 @@ export const zhHant = defineLocale({
     },
     model: {
       loading: '正在載入模型設定...',
-      appliesDesc: '套用至新工作階段。可在輸入框的模型選擇器中臨時切換目前對話。',
       provider: '提供方',
       model: '模型',
       applying: '套用中...',
@@ -1260,6 +1261,12 @@ export const zhHant = defineLocale({
     noArtifactsDesc: '當工作階段產生圖片和檔案輸出時，它們會顯示在這裡。',
     failedLoad: '成品載入失敗',
     openFailed: '開啟失敗',
+    deleteAction: '刪除',
+    deleteTitle: label => `刪除${label || '成品'}？`,
+    deleteDescription: '這會從成品中移除該檔案。此操作無法復原。',
+    deleteConfirm: '刪除成品',
+    deleting: '正在刪除',
+    deleted: '成品已刪除',
     itemsImage: '張圖片',
     itemsLink: '個連結',
     itemsFile: '個檔案',

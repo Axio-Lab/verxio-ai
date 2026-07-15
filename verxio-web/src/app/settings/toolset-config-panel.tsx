@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { PageLoader } from '@/components/page-loader'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Input } from '@/components/ui/input'
 import { deleteEnvVar, getToolsetConfig, revealEnvVar, selectToolsetProvider, setEnvVar } from '@/hermes'
 import { useI18n } from '@/i18n'
@@ -43,6 +44,7 @@ function EnvVarField({ envVar, isSet, onSaved, onCleared }: EnvVarFieldProps) {
   const [value, setValue] = useState('')
   const [revealed, setRevealed] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false)
 
   async function handleSave() {
     if (!value) {
@@ -57,7 +59,7 @@ function EnvVarField({ envVar, isSet, onSaved, onCleared }: EnvVarFieldProps) {
       setValue('')
       onSaved(envVar.key)
       notify({ kind: 'success', title: copy.savedTitle, message: copy.savedMessage(envVar.key) })
-      await runRuntimeEnvReload()
+      await runRuntimeEnvReload({ notifySuccess: false })
     } catch (err) {
       notifyError(err, copy.failedSave(envVar.key))
     } finally {
@@ -65,24 +67,24 @@ function EnvVarField({ envVar, isSet, onSaved, onCleared }: EnvVarFieldProps) {
     }
   }
 
-  async function handleClear() {
-    if (!window.confirm(copy.removeConfirm(envVar.key))) {
-      return
-    }
-
+  async function clearKey() {
     setBusy(true)
 
     try {
       await deleteEnvVar(envVar.key)
       setRevealed(null)
       onCleared(envVar.key)
+      await runRuntimeEnvReload({ notifySuccess: false })
       notify({ kind: 'success', title: copy.removedTitle, message: copy.removedMessage(envVar.key) })
-      await runRuntimeEnvReload()
     } catch (err) {
       notifyError(err, copy.failedRemove(envVar.key))
     } finally {
       setBusy(false)
     }
+  }
+
+  function handleClear() {
+    setConfirmClearOpen(true)
   }
 
   async function handleReveal() {
@@ -101,62 +103,73 @@ function EnvVarField({ envVar, isSet, onSaved, onCleared }: EnvVarFieldProps) {
   }
 
   return (
-    <div className="grid gap-2 rounded-lg bg-background/55 p-2.5">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-xs font-medium">{envVar.key}</span>
-            <Pill tone={isSet ? 'primary' : 'muted'}>
-              {isSet && <Check className="size-3" />}
-              {isSet ? copy.set : copy.notSet}
-            </Pill>
+    <>
+      <div className="grid gap-2 rounded-lg bg-background/55 p-2.5">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-xs font-medium">{envVar.key}</span>
+              <Pill tone={isSet ? 'primary' : 'muted'}>
+                {isSet && <Check className="size-3" />}
+                {isSet ? copy.set : copy.notSet}
+              </Pill>
+            </div>
+            {envVar.prompt && envVar.prompt !== envVar.key && (
+              <p className="mt-0.5 text-[0.7rem] text-muted-foreground">{envVar.prompt}</p>
+            )}
           </div>
-          {envVar.prompt && envVar.prompt !== envVar.key && (
-            <p className="mt-0.5 text-[0.7rem] text-muted-foreground">{envVar.prompt}</p>
+          {!editing && (
+            <EnvVarActionsMenu
+              clearDisabled={busy}
+              docsUrl={envVar.url}
+              isRevealed={revealed !== null}
+              isSet={isSet}
+              label={envVar.key}
+              onClear={handleClear}
+              onEdit={() => setEditing(true)}
+              onReveal={() => void handleReveal()}
+            >
+              <EnvVarActionsTrigger label={envVar.key} onClick={event => event.stopPropagation()} />
+            </EnvVarActionsMenu>
           )}
         </div>
-        {!editing && (
-          <EnvVarActionsMenu
-            clearDisabled={busy}
-            docsUrl={envVar.url}
-            isRevealed={revealed !== null}
-            isSet={isSet}
-            label={envVar.key}
-            onClear={() => void handleClear()}
-            onEdit={() => setEditing(true)}
-            onReveal={() => void handleReveal()}
-          >
-            <EnvVarActionsTrigger label={envVar.key} onClick={event => event.stopPropagation()} />
-          </EnvVarActionsMenu>
+
+        {isSet && revealed !== null && (
+          <div className="rounded-md bg-background px-2.5 py-1.5 font-mono text-xs text-foreground">
+            {revealed || '---'}
+          </div>
+        )}
+
+        {editing && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              autoFocus
+              className="min-w-52 flex-1 font-mono"
+              onChange={e => setValue(e.target.value)}
+              placeholder={envVar.prompt || envVar.key}
+              type={envVar.default ? 'text' : 'password'}
+              value={value}
+            />
+            <Button disabled={busy || !value} onClick={() => void handleSave()} size="sm">
+              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Save />}
+              {t.common.save}
+            </Button>
+            <Button onClick={() => setEditing(false)} size="sm" variant="text">
+              {t.common.cancel}
+            </Button>
+          </div>
         )}
       </div>
-
-      {isSet && revealed !== null && (
-        <div className="rounded-md bg-background px-2.5 py-1.5 font-mono text-xs text-foreground">
-          {revealed || '---'}
-        </div>
-      )}
-
-      {editing && (
-        <div className="flex flex-wrap items-center gap-2">
-          <Input
-            autoFocus
-            className="min-w-52 flex-1 font-mono"
-            onChange={e => setValue(e.target.value)}
-            placeholder={envVar.prompt || envVar.key}
-            type={envVar.default ? 'text' : 'password'}
-            value={value}
-          />
-          <Button disabled={busy || !value} onClick={() => void handleSave()} size="sm">
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Save />}
-            {t.common.save}
-          </Button>
-          <Button onClick={() => setEditing(false)} size="sm" variant="text">
-            {t.common.cancel}
-          </Button>
-        </div>
-      )}
-    </div>
+      <ConfirmDialog
+        busyLabel={t.settings.credentials.removing}
+        confirmLabel={t.common.remove}
+        destructive
+        onClose={() => setConfirmClearOpen(false)}
+        onConfirm={clearKey}
+        open={confirmClearOpen}
+        title={copy.removeConfirm(envVar.key)}
+      />
+    </>
   )
 }
 

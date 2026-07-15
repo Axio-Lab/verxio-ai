@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 from pathlib import Path
 from subprocess import CompletedProcess
@@ -8,7 +9,7 @@ from subprocess import CompletedProcess
 import pytest
 from fastapi.testclient import TestClient
 
-from app import composio_catalog, control_plane, db, emailer, inference, main, runtime_manager
+from app import composio_catalog, control_plane, db, emailer, inference, main, runtime_manager, transcription_catalog
 from app.auth import SESSION_COOKIE
 from app.main import app
 from app.models import ComposioConnectedAccount, ComposioToolBridgeStatus, RuntimeInstance
@@ -171,10 +172,16 @@ def test_inference_catalog_defaults_to_verxio_qwen(client):
     assert qwen_model["providerSlug"] == "alibaba"
     assert qwen_model["displayName"] == "Verxio Qwen"
     assert qwen_model["upstreamModelId"] == "qwen3.6-plus"
+    assert qwen_model["availableModelIds"][0] == "qwen3.6-plus"
     assert "DASHSCOPE_API_KEY" in qwen_model["requiredEnvVars"]
     assert gemini_model["providerSlug"] == "gemini"
     assert gemini_model["displayName"] == "Verxio Gemini"
     assert gemini_model["upstreamModelId"] == "gemini-flash-lite-latest"
+    assert gemini_model["availableModelIds"][:3] == [
+        "gemini-flash-lite-latest",
+        "gemini-3.1-flash-lite",
+        "gemini-2.5-pro",
+    ]
     assert gemini_model["default"] is False
     assert "GEMINI_API_KEY" in gemini_model["requiredEnvVars"]
 
@@ -187,6 +194,57 @@ def test_inference_settings_are_hosted_verxio_qwen_by_default(client):
     assert response.status_code == 200
     assert response.json()["mode"] == "hosted"
     assert response.json()["defaultModelId"] == "verxio-qwen"
+
+
+def test_transcription_catalog_rejects_anonymous_users(client):
+    response = client.get("/api/transcription/catalog")
+
+    assert response.status_code == 401
+
+
+def test_transcription_catalog_uses_fallback_without_keys(client):
+    _payload, token = signup(client, "transcription-catalog@example.com")
+
+    response = client.get("/api/transcription/catalog", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+
+    assert response.status_code == 200
+    body = response.json()
+    groq = next(provider for provider in body["providers"] if provider["id"] == "groq")
+    assert groq["configured"] is False
+    assert groq["envKey"] == "GROQ_API_KEY"
+    assert groq["source"] == "fallback"
+    assert groq["recommendedModel"] == "whisper-large-v3-turbo"
+    assert [model["id"] for model in groq["models"]][:2] == ["whisper-large-v3-turbo", "whisper-large-v3"]
+
+
+def test_transcription_catalog_fetches_live_models_with_runtime_key(client, monkeypatch):
+    payload, token = signup(client, "transcription-live@example.com")
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    env_path = Path(str(runtime_row["hermes_home_path"])) / ".env"
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    env_path.write_text("VOICE_TOOLS_OPENAI_KEY=op-secret\n", encoding="utf-8")
+
+    async def fake_fetch_provider_models(_client, spec, api_key, _env):
+        assert api_key == "op-secret"
+        if spec.id == "openai":
+            return ["gpt-4o-mini-transcribe", "gpt-new-transcribe"]
+        return []
+
+    monkeypatch.setattr(transcription_catalog, "_fetch_provider_models", fake_fetch_provider_models)
+
+    response = client.get("/api/transcription/catalog", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+
+    assert response.status_code == 200
+    openai = next(provider for provider in response.json()["providers"] if provider["id"] == "openai")
+    assert openai["configured"] is True
+    assert openai["source"] == "provider"
+    assert openai["recommendedModel"] == "gpt-4o-mini-transcribe"
+    assert [model["id"] for model in openai["models"]] == ["gpt-4o-mini-transcribe", "gpt-new-transcribe"]
+    assert "op-secret" not in response.text
 
 
 def test_dashboard_model_paths_need_inference_sync():
@@ -676,6 +734,54 @@ def test_artifacts_are_indexed_from_runtime_workspace_and_isolated(client):
 
     assert preview.status_code == 200
     assert blocked.status_code == 404
+
+    blocked_delete = client.delete(f"/api/artifacts/{artifact_id}", headers={"Cookie": f"{SESSION_COOKIE}={token_two}"})
+    deleted = client.delete(f"/api/artifacts/{artifact_id}", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
+
+    assert blocked_delete.status_code == 404
+    assert deleted.status_code == 200
+    assert deleted.json() == {"ok": True}
+    assert not (artifact_path / "daily-sales-dashboard.html").exists()
+
+    after_delete = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
+    assert after_delete.status_code == 200
+    assert after_delete.json()["artifacts"] == []
+
+
+def test_notepad_recording_upload_saves_audio_as_artifact(client):
+    payload, token = signup(client, "recording-artifact@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+    audio_bytes = b"verxio-recording"
+    data_url = f"data:audio/webm;base64,{base64.b64encode(audio_bytes).decode('ascii')}"
+
+    response = client.post(
+        "/api/notepad/recordings",
+        json={
+            "file_name": "../Weekly Planning?.wav",
+            "data_url": data_url,
+            "mime_type": "audio/webm",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    artifact = response.json()["artifact"]
+    assert artifact["file_name"] == "Weekly Planning.webm"
+    assert artifact["relative_path"] == "notepad-recordings/Weekly Planning.webm"
+    assert artifact["content_type"] in {"audio/webm", "video/webm"}
+    assert artifact["size_bytes"] == len(audio_bytes)
+
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ? AND agent_id = ?",
+        (payload["workspace"]["id"], payload["profile"]["id"]),
+    )
+    assert runtime_row
+    saved = Path(str(runtime_row["artifact_path"])) / artifact["relative_path"]
+    assert saved.read_bytes() == audio_bytes
+
+    artifacts = client.get("/api/artifacts", headers=headers)
+    assert artifacts.status_code == 200
+    assert artifact["relative_path"] in {item["relative_path"] for item in artifacts.json()["artifacts"]}
 
 
 def test_notepad_notes_folders_and_public_shares(client):

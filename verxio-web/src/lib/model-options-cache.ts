@@ -1,7 +1,9 @@
+import type { QueryClient } from '@tanstack/react-query'
+
 import { readVerxioAuthScope } from '@/lib/auth-scope'
 import type { ModelOptionsResponse } from '@/types/hermes'
 
-const MODEL_OPTIONS_CACHE_KEY = 'verxio.model-options.cache.v1'
+const MODEL_OPTIONS_CACHE_KEY = 'verxio.model-options.cache.v2'
 
 function cacheKey(scope: string): string {
   return `${MODEL_OPTIONS_CACHE_KEY}:${readVerxioAuthScope()}:${scope}`
@@ -37,4 +39,29 @@ export function writeCachedModelOptions(scope: string, options: ModelOptionsResp
   } catch {
     // Cache writes are best effort; live runtime data still drives the picker.
   }
+}
+
+export function clearCachedModelOptions(): void {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const prefix = `${MODEL_OPTIONS_CACHE_KEY}:${readVerxioAuthScope()}:`
+
+  try {
+    for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
+      const key = window.localStorage.key(index)
+
+      if (key?.startsWith(prefix)) {
+        window.localStorage.removeItem(key)
+      }
+    }
+  } catch {
+    // Cache clears are best effort.
+  }
+}
+
+export async function refreshModelOptionsQueries(queryClient: QueryClient): Promise<void> {
+  await queryClient.invalidateQueries({ queryKey: ['model-options'] })
+  await queryClient.refetchQueries({ queryKey: ['model-options'], type: 'active' })
 }

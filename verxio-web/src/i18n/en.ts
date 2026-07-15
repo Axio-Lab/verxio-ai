@@ -106,7 +106,7 @@ export const en: Translations = {
     errors: {
       elevenLabsNeedsKey: 'ElevenLabs STT needs ELEVENLABS_API_KEY.',
       elevenLabsRejectedKey: 'ElevenLabs rejected the API key (401).',
-      methodNotAllowed: 'The desktop backend rejected that request (405 Method Not Allowed). Try restarting Verxio.',
+      methodNotAllowed: 'That action used an unsupported API method. Refresh Verxio and try again.',
       microphonePermission: 'Microphone permission was denied.',
       openaiRejectedApiKey: 'OpenAI rejected the API key.',
       openaiRejectedApiKeyWithStatus: status => `OpenAI rejected the API key (${status} invalid_api_key).`,
@@ -278,6 +278,7 @@ export const en: Translations = {
       gateway: 'Gateway',
       apiKeys: 'Tools & Keys',
       keysTools: 'Tools',
+      keysTranscription: 'Transcription',
       keysSettings: 'Settings',
       mcp: 'MCP',
       archivedChats: 'Archived Chats',
@@ -300,8 +301,8 @@ export const en: Translations = {
       reloadDescription:
         'Reload saved runtime credentials without restarting. Use after pasting API keys or env changes.',
       reloadAction: 'Reload',
-      reloadDoneTitle: 'Credentials reloaded',
-      reloadDoneMessage: 'Start a new chat if the model or provider still looks stale.',
+      reloadDoneTitle: 'Credentials updated',
+      reloadDoneMessage: 'Model and tool credentials are refreshed.',
       reloadFailed: 'Could not reload credentials',
       agentRestartTitle: 'Restart agent',
       agentRestartDescription:
@@ -453,7 +454,8 @@ export const en: Translations = {
       or: 'or',
       escToCancel: 'esc to cancel',
       getKey: 'Get a key',
-      saving: 'Saving'
+      saving: 'Saving',
+      removing: 'Removing'
     },
     envActions: {
       actionsFor: label => `Actions for ${label}`,
@@ -579,7 +581,6 @@ export const en: Translations = {
     },
     model: {
       loading: 'Loading model configuration...',
-      appliesDesc: 'Applies to new sessions. Use the model picker in the composer to hot-swap the active chat.',
       provider: 'Provider',
       model: 'Model',
       applying: 'Applying...',
@@ -1452,6 +1453,12 @@ export const en: Translations = {
     noArtifactsDesc: 'Generated images and file outputs will appear here as sessions produce them.',
     failedLoad: 'Artifacts failed to load',
     openFailed: 'Open failed',
+    deleteAction: 'Delete',
+    deleteTitle: label => `Delete ${label || 'artifact'}?`,
+    deleteDescription: 'This removes the file from artifacts. This cannot be undone.',
+    deleteConfirm: 'Delete artifact',
+    deleting: 'Deleting',
+    deleted: 'Artifact deleted',
     itemsImage: 'images',
     itemsLink: 'links',
     itemsFile: 'files',

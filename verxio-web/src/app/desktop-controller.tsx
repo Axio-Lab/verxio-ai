@@ -92,7 +92,15 @@ import { ModelVisibilityOverlay } from './model-visibility-overlay'
 import { RightSidebarPane } from './right-sidebar'
 import { $terminalTakeover } from './right-sidebar/store'
 import { PersistentTerminal, TerminalSlot } from './right-sidebar/terminal/persistent'
-import { CRON_ROUTE, NEW_CHAT_ROUTE, routeSessionId, sessionRoute, SETTINGS_ROUTE, SKILLS_ROUTE } from './routes'
+import {
+  CRON_ROUTE,
+  NEW_CHAT_ROUTE,
+  NOT_FOUND_ROUTE,
+  routeSessionId,
+  sessionRoute,
+  SETTINGS_ROUTE,
+  SKILLS_ROUTE
+} from './routes'
 import { SessionPickerOverlay } from './session-picker-overlay'
 import { useContextSuggestions } from './session/hooks/use-context-suggestions'
 import { useCwdActions } from './session/hooks/use-cwd-actions'
@@ -1046,7 +1054,8 @@ export function DesktopController() {
           <Route element={<Navigate replace to={NEW_CHAT_ROUTE} />} path="login" />
           <Route element={<Navigate replace to={NEW_CHAT_ROUTE} />} path="new" />
           <Route element={<LegacySessionRedirect />} path="sessions/:sessionId" />
-          <Route element={<Navigate replace to={NEW_CHAT_ROUTE} />} path="*" />
+          <Route element={<NotFoundView />} path={NOT_FOUND_ROUTE.slice(1)} />
+          <Route element={<NotFoundView />} path="*" />
         </Routes>
       </PaneMain>
       {/*
@@ -1065,4 +1074,15 @@ function LegacySessionRedirect() {
   const { sessionId } = useParams()
 
   return <Navigate replace to={sessionId ? sessionRoute(sessionId) : NEW_CHAT_ROUTE} />
+}
+
+function NotFoundView() {
+  return (
+    <div className="grid h-full min-h-0 place-items-center bg-(--ui-chat-surface-background) px-6 py-10 pt-[calc(var(--titlebar-height)+2.5rem)]">
+      <div className="grid max-w-md gap-2 text-center">
+        <h2 className="text-xl font-semibold tracking-tight">Page not found</h2>
+        <p className="text-sm leading-5 text-muted-foreground">This page does not exist in Verxio.</p>
+      </div>
+    </div>
+  )
 }

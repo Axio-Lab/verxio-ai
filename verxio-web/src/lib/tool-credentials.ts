@@ -1,5 +1,7 @@
 import type { EnvVarInfo } from '@/types/hermes'
 
+import { CLOUD_TRANSCRIPTION_ENV_KEYS } from './transcription-providers'
+
 const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 function envCategory(info?: EnvVarInfo): string {
@@ -30,6 +32,10 @@ export function looksLikeToolCredentialEnv(name: string): boolean {
 }
 
 export function shouldReloadToolCredential(key: string, info?: EnvVarInfo): boolean {
+  if (CLOUD_TRANSCRIPTION_ENV_KEYS.includes(key)) {
+    return true
+  }
+
   if (info?.custom) {
     return true
   }

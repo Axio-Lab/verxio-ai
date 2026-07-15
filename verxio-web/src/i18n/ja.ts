@@ -175,6 +175,7 @@ export const ja = defineLocale({
       gateway: 'ゲートウェイ',
       apiKeys: 'ツールとキー',
       keysTools: 'ツール',
+      keysTranscription: 'Transcription',
       keysSettings: '設定',
       mcp: 'MCP',
       archivedChats: 'アーカイブ済みチャット',
@@ -476,7 +477,8 @@ export const ja = defineLocale({
       or: 'または',
       escToCancel: 'Esc でキャンセル',
       getKey: 'キーを取得',
-      saving: '保存中'
+      saving: '保存中',
+      removing: '削除中'
     },
     envActions: {
       actionsFor: label => `${label} のアクション`,
@@ -608,8 +610,6 @@ export const ja = defineLocale({
     },
     model: {
       loading: 'モデル設定を読み込み中...',
-      appliesDesc:
-        '新しいセッションに適用されます。コンポーザーのモデルピッカーを使ってアクティブなチャットをホットスワップできます。',
       provider: 'プロバイダー',
       model: 'モデル',
       applying: '適用中...',
@@ -1312,6 +1312,12 @@ export const ja = defineLocale({
     noArtifactsDesc: 'セッションで生成された画像やファイルの出力がここに表示されます。',
     failedLoad: 'アーティファクトの読み込みに失敗しました',
     openFailed: '開くことができませんでした',
+    deleteAction: '削除',
+    deleteTitle: label => `${label || 'アーティファクト'} を削除しますか？`,
+    deleteDescription: 'このファイルをアーティファクトから削除します。この操作は元に戻せません。',
+    deleteConfirm: 'アーティファクトを削除',
+    deleting: '削除中',
+    deleted: 'アーティファクトを削除しました',
     itemsImage: '画像',
     itemsLink: 'リンク',
     itemsFile: 'ファイル',

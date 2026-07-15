@@ -56,6 +56,16 @@ export interface VerxioArtifactListResponse {
   artifacts: VerxioArtifact[]
 }
 
+export interface VerxioNotepadRecordingUploadInput {
+  file_name: string
+  data_url: string
+  mime_type?: string
+}
+
+export interface VerxioNotepadRecordingUploadResponse {
+  artifact: VerxioArtifact
+}
+
 export interface VerxioNotepadFolder {
   id: string
   tenant_id: string
@@ -218,6 +228,7 @@ export interface VerxioInferenceModel {
   description: string
   providerSlug: string
   upstreamModelId: string
+  availableModelIds?: string[]
   requiredEnvVars: string[]
   hostedAvailable: boolean
   byokAvailable: boolean
@@ -252,6 +263,30 @@ export interface VerxioInferenceUsageSummary {
 export interface VerxioInferenceUsageResponse {
   settings: VerxioInferenceSettings
   usage: VerxioInferenceUsageSummary
+}
+
+export interface VerxioTranscriptionCatalogModel {
+  id: string
+  source: 'fallback' | 'provider'
+}
+
+export interface VerxioTranscriptionCatalogProvider {
+  id: 'elevenlabs' | 'groq' | 'mistral' | 'openai' | 'xai'
+  label: string
+  envKey: string
+  docsUrl: string
+  description: string
+  configured: boolean
+  recommendedModel: string
+  models: VerxioTranscriptionCatalogModel[]
+  source: 'fallback' | 'provider'
+  error?: string | null
+  fetchedAt?: string | null
+}
+
+export interface VerxioTranscriptionCatalogResponse {
+  providers: VerxioTranscriptionCatalogProvider[]
+  cacheTtlSeconds: number
 }
 
 export type PulseChannelType = 'instagram' | 'messenger' | 'whatsapp' | 'tiktok' | 'linkedin'
@@ -613,8 +648,24 @@ export function listVerxioArtifacts(): Promise<VerxioArtifactListResponse> {
   return verxioFetch<VerxioArtifactListResponse>('/api/artifacts')
 }
 
+export function deleteVerxioArtifact(artifactId: string): Promise<{ ok: boolean }> {
+  return verxioFetch<{ ok: boolean }>(`/api/artifacts/${encodeURIComponent(artifactId)}`, {
+    method: 'DELETE'
+  })
+}
+
 export function listNotepad(): Promise<VerxioNotepadListResponse> {
   return verxioFetch<VerxioNotepadListResponse>('/api/notepad')
+}
+
+export function uploadNotepadRecording(
+  input: VerxioNotepadRecordingUploadInput
+): Promise<VerxioNotepadRecordingUploadResponse> {
+  return verxioFetch<VerxioNotepadRecordingUploadResponse>('/api/notepad/recordings', {
+    body: JSON.stringify(input),
+    method: 'POST',
+    timeoutMs: 300_000
+  })
 }
 
 export function createNotepadFolder(name: string): Promise<VerxioNotepadFolder> {
@@ -745,6 +796,15 @@ export function updateInferenceSettings(input: {
 
 export function getInferenceUsage(): Promise<VerxioInferenceUsageResponse> {
   return verxioFetch<VerxioInferenceUsageResponse>('/api/inference/usage')
+}
+
+export function listVerxioTranscriptionCatalog(refresh = false): Promise<VerxioTranscriptionCatalogResponse> {
+  return verxioFetch<VerxioTranscriptionCatalogResponse>(
+    `/api/transcription/catalog${refresh ? '?refresh=true' : ''}`,
+    {
+      timeoutMs: 12_000
+    }
+  )
 }
 
 export function listPulseChannels(): Promise<PulseChannelsResponse> {

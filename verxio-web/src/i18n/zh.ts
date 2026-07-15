@@ -274,6 +274,7 @@ export const zh: Translations = {
       gateway: '网关',
       apiKeys: '工具与密钥',
       keysTools: '工具',
+      keysTranscription: 'Transcription',
       keysSettings: '设置',
       mcp: 'MCP',
       archivedChats: '已归档对话',
@@ -611,7 +612,8 @@ export const zh: Translations = {
       or: '或',
       escToCancel: '按 esc 取消',
       getKey: '获取密钥',
-      saving: '保存中'
+      saving: '保存中',
+      removing: '移除中'
     },
     envActions: {
       actionsFor: label => `${label} 的操作`,
@@ -734,7 +736,6 @@ export const zh: Translations = {
     },
     model: {
       loading: '正在加载模型配置...',
-      appliesDesc: '应用于新会话。可在输入框的模型选择器中临时切换当前对话。',
       provider: '提供方',
       model: '模型',
       applying: '应用中...',
@@ -1532,6 +1533,12 @@ export const zh: Translations = {
     noArtifactsDesc: '当会话生成图片和文件输出时，它们会显示在这里。',
     failedLoad: '产物加载失败',
     openFailed: '打开失败',
+    deleteAction: '删除',
+    deleteTitle: label => `删除${label || '产物'}？`,
+    deleteDescription: '这会从产物中移除该文件。此操作无法撤销。',
+    deleteConfirm: '删除产物',
+    deleting: '正在删除',
+    deleted: '产物已删除',
     itemsImage: '张图片',
     itemsLink: '个链接',
     itemsFile: '个文件',

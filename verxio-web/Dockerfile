@@ -1,10 +1,14 @@
 FROM node:22-alpine AS build
 
 WORKDIR /app
+ENV npm_config_audit=false \
+    npm_config_fund=false \
+    npm_config_update_notifier=false \
+    NO_UPDATE_NOTIFIER=1
 
 COPY package.json package-lock.json ./
 # prepare installs local git hooks; not needed (or available) in the image build.
-RUN npm ci --ignore-scripts
+RUN npm ci --ignore-scripts --no-audit --no-fund
 
 COPY . .
 

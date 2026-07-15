@@ -205,12 +205,10 @@ function ConfigField({
 export function ConfigSettings({
   activeSectionId,
   onConfigSaved,
-  onMainModelChanged,
   importInputRef
 }: {
   activeSectionId: string
   onConfigSaved?: () => void
-  onMainModelChanged?: (provider: string, model: string) => void
   importInputRef: React.RefObject<HTMLInputElement | null>
 }) {
   const { t } = useI18n()
@@ -374,7 +372,7 @@ export function ConfigSettings({
     <SettingsContent>
       {activeSectionId === 'model' && (
         <div className="mb-6">
-          <ModelSettings onMainModelChanged={onMainModelChanged} />
+          <ModelSettings />
         </div>
       )}
       {fields.length === 0 ? (

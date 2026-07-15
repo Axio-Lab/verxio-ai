@@ -15,6 +15,7 @@ export const NOTEPAD_ROUTE = '/notepad'
 export const CRON_ROUTE = '/cron'
 export const PROFILES_ROUTE = '/profiles'
 export const AGENTS_ROUTE = '/agents'
+export const NOT_FOUND_ROUTE = '/404'
 
 export type AppView =
   | 'agents'
@@ -69,6 +70,7 @@ const RESERVED_PATHS: ReadonlySet<string> = new Set([
   LOGIN_ROUTE,
   SIGNUP_ROUTE,
   SIGNOUT_ROUTE,
+  NOT_FOUND_ROUTE,
   TOOLSET_ROUTE,
   TOOLSETS_ROUTE
 ])

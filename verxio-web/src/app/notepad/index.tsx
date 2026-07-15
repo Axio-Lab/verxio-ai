@@ -14,11 +14,33 @@ import {
   DialogTitle
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tip } from '@/components/ui/tooltip'
 import { VerxioWordmark } from '@/components/verxio-wordmark'
 import type { DesktopCaptureSource } from '@/global'
-import { NOTEPAD_RECORDING_BITS_PER_SECOND, transcribeAudioBlob } from '@/lib/audio'
+import { getEnvVars, getHermesConfigRecord, reloadRuntimeEnv, saveHermesConfig, setEnvVar } from '@/hermes'
+import {
+  assertTranscriptionSize,
+  blobToDataUrl,
+  NOTEPAD_MAX_RECORDING_SECONDS,
+  NOTEPAD_RECORDING_BITS_PER_SECOND,
+  transcribeAudioDataUrl
+} from '@/lib/audio'
 import { isVerxioDesktop } from '@/lib/platform'
+import {
+  applyCloudTranscriptionConfig,
+  configuredCloudTranscriptionProvider,
+  selectedCloudTranscriptionModel,
+  selectedCloudTranscriptionProvider
+} from '@/lib/transcription-config'
+import {
+  CLOUD_TRANSCRIPTION_PROVIDERS,
+  type CloudTranscriptionProvider,
+  cloudTranscriptionProviderById,
+  type CloudTranscriptionProviderId,
+  cloudTranscriptionProvidersFromCatalog,
+  transcriptionModelOptions
+} from '@/lib/transcription-providers'
 import { cn } from '@/lib/utils'
 import {
   createNotepadFolder,
@@ -27,10 +49,12 @@ import {
   deleteNotepadNote,
   getPublicNotepadShare,
   listNotepad,
+  listVerxioTranscriptionCatalog,
   revokeNotepadShare,
   shareNotepadNote,
   summarizeNotepadNote,
   updateNotepadNote,
+  uploadNotepadRecording,
   verxioApiBaseUrl,
   type VerxioNotepadFolder,
   type VerxioNotepadNote,
@@ -77,12 +101,42 @@ const NOTEPAD_MIC_COPY = {
 }
 
 type RecordingMode = 'idle' | 'mic' | 'system' | 'transcribing'
+type RecordingSource = 'desktop-audio' | 'microphone'
+type RecordingIntent = 'mic' | 'system'
 type PendingDelete = { folder: VerxioNotepadFolder; kind: 'folder' } | { kind: 'note'; note: VerxioNotepadNote }
 
 function noteTime(value: string) {
   const parsed = Date.parse(value)
 
   return Number.isFinite(parsed) ? NOTE_TIME.format(parsed) : ''
+}
+
+function safeFilePart(value: string): string {
+  return value.replace(/[^A-Za-z0-9._ -]+/g, '-').replace(/^[ ._-]+|[ ._-]+$/g, '') || 'notepad-recording'
+}
+
+function recordingFileName(title: string, source: RecordingSource): string {
+  const stamp = new Date()
+    .toISOString()
+    .replace(/\.\d+Z$/, 'Z')
+    .replace(/[:]/g, '-')
+
+  const channel = source === 'desktop-audio' ? 'device' : 'microphone'
+
+  return `${safeFilePart(title).slice(0, 80)}-${channel}-${stamp}.webm`
+}
+
+function formatRecordingDuration(seconds: number): string {
+  const safeSeconds = Math.max(0, seconds)
+  const hours = Math.floor(safeSeconds / 3600)
+  const minutes = Math.floor((safeSeconds % 3600) / 60)
+  const remainder = safeSeconds % 60
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`
+  }
+
+  return `${minutes}:${String(remainder).padStart(2, '0')}`
 }
 
 function noteBody(note: VerxioNotepadNote): string {
@@ -162,6 +216,20 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null)
   const [recordingMode, setRecordingMode] = useState<RecordingMode>('idle')
   const [recordingSeconds, setRecordingSeconds] = useState(0)
+  const [transcriptionDialogOpen, setTranscriptionDialogOpen] = useState(false)
+  const [transcriptionSetupSaving, setTranscriptionSetupSaving] = useState(false)
+  const [transcriptionSetupError, setTranscriptionSetupError] = useState<string | null>(null)
+  const [transcriptionProviders, setTranscriptionProviders] = useState(CLOUD_TRANSCRIPTION_PROVIDERS)
+  const [transcriptionConfigLoading, setTranscriptionConfigLoading] = useState(true)
+  const [transcriptionConfigSaving, setTranscriptionConfigSaving] = useState(false)
+
+  const [transcriptionProviderId, setTranscriptionProviderId] = useState<CloudTranscriptionProviderId>(
+    CLOUD_TRANSCRIPTION_PROVIDERS[0].id
+  )
+
+  const [transcriptionModel, setTranscriptionModel] = useState(CLOUD_TRANSCRIPTION_PROVIDERS[0].recommendedModel)
+  const [transcriptionApiKey, setTranscriptionApiKey] = useState('')
+  const [pendingRecordingIntent, setPendingRecordingIntent] = useState<RecordingIntent | null>(null)
 
   const [systemAudioSupported, setSystemAudioSupported] = useState(
     () =>
@@ -185,7 +253,11 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   const systemStreamRef = useRef<MediaStream | null>(null)
   const systemChunksRef = useRef<Blob[]>([])
   const recordingStartedAtRef = useRef(0)
+  const recordingAutoStopRequestedRef = useRef(false)
   const micRecorderRef = useRef(micRecorder)
+  const stopRecordingRef = useRef<() => Promise<void>>(async () => undefined)
+
+  stopRecordingRef.current = () => handleStopRecording()
 
   const folderById = useMemo(() => new Map(folders.map(folder => [folder.id, folder])), [folders])
   const trimmedQuery = query.trim().toLowerCase()
@@ -224,6 +296,14 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
 
   const recordingLevel = recordingMode === 'mic' ? micLevel : recordingMode === 'system' ? 0.65 : 0
 
+  const transcriptionProvider =
+    cloudTranscriptionProviderById(transcriptionProviderId, transcriptionProviders) ?? transcriptionProviders[0]
+
+  const transcriptionModelSuggestions = useMemo(
+    () => transcriptionModelOptions(transcriptionProvider, transcriptionModel),
+    [transcriptionModel, transcriptionProvider]
+  )
+
   const pendingDeleteBusy = pendingDelete
     ? pendingDelete.kind === 'note'
       ? busyAction === 'delete-note'
@@ -253,6 +333,41 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    let cancelled = false
+
+    void (async () => {
+      setTranscriptionConfigLoading(true)
+
+      try {
+        const [config, catalog] = await Promise.all([
+          getHermesConfigRecord(),
+          listVerxioTranscriptionCatalog().catch(() => null)
+        ])
+
+        if (cancelled) {
+          return
+        }
+
+        const providers = cloudTranscriptionProvidersFromCatalog(catalog)
+        const provider = selectedCloudTranscriptionProvider(config, providers)
+        const model = selectedCloudTranscriptionModel(config, provider)
+
+        setTranscriptionProviders(providers)
+        setTranscriptionProviderId(provider.id)
+        setTranscriptionModel(model)
+      } catch (error) {
+        notifyError(error, 'Could not load transcription settings')
+      } finally {
+        if (!cancelled) {
+          setTranscriptionConfigLoading(false)
+        }
+      }
+    })()
+
+    return () => void (cancelled = true)
+  }, [])
 
   useEffect(() => {
     setNotePage(1)
@@ -299,10 +414,18 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     }
 
     recordingStartedAtRef.current = Date.now()
+    recordingAutoStopRequestedRef.current = false
     setRecordingSeconds(0)
 
     const timer = window.setInterval(() => {
-      setRecordingSeconds(Math.floor((Date.now() - recordingStartedAtRef.current) / 1000))
+      const elapsedSeconds = Math.floor((Date.now() - recordingStartedAtRef.current) / 1000)
+      setRecordingSeconds(Math.min(elapsedSeconds, NOTEPAD_MAX_RECORDING_SECONDS))
+
+      if (elapsedSeconds >= NOTEPAD_MAX_RECORDING_SECONDS && !recordingAutoStopRequestedRef.current) {
+        recordingAutoStopRequestedRef.current = true
+        notify({ kind: 'warning', message: 'Recording limit reached. Saving and transcribing the audio now.' })
+        void stopRecordingRef.current()
+      }
     }, 250)
 
     return () => window.clearInterval(timer)
@@ -311,6 +434,12 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   useEffect(() => {
     micRecorderRef.current = micRecorder
   }, [micRecorder])
+
+  useEffect(() => {
+    if (!transcriptionModel.trim()) {
+      setTranscriptionModel(transcriptionProvider.recommendedModel)
+    }
+  }, [transcriptionModel, transcriptionProvider])
 
   useEffect(
     () => () => {
@@ -501,6 +630,97 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     }
   }
 
+  async function saveTranscriptionPreference(
+    provider: CloudTranscriptionProvider,
+    model: string,
+    successMessage?: string
+  ): Promise<boolean> {
+    const selectedModel = model.trim() || provider.recommendedModel
+
+    setTranscriptionConfigSaving(true)
+
+    try {
+      const config = await getHermesConfigRecord()
+      const nextConfig = applyCloudTranscriptionConfig(config, provider, selectedModel)
+      await saveHermesConfig(nextConfig)
+      setTranscriptionProviderId(provider.id)
+      setTranscriptionModel(selectedModel)
+
+      if (successMessage) {
+        notify({ kind: 'success', message: successMessage })
+      }
+
+      return true
+    } catch (error) {
+      notifyError(error, 'Could not save transcription settings')
+
+      return false
+    } finally {
+      setTranscriptionConfigSaving(false)
+    }
+  }
+
+  async function handleNoteTranscriptionProviderChange(value: string) {
+    const provider = cloudTranscriptionProviderById(value, transcriptionProviders) ?? transcriptionProviders[0]
+    const model = provider.recommendedModel
+
+    setTranscriptionProviderId(provider.id)
+    setTranscriptionModel(model)
+    await saveTranscriptionPreference(provider, model)
+  }
+
+  async function handleNoteTranscriptionModelChange(value: string) {
+    const model = value || transcriptionProvider.recommendedModel
+
+    setTranscriptionModel(model)
+    await saveTranscriptionPreference(transcriptionProvider, model)
+  }
+
+  async function ensureTranscriptionReady(intent: RecordingIntent): Promise<boolean> {
+    try {
+      const [vars, config, catalog] = await Promise.all([
+        getEnvVars(),
+        getHermesConfigRecord(),
+        listVerxioTranscriptionCatalog().catch(() => null)
+      ])
+
+      const providers = cloudTranscriptionProvidersFromCatalog(catalog)
+
+      const provider =
+        cloudTranscriptionProviderById(transcriptionProviderId, providers) ??
+        selectedCloudTranscriptionProvider(config, providers)
+
+      const model = transcriptionModel.trim() || selectedCloudTranscriptionModel(config, provider)
+
+      const providerAlreadyCloud = configuredCloudTranscriptionProvider(config, providers)?.id === provider.id
+
+      setTranscriptionProviders(providers)
+      setTranscriptionProviderId(provider.id)
+      setTranscriptionModel(model)
+
+      if (vars[provider.envKey]?.is_set || provider.configured) {
+        if (!providerAlreadyCloud || selectedCloudTranscriptionModel(config, provider) !== model) {
+          await saveHermesConfig(applyCloudTranscriptionConfig(config, provider, model))
+        }
+
+        return true
+      }
+
+      setPendingRecordingIntent(intent)
+      setTranscriptionProviderId(provider.id)
+      setTranscriptionModel(model)
+      setTranscriptionApiKey('')
+      setTranscriptionSetupError(null)
+      setTranscriptionDialogOpen(true)
+
+      return false
+    } catch (error) {
+      notifyError(error, 'Could not check transcription setup')
+
+      return false
+    }
+  }
+
   function cleanupSystemRecording() {
     systemStreamRef.current?.getTracks().forEach(track => track.stop())
     systemStreamRef.current = null
@@ -614,7 +834,21 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     setRecordingMode('transcribing')
 
     try {
-      const transcript = (await transcribeAudioBlob(audio)).trim()
+      const dataUrl = await blobToDataUrl(audio)
+
+      try {
+        await uploadNotepadRecording({
+          data_url: dataUrl,
+          file_name: recordingFileName(selectedNote?.title ?? draft?.title ?? 'notepad-recording', source),
+          mime_type: audio.type
+        })
+        notify({ kind: 'success', message: 'Recording saved to artifacts' })
+      } catch (error) {
+        notifyError(error, 'Could not save recording artifact')
+      }
+
+      assertTranscriptionSize(audio)
+      const transcript = (await transcribeAudioDataUrl(dataUrl, audio.type)).trim()
 
       if (!transcript) {
         notify({ kind: 'warning', message: 'No speech detected' })
@@ -628,7 +862,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     }
   }
 
-  async function handleStartSystemRecording() {
+  async function beginSystemRecording() {
     if (!selectedNote || !draft) {
       return
     }
@@ -667,6 +901,14 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     }
   }
 
+  async function handleStartSystemRecording() {
+    if (!(await ensureTranscriptionReady('system'))) {
+      return
+    }
+
+    await beginSystemRecording()
+  }
+
   async function handleConfirmCaptureSource() {
     if (!selectedCaptureSourceId) {
       return
@@ -698,13 +940,73 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     }
   }
 
-  async function handleStartMicRecording() {
+  function handleTranscriptionDialogOpenChange(open: boolean) {
+    if (transcriptionSetupSaving) {
+      return
+    }
+
+    setTranscriptionDialogOpen(open)
+
+    if (!open) {
+      setPendingRecordingIntent(null)
+      setTranscriptionApiKey('')
+      setTranscriptionSetupError(null)
+    }
+  }
+
+  async function handleSaveTranscriptionSetup(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    const apiKey = transcriptionApiKey.trim()
+
+    if (!apiKey) {
+      setTranscriptionSetupError(`Paste your ${transcriptionProvider.label} API key first.`)
+
+      return
+    }
+
+    const intent = pendingRecordingIntent
+    setTranscriptionSetupSaving(true)
+    setTranscriptionSetupError(null)
+
+    try {
+      const config = await getHermesConfigRecord()
+      const nextConfig = applyCloudTranscriptionConfig(config, transcriptionProvider, transcriptionModel)
+
+      await setEnvVar(transcriptionProvider.envKey, apiKey)
+      await saveHermesConfig(nextConfig)
+      await reloadRuntimeEnv()
+      setTranscriptionProviderId(transcriptionProvider.id)
+      setTranscriptionModel(transcriptionModel || transcriptionProvider.recommendedModel)
+      setTranscriptionDialogOpen(false)
+      setPendingRecordingIntent(null)
+      setTranscriptionApiKey('')
+      notify({ kind: 'success', message: 'Transcription setup saved' })
+
+      if (intent === 'system') {
+        await beginSystemRecording()
+      } else if (intent === 'mic') {
+        await beginMicRecording()
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not save transcription setup'
+      setTranscriptionSetupError(message)
+      notifyError(error, 'Could not save transcription setup')
+    } finally {
+      setTranscriptionSetupSaving(false)
+    }
+  }
+
+  async function beginMicRecording() {
     if (!selectedNote || !draft) {
       return
     }
 
     try {
-      await micRecorder.start({ audioBitsPerSecond: NOTEPAD_RECORDING_BITS_PER_SECOND })
+      await micRecorder.start({
+        audioBitsPerSecond: NOTEPAD_RECORDING_BITS_PER_SECOND,
+        timesliceMs: 1000
+      })
       setRecordingMode('mic')
     } catch (error) {
       notifyError(error, 'Could not start microphone recording')
@@ -712,7 +1014,15 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     }
   }
 
-  async function handleStopRecording() {
+  async function handleStartMicRecording() {
+    if (!(await ensureTranscriptionReady('mic'))) {
+      return
+    }
+
+    await beginMicRecording()
+  }
+
+  async function handleStopRecording(_options?: { automatic?: boolean }) {
     if (recordingMode === 'system') {
       await transcribeRecording(await stopSystemRecording(), 'desktop-audio')
 
@@ -1031,6 +1341,49 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                   <Codicon name={saving ? 'loading' : 'save'} spinning={saving} />
                   Save
                 </Button>
+                <div className="flex min-w-0 flex-wrap items-center gap-1 rounded-[6px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-1.5 py-1">
+                  <Select
+                    disabled={transcriptionConfigLoading || transcriptionConfigSaving || recordingMode !== 'idle'}
+                    onValueChange={value => void handleNoteTranscriptionProviderChange(value)}
+                    value={transcriptionProvider.id}
+                  >
+                    <SelectTrigger
+                      aria-label="Transcription provider"
+                      className="h-7 min-w-24 border-0 bg-transparent px-1.5 text-xs shadow-none"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {transcriptionProviders.map(provider => (
+                        <SelectItem key={provider.id} value={provider.id}>
+                          {provider.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    disabled={transcriptionConfigLoading || transcriptionConfigSaving || recordingMode !== 'idle'}
+                    onValueChange={value => void handleNoteTranscriptionModelChange(value)}
+                    value={transcriptionModel}
+                  >
+                    <SelectTrigger
+                      aria-label="Transcription model"
+                      className="h-7 min-w-40 border-0 bg-transparent px-1.5 text-xs shadow-none"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {transcriptionModelSuggestions.map(model => (
+                        <SelectItem key={model} value={model}>
+                          {model}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {transcriptionConfigSaving ? (
+                    <Codicon className="text-muted-foreground" name="loading" spinning />
+                  ) : null}
+                </div>
                 {recordingMode === 'idle' ? (
                   <>
                     {systemAudioSupported && (
@@ -1059,28 +1412,29 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                     Transcribing
                   </Button>
                 ) : (
-                  <Button onClick={handleStopRecording} size="sm" type="button" variant="destructive">
+                  <Button onClick={() => void handleStopRecording()} size="sm" type="button" variant="destructive">
                     <Codicon name="debug-stop" />
                     <span
                       aria-hidden="true"
                       className="h-2 w-2 rounded-full bg-current opacity-80"
                       style={{ transform: `scale(${0.75 + recordingLevel * 0.7})` }}
                     />
-                    {recordingMode === 'system' ? 'Device' : 'Mic'} {recordingSeconds}s
+                    {recordingMode === 'system' ? 'Device' : 'Mic'} {formatRecordingDuration(recordingSeconds)}
                   </Button>
                 )}
                 <Button
+                  className="border-primary/60 bg-transparent text-foreground shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--dt-primary)_70%,transparent)] hover:bg-primary/5"
                   disabled={busyAction === 'summarize-note' || !draft.content.trim()}
                   onClick={handleGenerateSummary}
                   size="sm"
                   type="button"
-                  variant="ghost"
+                  variant="outline"
                 >
                   <Codicon
                     name={busyAction === 'summarize-note' ? 'loading' : 'sparkle'}
                     spinning={busyAction === 'summarize-note'}
                   />
-                  Summary
+                  Summarize
                 </Button>
                 {selectedNote.share_token ? (
                   <>
@@ -1288,6 +1642,140 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
               Delete
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog onOpenChange={handleTranscriptionDialogOpenChange} open={transcriptionDialogOpen}>
+        <DialogContent className="max-w-md" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Set up transcription</DialogTitle>
+            <DialogDescription>
+              Choose the cloud provider Verxio should use for this recording. Your key is saved to your runtime
+              credentials.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form aria-busy={transcriptionSetupSaving} className="grid gap-4" onSubmit={handleSaveTranscriptionSetup}>
+            <div className="grid gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-transcription-provider">
+                Provider
+              </label>
+              <Select
+                disabled={transcriptionSetupSaving}
+                onValueChange={value => {
+                  const provider =
+                    cloudTranscriptionProviderById(value, transcriptionProviders) ?? transcriptionProviders[0]
+
+                  setTranscriptionProviderId(provider.id)
+                  setTranscriptionModel(provider.recommendedModel)
+                }}
+                value={transcriptionProvider.id}
+              >
+                <SelectTrigger id="notepad-transcription-provider">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {transcriptionProviders.map(provider => (
+                    <SelectItem key={provider.id} value={provider.id}>
+                      {provider.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{transcriptionProvider.description}</p>
+            </div>
+
+            <div className="grid gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-transcription-model">
+                Model
+              </label>
+              <Select
+                disabled={transcriptionSetupSaving}
+                onValueChange={setTranscriptionModel}
+                value={transcriptionModel}
+              >
+                <SelectTrigger id="notepad-transcription-model">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {transcriptionModelSuggestions.map(model => (
+                    <SelectItem key={model} value={model}>
+                      {model}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="flex flex-wrap gap-1">
+                {transcriptionProvider.models.map(model => (
+                  <span
+                    className={cn(
+                      'rounded-[4px] border px-1.5 py-0.5 text-[0.6875rem]',
+                      model === transcriptionModel
+                        ? 'border-primary/70 bg-primary/5 text-foreground'
+                        : 'border-(--ui-stroke-tertiary) text-muted-foreground'
+                    )}
+                    key={model}
+                  >
+                    {model}
+                  </span>
+                ))}
+              </div>
+              {transcriptionProvider.catalogError ? (
+                <p className="text-xs text-muted-foreground">{transcriptionProvider.catalogError}</p>
+              ) : null}
+            </div>
+
+            <div className="grid gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-transcription-key">
+                {transcriptionProvider.label} API key
+              </label>
+              <Input
+                aria-describedby={transcriptionSetupError ? 'notepad-transcription-error' : undefined}
+                aria-invalid={transcriptionSetupError ? 'true' : undefined}
+                autoComplete="off"
+                autoFocus
+                disabled={transcriptionSetupSaving}
+                id="notepad-transcription-key"
+                onChange={event => {
+                  setTranscriptionApiKey(event.target.value)
+                  setTranscriptionSetupError(null)
+                }}
+                placeholder={`Paste ${transcriptionProvider.envKey}`}
+                spellCheck={false}
+                type="password"
+                value={transcriptionApiKey}
+              />
+              <a
+                className="inline-flex w-fit items-center gap-1 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                href={transcriptionProvider.docsUrl}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Get a {transcriptionProvider.label} API key
+                <Codicon name="link-external" />
+              </a>
+              {transcriptionSetupError ? (
+                <p className="text-xs text-destructive" id="notepad-transcription-error">
+                  {transcriptionSetupError}
+                </p>
+              ) : null}
+            </div>
+
+            <DialogFooter>
+              <Button
+                disabled={transcriptionSetupSaving}
+                onClick={() => handleTranscriptionDialogOpenChange(false)}
+                type="button"
+                variant="ghost"
+              >
+                Cancel
+              </Button>
+              <Button disabled={transcriptionSetupSaving} type="submit">
+                {transcriptionSetupSaving ? <Codicon name="loading" spinning /> : <Codicon name="record" />}
+                Save and start recording
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

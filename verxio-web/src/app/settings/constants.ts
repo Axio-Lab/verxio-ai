@@ -241,6 +241,7 @@ export const ENUM_OPTIONS: Record<string, string[]> = {
   'delegation.reasoning_effort': ['', 'minimal', 'low', 'medium', 'high', 'xhigh'],
   'memory.provider': ['', 'builtin', 'hindsight', 'honcho'],
   'stt.elevenlabs.model_id': ['scribe_v2', 'scribe_v1'],
+  'stt.groq.model': ['whisper-large-v3-turbo', 'whisper-large-v3'],
   'stt.local.model': ['tiny', 'base', 'small', 'medium', 'large-v3'],
   'tts.openai.voice': ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'],
   'updates.non_interactive_local_changes': ['stash', 'discard']
@@ -305,6 +306,9 @@ export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
   stt: {
     enabled: 'Speech To Text',
     provider: 'Speech-To-Text Provider',
+    groq: {
+      model: 'Groq STT Model'
+    },
     local: {
       model: 'Local Transcription Model',
       language: 'Transcription Language'
@@ -406,6 +410,9 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = defineFieldCopy({
   },
   stt: {
     enabled: 'Enable local or provider-backed speech transcription.',
+    groq: {
+      model: 'Groq Whisper model used for Notepad transcription.'
+    },
     elevenlabs: {
       languageCode: 'Optional ISO-639-3 language code. Blank lets ElevenLabs auto-detect.'
     }
@@ -489,6 +496,7 @@ export const SECTIONS: DesktopConfigSection[] = [
       'tts.provider',
       'stt.enabled',
       'stt.provider',
+      'stt.groq.model',
       'voice.auto_tts',
       'tts.edge.voice',
       'tts.openai.model',

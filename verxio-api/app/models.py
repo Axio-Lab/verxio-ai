@@ -148,6 +148,7 @@ class InferenceModelCatalogItem(BaseModel):
     description: str
     providerSlug: str
     upstreamModelId: str
+    availableModelIds: list[str] = Field(default_factory=list)
     requiredEnvVars: list[str]
     hostedAvailable: bool
     byokAvailable: bool
@@ -191,6 +192,34 @@ class InferenceUsageResponse(BaseModel):
     usage: InferenceUsageSummary
 
 
+TranscriptionProviderId = Literal["elevenlabs", "groq", "mistral", "openai", "xai"]
+TranscriptionCatalogSource = Literal["fallback", "provider"]
+
+
+class TranscriptionModelOption(BaseModel):
+    id: str
+    source: TranscriptionCatalogSource = "provider"
+
+
+class TranscriptionProviderCatalogItem(BaseModel):
+    id: TranscriptionProviderId
+    label: str
+    envKey: str
+    docsUrl: str
+    description: str
+    configured: bool = False
+    recommendedModel: str
+    models: list[TranscriptionModelOption]
+    source: TranscriptionCatalogSource = "fallback"
+    error: str | None = None
+    fetchedAt: str | None = None
+
+
+class TranscriptionCatalogResponse(BaseModel):
+    providers: list[TranscriptionProviderCatalogItem]
+    cacheTtlSeconds: int
+
+
 class InferenceRuntimeBridgeStatus(BaseModel):
     configured: bool
     enabled: bool
@@ -219,6 +248,16 @@ class ArtifactRecord(BaseModel):
 
 class ArtifactListResponse(BaseModel):
     artifacts: list[ArtifactRecord]
+
+
+class NotepadRecordingUploadRequest(BaseModel):
+    file_name: str = Field(default="notepad-recording.webm", min_length=1, max_length=180)
+    data_url: str = Field(min_length=1)
+    mime_type: str | None = Field(default=None, max_length=120)
+
+
+class NotepadRecordingUploadResponse(BaseModel):
+    artifact: ArtifactRecord
 
 
 class NotepadFolderRecord(BaseModel):

@@ -216,6 +216,7 @@ export interface Translations {
       gateway: string
       apiKeys: string
       keysTools: string
+      keysTranscription: string
       keysSettings: string
       mcp: string
       archivedChats: string
@@ -347,6 +348,7 @@ export interface Translations {
       escToCancel: string
       getKey: string
       saving: string
+      removing: string
     }
     envActions: {
       actionsFor: (label: string) => string
@@ -467,7 +469,6 @@ export interface Translations {
     }
     model: {
       loading: string
-      appliesDesc: string
       provider: string
       model: string
       applying: string
@@ -1051,6 +1052,12 @@ export interface Translations {
     noArtifactsDesc: string
     failedLoad: string
     openFailed: string
+    deleteAction: string
+    deleteTitle: (label: string) => string
+    deleteDescription: string
+    deleteConfirm: string
+    deleting: string
+    deleted: string
     itemsImage: string
     itemsLink: string
     itemsFile: string
