@@ -718,6 +718,10 @@ def test_artifacts_are_indexed_from_runtime_workspace_and_isolated(client):
     artifact_path = Path(str(runtime_one["artifact_path"]))
     artifact_path.mkdir(parents=True, exist_ok=True)
     (artifact_path / "daily-sales-dashboard.html").write_text("<html><body>Daily sales</body></html>", encoding="utf-8")
+    png_bytes = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+    )
+    (artifact_path / "man_in_pool_nano_banana.png").write_bytes(png_bytes)
 
     user_one_response = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
     user_two_response = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_two}"})
@@ -725,14 +729,21 @@ def test_artifacts_are_indexed_from_runtime_workspace_and_isolated(client):
     assert user_one_response.status_code == 200
     assert user_two_response.status_code == 200
     user_one_artifacts = user_one_response.json()["artifacts"]
-    assert [artifact["file_name"] for artifact in user_one_artifacts] == ["daily-sales-dashboard.html"]
+    assert {artifact["file_name"] for artifact in user_one_artifacts} == {
+        "daily-sales-dashboard.html",
+        "man_in_pool_nano_banana.png",
+    }
+    image_artifact = next(artifact for artifact in user_one_artifacts if artifact["file_name"].endswith(".png"))
+    assert image_artifact["content_type"] == "image/png"
     assert user_two_response.json()["artifacts"] == []
 
-    artifact_id = user_one_artifacts[0]["id"]
+    artifact_id = image_artifact["id"]
     preview = client.get(f"/api/artifacts/{artifact_id}/preview", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
     blocked = client.get(f"/api/artifacts/{artifact_id}/preview", headers={"Cookie": f"{SESSION_COOKIE}={token_two}"})
 
     assert preview.status_code == 200
+    assert preview.headers["content-type"] == "image/png"
+    assert preview.content == png_bytes
     assert blocked.status_code == 404
 
     blocked_delete = client.delete(f"/api/artifacts/{artifact_id}", headers={"Cookie": f"{SESSION_COOKIE}={token_two}"})
@@ -741,11 +752,11 @@ def test_artifacts_are_indexed_from_runtime_workspace_and_isolated(client):
     assert blocked_delete.status_code == 404
     assert deleted.status_code == 200
     assert deleted.json() == {"ok": True}
-    assert not (artifact_path / "daily-sales-dashboard.html").exists()
+    assert not (artifact_path / "man_in_pool_nano_banana.png").exists()
 
     after_delete = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
     assert after_delete.status_code == 200
-    assert after_delete.json()["artifacts"] == []
+    assert [artifact["file_name"] for artifact in after_delete.json()["artifacts"]] == ["daily-sales-dashboard.html"]
 
 
 def test_notepad_recording_upload_saves_audio_as_artifact(client):
