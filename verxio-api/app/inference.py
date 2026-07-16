@@ -37,9 +37,18 @@ BRIDGE_STATE_FILE = "inference-runtime-bridge.json"
 
 DEFAULT_QWEN_AVAILABLE_MODELS = (
     DEFAULT_QWEN_UPSTREAM_MODEL,
+    "qwen3.7-max",
+    "qwen3.7-plus",
+    "qwen3.5-plus",
     "qwen3.6-coder",
     "qwen3.6-max",
     "qwen3.6-flash",
+    "qwen3-coder-plus",
+    "qwen3-coder-next",
+    "kimi-k2.5",
+    "glm-5",
+    "glm-4.7",
+    "MiniMax-M2.5",
 )
 DEFAULT_GEMINI_AVAILABLE_MODELS = (
     DEFAULT_GEMINI_UPSTREAM_MODEL,
