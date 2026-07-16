@@ -7,6 +7,7 @@ from pathlib import Path
 from subprocess import CompletedProcess
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 from app import composio_catalog, control_plane, db, emailer, inference, main, runtime_manager, transcription_catalog
@@ -180,13 +181,30 @@ def test_inference_catalog_defaults_to_verxio_qwen(client):
     assert gemini_model["providerSlug"] == "gemini"
     assert gemini_model["displayName"] == "Verxio Gemini"
     assert gemini_model["upstreamModelId"] == "gemini-flash-lite-latest"
-    assert gemini_model["availableModelIds"][:3] == [
-        "gemini-flash-lite-latest",
-        "gemini-3.1-flash-lite",
-        "gemini-2.5-pro",
-    ]
+    assert gemini_model["availableModelIds"][0] == "gemini-flash-lite-latest"
+    assert "gemini-3-pro-preview" in gemini_model["availableModelIds"]
+    assert "gemini-2.5-pro" in gemini_model["availableModelIds"]
     assert gemini_model["default"] is False
     assert "GEMINI_API_KEY" in gemini_model["requiredEnvVars"]
+
+
+def test_inference_catalog_uses_hermes_provider_models(client, monkeypatch):
+    _payload, token = signup(client, "inference-hermes-catalog@example.com")
+    monkeypatch.setattr(
+        inference,
+        "_hermes_provider_model_ids",
+        lambda provider: ("qwen-from-hermes", "glm-from-hermes") if provider == "alibaba" else (),
+    )
+
+    response = client.get("/api/inference/catalog", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+
+    assert response.status_code == 200
+    qwen_model = next(model for model in response.json()["models"] if model["id"] == "verxio-qwen")
+    assert qwen_model["availableModelIds"][:3] == [
+        "qwen3.6-plus",
+        "qwen-from-hermes",
+        "glm-from-hermes",
+    ]
 
 
 def test_inference_settings_are_hosted_verxio_qwen_by_default(client):
@@ -384,6 +402,30 @@ def test_inference_bridge_honors_verxio_hosted_qwen_model_env(client, monkeypatc
     assert status.upstreamModelId == "qwen3.7-max"
     config = (Path(runtime.hermes_home_path) / "config.yaml").read_text(encoding="utf-8")
     assert "default: qwen3.7-max" in config
+
+
+def test_inference_bridge_removes_stale_hosted_assignment_without_key(client):
+    payload, _token = signup(client, "inference-stale-provider@example.com")
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    runtime = control_plane.runtime_from_row(runtime_row)
+    config_path = Path(runtime.hermes_home_path) / "config.yaml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        "model:\n  provider: alibaba\n  default: qwen3.6-plus\nterminal:\n  cwd: /workspace\n",
+        encoding="utf-8",
+    )
+
+    status = inference.sync_inference_runtime_bridge(runtime, payload["user"]["id"])
+
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    assert status.configured is False
+    assert status.changed is True
+    assert config.get("model") is None
+    assert config["terminal"]["cwd"] == "/workspace"
 
 
 def test_inference_bridge_writes_hosted_verxio_gemini_model_config(client, monkeypatch):
