@@ -48,6 +48,8 @@ async function startBrowserDownload(src: string) {
 
 export interface ZoomableImageProps extends ComponentProps<'img'> {
   containerClassName?: string
+  lightboxOpen?: boolean
+  onLightboxOpenChange?: (open: boolean) => void
   slot?: string
 }
 
@@ -70,11 +72,22 @@ export async function downloadImageFromSrc(src: string, copy: ImageActionCopy): 
   await startBrowserDownload(src)
 }
 
-export function ZoomableImage({ className, containerClassName, src, alt, slot, ...props }: ZoomableImageProps) {
+export function ZoomableImage({
+  className,
+  containerClassName,
+  lightboxOpen,
+  onLightboxOpenChange,
+  src,
+  alt,
+  slot,
+  ...props
+}: ZoomableImageProps) {
   const { t } = useI18n()
   const copy = t.desktop
   const [saving, setSaving] = useState(false)
-  const [lightboxOpen, setLightboxOpen] = useState(false)
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
+  const open = lightboxOpen ?? uncontrolledOpen
+  const setOpen = onLightboxOpenChange ?? setUncontrolledOpen
   const canOpen = Boolean(src)
 
   async function handleDownload() {
@@ -117,7 +130,7 @@ export function ZoomableImage({ className, containerClassName, src, alt, slot, .
         <button
           className="contents"
           disabled={!canOpen}
-          onClick={() => canOpen && setLightboxOpen(true)}
+          onClick={() => canOpen && setOpen(true)}
           title={canOpen ? copy.openImage : undefined}
           type="button"
         >
@@ -137,8 +150,8 @@ export function ZoomableImage({ className, containerClassName, src, alt, slot, .
           alt={alt}
           copy={copy}
           onClick={handleDownload}
-          onOpenChange={setLightboxOpen}
-          open={lightboxOpen}
+          onOpenChange={setOpen}
+          open={open}
           saving={saving}
           src={src}
         />

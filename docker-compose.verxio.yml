@@ -57,6 +57,9 @@ services:
       - ${VERXIO_STATE_DIR:-./.verxio}:/app/.verxio
       - ./hermes-agent:/opt/hermes-agent:ro
       - /var/run/docker.sock:/var/run/docker.sock
+      # Desktop-synced workspaces live under the host home (e.g. Documents).
+      # Without this bind, the API container cannot index generated images there.
+      - ${VERXIO_HOST_HOME_BIND:-${HOME}}:${VERXIO_HOST_HOME_BIND:-${HOME}}
 
   verxio-web:
     build:
