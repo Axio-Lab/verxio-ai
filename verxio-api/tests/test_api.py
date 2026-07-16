@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import os
 from pathlib import Path
 from subprocess import CompletedProcess
 
@@ -193,7 +194,7 @@ def test_inference_catalog_uses_hermes_provider_models(client, monkeypatch):
     monkeypatch.setattr(
         inference,
         "_hermes_provider_model_ids",
-        lambda provider: ("qwen-from-hermes", "glm-from-hermes") if provider == "alibaba" else (),
+        lambda model: ("qwen-from-hermes", "glm-from-hermes") if model.provider_slug == "alibaba" else (),
     )
 
     response = client.get("/api/inference/catalog", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
@@ -205,6 +206,41 @@ def test_inference_catalog_uses_hermes_provider_models(client, monkeypatch):
         "qwen-from-hermes",
         "glm-from-hermes",
     ]
+
+
+def test_inference_catalog_passes_hosted_key_to_hermes(client, monkeypatch):
+    _payload, token = signup(client, "inference-hosted-hermes-key@example.com")
+    observed: list[dict[str, str | None]] = []
+
+    class FakeHermesModels:
+        @staticmethod
+        def provider_model_ids(provider_slug: str, force_refresh: bool = False) -> list[str]:
+            observed.append(
+                {
+                    "provider_slug": provider_slug,
+                    "force_refresh": str(force_refresh),
+                    "dashscope": os.getenv("DASHSCOPE_API_KEY"),
+                }
+            )
+            return ["deepseek-v4-flash", "happy-horse-model"]
+
+    monkeypatch.setenv("VERXIO_HOSTED_QWEN_API_KEY", "hosted-qwen-secret")
+    monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
+    monkeypatch.setattr(inference.importlib, "import_module", lambda name: FakeHermesModels)
+
+    response = client.get("/api/inference/catalog", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+
+    assert response.status_code == 200
+    qwen_model = next(model for model in response.json()["models"] if model["id"] == "verxio-qwen")
+    assert "deepseek-v4-flash" in qwen_model["availableModelIds"]
+    assert "happy-horse-model" in qwen_model["availableModelIds"]
+    alibaba_call = next(call for call in observed if call["provider_slug"] == "alibaba")
+    assert alibaba_call == {
+        "provider_slug": "alibaba",
+        "force_refresh": "True",
+        "dashscope": "hosted-qwen-secret",
+    }
+    assert os.getenv("DASHSCOPE_API_KEY") is None
 
 
 def test_inference_settings_are_hosted_verxio_qwen_by_default(client):

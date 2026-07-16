@@ -5,9 +5,10 @@ import importlib
 import json
 import os
 import sys
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import yaml
 
@@ -112,7 +113,7 @@ def _available_model_ids(model: HostedModelDefinition) -> list[str]:
     upstream = _upstream_model_id(model)
     seen: set[str] = set()
     ordered: list[str] = []
-    hermes_models = _hermes_provider_model_ids(model.provider_slug)
+    hermes_models = _hermes_provider_model_ids(model)
 
     for model_id in (upstream, *_csv_env_values(model.available_models_env), *hermes_models, *model.available_models_fallback):
         if model_id and model_id not in seen:
@@ -134,7 +135,23 @@ def _hermes_repo_path() -> Path:
     return Path("/opt/hermes-agent")
 
 
-def _hermes_provider_model_ids(provider_slug: str) -> tuple[str, ...]:
+@contextmanager
+def _temporary_env(values: dict[str, str]) -> Iterator[None]:
+    previous = {name: os.environ.get(name) for name in values}
+    try:
+        for name, value in values.items():
+            if value:
+                os.environ[name] = value
+        yield
+    finally:
+        for name, value in previous.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+
+def _hermes_provider_model_ids(model: HostedModelDefinition) -> tuple[str, ...]:
     """Use Hermes' provider catalog instead of maintaining a Verxio fork."""
     repo = _hermes_repo_path()
     if repo.is_dir():
@@ -145,7 +162,15 @@ def _hermes_provider_model_ids(provider_slug: str) -> tuple[str, ...]:
     try:
         models = importlib.import_module("hermes_cli.models")
         provider_model_ids = getattr(models, "provider_model_ids")
-        return tuple(str(model_id) for model_id in provider_model_ids(provider_slug) if str(model_id).strip())
+        _secret_name, secret_value = _hosted_secret(model)
+        hermes_env = {
+            env_name: secret_value
+            for env_name in (model.runtime_env_var, *model.byok_env_vars)
+            if secret_value
+        }
+        with _temporary_env(hermes_env):
+            model_ids = provider_model_ids(model.provider_slug, force_refresh=bool(secret_value))
+        return tuple(str(model_id) for model_id in model_ids if str(model_id).strip())
     except Exception:
         return ()
 
