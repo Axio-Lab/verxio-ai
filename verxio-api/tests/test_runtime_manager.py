@@ -246,3 +246,46 @@ def test_index_artifacts_includes_runtime_home_delivery_artifacts(monkeypatch, t
     public, path = runtime_manager.artifact_file(runtime, record.id)
     assert public.file_name == "product_launch_list.csv"
     assert path == (home_artifacts / "product_launch_list.csv").resolve()
+
+
+def test_sync_container_workspace_artifacts_mirrors_unreachable_host_path(monkeypatch, tmp_path):
+    hermes_home = tmp_path / "home"
+    mirror = hermes_home / "artifacts"
+    hermes_home.mkdir(parents=True)
+    # Simulate an empty ghost artifact dir that the API container can see,
+    # while the real generated image only exists in the Hermes container.
+    ghost = tmp_path / "ghost-artifacts"
+    ghost.mkdir()
+
+    runtime = _runtime().model_copy(
+        update={
+            "hermes_home_path": str(hermes_home),
+            "artifact_path": str(ghost),
+            "workspace_path": str(tmp_path / "missing-workspace"),
+            "container_name": "verxio-ws-1-agent-1",
+        }
+    )
+
+    calls: list[list[str]] = []
+
+    def fake_run_docker(args: list[str]) -> CompletedProcess[str]:
+        calls.append(args)
+        if args[:1] == ["inspect"]:
+            return CompletedProcess(args, 0, stdout="true\n", stderr="")
+        if args[:2] == ["exec", "verxio-ws-1-agent-1"]:
+            return CompletedProcess(args, 0, stdout="", stderr="")
+        if args[:1] == ["cp"]:
+            mirror.mkdir(parents=True, exist_ok=True)
+            (mirror / "man_in_pool.png").write_bytes(b"png-bytes")
+            return CompletedProcess(args, 0, stdout="", stderr="")
+        raise AssertionError(f"Unexpected docker call: {args}")
+
+    monkeypatch.setattr(runtime_manager, "_run_docker", fake_run_docker)
+
+    synced = runtime_manager._sync_container_workspace_artifacts(runtime)
+
+    assert synced == mirror.resolve()
+    assert (mirror / "man_in_pool.png").read_bytes() == b"png-bytes"
+    assert calls[0][:1] == ["inspect"]
+    assert calls[-1][0] == "cp"
+    assert calls[-1][1].endswith(":/workspace/artifacts/.")

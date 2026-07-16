@@ -591,7 +591,14 @@ async def preview_artifact(artifact_id: str, request: Request) -> FileResponse:
         record, path = artifact_file(runtime, artifact_id)
     except (FileNotFoundError, KeyError) as exc:
         raise HTTPException(status_code=404, detail="Artifact not found.") from exc
-    return FileResponse(path, media_type=record.content_type, filename=record.file_name)
+    # Inline so browsers/img tags open a viewer instead of forcing a download.
+    # Use /download when the client wants an attachment.
+    return FileResponse(
+        path,
+        media_type=record.content_type,
+        filename=record.file_name,
+        content_disposition_type="inline",
+    )
 
 
 @app.get("/api/artifacts/{artifact_id}/download")
@@ -602,7 +609,12 @@ async def download_artifact(artifact_id: str, request: Request) -> FileResponse:
         record, path = artifact_file(runtime, artifact_id)
     except (FileNotFoundError, KeyError) as exc:
         raise HTTPException(status_code=404, detail="Artifact not found.") from exc
-    return FileResponse(path, media_type=record.content_type, filename=record.file_name)
+    return FileResponse(
+        path,
+        media_type=record.content_type,
+        filename=record.file_name,
+        content_disposition_type="attachment",
+    )
 
 
 def _share_url(_request: Request, token: str) -> str:

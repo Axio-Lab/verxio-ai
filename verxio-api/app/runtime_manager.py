@@ -909,6 +909,72 @@ def _is_path_within(path: Path, root: Path) -> bool:
     return path == root or root in path.parents
 
 
+def _managed_runtime_root() -> Path | None:
+    runtime_root_env = os.getenv("VERXIO_RUNTIME_ROOT", "").strip()
+    if not runtime_root_env:
+        return None
+    return Path(runtime_root_env).expanduser().resolve()
+
+
+def _path_is_under_managed_runtime(path: Path) -> bool:
+    root = _managed_runtime_root()
+    if root is None:
+        return True
+    try:
+        path.resolve().relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def _dir_has_files(path: Path) -> bool:
+    if not path.exists() or not path.is_dir():
+        return False
+    return any(entry.is_file() for entry in path.rglob("*"))
+
+
+def _sync_container_workspace_artifacts(runtime: RuntimeInstance) -> Path | None:
+    """Mirror Hermes `/workspace/artifacts` into an API-visible directory.
+
+    Desktop-synced workspaces use host paths (for example under Documents) that
+    Hermes bind-mounts correctly, but the API container often cannot see.
+    Without this sync, generated images land on disk and chat mentions
+    `/workspace/artifacts/...`, yet Verxio indexes an empty ghost folder and
+    shows "Not found in artifacts yet".
+    """
+
+    if runtime.mode != "local-docker":
+        return None
+
+    artifact_root = Path(runtime.artifact_path).expanduser().resolve()
+    if _dir_has_files(artifact_root):
+        return None
+
+    container = _container_name(runtime)
+    running = _run_docker(["inspect", "-f", "{{.State.Running}}", container])
+    if running.returncode != 0 or running.stdout.strip() != "true":
+        return None
+
+    probe = _run_docker(
+        [
+            "exec",
+            container,
+            "sh",
+            "-lc",
+            "test -d /workspace/artifacts && find /workspace/artifacts -type f | head -1 | grep -q .",
+        ]
+    )
+    if probe.returncode != 0:
+        return None
+
+    mirror = (Path(runtime.hermes_home_path).expanduser().resolve() / "artifacts")
+    mirror.mkdir(parents=True, exist_ok=True)
+    copied = _run_docker(["cp", f"{container}:/workspace/artifacts/.", f"{mirror}/"])
+    if copied.returncode != 0:
+        return None
+    return mirror
+
+
 def _workspace_artifact_candidates(runtime: RuntimeInstance) -> list[tuple[Path, str, str]]:
     """Return host files that should appear in the user-facing Artifacts view.
 
@@ -920,6 +986,8 @@ def _workspace_artifact_candidates(runtime: RuntimeInstance) -> list[tuple[Path,
     `$HERMES_HOME/artifacts`. Index those as runtime-home artifacts so files that
     the chat can deliver are still visible in Verxio's Artifacts page.
     """
+
+    _sync_container_workspace_artifacts(runtime)
 
     artifact_root = Path(runtime.artifact_path).resolve()
     workspace_root = Path(runtime.workspace_path).resolve()
@@ -1001,7 +1069,11 @@ def index_artifacts(runtime: RuntimeInstance) -> list[ArtifactRecord]:
     artifact_root = Path(runtime.artifact_path).resolve()
     workspace_root = Path(runtime.workspace_path).resolve()
     runtime_home_artifact_root = (Path(runtime.hermes_home_path) / "artifacts").resolve()
-    artifact_root.mkdir(parents=True, exist_ok=True)
+    # Only auto-create artifact dirs under the managed runtime root. Creating
+    # `/Users/.../Documents/...` inside the API container when that host path
+    # is not bind-mounted leaves an empty ghost directory that hides real files.
+    if _path_is_under_managed_runtime(artifact_root):
+        artifact_root.mkdir(parents=True, exist_ok=True)
     now = now_iso()
 
     for resolved, relative, source in _workspace_artifact_candidates(runtime):

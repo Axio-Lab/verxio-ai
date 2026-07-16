@@ -43,8 +43,8 @@ import { isVerxioDesktop } from '@/lib/platform'
 import { previewTargetFromMarkdownHref } from '@/lib/preview-targets'
 import { tailBoundedRemend } from '@/lib/remend-tail'
 import { cn } from '@/lib/utils'
-import { extractWorkspaceArtifactPaths, workspaceArtifactRelativePath } from '@/lib/verxio-artifact-paths'
 import { listVerxioArtifacts, verxioApiEnabled, verxioApiUrl, type VerxioArtifact } from '@/lib/verxio-api'
+import { extractWorkspaceArtifactPaths, workspaceArtifactRelativePath } from '@/lib/verxio-artifact-paths'
 import { notifyError } from '@/store/notifications'
 import { type PreviewTarget, setCurrentSessionPreviewTarget } from '@/store/preview'
 import { $currentCwd } from '@/store/session'
@@ -426,9 +426,16 @@ function GeneratedArtifactCard({ artifact }: { artifact: ResolvedArtifact }) {
   const size = artifact.record ? formatArtifactSize(artifact.record.size_bytes) : ''
   const fileName = artifact.record?.file_name || basename(artifact.path)
   const unresolved = !artifact.record || !artifact.target || !artifact.previewUrl || !artifact.downloadUrl
+  const [lightboxOpen, setLightboxOpen] = useState(false)
 
   const openPreview = () => {
     if (!artifact.target || !artifact.previewUrl) {
+      return
+    }
+
+    if (isImage) {
+      setLightboxOpen(true)
+
       return
     }
 
@@ -444,20 +451,18 @@ function GeneratedArtifactCard({ artifact }: { artifact: ResolvedArtifact }) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-muted/20">
       {isImage ? (
-        <button
-          className="block w-full border-b border-border bg-background/55 p-1.5"
-          onClick={openPreview}
-          type="button"
-        >
+        <div className="border-b border-border bg-background/55 p-1.5">
           <ZoomableImage
             alt={fileName}
-            className="max-h-56 w-full rounded-md object-contain"
-            containerClassName="max-h-56"
+            className="max-h-56 w-full cursor-zoom-in rounded-md object-contain"
+            containerClassName="max-h-56 w-full"
             decoding="async"
+            lightboxOpen={lightboxOpen}
             loading="lazy"
+            onLightboxOpenChange={setLightboxOpen}
             src={artifact.previewUrl || ''}
           />
-        </button>
+        </div>
       ) : null}
       <div className="flex min-w-0 items-center gap-2 px-2.5 py-2">
         <span className="grid size-7 shrink-0 place-items-center rounded-md bg-background text-muted-foreground">

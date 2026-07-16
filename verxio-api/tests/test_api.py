@@ -739,11 +739,15 @@ def test_artifacts_are_indexed_from_runtime_workspace_and_isolated(client):
 
     artifact_id = image_artifact["id"]
     preview = client.get(f"/api/artifacts/{artifact_id}/preview", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
+    download = client.get(f"/api/artifacts/{artifact_id}/download", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
     blocked = client.get(f"/api/artifacts/{artifact_id}/preview", headers={"Cookie": f"{SESSION_COOKIE}={token_two}"})
 
     assert preview.status_code == 200
     assert preview.headers["content-type"] == "image/png"
+    assert "inline" in preview.headers.get("content-disposition", "").lower()
     assert preview.content == png_bytes
+    assert download.status_code == 200
+    assert "attachment" in download.headers.get("content-disposition", "").lower()
     assert blocked.status_code == 404
 
     blocked_delete = client.delete(f"/api/artifacts/{artifact_id}", headers={"Cookie": f"{SESSION_COOKIE}={token_two}"})
