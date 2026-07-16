@@ -475,11 +475,14 @@ def _strip_legacy_providers_from_auth(auth_path: Path) -> bool:
 
 
 def cleanup_legacy_hosted_credentials(runtime: RuntimeInstance) -> bool:
-    """Remove Verxio-GPT-era hosted OpenAI credentials from a runtime Hermes home."""
+    """Preserve user-managed runtime credentials.
+
+    Older hosted-inference cleanup removed provider env vars from Hermes' `.env`
+    to hide stale Verxio-injected keys. That is unsafe now that Tools & Keys uses
+    the same file for user-owned credentials such as OPENAI_API_KEY.
+    """
     ensure_runtime_directories(runtime)
-    changed = _strip_legacy_env_vars_from_dotenv(_runtime_env_path(runtime))
-    changed = _strip_legacy_providers_from_auth(_runtime_auth_path(runtime)) or changed
-    return changed
+    return False
 
 
 def _strip_hosted_model_assignment(runtime: RuntimeInstance, model: HostedModelDefinition) -> bool:

@@ -375,7 +375,7 @@ def test_inference_bridge_writes_hosted_verxio_qwen_after_explicit_settings(clie
     assert "verxio-qwen-key" not in state.read_text(encoding="utf-8")
 
 
-def test_inference_bridge_strips_legacy_openai_credentials(client, monkeypatch):
+def test_inference_bridge_preserves_openai_tool_credentials(client, monkeypatch):
     monkeypatch.setenv("VERXIO_HOSTED_QWEN_API_KEY", "verxio-qwen-key")
     payload, _token = signup(client, "inference-legacy@example.com")
     runtime_row = db.fetch_one(
@@ -421,11 +421,11 @@ def test_inference_bridge_strips_legacy_openai_credentials(client, monkeypatch):
     assert status.enabled is True
     assert status.changed is True
     env_text = (hermes_home / ".env").read_text(encoding="utf-8")
-    assert "OPENAI_API_KEY" not in env_text
-    assert "DASHSCOPE_API_KEY" not in env_text
+    assert "OPENAI_API_KEY=legacy-verxio-gpt-key" in env_text
+    assert "DASHSCOPE_API_KEY=keep" in env_text
     auth = json.loads((hermes_home / "auth.json").read_text(encoding="utf-8"))
-    assert "openai-api" not in auth.get("credential_pool", {})
-    assert auth.get("active_provider") == ""
+    assert "openai-api" in auth.get("credential_pool", {})
+    assert auth.get("active_provider") == "openai-api"
     assert "openai-codex" in auth.get("credential_pool", {})
 
 
@@ -529,7 +529,7 @@ def test_inference_bridge_honors_verxio_hosted_gemini_model_env(client, monkeypa
     assert "default: gemini-2.5-flash" in config
 
 
-def test_inference_bridge_strips_sibling_hosted_credentials_for_gemini(client, monkeypatch):
+def test_inference_bridge_preserves_user_env_credentials_for_gemini(client, monkeypatch):
     monkeypatch.setenv("VERXIO_HOSTED_GEMINI_API_KEY", "verxio-gemini-key")
     payload, token = signup(client, "inference-gemini-strip@example.com")
     response = client.put(
@@ -548,7 +548,7 @@ def test_inference_bridge_strips_sibling_hosted_credentials_for_gemini(client, m
     hermes_home = Path(runtime.hermes_home_path)
     hermes_home.mkdir(parents=True, exist_ok=True)
     (hermes_home / ".env").write_text(
-        "DASHSCOPE_API_KEY=stale-qwen-key\nGEMINI_API_KEY=stale-gemini-key\n",
+        "DASHSCOPE_API_KEY=user-qwen-key\nGEMINI_API_KEY=user-gemini-key\nOPENAI_API_KEY=user-openai-key\n",
         encoding="utf-8",
     )
     (hermes_home / "auth.json").write_text(
@@ -585,12 +585,13 @@ def test_inference_bridge_strips_sibling_hosted_credentials_for_gemini(client, m
     assert status.enabled is True
     assert status.defaultModelId == "verxio-gemini"
     env_text = (hermes_home / ".env").read_text(encoding="utf-8")
-    assert "DASHSCOPE_API_KEY" not in env_text
-    assert "GEMINI_API_KEY" not in env_text
+    assert "DASHSCOPE_API_KEY=user-qwen-key" in env_text
+    assert "GEMINI_API_KEY=user-gemini-key" in env_text
+    assert "OPENAI_API_KEY=user-openai-key" in env_text
     auth = json.loads((hermes_home / "auth.json").read_text(encoding="utf-8"))
-    assert "alibaba" not in auth.get("credential_pool", {})
-    assert "gemini" not in auth.get("credential_pool", {})
-    assert auth.get("active_provider") == ""
+    assert "alibaba" in auth.get("credential_pool", {})
+    assert "gemini" in auth.get("credential_pool", {})
+    assert auth.get("active_provider") == "alibaba"
 
 
 def test_inference_bridge_byok_preserves_hermes_provider_settings(client, monkeypatch):
