@@ -223,6 +223,14 @@ def test_transcription_catalog_rejects_anonymous_users(client):
     assert response.status_code == 401
 
 
+def test_dashboard_env_mutations_reassert_hosted_inference_env():
+    assert main._dashboard_path_needs_inference_env_reassert("api/env/reload", "POST")
+    assert main._dashboard_path_needs_inference_env_reassert("api/env", "PUT")
+    assert main._dashboard_path_needs_inference_env_reassert("api/tools/toolsets/tts/env", "PUT")
+    assert not main._dashboard_path_needs_inference_env_reassert("api/model/options", "GET")
+    assert not main._dashboard_path_needs_inference_env_reassert("api/status", "GET")
+
+
 def test_transcription_catalog_uses_fallback_without_keys(client):
     _payload, token = signup(client, "transcription-catalog@example.com")
 
