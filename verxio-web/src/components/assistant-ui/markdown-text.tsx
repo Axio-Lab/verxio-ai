@@ -622,7 +622,11 @@ function InlineCode({ children, className, ...props }: ComponentProps<'code'>) {
     }
   }
 
-  return <code className={className} dir="ltr" {...props} />
+  return (
+    <code className={className} dir="ltr" {...props}>
+      {children}
+    </code>
+  )
 }
 
 function MarkdownImage({ className, src, alt, ...props }: ComponentProps<'img'>) {
