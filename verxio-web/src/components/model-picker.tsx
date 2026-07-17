@@ -108,7 +108,12 @@ export function ModelPickerDialog({
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
-      <DialogContent className={cn('max-h-[85vh] max-w-2xl gap-0 overflow-hidden p-0', contentClassName)}>
+      <DialogContent
+        className={cn(
+          'grid max-h-[calc(100dvh-1rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] w-[calc(100vw-1rem)] max-w-2xl grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-h-[85vh] sm:w-full',
+          contentClassName
+        )}
+      >
         <DialogHeader className="border-b border-border px-4 py-3">
           <DialogTitle>{copy.title}</DialogTitle>
           <DialogDescription className="font-mono text-xs leading-relaxed">
@@ -118,8 +123,13 @@ export function ModelPickerDialog({
         </DialogHeader>
 
         <Command className="rounded-none bg-card" shouldFilter={false}>
-          <CommandInput autoFocus onValueChange={setSearch} placeholder={copy.search} value={search} />
-          <CommandList className="max-h-96">
+          <CommandInput
+            className="text-base sm:text-sm"
+            onValueChange={setSearch}
+            placeholder={copy.search}
+            value={search}
+          />
+          <CommandList className="max-h-none min-h-0 flex-1">
             {!loading && !error && <CommandEmpty>{copy.noModels}</CommandEmpty>}
             <ModelResults
               currentModel={optionsModel || currentModel}
@@ -133,8 +143,8 @@ export function ModelPickerDialog({
           </CommandList>
         </Command>
 
-        <DialogFooter className="flex-row items-center justify-between gap-3 bg-card p-3 sm:justify-between">
-          <label className="flex cursor-pointer select-none items-center gap-2 text-xs text-muted-foreground">
+        <DialogFooter className="flex-col gap-3 bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
+          <label className="flex min-h-10 cursor-pointer select-none items-center gap-2 text-xs text-muted-foreground">
             <Checkbox
               checked={persistGlobal || !sessionId}
               disabled={!sessionId}
@@ -143,11 +153,11 @@ export function ModelPickerDialog({
             {sessionId ? copy.persistGlobalSession : copy.persistGlobal}
           </label>
 
-          <div className="flex items-center gap-2">
-            <Button onClick={addProvider} variant="ghost">
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
+            <Button className="min-h-10" onClick={addProvider} variant="ghost">
               {copy.addProvider}
             </Button>
-            <Button onClick={() => onOpenChange(false)} variant="outline">
+            <Button className="min-h-10" onClick={() => onOpenChange(false)} variant="outline">
               {t.common.cancel}
             </Button>
           </div>
@@ -237,7 +247,7 @@ function ModelResults({
               return (
                 <CommandItem
                   className={cn(
-                    'flex items-center gap-2 pl-6 font-mono',
+                    'flex min-h-10 items-center gap-2 py-2 pl-6 font-mono sm:min-h-0 sm:py-1.5',
                     isCurrent &&
                       'bg-primary text-primary-foreground data-[selected=true]:bg-primary data-[selected=true]:text-primary-foreground',
                     locked && 'cursor-not-allowed opacity-45'
@@ -251,7 +261,7 @@ function ModelResults({
                   }}
                   value={`${provider.slug}:${model}`}
                 >
-                  <span className="min-w-0 flex-1 truncate">{model}</span>
+                  <span className="min-w-0 flex-1 break-all sm:truncate">{model}</span>
                   {locked && (
                     <span className="shrink-0 text-[0.62rem] uppercase tracking-wide opacity-80">{copy.pro}</span>
                   )}
@@ -336,7 +346,7 @@ function ProviderHeading({ provider }: { provider: ModelOptionProvider }) {
     ) : null
 
   return (
-    <span className="flex min-w-0 items-center gap-2">
+    <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
       <span className="truncate">{provider.name}</span>
       <span className="font-mono text-xs font-normal normal-case tracking-normal text-muted-foreground">
         {provider.slug} · {provider.total_models ?? provider.models?.length ?? 0}

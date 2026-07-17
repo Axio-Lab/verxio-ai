@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 // Shared chrome styling for interactive statusbar items (button / link / menu
 // trigger). The 'text' variant intentionally omits hover/transition/disabled.
 const STATUSBAR_ACTION_CLASS =
-  'inline-flex h-full items-center gap-1 rounded-none px-1.5 text-[0.6875rem] text-(--ui-text-tertiary) transition-colors hover:bg-(--chrome-action-hover) hover:text-foreground disabled:cursor-default disabled:opacity-45'
+  'inline-flex h-full min-w-10 shrink-0 items-center justify-center gap-1 rounded-none px-2 text-[0.6875rem] text-(--ui-text-tertiary) transition-colors hover:bg-(--chrome-action-hover) hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-0 disabled:cursor-default disabled:opacity-45 sm:min-w-0 sm:justify-start sm:px-1.5'
 
 export interface StatusbarMenuItem {
   id: string
@@ -57,23 +57,19 @@ export function StatusbarControls({ className, leftItems = [], items = [], ...pr
       className={cn(
         // Include safe-area so the home indicator doesn't cover Status/Agents/Cron
         // on notched phones when viewport-fit=cover is set.
-        'flex h-[calc(1.25rem+env(safe-area-inset-bottom,0px))] shrink-0 items-stretch justify-between gap-2 border-t border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) px-1 pt-0 pb-[env(safe-area-inset-bottom,0px)] text-(--ui-text-tertiary) [-webkit-app-region:no-drag]',
+        'flex h-[calc(2.5rem+env(safe-area-inset-bottom,0px))] shrink-0 items-stretch justify-between gap-1 border-t border-(--ui-stroke-tertiary) bg-(--ui-sidebar-surface-background) px-1 pt-0 pb-[env(safe-area-inset-bottom,0px)] text-(--ui-text-tertiary) [-webkit-app-region:no-drag] sm:h-[calc(1.25rem+env(safe-area-inset-bottom,0px))] sm:gap-2',
         className
       )}
       {...props}
     >
-      {/* `overflow-x-clip` (not `overflow-x-auto`) so a wide status item — for
-          example "Connecting…" on a fresh/untitled session — can't paint a
-          horizontal scrollbar across the bottom of the window. Items already
-          `truncate` their labels, so clipping is the right behavior. */}
-      <div className="flex min-w-0 items-stretch gap-0.5 overflow-x-clip">
+      <div className="scrollbar-none flex min-w-0 flex-1 items-stretch gap-0.5 overflow-x-auto overscroll-x-contain sm:flex-none sm:overflow-x-clip">
         {leftItems
           .filter(item => !item.hidden)
           .map(item => (
             <StatusbarItemView item={item} key={`left:${item.id}`} navigate={navigate} />
           ))}
       </div>
-      <div className="flex min-w-0 items-stretch gap-0.5 overflow-x-clip">
+      <div className="scrollbar-none flex min-w-0 flex-1 justify-end items-stretch gap-0.5 overflow-x-auto overscroll-x-contain sm:flex-none sm:overflow-x-clip">
         {items
           .filter(item => !item.hidden)
           .map(item => (
@@ -88,8 +84,8 @@ function StatusbarItemView({ item, navigate }: { item: StatusbarItem; navigate: 
   const content = (
     <>
       {item.icon}
-      {item.label && <span className="truncate">{item.label}</span>}
-      {item.detail && <span className="truncate text-muted-foreground/80">{item.detail}</span>}
+      {item.label && <span className={cn('truncate', item.icon && 'hidden sm:inline')}>{item.label}</span>}
+      {item.detail && <span className="hidden truncate text-muted-foreground/80 sm:inline">{item.detail}</span>}
     </>
   )
 
@@ -151,7 +147,7 @@ function StatusbarItemView({ item, navigate }: { item: StatusbarItem; navigate: 
     return (
       <div
         className={cn(
-          'inline-flex h-full items-center gap-1 px-1.5 text-[0.6875rem] text-(--ui-text-tertiary)',
+          'inline-flex h-full min-w-10 shrink-0 items-center justify-center gap-1 px-2 text-[0.6875rem] text-(--ui-text-tertiary) sm:min-w-0 sm:justify-start sm:px-1.5',
           item.className
         )}
       >
