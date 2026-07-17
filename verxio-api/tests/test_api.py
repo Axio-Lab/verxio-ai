@@ -1082,6 +1082,67 @@ def test_composio_bridge_writes_runtime_mcp_server(client, monkeypatch):
     assert "source of truth for Verxio" in config
 
 
+def test_composio_accounts_use_current_api_and_parse_auth_config_toolkit(monkeypatch):
+    monkeypatch.setenv("COMPOSIO_API_KEY", "test-key")
+    monkeypatch.setenv("COMPOSIO_API_BASE_URL", "https://legacy.example/api/v3")
+    monkeypatch.setenv("COMPOSIO_TOOLS_API_BASE_URL", "https://current.example/api/v3.1")
+
+    calls: list[tuple[str, str, dict]] = []
+
+    def fake_get(base_url: str, path: str, params=None, timeout: int = 30):
+        calls.append((base_url, path, params or {}))
+        assert base_url == "https://current.example/api/v3.1"
+        assert path == "/connected_accounts"
+        assert params["user_ids"] == "user_123"
+        return {
+            "items": [
+                {
+                    "auth_config": {"toolkit": {"slug": "gmail"}},
+                    "created_at": "2026-07-17T00:00:00Z",
+                    "id": "ca_gmail",
+                    "state": {"val": {"status": "ACTIVE"}},
+                }
+            ]
+        }
+
+    monkeypatch.setattr(composio_catalog, "_get", fake_get)
+
+    accounts = composio_catalog.list_composio_accounts("user_123")
+
+    assert len(accounts) == 1
+    assert accounts[0].appSlug == "gmail"
+    assert accounts[0].id == "ca_gmail"
+    assert accounts[0].status == "ACTIVE"
+    assert calls == [
+        (
+            "https://current.example/api/v3.1",
+            "/connected_accounts",
+            {"user_ids": "user_123", "statuses": "ACTIVE", "limit": 1000},
+        )
+    ]
+
+
+def test_composio_accounts_fall_back_to_legacy_api(monkeypatch):
+    monkeypatch.setenv("COMPOSIO_API_KEY", "test-key")
+    monkeypatch.setenv("COMPOSIO_API_BASE_URL", "https://legacy.example/api/v3")
+    monkeypatch.setenv("COMPOSIO_TOOLS_API_BASE_URL", "https://current.example/api/v3.1")
+
+    calls: list[str] = []
+
+    def fake_get(base_url: str, path: str, params=None, timeout: int = 30):
+        calls.append(base_url)
+        if base_url == "https://current.example/api/v3.1":
+            raise RuntimeError("not found")
+        return {"connected_accounts": [{"app_slug": "gmail", "id": "ca_gmail", "status": "ACTIVE"}]}
+
+    monkeypatch.setattr(composio_catalog, "_get", fake_get)
+
+    accounts = composio_catalog.list_composio_accounts("user_123")
+
+    assert [account.appSlug for account in accounts] == ["gmail"]
+    assert calls == ["https://current.example/api/v3.1", "https://legacy.example/api/v3"]
+
+
 def test_composio_bridge_accepts_explicit_preload_allowlist(client, monkeypatch):
     monkeypatch.setenv("COMPOSIO_API_KEY", "test-key")
     monkeypatch.setenv(

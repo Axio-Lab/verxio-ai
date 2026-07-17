@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import hashlib
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,8 @@ from app.models import (
     ComposioToolPreview,
     RuntimeInstance,
 )
+
+logger = logging.getLogger(__name__)
 
 
 COMPOSIO_MCP_SERVER_NAME = "composio"
@@ -348,17 +351,36 @@ def list_composio_accounts(user_id: str) -> list[ComposioConnectedAccount]:
     if not is_composio_configured():
         return []
 
-    try:
-        response = _get(
-            _api_base(),
-            "/connected_accounts",
-            params={"user_ids": user_id, "statuses": "ACTIVE", "limit": 1000},
-            timeout=20,
-        )
-    except Exception:
-        return []
+    params = {"user_ids": user_id, "statuses": "ACTIVE", "limit": 1000}
+    errors: list[str] = []
 
-    return [_account_to_model(item) for item in _extract_items(response)]
+    # Connected Accounts are on the current v3.1 API. Keep a v3 fallback so
+    # self-hosted deployments that override COMPOSIO_API_BASE_URL keep working,
+    # but do not silently treat API drift as "no connected apps".
+    for base_url in _dedupe_urls(_tools_api_base(), _api_base()):
+        try:
+            response = _get(base_url, "/connected_accounts", params=params, timeout=20)
+            return [_account_to_model(item) for item in _extract_items(response)]
+        except Exception as exc:
+            errors.append(f"{base_url}/connected_accounts: {exc}")
+
+    logger.warning(
+        "Could not list Composio connected accounts for user %s: %s",
+        user_id,
+        " | ".join(errors) or "unknown error",
+    )
+    return []
+
+
+def _dedupe_urls(*urls: str) -> list[str]:
+    rows: list[str] = []
+    seen: set[str] = set()
+    for url in urls:
+        normalized = str(url or "").rstrip("/")
+        if normalized and normalized not in seen:
+            rows.append(normalized)
+            seen.add(normalized)
+    return rows
 
 
 def sync_composio_runtime_bridge(
@@ -620,12 +642,16 @@ def delete_composio_account(account_id: str) -> dict[str, str]:
     if not account_id:
         raise HTTPException(status_code=400, detail="account_id is required.")
 
-    try:
-        _delete(f"{_api_base()}/connected_accounts/{account_id}", timeout=20)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    errors: list[str] = []
+    for base_url in _dedupe_urls(_tools_api_base(), _api_base()):
+        try:
+            _delete(f"{base_url}/connected_accounts/{account_id}", timeout=20)
+            return disconnected_response()
+        except RuntimeError as exc:
+            errors.append(str(exc))
 
-    return disconnected_response()
+    message = errors[-1] if errors else "Composio request failed."
+    raise HTTPException(status_code=502, detail=message)
 
 
 def disconnected_response() -> dict[str, str]:
@@ -1474,11 +1500,28 @@ def _tool_to_preview(item: dict[str, Any]) -> ComposioToolPreview:
 
 def _account_to_model(item: dict[str, Any]) -> ComposioConnectedAccount:
     toolkit = item.get("toolkit") if isinstance(item.get("toolkit"), dict) else {}
+    auth_config = item.get("auth_config") if isinstance(item.get("auth_config"), dict) else {}
+    auth_config_toolkit = auth_config.get("toolkit") if isinstance(auth_config.get("toolkit"), dict) else {}
+    integration = item.get("integration") if isinstance(item.get("integration"), dict) else {}
+    app = item.get("app") if isinstance(item.get("app"), dict) else {}
+    state = item.get("state") if isinstance(item.get("state"), dict) else {}
+    state_val = state.get("val") if isinstance(state.get("val"), dict) else {}
+
     return ComposioConnectedAccount(
-        appSlug=str(toolkit.get("slug") or item.get("appSlug") or item.get("app_slug") or "unknown"),
+        appSlug=str(
+            toolkit.get("slug")
+            or auth_config_toolkit.get("slug")
+            or integration.get("slug")
+            or app.get("slug")
+            or item.get("toolkit_slug")
+            or item.get("toolkitSlug")
+            or item.get("appSlug")
+            or item.get("app_slug")
+            or "unknown"
+        ),
         createdAt=item.get("createdAt") or item.get("created_at"),
         id=str(item.get("id") or ""),
-        status=str(item.get("status") or "UNKNOWN"),
+        status=str(item.get("status") or state_val.get("status") or state.get("status") or "UNKNOWN"),
     )
 
 
