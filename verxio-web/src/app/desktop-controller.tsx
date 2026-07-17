@@ -701,6 +701,19 @@ export function DesktopController() {
     updateSessionState
   })
 
+  const rebindActiveSession = useCallback(async () => {
+    const stored = selectedStoredSessionIdRef.current
+
+    if (!stored) {
+      return
+    }
+
+    // Drop the pre-disconnect runtime id so resumeSession does not treat a
+    // dead in-memory mapping as still valid.
+    runtimeIdByStoredSessionIdRef.current.delete(stored)
+    await resumeSession(stored)
+  }, [resumeSession, runtimeIdByStoredSessionIdRef, selectedStoredSessionIdRef])
+
   useGatewayBoot({
     handleGatewayEvent: handleDesktopGatewayEvent,
     onConnectionReady: c => {
@@ -709,6 +722,7 @@ export function DesktopController() {
     onGatewayReady: g => {
       gatewayRef.current = g
     },
+    rebindActiveSession,
     refreshHermesConfig,
     refreshSessions
   })

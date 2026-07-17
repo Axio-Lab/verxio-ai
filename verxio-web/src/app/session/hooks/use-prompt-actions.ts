@@ -385,7 +385,27 @@ export function usePromptActions({
           }
         }
 
-        await requestGateway('prompt.submit', { session_id: sessionId, text: submitText })
+        // After deploy/runtime wipe, reconnect restores the WS but the tab may
+        // still hold a dead in-memory runtime session id. Resume the durable
+        // stored session once and retry — same recovery as sleep/wake on desktop.
+        try {
+          await requestGateway('prompt.submit', { session_id: sessionId, text: submitText })
+        } catch (firstErr) {
+          if (!isSessionNotFoundError(firstErr) || !selectedStoredSessionIdRef.current) {
+            throw firstErr
+          }
+
+          await resumeStoredSession(selectedStoredSessionIdRef.current)
+          const recoveredId = activeSessionIdRef.current
+
+          if (!recoveredId) {
+            throw firstErr
+          }
+
+          sessionId = recoveredId
+          seedOptimistic(recoveredId)
+          await requestGateway('prompt.submit', { session_id: recoveredId, text: submitText })
+        }
 
         if (usingComposerAttachments) {
           clearComposerAttachments()
@@ -427,10 +447,12 @@ export function usePromptActions({
     },
     [
       activeSessionId,
+      activeSessionIdRef,
       busyRef,
       copy,
       createBackendSessionForSend,
       requestGateway,
+      resumeStoredSession,
       selectedStoredSessionIdRef,
       syncImageAttachmentsForSubmit,
       updateSessionState

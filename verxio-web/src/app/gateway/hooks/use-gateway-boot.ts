@@ -40,6 +40,7 @@ interface GatewayBootOptions {
     connection: Awaited<ReturnType<NonNullable<typeof window.hermesDesktop>['getConnection']>> | null
   ) => void
   onGatewayReady: (gateway: HermesGateway | null) => void
+  rebindActiveSession?: () => Promise<void>
   refreshHermesConfig: () => Promise<void>
   refreshSessions: () => Promise<void>
 }
@@ -48,6 +49,7 @@ export function useGatewayBoot({
   handleGatewayEvent,
   onConnectionReady,
   onGatewayReady,
+  rebindActiveSession,
   refreshHermesConfig,
   refreshSessions
 }: GatewayBootOptions) {
@@ -55,6 +57,7 @@ export function useGatewayBoot({
     handleGatewayEvent,
     onConnectionReady,
     onGatewayReady,
+    rebindActiveSession,
     refreshHermesConfig,
     refreshSessions
   })
@@ -63,6 +66,7 @@ export function useGatewayBoot({
     handleGatewayEvent,
     onConnectionReady,
     onGatewayReady,
+    rebindActiveSession,
     refreshHermesConfig,
     refreshSessions
   }
@@ -147,9 +151,13 @@ export function useGatewayBoot({
         }
 
         reconnectAttempt = 0
-        // Resync state that may have moved on the backend while we were asleep.
+        // Resync state that may have moved on the backend while we were asleep /
+        // while ECS wiped the Hermes runtime. refreshSessions alone only updates
+        // the sidebar list — rebind remints a live runtime id for the open chat
+        // so the next prompt does not 404 with "session not found".
         await callbacksRef.current.refreshHermesConfig().catch(() => undefined)
         await callbacksRef.current.refreshSessions().catch(() => undefined)
+        await callbacksRef.current.rebindActiveSession?.().catch(() => undefined)
       } catch (err) {
         // OAuth session expired mid-reconnect: surface the actionable "sign in
         // again" message once instead of silently looping the backoff against a
