@@ -6,6 +6,7 @@ import {
   isVerxioDesktop,
   resolveDesktopWorkspaceCwd
 } from './desktop-workspace'
+import { verxioArtifactPreviewTarget } from './verxio-artifact-preview'
 
 const HTML_EXTENSIONS = new Set(['.htm', '.html'])
 const IMAGE_EXTENSIONS = new Set(['.bmp', '.gif', '.jpeg', '.jpg', '.png', '.svg', '.webp'])
@@ -138,6 +139,18 @@ export async function normalizeOrLocalPreviewTarget(
   } catch {
     // Running Electron may still have the old HTML-only preview IPC. Fall
     // through to renderer-side local classification so text/images still open.
+  }
+
+  // Hosted web cannot open file:// workspace paths. Prefer the authenticated
+  // /api/artifacts/.../preview URL used by the in-chat artifact cards.
+  try {
+    const verxioTarget = await verxioArtifactPreviewTarget(rawTarget)
+
+    if (verxioTarget) {
+      return verxioTarget
+    }
+  } catch {
+    // Artifacts API may be briefly unavailable; fall through to local target.
   }
 
   return localPreviewTarget(rawTarget, cwd)

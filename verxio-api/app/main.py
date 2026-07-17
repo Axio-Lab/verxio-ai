@@ -955,8 +955,11 @@ async def _sync_composio_bridge_for_user(user: dict, *, apply_live: bool = False
         # Env injection requires a new container. Rare — only when the platform
         # key was added after the runtime was already started.
         await restart_runtime(runtime, extra_env=runtime_env_for_user(str(user["id"])))
-    elif apply_live and bridge.changed and runtime.status in {"running", "starting"}:
-        # Keep the UI session alive: reload MCP servers from the updated config.
+    elif apply_live and runtime.status in {"running", "starting"} and (bridge.changed or bridge.enabled):
+        # Soft-reload whenever the bridge is live — not only when config bytes
+        # changed. Prod sessions often already have the MCP URL on disk but a
+        # stale Connected Apps prompt / toolset until reload runs (local feels
+        # fine because Skills → Connections usually forced a change).
         await soft_reload_runtime_mcp(runtime)
 
     return accounts, bridge

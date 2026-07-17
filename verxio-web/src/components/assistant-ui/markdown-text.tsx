@@ -44,7 +44,12 @@ import { previewTargetFromMarkdownHref } from '@/lib/preview-targets'
 import { tailBoundedRemend } from '@/lib/remend-tail'
 import { cn } from '@/lib/utils'
 import { listVerxioArtifacts, verxioApiEnabled, verxioApiUrl, type VerxioArtifact } from '@/lib/verxio-api'
-import { extractWorkspaceArtifactPaths, workspaceArtifactRelativePath } from '@/lib/verxio-artifact-paths'
+import {
+  artifactTargetForRecord,
+  recordMatchesArtifactPath,
+  verxioArtifactPreviewTarget
+} from '@/lib/verxio-artifact-preview'
+import { extractWorkspaceArtifactPaths } from '@/lib/verxio-artifact-paths'
 import { notifyError } from '@/store/notifications'
 import { type PreviewTarget, setCurrentSessionPreviewTarget } from '@/store/preview'
 import { $currentCwd } from '@/store/session'
@@ -235,90 +240,12 @@ function basename(value: string): string {
   return value.split(/[\\/]/).filter(Boolean).pop() || value
 }
 
-function artifactPreviewKind(record: VerxioArtifact): PreviewTarget['previewKind'] {
-  if (record.content_type.startsWith('image/')) {
-    return 'image'
-  }
-
-  if (/\.html?$/i.test(record.file_name)) {
-    return 'html'
-  }
-
-  if (
-    record.content_type.startsWith('text/') ||
-    /(?:json|xml|csv|markdown|yaml|toml|javascript|typescript|sql|shell)/i.test(record.content_type)
-  ) {
-    return 'text'
-  }
-
-  return 'binary'
-}
-
-async function verxioArtifactPreviewTarget(path: string): Promise<PreviewTarget | null> {
-  if (!verxioApiEnabled()) {
-    return null
-  }
-
-  const relative = workspaceArtifactRelativePath(path)
-
-  if (!relative) {
-    return null
-  }
-
-  const normalized = relative.replace(/^\/+/, '')
-  const response = await listVerxioArtifacts()
-
-  const record = response.artifacts.find(artifact => {
-    const artifactPath = artifact.relative_path.replace(/^workspace\//, '')
-    const runtimeHomePath = artifact.relative_path.replace(/^runtime-home\/artifacts\//, '')
-
-    return artifactPath === normalized || runtimeHomePath === normalized
-  })
-
-  if (!record) {
-    return null
-  }
-
-  return {
-    kind: 'url',
-    label: record.file_name || basename(path),
-    mimeType: record.content_type,
-    previewKind: artifactPreviewKind(record),
-    source: path,
-    url: verxioApiUrl(`/api/artifacts/${encodeURIComponent(record.id)}/preview`)
-  }
-}
-
 interface ResolvedArtifact {
   path: string
   record: VerxioArtifact | null
   target: PreviewTarget | null
   previewUrl: string | null
   downloadUrl: string | null
-}
-
-function recordMatchesArtifactPath(record: VerxioArtifact, path: string): boolean {
-  const relative = workspaceArtifactRelativePath(path)?.replace(/^\/+/, '')
-
-  if (!relative) {
-    return false
-  }
-
-  const artifactPath = record.relative_path.replace(/^workspace\//, '')
-  const runtimeHomePath = record.relative_path.replace(/^runtime-home\/artifacts\//, '')
-
-  return artifactPath === relative || runtimeHomePath === relative
-}
-
-function artifactTargetForRecord(record: VerxioArtifact, path: string): PreviewTarget {
-  return {
-    kind: 'url',
-    label: record.file_name || basename(path),
-    mimeType: record.content_type,
-    previewKind: artifactPreviewKind(record),
-    source: path,
-    url: verxioApiUrl(`/api/artifacts/${encodeURIComponent(record.id)}/preview`)
-  }
 }
 
 function unresolvedArtifact(path: string): ResolvedArtifact {

@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { Tip } from '@/components/ui/tooltip'
 import { useI18n } from '@/i18n'
+import { isVerxioDesktop } from '@/lib/desktop-workspace'
+import { openExternalLink } from '@/lib/external-link'
 import { ChevronRight, X } from '@/lib/icons'
 import { normalizeOrLocalPreviewTarget } from '@/lib/local-preview'
 import { PREVIEW_PANE_ID } from '@/lib/responsive'
@@ -34,7 +36,25 @@ export const PreviewStatusRow = memo(function PreviewStatusRow({ item, onDismiss
       throw new Error(`Could not open preview target: ${item.target}`)
     }
 
+    // Browser cannot open container file:// paths; require the Verxio artifacts API URL.
+    if (!isVerxioDesktop() && target.url.startsWith('file:')) {
+      throw new Error(`Could not resolve hosted preview for: ${item.target}`)
+    }
+
     return target
+  }
+
+  const openResolvedInBrowser = async () => {
+    const resolved = await resolveTarget()
+
+    if (window.hermesDesktop?.openExternal) {
+      await window.hermesDesktop.openExternal(resolved.url)
+
+      return
+    }
+
+    // Hosted web: same path as in-chat artifact cards (cookies + /api/artifacts preview).
+    openExternalLink(resolved.url)
   }
 
   const togglePreview = async () => {
@@ -51,6 +71,14 @@ export const PreviewStatusRow = memo(function PreviewStatusRow({ item, onDismiss
     setOpening(true)
 
     try {
+      // Desktop has a right-rail preview pane. Hosted web does not surface that
+      // pane for status-stack rows, so open the preview URL directly.
+      if (!isVerxioDesktop()) {
+        await openResolvedInBrowser()
+
+        return
+      }
+
       setCurrentSessionPreviewTarget(await resolveTarget(), 'tool-result', item.target)
     } catch (error) {
       notifyError(error, t.preview.unavailable)
@@ -61,15 +89,7 @@ export const PreviewStatusRow = memo(function PreviewStatusRow({ item, onDismiss
 
   const openInBrowser = async () => {
     try {
-      const resolved = await resolveTarget()
-
-      if (window.hermesDesktop?.openExternal) {
-        await window.hermesDesktop.openExternal(resolved.url)
-
-        return
-      }
-
-      window.open(resolved.url, '_blank', 'noopener,noreferrer')
+      await openResolvedInBrowser()
     } catch (error) {
       notifyError(error, t.preview.unavailable)
     }
