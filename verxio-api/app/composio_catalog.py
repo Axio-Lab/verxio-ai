@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import hashlib
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,8 @@ from app.models import (
     ComposioToolPreview,
     RuntimeInstance,
 )
+
+logger = logging.getLogger(__name__)
 
 
 COMPOSIO_MCP_SERVER_NAME = "composio"
@@ -348,17 +351,78 @@ def list_composio_accounts(user_id: str) -> list[ComposioConnectedAccount]:
     if not is_composio_configured():
         return []
 
+    # Composio OpenAPI types these as arrays; pass lists so httpx encodes
+    # user_ids=…&statuses=ACTIVE the way the API expects.
+    params = {"user_ids": [user_id], "statuses": ["ACTIVE"], "limit": 1000}
+    errors: list[str] = []
+
+    # Connected Accounts are on the current v3.1 API. Keep a v3 fallback so
+    # self-hosted deployments that override COMPOSIO_API_BASE_URL keep working,
+    # but do not silently treat API drift as "no connected apps".
+    for base_url in _dedupe_urls(_tools_api_base(), _api_base()):
+        try:
+            response = _get(base_url, "/connected_accounts", params=params, timeout=20)
+            accounts = [_account_to_model(item) for item in _extract_items(response)]
+            if not accounts:
+                _log_empty_account_diagnostics(user_id, base_url)
+            return accounts
+        except Exception as exc:
+            errors.append(f"{base_url}/connected_accounts: {exc}")
+
+    logger.warning(
+        "Could not list Composio connected accounts for user %s: %s",
+        user_id,
+        " | ".join(errors) or "unknown error",
+    )
+    return []
+
+
+def _log_empty_account_diagnostics(user_id: str, base_url: str) -> None:
+    """Log whether the Composio project has ACTIVE accounts under other user ids."""
     try:
         response = _get(
-            _api_base(),
+            base_url,
             "/connected_accounts",
-            params={"user_ids": user_id, "statuses": "ACTIVE", "limit": 1000},
-            timeout=20,
+            params={"statuses": ["ACTIVE"], "limit": 10},
+            timeout=15,
         )
-    except Exception:
-        return []
+    except Exception as exc:
+        logger.warning(
+            "Composio returned no ACTIVE accounts for Verxio user %s; "
+            "could not sample project accounts (%s)",
+            user_id,
+            exc,
+        )
+        return
 
-    return [_account_to_model(item) for item in _extract_items(response)]
+    items = _extract_items(response)
+    total = response.get("total_items") if isinstance(response, dict) else None
+    other_ids: list[str] = []
+    for item in items:
+        other = str(item.get("user_id") or "").strip()
+        if other and other != user_id and other not in other_ids:
+            other_ids.append(other)
+        if len(other_ids) >= 5:
+            break
+
+    logger.warning(
+        "Composio returned no ACTIVE accounts for Verxio user %s. "
+        "Project sample: total_items=%s other_user_ids=%s",
+        user_id,
+        total if total is not None else len(items),
+        other_ids or "(none in sample)",
+    )
+
+
+def _dedupe_urls(*urls: str) -> list[str]:
+    rows: list[str] = []
+    seen: set[str] = set()
+    for url in urls:
+        normalized = str(url or "").rstrip("/")
+        if normalized and normalized not in seen:
+            rows.append(normalized)
+            seen.add(normalized)
+    return rows
 
 
 def sync_composio_runtime_bridge(
@@ -390,14 +454,21 @@ def sync_composio_runtime_bridge(
 
     if not connected_apps:
         mcp_changed = _remove_runtime_mcp_server(runtime)
-        prompt_changed = _remove_runtime_composio_prompt(runtime)
+        config = _read_runtime_config(runtime)
+        prompt_changed = _upsert_runtime_composio_prompt(config, [])
+        if prompt_changed:
+            _write_runtime_config(runtime, config)
         changed = mcp_changed or prompt_changed
         _bridge_state_path(runtime).unlink(missing_ok=True)
         return ComposioToolBridgeStatus(
             changed=changed,
             configured=True,
             enabled=False,
-            message=None,
+            message=(
+                f"No ACTIVE Composio apps for Verxio user {user_id}. "
+                "Reconnect Gmail and other apps under Skills → Connections on this environment "
+                "(local connections do not carry over to production)."
+            ),
             serverName=COMPOSIO_MCP_SERVER_NAME,
         )
 
@@ -620,12 +691,16 @@ def delete_composio_account(account_id: str) -> dict[str, str]:
     if not account_id:
         raise HTTPException(status_code=400, detail="account_id is required.")
 
-    try:
-        _delete(f"{_api_base()}/connected_accounts/{account_id}", timeout=20)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    errors: list[str] = []
+    for base_url in _dedupe_urls(_tools_api_base(), _api_base()):
+        try:
+            _delete(f"{base_url}/connected_accounts/{account_id}", timeout=20)
+            return disconnected_response()
+        except RuntimeError as exc:
+            errors.append(str(exc))
 
-    return disconnected_response()
+    message = errors[-1] if errors else "Composio request failed."
+    raise HTTPException(status_code=502, detail=message)
 
 
 def disconnected_response() -> dict[str, str]:
@@ -882,6 +957,25 @@ def _build_composio_context_prompt(connected_apps: list[str]) -> str:
     labels = [_composio_app_label(slug) for slug in connected_apps]
     app_lines = [f"- {label} (`{slug}`)" for slug, label in zip(connected_apps, labels, strict=False)]
     app_list = "\n".join(app_lines) if app_lines else "- None"
+
+    if not connected_apps:
+        return "\n".join(
+            [
+                COMPOSIO_PROMPT_START,
+                "## Verxio Connected Apps",
+                "",
+                "Composio is configured on this runtime (`COMPOSIO_API_KEY` may be present), but this Verxio user currently has **no ACTIVE connected apps**.",
+                "",
+                "Connected apps:",
+                "- None",
+                "",
+                "Do NOT treat `COMPOSIO_API_KEY` as proof that Gmail/Slack/GitHub/etc. are connected.",
+                "Do NOT call Composio REST/v1/v3 endpoints, install the Composio SDK, or dig through env files for OAuth tokens.",
+                "Tell the user to open **Skills → Connections** in this same Verxio environment and reconnect the apps they need.",
+                "Local desktop connections do not automatically appear in hosted production — each environment uses its own Verxio user id.",
+                COMPOSIO_PROMPT_END,
+            ]
+        )
 
     return "\n".join(
         [
@@ -1474,11 +1568,28 @@ def _tool_to_preview(item: dict[str, Any]) -> ComposioToolPreview:
 
 def _account_to_model(item: dict[str, Any]) -> ComposioConnectedAccount:
     toolkit = item.get("toolkit") if isinstance(item.get("toolkit"), dict) else {}
+    auth_config = item.get("auth_config") if isinstance(item.get("auth_config"), dict) else {}
+    auth_config_toolkit = auth_config.get("toolkit") if isinstance(auth_config.get("toolkit"), dict) else {}
+    integration = item.get("integration") if isinstance(item.get("integration"), dict) else {}
+    app = item.get("app") if isinstance(item.get("app"), dict) else {}
+    state = item.get("state") if isinstance(item.get("state"), dict) else {}
+    state_val = state.get("val") if isinstance(state.get("val"), dict) else {}
+
     return ComposioConnectedAccount(
-        appSlug=str(toolkit.get("slug") or item.get("appSlug") or item.get("app_slug") or "unknown"),
+        appSlug=str(
+            toolkit.get("slug")
+            or auth_config_toolkit.get("slug")
+            or integration.get("slug")
+            or app.get("slug")
+            or item.get("toolkit_slug")
+            or item.get("toolkitSlug")
+            or item.get("appSlug")
+            or item.get("app_slug")
+            or "unknown"
+        ),
         createdAt=item.get("createdAt") or item.get("created_at"),
         id=str(item.get("id") or ""),
-        status=str(item.get("status") or "UNKNOWN"),
+        status=str(item.get("status") or state_val.get("status") or state.get("status") or "UNKNOWN"),
     )
 
 
