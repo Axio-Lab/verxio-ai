@@ -45,16 +45,33 @@ export const PreviewStatusRow = memo(function PreviewStatusRow({ item, onDismiss
   }
 
   const openResolvedInBrowser = async () => {
-    const resolved = await resolveTarget()
+    // Open the tab synchronously while we still have the user-gesture. Resolving
+    // the Verxio preview URL can take seconds (/api/artifacts), and window.open
+    // after await is blocked by popup rules — which looked like "Open preview
+    // does nothing".
+    const pending =
+      !window.hermesDesktop?.openExternal && !isVerxioDesktop() ? window.open('about:blank', '_blank') : null
 
-    if (window.hermesDesktop?.openExternal) {
-      await window.hermesDesktop.openExternal(resolved.url)
+    try {
+      const resolved = await resolveTarget()
 
-      return
+      if (window.hermesDesktop?.openExternal) {
+        await window.hermesDesktop.openExternal(resolved.url)
+
+        return
+      }
+
+      if (pending) {
+        pending.location.href = resolved.url
+
+        return
+      }
+
+      openExternalLink(resolved.url)
+    } catch (error) {
+      pending?.close()
+      throw error
     }
-
-    // Hosted web: same path as in-chat artifact cards (cookies + /api/artifacts preview).
-    openExternalLink(resolved.url)
   }
 
   const togglePreview = async () => {
