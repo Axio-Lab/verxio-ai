@@ -388,7 +388,7 @@ export function ArtifactsView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
 
     try {
       if (verxioApiEnabled()) {
-        const response = await listVerxioArtifacts()
+        const response = await listVerxioArtifacts({ refresh: true })
         setArtifacts(response.artifacts.map(mapVerxioArtifact).sort((left, right) => right.timestamp - left.timestamp))
 
         return
