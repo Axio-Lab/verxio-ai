@@ -188,8 +188,7 @@ apps -> results return to the channel or workspace.**
 
 ## Infrastructure Architecture
 
-Production runs on **Alibaba Cloud ECS**. The hosted default model is **Verxio
-Qwen** via Alibaba DashScope.
+Production runs on **Alibaba Cloud ECS**.
 
 ```mermaid
 flowchart LR
@@ -221,28 +220,78 @@ flowchart LR
 
 ## How It Is Built
 
-Verxio is a hosted product built on top of the Hermes Agent runtime. The split
-is intentional:
+Verxio is a hosted AI agent product built on top of Hermes Agent, Nous
+Research's open-source self-improving agent framework, and developed with
+OpenAI Codex and GPT models.
+
+Hermes provides the underlying agent framework. OpenAI's GPT models power key
+intelligence and reasoning capabilities inside the Verxio experience, while
+Codex played a central role in the development workflow: helping build,
+iterate, debug, and ship the product across the API, web, desktop, and runtime
+codebases.
+
+Verxio brings these components together into a complete product experience. The
+split is intentional:
 
 - **Verxio owns the product experience** - authentication, workspaces, runtime
   lifecycle, web and desktop apps, app connections, Pulse, Notepad, artifacts,
   usage metering, and messaging setup.
 - **The runtime owns agent behavior** - memory, skills, tools, scheduled work,
   messaging execution, delegation, and self-improvement.
+- **Users can bring their own model access** - Verxio is designed so users can
+  connect provider accounts, including ChatGPT/Codex-style subscriptions or API
+  keys, and use those credentials as model providers instead of being locked to
+  a single hosted default.
+
+### Where Codex Accelerated the Build
+
+Codex was used as an active engineering partner throughout the project, not
+only as a code completion tool. GPT-5.6 and Codex helped turn the idea into a
+working product by accelerating:
+
+- **Architecture decisions** - separating the Verxio control plane from the
+  Hermes runtime, isolating each customer workspace in its own runtime
+  container, and keeping product metadata separate from agent memory, skills,
+  credentials, sessions, and artifacts.
+- **Cross-stack implementation** - building and iterating across `verxio-api`,
+  `verxio-web`, `verxio-desktop`, and `hermes-agent` while preserving the
+  boundaries between hosted product code and runtime agent behavior.
+- **Model-provider design** - wiring hosted providers, user-provided keys, and
+  subscription-backed provider access so Verxio can support both managed
+  defaults and user-owned model access.
+- **Debugging and quality loops** - tracing runtime/session failures, fixing
+  environment reload issues, artifact preview bugs, model selector behavior,
+  read-aloud support, and agent resume edge cases with targeted tests and
+  Docker verification.
+- **Product iteration** - shaping Pulse, Notepad, artifacts, messaging,
+  settings, skills, runtime orchestration, and desktop capabilities into a
+  unified experience instead of separate technical demos.
+
+Key decisions were made with Codex in the loop: which logic belonged in the
+hosted Verxio API versus the Hermes runtime, how to preserve runtime isolation,
+how to support provider choice without exposing users to infrastructure
+complexity, and how to verify fixes with focused tests plus local Docker
+runtime rebuilds.
 
 Core directories:
 
-- `hermes-agent/` - internal agent runtime used by Verxio.
 - `verxio-api/` - FastAPI control plane with auth, workspaces, runtime
-  registry, Composio bridge, Pulse, Notepad, artifacts, and proxying.
+  orchestration, Composio bridge, Pulse automations, Notepad, artifact
+  management, usage metering, and proxying.
 - `verxio-web/` - React web app for chat, settings, skills, messaging,
   connections, Pulse, Notepad, and artifacts.
 - `verxio-desktop/` - Electron shell that reuses `verxio-web` and enables
-  native desktop bridge APIs.
+  native file access, terminal support, system audio recording, and desktop
+  bridge APIs.
+- `hermes-agent/` - underlying agent runtime powering memory, skills,
+  messaging, scheduling, delegation, and tool execution.
 - `.verxio/` - local runtime state, runtime homes, workspaces, and artifacts.
 
 Verxio-specific product changes live in `verxio-api`, `verxio-web`, and
-`verxio-desktop`. Runtime changes are kept inside `hermes-agent`.
+`verxio-desktop`. Runtime changes are kept inside `hermes-agent`. Hermes
+provides the agent foundation, OpenAI's GPT models provide intelligence, Codex
+accelerated how the system was built and shipped, and Verxio turns it into an
+accessible, integrated product.
 
 ## Runtime Isolation
 
@@ -354,6 +403,13 @@ Open:
 
 ```text
 http://127.0.0.1:8080
+```
+
+Deployment test login:
+
+```text
+Email: donatusprince@gmail.com
+Password: 123456789
 ```
 
 Signup creates a user, personal workspace, default Verxio agent, runtime

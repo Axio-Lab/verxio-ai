@@ -3,10 +3,12 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import os
 from pathlib import Path
 from subprocess import CompletedProcess
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 from app import composio_catalog, control_plane, db, emailer, inference, main, runtime_manager, transcription_catalog
@@ -173,17 +175,72 @@ def test_inference_catalog_defaults_to_verxio_qwen(client):
     assert qwen_model["displayName"] == "Verxio Qwen"
     assert qwen_model["upstreamModelId"] == "qwen3.6-plus"
     assert qwen_model["availableModelIds"][0] == "qwen3.6-plus"
+    assert "kimi-k2.5" in qwen_model["availableModelIds"]
+    assert "glm-5" in qwen_model["availableModelIds"]
+    assert "MiniMax-M2.5" in qwen_model["availableModelIds"]
     assert "DASHSCOPE_API_KEY" in qwen_model["requiredEnvVars"]
     assert gemini_model["providerSlug"] == "gemini"
     assert gemini_model["displayName"] == "Verxio Gemini"
     assert gemini_model["upstreamModelId"] == "gemini-flash-lite-latest"
-    assert gemini_model["availableModelIds"][:3] == [
-        "gemini-flash-lite-latest",
-        "gemini-3.1-flash-lite",
-        "gemini-2.5-pro",
-    ]
+    assert gemini_model["availableModelIds"][0] == "gemini-flash-lite-latest"
+    assert "gemini-3-pro-preview" in gemini_model["availableModelIds"]
+    assert "gemini-2.5-pro" in gemini_model["availableModelIds"]
     assert gemini_model["default"] is False
     assert "GEMINI_API_KEY" in gemini_model["requiredEnvVars"]
+
+
+def test_inference_catalog_uses_hermes_provider_models(client, monkeypatch):
+    _payload, token = signup(client, "inference-hermes-catalog@example.com")
+    monkeypatch.setattr(
+        inference,
+        "_hermes_provider_model_ids",
+        lambda model: ("qwen-from-hermes", "glm-from-hermes") if model.provider_slug == "alibaba" else (),
+    )
+
+    response = client.get("/api/inference/catalog", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+
+    assert response.status_code == 200
+    qwen_model = next(model for model in response.json()["models"] if model["id"] == "verxio-qwen")
+    assert qwen_model["availableModelIds"][:3] == [
+        "qwen3.6-plus",
+        "qwen-from-hermes",
+        "glm-from-hermes",
+    ]
+
+
+def test_inference_catalog_passes_hosted_key_to_hermes(client, monkeypatch):
+    _payload, token = signup(client, "inference-hosted-hermes-key@example.com")
+    observed: list[dict[str, str | None]] = []
+
+    class FakeHermesModels:
+        @staticmethod
+        def provider_model_ids(provider_slug: str, force_refresh: bool = False) -> list[str]:
+            observed.append(
+                {
+                    "provider_slug": provider_slug,
+                    "force_refresh": str(force_refresh),
+                    "dashscope": os.getenv("DASHSCOPE_API_KEY"),
+                }
+            )
+            return ["deepseek-v4-flash", "happy-horse-model"]
+
+    monkeypatch.setenv("VERXIO_HOSTED_QWEN_API_KEY", "hosted-qwen-secret")
+    monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
+    monkeypatch.setattr(inference.importlib, "import_module", lambda name: FakeHermesModels)
+
+    response = client.get("/api/inference/catalog", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+
+    assert response.status_code == 200
+    qwen_model = next(model for model in response.json()["models"] if model["id"] == "verxio-qwen")
+    assert "deepseek-v4-flash" in qwen_model["availableModelIds"]
+    assert "happy-horse-model" in qwen_model["availableModelIds"]
+    alibaba_call = next(call for call in observed if call["provider_slug"] == "alibaba")
+    assert alibaba_call == {
+        "provider_slug": "alibaba",
+        "force_refresh": "True",
+        "dashscope": "hosted-qwen-secret",
+    }
+    assert os.getenv("DASHSCOPE_API_KEY") is None
 
 
 def test_inference_settings_are_hosted_verxio_qwen_by_default(client):
@@ -200,6 +257,14 @@ def test_transcription_catalog_rejects_anonymous_users(client):
     response = client.get("/api/transcription/catalog")
 
     assert response.status_code == 401
+
+
+def test_dashboard_env_mutations_reassert_hosted_inference_env():
+    assert main._dashboard_path_needs_inference_env_reassert("api/env/reload", "POST")
+    assert main._dashboard_path_needs_inference_env_reassert("api/env", "PUT")
+    assert main._dashboard_path_needs_inference_env_reassert("api/tools/toolsets/tts/env", "PUT")
+    assert not main._dashboard_path_needs_inference_env_reassert("api/model/options", "GET")
+    assert not main._dashboard_path_needs_inference_env_reassert("api/status", "GET")
 
 
 def test_transcription_catalog_uses_fallback_without_keys(client):
@@ -310,7 +375,7 @@ def test_inference_bridge_writes_hosted_verxio_qwen_after_explicit_settings(clie
     assert "verxio-qwen-key" not in state.read_text(encoding="utf-8")
 
 
-def test_inference_bridge_strips_legacy_openai_credentials(client, monkeypatch):
+def test_inference_bridge_preserves_openai_tool_credentials(client, monkeypatch):
     monkeypatch.setenv("VERXIO_HOSTED_QWEN_API_KEY", "verxio-qwen-key")
     payload, _token = signup(client, "inference-legacy@example.com")
     runtime_row = db.fetch_one(
@@ -356,11 +421,11 @@ def test_inference_bridge_strips_legacy_openai_credentials(client, monkeypatch):
     assert status.enabled is True
     assert status.changed is True
     env_text = (hermes_home / ".env").read_text(encoding="utf-8")
-    assert "OPENAI_API_KEY" not in env_text
-    assert "DASHSCOPE_API_KEY" not in env_text
+    assert "OPENAI_API_KEY=legacy-verxio-gpt-key" in env_text
+    assert "DASHSCOPE_API_KEY=keep" in env_text
     auth = json.loads((hermes_home / "auth.json").read_text(encoding="utf-8"))
-    assert "openai-api" not in auth.get("credential_pool", {})
-    assert auth.get("active_provider") == ""
+    assert "openai-api" in auth.get("credential_pool", {})
+    assert auth.get("active_provider") == "openai-api"
     assert "openai-codex" in auth.get("credential_pool", {})
 
 
@@ -381,6 +446,30 @@ def test_inference_bridge_honors_verxio_hosted_qwen_model_env(client, monkeypatc
     assert status.upstreamModelId == "qwen3.7-max"
     config = (Path(runtime.hermes_home_path) / "config.yaml").read_text(encoding="utf-8")
     assert "default: qwen3.7-max" in config
+
+
+def test_inference_bridge_removes_stale_hosted_assignment_without_key(client):
+    payload, _token = signup(client, "inference-stale-provider@example.com")
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    runtime = control_plane.runtime_from_row(runtime_row)
+    config_path = Path(runtime.hermes_home_path) / "config.yaml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        "model:\n  provider: alibaba\n  default: qwen3.6-plus\nterminal:\n  cwd: /workspace\n",
+        encoding="utf-8",
+    )
+
+    status = inference.sync_inference_runtime_bridge(runtime, payload["user"]["id"])
+
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    assert status.configured is False
+    assert status.changed is True
+    assert config.get("model") is None
+    assert config["terminal"]["cwd"] == "/workspace"
 
 
 def test_inference_bridge_writes_hosted_verxio_gemini_model_config(client, monkeypatch):
@@ -440,7 +529,7 @@ def test_inference_bridge_honors_verxio_hosted_gemini_model_env(client, monkeypa
     assert "default: gemini-2.5-flash" in config
 
 
-def test_inference_bridge_strips_sibling_hosted_credentials_for_gemini(client, monkeypatch):
+def test_inference_bridge_preserves_user_env_credentials_for_gemini(client, monkeypatch):
     monkeypatch.setenv("VERXIO_HOSTED_GEMINI_API_KEY", "verxio-gemini-key")
     payload, token = signup(client, "inference-gemini-strip@example.com")
     response = client.put(
@@ -459,7 +548,7 @@ def test_inference_bridge_strips_sibling_hosted_credentials_for_gemini(client, m
     hermes_home = Path(runtime.hermes_home_path)
     hermes_home.mkdir(parents=True, exist_ok=True)
     (hermes_home / ".env").write_text(
-        "DASHSCOPE_API_KEY=stale-qwen-key\nGEMINI_API_KEY=stale-gemini-key\n",
+        "DASHSCOPE_API_KEY=user-qwen-key\nGEMINI_API_KEY=user-gemini-key\nOPENAI_API_KEY=user-openai-key\n",
         encoding="utf-8",
     )
     (hermes_home / "auth.json").write_text(
@@ -496,12 +585,13 @@ def test_inference_bridge_strips_sibling_hosted_credentials_for_gemini(client, m
     assert status.enabled is True
     assert status.defaultModelId == "verxio-gemini"
     env_text = (hermes_home / ".env").read_text(encoding="utf-8")
-    assert "DASHSCOPE_API_KEY" not in env_text
-    assert "GEMINI_API_KEY" not in env_text
+    assert "DASHSCOPE_API_KEY=user-qwen-key" in env_text
+    assert "GEMINI_API_KEY=user-gemini-key" in env_text
+    assert "OPENAI_API_KEY=user-openai-key" in env_text
     auth = json.loads((hermes_home / "auth.json").read_text(encoding="utf-8"))
-    assert "alibaba" not in auth.get("credential_pool", {})
-    assert "gemini" not in auth.get("credential_pool", {})
-    assert auth.get("active_provider") == ""
+    assert "alibaba" in auth.get("credential_pool", {})
+    assert "gemini" in auth.get("credential_pool", {})
+    assert auth.get("active_provider") == "alibaba"
 
 
 def test_inference_bridge_byok_preserves_hermes_provider_settings(client, monkeypatch):

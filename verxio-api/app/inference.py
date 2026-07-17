@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
 import os
+import sys
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import yaml
 
@@ -35,13 +38,22 @@ HOSTED_GEMINI_MODELS_ENV = "VERXIO_HOSTED_GEMINI_MODELS"
 CATALOG_VERSION = "2026-07-01"
 BRIDGE_STATE_FILE = "inference-runtime-bridge.json"
 
-DEFAULT_QWEN_AVAILABLE_MODELS = (
+FALLBACK_QWEN_AVAILABLE_MODELS = (
     DEFAULT_QWEN_UPSTREAM_MODEL,
+    "qwen3.7-max",
+    "qwen3.7-plus",
+    "qwen3.5-plus",
     "qwen3.6-coder",
     "qwen3.6-max",
     "qwen3.6-flash",
+    "qwen3-coder-plus",
+    "qwen3-coder-next",
+    "kimi-k2.5",
+    "glm-5",
+    "glm-4.7",
+    "MiniMax-M2.5",
 )
-DEFAULT_GEMINI_AVAILABLE_MODELS = (
+FALLBACK_GEMINI_AVAILABLE_MODELS = (
     DEFAULT_GEMINI_UPSTREAM_MODEL,
     "gemini-3.1-flash-lite",
     "gemini-2.5-pro",
@@ -69,7 +81,7 @@ class HostedModelDefinition:
     provider_slug: str
     upstream_model_default: str
     upstream_model_env: str | None
-    available_models_default: tuple[str, ...]
+    available_models_fallback: tuple[str, ...]
     available_models_env: str | None
     hosted_secret_env: tuple[str, ...]
     runtime_env_var: str
@@ -101,13 +113,66 @@ def _available_model_ids(model: HostedModelDefinition) -> list[str]:
     upstream = _upstream_model_id(model)
     seen: set[str] = set()
     ordered: list[str] = []
+    hermes_models = _hermes_provider_model_ids(model)
 
-    for model_id in (upstream, *_csv_env_values(model.available_models_env), *model.available_models_default):
+    for model_id in (upstream, *_csv_env_values(model.available_models_env), *hermes_models, *model.available_models_fallback):
         if model_id and model_id not in seen:
             seen.add(model_id)
             ordered.append(model_id)
 
     return ordered
+
+
+def _hermes_repo_path() -> Path:
+    explicit = os.getenv("VERXIO_HERMES_REPO", "").strip()
+    if explicit:
+        return Path(explicit).expanduser()
+
+    local_repo = Path(__file__).resolve().parents[2] / "hermes-agent"
+    if local_repo.is_dir():
+        return local_repo
+
+    return Path("/opt/hermes-agent")
+
+
+@contextmanager
+def _temporary_env(values: dict[str, str]) -> Iterator[None]:
+    previous = {name: os.environ.get(name) for name in values}
+    try:
+        for name, value in values.items():
+            if value:
+                os.environ[name] = value
+        yield
+    finally:
+        for name, value in previous.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+
+def _hermes_provider_model_ids(model: HostedModelDefinition) -> tuple[str, ...]:
+    """Use Hermes' provider catalog instead of maintaining a Verxio fork."""
+    repo = _hermes_repo_path()
+    if repo.is_dir():
+        repo_str = str(repo)
+        if repo_str not in sys.path:
+            sys.path.insert(0, repo_str)
+
+    try:
+        models = importlib.import_module("hermes_cli.models")
+        provider_model_ids = getattr(models, "provider_model_ids")
+        _secret_name, secret_value = _hosted_secret(model)
+        hermes_env = {
+            env_name: secret_value
+            for env_name in (model.runtime_env_var, *model.byok_env_vars)
+            if secret_value
+        }
+        with _temporary_env(hermes_env):
+            model_ids = provider_model_ids(model.provider_slug, force_refresh=bool(secret_value))
+        return tuple(str(model_id) for model_id in model_ids if str(model_id).strip())
+    except Exception:
+        return ()
 
 
 MODEL_CATALOG: tuple[HostedModelDefinition, ...] = (
@@ -118,7 +183,7 @@ MODEL_CATALOG: tuple[HostedModelDefinition, ...] = (
         provider_slug="alibaba",
         upstream_model_default=DEFAULT_QWEN_UPSTREAM_MODEL,
         upstream_model_env=HOSTED_QWEN_MODEL_ENV,
-        available_models_default=DEFAULT_QWEN_AVAILABLE_MODELS,
+        available_models_fallback=FALLBACK_QWEN_AVAILABLE_MODELS,
         available_models_env=HOSTED_QWEN_MODELS_ENV,
         hosted_secret_env=("VERXIO_HOSTED_QWEN_API_KEY", "VERXIO_DASHSCOPE_API_KEY"),
         runtime_env_var="DASHSCOPE_API_KEY",
@@ -135,7 +200,7 @@ MODEL_CATALOG: tuple[HostedModelDefinition, ...] = (
         provider_slug="gemini",
         upstream_model_default=DEFAULT_GEMINI_UPSTREAM_MODEL,
         upstream_model_env=HOSTED_GEMINI_MODEL_ENV,
-        available_models_default=DEFAULT_GEMINI_AVAILABLE_MODELS,
+        available_models_fallback=FALLBACK_GEMINI_AVAILABLE_MODELS,
         available_models_env=HOSTED_GEMINI_MODELS_ENV,
         hosted_secret_env=("VERXIO_HOSTED_GEMINI_API_KEY", "VERXIO_GOOGLE_API_KEY"),
         runtime_env_var="GEMINI_API_KEY",
@@ -410,11 +475,39 @@ def _strip_legacy_providers_from_auth(auth_path: Path) -> bool:
 
 
 def cleanup_legacy_hosted_credentials(runtime: RuntimeInstance) -> bool:
-    """Remove Verxio-GPT-era hosted OpenAI credentials from a runtime Hermes home."""
+    """Preserve user-managed runtime credentials.
+
+    Older hosted-inference cleanup removed provider env vars from Hermes' `.env`
+    to hide stale Verxio-injected keys. That is unsafe now that Tools & Keys uses
+    the same file for user-owned credentials such as OPENAI_API_KEY.
+    """
     ensure_runtime_directories(runtime)
-    changed = _strip_legacy_env_vars_from_dotenv(_runtime_env_path(runtime))
-    changed = _strip_legacy_providers_from_auth(_runtime_auth_path(runtime)) or changed
-    return changed
+    return False
+
+
+def _strip_hosted_model_assignment(runtime: RuntimeInstance, model: HostedModelDefinition) -> bool:
+    config = _read_runtime_config(runtime)
+    raw_model = config.get("model")
+    if not isinstance(raw_model, dict):
+        return False
+
+    if str(raw_model.get("provider") or "") != model.provider_slug:
+        return False
+
+    raw_model.pop("provider", None)
+    raw_model.pop("default", None)
+    if not raw_model:
+        config.pop("model", None)
+    else:
+        config["model"] = raw_model
+
+    _write_runtime_config(runtime, config)
+
+    state_path = _state_path(runtime)
+    if state_path.exists():
+        state_path.unlink()
+
+    return True
 
 
 def sync_inference_runtime_bridge(runtime: RuntimeInstance, user_id: str) -> InferenceRuntimeBridgeStatus:
@@ -441,10 +534,11 @@ def sync_inference_runtime_bridge(runtime: RuntimeInstance, user_id: str) -> Inf
     legacy_credentials_cleaned = cleanup_legacy_hosted_credentials(runtime)
 
     if not secret_value:
+        model_assignment_cleaned = _strip_hosted_model_assignment(runtime, model)
         return InferenceRuntimeBridgeStatus(
             configured=False,
             enabled=False,
-            changed=legacy_credentials_cleaned,
+            changed=legacy_credentials_cleaned or model_assignment_cleaned,
             mode=settings.mode,
             defaultModelId=model.id,
             providerSlug=model.provider_slug,

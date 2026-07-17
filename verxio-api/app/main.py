@@ -1188,6 +1188,29 @@ def _dashboard_path_needs_inference_sync(path: str) -> bool:
     return normalized in {"api/model/info", "api/model/options"}
 
 
+def _dashboard_path_needs_inference_env_reassert(path: str, method: str) -> bool:
+    """Dashboard env writes can drop Verxio-injected hosted model env vars.
+
+    Hermes' `/api/env/reload` mirrors `.env` into `os.environ` and removes keys
+    absent from `.env`. Hosted inference secrets are intentionally injected as
+    container env, not persisted into `.env`, so a generic Tools & Keys reload
+    can make the running gateway process forget `DASHSCOPE_API_KEY` while
+    `config.yaml` still selects `provider: alibaba`.
+    """
+    if _dashboard_request_is_read(method):
+        return False
+
+    normalized = path.strip("/")
+    return normalized in {
+        "api/env",
+        "api/env/reload",
+        "api/runtime/restart",
+    } or (
+        normalized.startswith("api/tools/toolsets/")
+        and (normalized.endswith("/env") or normalized.endswith("/provider"))
+    )
+
+
 _ENSURE_TASKS: set[asyncio.Task[None]] = set()
 _BRIDGE_TASKS: set[asyncio.Task[None]] = set()
 
@@ -1295,6 +1318,12 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
         mark_runtime_healthy(runtime)
     elif lightweight and upstream.status_code >= 500:
         _schedule_runtime_ensure(user)
+
+    if upstream.status_code < 400 and _dashboard_path_needs_inference_env_reassert(path, request.method):
+        runtime_env = runtime_env_for_user(str(user["id"]))
+        if runtime_env and runtime.status == "running":
+            runtime = await restart_runtime(get_runtime_for_user(user, fresh=True), extra_env=runtime_env)
+            mark_runtime_healthy(runtime)
 
     response_headers = {
         key: value
