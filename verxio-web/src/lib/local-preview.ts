@@ -6,6 +6,7 @@ import {
   isVerxioDesktop,
   resolveDesktopWorkspaceCwd
 } from './desktop-workspace'
+import { workspaceArtifactRelativePath } from './verxio-artifact-paths'
 import { verxioArtifactPreviewTarget } from './verxio-artifact-preview'
 
 const HTML_EXTENSIONS = new Set(['.htm', '.html'])
@@ -143,15 +144,19 @@ export async function normalizeOrLocalPreviewTarget(
 
   // Hosted web cannot open file:// workspace paths. Prefer the authenticated
   // /api/artifacts/.../preview URL used by the in-chat artifact cards.
-  try {
-    const verxioTarget = await verxioArtifactPreviewTarget(rawTarget)
+  const verxioTarget = await verxioArtifactPreviewTarget(rawTarget)
 
-    if (verxioTarget) {
-      return verxioTarget
-    }
-  } catch {
-    // Artifacts API may be briefly unavailable; fall through to local target.
+  if (verxioTarget) {
+    return verxioTarget
   }
 
-  return localPreviewTarget(rawTarget, cwd)
+  const local = localPreviewTarget(rawTarget, cwd)
+
+  // Never hand hosted web a container file:// URL for /workspace/artifacts — the
+  // browser blocks it and the status-stack "Open preview" looked broken.
+  if (!isVerxioDesktop() && local?.url.startsWith('file:') && workspaceArtifactRelativePath(rawTarget)) {
+    return null
+  }
+
+  return local
 }

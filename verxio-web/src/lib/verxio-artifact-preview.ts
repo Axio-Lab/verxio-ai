@@ -40,8 +40,15 @@ export function recordMatchesArtifactPath(record: VerxioArtifact, path: string):
 
   const artifactPath = record.relative_path.replace(/^workspace\//, '')
   const runtimeHomePath = record.relative_path.replace(/^runtime-home\/artifacts\//, '')
+  const fileName = relative.split('/').filter(Boolean).pop() || relative
 
-  return artifactPath === relative || runtimeHomePath === relative
+  return (
+    artifactPath === relative ||
+    runtimeHomePath === relative ||
+    record.file_name === fileName ||
+    artifactPath.endsWith(`/${fileName}`) ||
+    runtimeHomePath.endsWith(`/${fileName}`)
+  )
 }
 
 /** Resolve a workspace artifact path to a same-origin Verxio preview URL for hosted web. */

@@ -654,7 +654,10 @@ export function listVerxioArtifacts(options?: { refresh?: boolean }): Promise<Ve
     return artifactsListCache.promise
   }
 
-  const promise = verxioFetch<VerxioArtifactListResponse>('/api/artifacts').catch(error => {
+  const promise = verxioFetch<VerxioArtifactListResponse>('/api/artifacts', {
+    // Indexing can take a while after React scaffolds; don't abort early.
+    timeoutMs: 60_000
+  }).catch(error => {
     if (artifactsListCache?.promise === promise) {
       artifactsListCache = null
     }
