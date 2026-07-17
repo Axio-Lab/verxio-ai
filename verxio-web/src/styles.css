@@ -1149,9 +1149,18 @@ canvas {
   min-height: 2.375rem;
 }
 
+/* iOS Safari zooms focused fields under 16px. Keep the prompt at 1rem on
+   phones so tapping the session box does not change page scale; desktop
+   stays on the tighter conversation size. */
 [data-slot='composer-rich-input'] {
   color: var(--ui-text-primary);
-  font-size: 0.8125rem;
+  font-size: 1rem;
+}
+
+@media (min-width: 640px) {
+  [data-slot='composer-rich-input'] {
+    font-size: var(--conversation-text-font-size, 0.8125rem);
+  }
 }
 
 [data-slot='composer-rich-input']:empty::before {
