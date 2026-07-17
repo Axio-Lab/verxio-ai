@@ -84,12 +84,21 @@ _WORKSPACE_ARTIFACT_SKIP_DIRS = {
     ".git",
     ".hg",
     ".next",
+    ".nuxt",
     ".pytest_cache",
+    ".turbo",
     ".venv",
+    "build",
+    "coverage",
     "dist",
     "node_modules",
+    "vendor",
     "venv",
 }
+# Hard cap so a generated React app cannot freeze /api/artifacts (and make the
+# web UI parse an HTML error page as JSON).
+_MAX_INDEXED_ARTIFACT_FILES = 2_000
+_MAX_ARTIFACT_HASH_BYTES = 32 * 1024 * 1024
 _RUNTIME_HOME_ARTIFACT_PREFIX = "runtime-home/artifacts/"
 _TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
 
@@ -200,11 +209,22 @@ def normalize_gateway_status_content(content: bytes) -> bytes:
 def _sha256_file(path: Path) -> str:
     import hashlib
 
+    try:
+        size = path.stat().st_size
+        if size > _MAX_ARTIFACT_HASH_BYTES:
+            return f"size:{size}"
+    except OSError:
+        return "unavailable"
+
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _artifact_path_is_skipped(relative: Path) -> bool:
+    return any(part in _WORKSPACE_ARTIFACT_SKIP_DIRS for part in relative.parts)
 
 
 def _docker_binary() -> str:
@@ -978,10 +998,27 @@ def _sync_container_workspace_artifacts(runtime: RuntimeInstance) -> Path | None
             container,
             "sh",
             "-lc",
-            "test -d /workspace/artifacts && find /workspace/artifacts -type f | head -1 | grep -q .",
+            "test -d /workspace/artifacts && find /workspace/artifacts -type f "
+            "! -path '*/node_modules/*' ! -path '*/.git/*' ! -path '*/.next/*' ! -path '*/dist/*' "
+            "| head -1 | grep -q .",
         ]
     )
     if probe.returncode != 0:
+        return None
+
+    # Never bulk-copy scaffolded app trees (node_modules/.next/dist) — that can
+    # wedge the API host and leave /api/artifacts returning HTML error pages.
+    heavy = _run_docker(
+        [
+            "exec",
+            container,
+            "sh",
+            "-lc",
+            "find /workspace/artifacts \\( -name node_modules -o -name .next -o -name dist -o -name build \\) "
+            "-type d 2>/dev/null | head -1 | grep -q .",
+        ]
+    )
+    if heavy.returncode == 0:
         return None
 
     mirror = (Path(runtime.hermes_home_path).expanduser().resolve() / "artifacts")
@@ -1015,10 +1052,18 @@ def _workspace_artifact_candidates(runtime: RuntimeInstance) -> list[tuple[Path,
         for file_path in artifact_root.rglob("*"):
             if not file_path.is_file():
                 continue
+            try:
+                relative = file_path.relative_to(artifact_root)
+            except ValueError:
+                continue
+            if _artifact_path_is_skipped(relative):
+                continue
             resolved = file_path.resolve()
             if not _is_path_within(resolved, artifact_root):
                 continue
-            candidates.append((resolved, resolved.relative_to(artifact_root).as_posix(), "workspace"))
+            candidates.append((resolved, relative.as_posix(), "workspace"))
+            if len(candidates) >= _MAX_INDEXED_ARTIFACT_FILES:
+                return candidates
 
     if workspace_root.exists():
         for file_path in workspace_root.iterdir():
@@ -1030,6 +1075,8 @@ def _workspace_artifact_candidates(runtime: RuntimeInstance) -> list[tuple[Path,
             candidates.append(
                 (resolved, f"workspace/{resolved.relative_to(workspace_root).as_posix()}", "workspace_root")
             )
+            if len(candidates) >= _MAX_INDEXED_ARTIFACT_FILES:
+                return candidates
 
         for folder_name in sorted(_WORKSPACE_ARTIFACT_DIR_NAMES - {"artifacts"}):
             folder = workspace_root / folder_name
@@ -1039,7 +1086,7 @@ def _workspace_artifact_candidates(runtime: RuntimeInstance) -> list[tuple[Path,
                 if not file_path.is_file() or file_path.suffix.lower() not in _ARTIFACT_FILE_EXTENSIONS:
                     continue
                 relative_to_folder = file_path.relative_to(folder)
-                if any(part in _WORKSPACE_ARTIFACT_SKIP_DIRS for part in relative_to_folder.parts[:-1]):
+                if _artifact_path_is_skipped(relative_to_folder):
                     continue
                 resolved = file_path.resolve()
                 if not _is_path_within(resolved, workspace_root):
@@ -1047,16 +1094,26 @@ def _workspace_artifact_candidates(runtime: RuntimeInstance) -> list[tuple[Path,
                 candidates.append(
                     (resolved, f"workspace/{resolved.relative_to(workspace_root).as_posix()}", "workspace_root")
                 )
+                if len(candidates) >= _MAX_INDEXED_ARTIFACT_FILES:
+                    return candidates
 
     if runtime_home_artifact_root.exists():
         for file_path in runtime_home_artifact_root.rglob("*"):
             if not file_path.is_file() or file_path.suffix.lower() not in _ARTIFACT_FILE_EXTENSIONS:
                 continue
+            try:
+                relative_path = file_path.relative_to(runtime_home_artifact_root)
+            except ValueError:
+                continue
+            if _artifact_path_is_skipped(relative_path):
+                continue
             resolved = file_path.resolve()
             if not _is_path_within(resolved, runtime_home_artifact_root):
                 continue
-            relative = resolved.relative_to(runtime_home_artifact_root).as_posix()
+            relative = relative_path.as_posix()
             candidates.append((resolved, f"{_RUNTIME_HOME_ARTIFACT_PREFIX}{relative}", "runtime_home"))
+            if len(candidates) >= _MAX_INDEXED_ARTIFACT_FILES:
+                return candidates
 
     return candidates
 

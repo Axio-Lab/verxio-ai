@@ -504,7 +504,10 @@ async def get_transcription_catalog_route(request: Request, refresh: bool = Fals
 async def list_artifacts(request: Request) -> ArtifactListResponse:
     user = require_user(request)
     runtime = get_runtime_for_user(user)
-    return ArtifactListResponse(artifacts=index_artifacts(runtime))
+    # Indexing walks the workspace and may docker-exec; keep it off the event loop
+    # so a large React scaffold cannot wedge health/auth and return HTML 502 pages.
+    artifacts = await asyncio.to_thread(index_artifacts, runtime)
+    return ArtifactListResponse(artifacts=artifacts)
 
 
 @app.post("/api/notepad/recordings", response_model=NotepadRecordingUploadResponse)
@@ -538,7 +541,7 @@ async def upload_notepad_recording(
     temp_path.replace(target)
 
     relative_path = target.relative_to(artifact_root).as_posix()
-    artifacts = index_artifacts(runtime)
+    artifacts = await asyncio.to_thread(index_artifacts, runtime)
     artifact = next((record for record in artifacts if record.relative_path == relative_path), None)
     if artifact is None:
         raise HTTPException(status_code=500, detail="Recording was saved but could not be indexed.")
