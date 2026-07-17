@@ -38,6 +38,7 @@ import { localPreviewTarget, normalizeOrLocalPreviewTarget } from './local-previ
 describe('localPreviewTarget', () => {
   beforeEach(() => {
     isVerxioDesktop.mockReturnValue(false)
+    verxioArtifactPreviewTarget.mockReset()
     verxioArtifactPreviewTarget.mockResolvedValue(null)
   })
 
@@ -65,8 +66,13 @@ describe('localPreviewTarget', () => {
 describe('normalizeOrLocalPreviewTarget', () => {
   beforeEach(() => {
     isVerxioDesktop.mockReturnValue(false)
+    verxioArtifactPreviewTarget.mockReset()
     verxioArtifactPreviewTarget.mockResolvedValue(null)
-    delete (window as { hermesDesktop?: unknown }).hermesDesktop
+
+    // Vitest node env has no browser window; stub only when present.
+    if (typeof globalThis.window !== 'undefined') {
+      delete (globalThis.window as { hermesDesktop?: unknown }).hermesDesktop
+    }
   })
 
   it('uses the Verxio artifacts API on hosted web for workspace HTML', async () => {
