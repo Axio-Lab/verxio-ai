@@ -131,6 +131,9 @@ def test_sync_runtime_workspace_updates_mount_paths(client, monkeypatch, tmp_pat
     async def fake_restart(runtime, extra_env=None):
         return runtime
 
+    # Desktop device sync is allowed when explicitly opted in (macOS desktop does
+    # this implicitly; Linux CI needs the flag).
+    monkeypatch.setenv("VERXIO_ALLOW_EXTERNAL_WORKSPACE", "1")
     monkeypatch.setattr("app.runtime_manager.restart_runtime", fake_restart)
 
     response = client.post(
@@ -150,6 +153,52 @@ def test_sync_runtime_workspace_updates_mount_paths(client, monkeypatch, tmp_pat
     assert runtime_row
     assert runtime_row["workspace_path"] == str(local_workspace.resolve())
     assert (local_workspace / "artifacts").is_dir()
+
+
+def test_hosted_workspace_heals_stale_desktop_device_path(client, monkeypatch, tmp_path):
+    payload, token = signup(client, "hosted-workspace-heal@example.com")
+    stale = tmp_path / "Users" / "donatusprince" / "Documents" / "Verxio"
+    stale.mkdir(parents=True)
+    (stale / "note.txt").write_text("keep me", encoding="utf-8")
+
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    db.execute(
+        """
+        UPDATE runtime_instances
+        SET workspace_path = ?, artifact_path = ?
+        WHERE id = ?
+        """,
+        (str(stale), str(stale / "artifacts"), runtime_row["id"]),
+    )
+
+    monkeypatch.delenv("VERXIO_ALLOW_EXTERNAL_WORKSPACE", raising=False)
+    monkeypatch.setattr(control_plane, "enforce_managed_workspace", lambda: True)
+
+    runtime = control_plane.runtime_from_row(
+        db.fetch_one("SELECT * FROM runtime_instances WHERE id = ?", (runtime_row["id"],)) or {}
+    )
+    healed = control_plane.ensure_runtime_directories(runtime)
+
+    assert healed.workspace_path.startswith(str(control_plane.RUNTIME_ROOT.resolve()))
+    assert healed.workspace_path.endswith("/workspace")
+    assert (Path(healed.workspace_path) / "note.txt").read_text(encoding="utf-8") == "keep me"
+
+    # Hosted sync must not re-bind a device path.
+    async def fake_restart(runtime, extra_env=None):
+        return runtime
+
+    monkeypatch.setattr("app.runtime_manager.restart_runtime", fake_restart)
+    response = client.post(
+        "/api/runtime/workspace",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"workspace_path": str(stale)},
+    )
+    assert response.status_code == 200
+    assert response.json()["runtime"]["workspace_path"] == healed.workspace_path
 
 
 def test_protected_composio_endpoint_rejects_anonymous_users(client):

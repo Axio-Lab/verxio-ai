@@ -701,7 +701,8 @@ async def start_runtime(
     wait_ready: bool = True,
 ) -> RuntimeInstance:
     # mkdir/config seed can touch a cold volume — keep it off the event loop.
-    await asyncio.to_thread(ensure_runtime_directories, runtime)
+    # Also remaps hosted workspaces off stale desktop device paths before mount.
+    runtime = await asyncio.to_thread(ensure_runtime_directories, runtime)
 
     async with _start_lock_for(runtime):
         return await _start_runtime_locked(runtime, extra_env=extra_env, wait_ready=wait_ready)
@@ -881,7 +882,18 @@ def _merge_workspace_tree(source: Path, destination: Path) -> None:
 
 
 async def sync_runtime_workspace(runtime: RuntimeInstance, workspace_path: str) -> RuntimeInstance:
-    """Point the runtime Docker mount at a host workspace folder (desktop sync)."""
+    """Point the runtime Docker mount at a host workspace folder (desktop sync).
+
+    Desktop (macOS) binds the user's device folder (e.g. Documents/Verxio).
+    Hosted/web keeps the managed RUNTIME_ROOT workspace and rejects device paths.
+    """
+    from app.control_plane import enforce_managed_workspace, ensure_hosted_workspace_paths
+
+    if enforce_managed_workspace():
+        # Ignore desktop device paths on hosted control planes (shared Turso can
+        # otherwise leave ECS mounting /Users/.../Documents/Verxio).
+        return await restart_runtime(ensure_hosted_workspace_paths(runtime))
+
     resolved = Path(workspace_path).expanduser().resolve()
 
     if not resolved.is_absolute():

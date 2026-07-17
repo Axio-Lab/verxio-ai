@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import time
 from collections import OrderedDict
 from pathlib import Path
@@ -135,7 +136,98 @@ def _is_under_runtime_root(path: Path) -> bool:
         return False
 
 
-def ensure_runtime_directories(runtime: RuntimeInstance) -> None:
+def _should_chown_workspace(path: Path) -> bool:
+    """Chown workspace for Hermes writes, but never a real desktop user folder.
+
+    - Always chown paths under RUNTIME_ROOT (hosted/managed).
+    - On macOS desktop, never chown outside RUNTIME_ROOT (Documents/Verxio, etc.).
+    - On Linux hosted, also chown stale absolute binds (e.g. leftover Mac
+      `/Users/.../Documents/Verxio` created as root on ECS) so Hermes can write.
+    """
+    if _is_under_runtime_root(path):
+        return True
+    if os.name == "nt" or sys.platform == "darwin":
+        return False
+    return True
+
+
+def enforce_managed_workspace() -> bool:
+    """Hosted/web keeps workspaces under RUNTIME_ROOT; desktop may use the device folder.
+
+    Desktop (macOS) calls ``/api/runtime/workspace`` to bind Documents/Verxio.
+    Hosted Linux must ignore those absolute device paths (they poison shared DBs
+    and mount as empty root-owned dirs on ECS).
+    """
+    flag = os.getenv("VERXIO_ALLOW_EXTERNAL_WORKSPACE", "").strip().lower()
+    if flag in {"1", "true", "yes", "on"}:
+        return False
+    if sys.platform == "darwin":
+        return False
+    return True
+
+
+def _merge_workspace_files(source: Path, destination: Path) -> None:
+    if not source.exists() or not source.is_dir():
+        return
+    destination.mkdir(parents=True, exist_ok=True)
+    for item in source.iterdir():
+        target = destination / item.name
+        try:
+            if item.is_dir():
+                _merge_workspace_files(item, target)
+            elif item.is_file() and not target.exists():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(item.read_bytes())
+        except OSError:
+            continue
+
+
+def ensure_hosted_workspace_paths(runtime: RuntimeInstance) -> RuntimeInstance:
+    """Remap stale desktop/device workspace paths back to managed RUNTIME_ROOT."""
+    if not enforce_managed_workspace():
+        return runtime
+
+    workspace = Path(runtime.workspace_path).expanduser()
+    if _is_under_runtime_root(workspace):
+        return runtime
+
+    paths = runtime_paths(runtime.workspace_id, runtime.agent_id)
+    managed_workspace = Path(paths["workspace_path"])
+    managed_artifacts = Path(paths["artifact_path"])
+    managed_workspace.mkdir(parents=True, exist_ok=True)
+    managed_artifacts.mkdir(parents=True, exist_ok=True)
+
+    _merge_workspace_files(workspace, managed_workspace)
+    _merge_workspace_files(workspace / "artifacts", managed_artifacts)
+
+    db.execute(
+        """
+        UPDATE runtime_instances
+        SET workspace_path = ?, artifact_path = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (str(managed_workspace), str(managed_artifacts), now_iso(), runtime.id),
+    )
+    db.execute(
+        """
+        UPDATE agents
+        SET workspace_path = ?, artifact_path = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (str(managed_workspace), str(managed_artifacts), now_iso(), runtime.agent_id),
+    )
+    _invalidate_context_cache(workspace_id=runtime.workspace_id, agent_id=runtime.agent_id)
+    row = db.fetch_one("SELECT * FROM runtime_instances WHERE id = ?", (runtime.id,))
+    return runtime_from_row(row or {}) if row else runtime.model_copy(
+        update={
+            "workspace_path": str(managed_workspace),
+            "artifact_path": str(managed_artifacts),
+        }
+    )
+
+
+def ensure_runtime_directories(runtime: RuntimeInstance) -> RuntimeInstance:
+    runtime = ensure_hosted_workspace_paths(runtime)
     hermes_home = Path(runtime.hermes_home_path)
     workspace = Path(runtime.workspace_path)
     artifacts = Path(runtime.artifact_path)
@@ -144,13 +236,11 @@ def ensure_runtime_directories(runtime: RuntimeInstance) -> None:
     for path in (hermes_home, workspace, artifacts):
         path.mkdir(parents=True, exist_ok=True)
 
-    # Hosted/ECS: API mkdir as root, Hermes runs as UID 10000 — chown managed
-    # runtime dirs so /workspace is writable on Linux.
-    # Desktop: workspace is the user's real device folder (e.g. Documents/Verxio).
-    # Never chown that — only touch paths under RUNTIME_ROOT.
+    # Hosted/ECS: API mkdir as root, Hermes runs as UID 10000 — chown so
+    # /workspace is writable. Desktop macOS: only touch RUNTIME_ROOT paths.
     if _is_under_runtime_root(hermes_home):
         _chown_path(hermes_home, uid, gid)
-    if _is_under_runtime_root(workspace):
+    if _should_chown_workspace(workspace):
         _chown_tree(workspace, uid, gid)
 
     config_path = hermes_home / "config.yaml"
@@ -184,6 +274,7 @@ def ensure_runtime_directories(runtime: RuntimeInstance) -> None:
         soul_path.write_text(VERXIO_SOUL_MD, encoding="utf-8")
 
     ensure_verxio_agent_defaults(hermes_home)
+    return runtime
 
 
 def workspace_from_row(row: dict[str, Any]) -> Workspace:
