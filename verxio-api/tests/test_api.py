@@ -1093,7 +1093,8 @@ def test_composio_accounts_use_current_api_and_parse_auth_config_toolkit(monkeyp
         calls.append((base_url, path, params or {}))
         assert base_url == "https://current.example/api/v3.1"
         assert path == "/connected_accounts"
-        assert params["user_ids"] == "user_123"
+        assert params["user_ids"] == ["user_123"]
+        assert params["statuses"] == ["ACTIVE"]
         return {
             "items": [
                 {
@@ -1117,7 +1118,7 @@ def test_composio_accounts_use_current_api_and_parse_auth_config_toolkit(monkeyp
         (
             "https://current.example/api/v3.1",
             "/connected_accounts",
-            {"user_ids": "user_123", "statuses": "ACTIVE", "limit": 1000},
+            {"user_ids": ["user_123"], "statuses": ["ACTIVE"], "limit": 1000},
         )
     ]
 
@@ -1556,6 +1557,7 @@ def test_runtime_start_updates_registry_without_real_docker(client, monkeypatch)
     run_call = next(call for call in calls if call[:1] == ["run"])
     assert "/host/verxio/runtimes" in " ".join(run_call)
     assert "/workspace" in " ".join(run_call)
+    assert "HERMES_WRITE_SAFE_ROOT=" in run_call
 
 
 def _runtime_for_health(**overrides) -> RuntimeInstance:

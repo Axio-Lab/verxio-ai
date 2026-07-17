@@ -351,7 +351,9 @@ def list_composio_accounts(user_id: str) -> list[ComposioConnectedAccount]:
     if not is_composio_configured():
         return []
 
-    params = {"user_ids": user_id, "statuses": "ACTIVE", "limit": 1000}
+    # Composio OpenAPI types these as arrays; pass lists so httpx encodes
+    # user_ids=…&statuses=ACTIVE the way the API expects.
+    params = {"user_ids": [user_id], "statuses": ["ACTIVE"], "limit": 1000}
     errors: list[str] = []
 
     # Connected Accounts are on the current v3.1 API. Keep a v3 fallback so
@@ -360,7 +362,10 @@ def list_composio_accounts(user_id: str) -> list[ComposioConnectedAccount]:
     for base_url in _dedupe_urls(_tools_api_base(), _api_base()):
         try:
             response = _get(base_url, "/connected_accounts", params=params, timeout=20)
-            return [_account_to_model(item) for item in _extract_items(response)]
+            accounts = [_account_to_model(item) for item in _extract_items(response)]
+            if not accounts:
+                _log_empty_account_diagnostics(user_id, base_url)
+            return accounts
         except Exception as exc:
             errors.append(f"{base_url}/connected_accounts: {exc}")
 
@@ -370,6 +375,43 @@ def list_composio_accounts(user_id: str) -> list[ComposioConnectedAccount]:
         " | ".join(errors) or "unknown error",
     )
     return []
+
+
+def _log_empty_account_diagnostics(user_id: str, base_url: str) -> None:
+    """Log whether the Composio project has ACTIVE accounts under other user ids."""
+    try:
+        response = _get(
+            base_url,
+            "/connected_accounts",
+            params={"statuses": ["ACTIVE"], "limit": 10},
+            timeout=15,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Composio returned no ACTIVE accounts for Verxio user %s; "
+            "could not sample project accounts (%s)",
+            user_id,
+            exc,
+        )
+        return
+
+    items = _extract_items(response)
+    total = response.get("total_items") if isinstance(response, dict) else None
+    other_ids: list[str] = []
+    for item in items:
+        other = str(item.get("user_id") or "").strip()
+        if other and other != user_id and other not in other_ids:
+            other_ids.append(other)
+        if len(other_ids) >= 5:
+            break
+
+    logger.warning(
+        "Composio returned no ACTIVE accounts for Verxio user %s. "
+        "Project sample: total_items=%s other_user_ids=%s",
+        user_id,
+        total if total is not None else len(items),
+        other_ids or "(none in sample)",
+    )
 
 
 def _dedupe_urls(*urls: str) -> list[str]:
@@ -412,14 +454,21 @@ def sync_composio_runtime_bridge(
 
     if not connected_apps:
         mcp_changed = _remove_runtime_mcp_server(runtime)
-        prompt_changed = _remove_runtime_composio_prompt(runtime)
+        config = _read_runtime_config(runtime)
+        prompt_changed = _upsert_runtime_composio_prompt(config, [])
+        if prompt_changed:
+            _write_runtime_config(runtime, config)
         changed = mcp_changed or prompt_changed
         _bridge_state_path(runtime).unlink(missing_ok=True)
         return ComposioToolBridgeStatus(
             changed=changed,
             configured=True,
             enabled=False,
-            message=None,
+            message=(
+                f"No ACTIVE Composio apps for Verxio user {user_id}. "
+                "Reconnect Gmail and other apps under Skills → Connections on this environment "
+                "(local connections do not carry over to production)."
+            ),
             serverName=COMPOSIO_MCP_SERVER_NAME,
         )
 
@@ -908,6 +957,25 @@ def _build_composio_context_prompt(connected_apps: list[str]) -> str:
     labels = [_composio_app_label(slug) for slug in connected_apps]
     app_lines = [f"- {label} (`{slug}`)" for slug, label in zip(connected_apps, labels, strict=False)]
     app_list = "\n".join(app_lines) if app_lines else "- None"
+
+    if not connected_apps:
+        return "\n".join(
+            [
+                COMPOSIO_PROMPT_START,
+                "## Verxio Connected Apps",
+                "",
+                "Composio is configured on this runtime (`COMPOSIO_API_KEY` may be present), but this Verxio user currently has **no ACTIVE connected apps**.",
+                "",
+                "Connected apps:",
+                "- None",
+                "",
+                "Do NOT treat `COMPOSIO_API_KEY` as proof that Gmail/Slack/GitHub/etc. are connected.",
+                "Do NOT call Composio REST/v1/v3 endpoints, install the Composio SDK, or dig through env files for OAuth tokens.",
+                "Tell the user to open **Skills → Connections** in this same Verxio environment and reconnect the apps they need.",
+                "Local desktop connections do not automatically appear in hosted production — each environment uses its own Verxio user id.",
+                COMPOSIO_PROMPT_END,
+            ]
+        )
 
     return "\n".join(
         [

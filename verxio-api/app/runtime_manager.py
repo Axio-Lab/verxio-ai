@@ -790,6 +790,11 @@ async def _start_runtime_locked(
         f"HERMES_DASHBOARD_SESSION_TOKEN={dashboard_token}",
         "-e",
         "TERMINAL_CWD=/workspace",
+        # Image default is /opt/data, but Verxio mounts the agent workspace at
+        # /workspace. An empty safe root keeps credential denylists active while
+        # allowing write_file under /workspace (and Hermes state under /opt/data).
+        "-e",
+        "HERMES_WRITE_SAFE_ROOT=",
         "-e",
         f"HERMES_UID={os.getenv('VERXIO_RUNTIME_UID', os.getenv('HERMES_UID', '10000'))}",
         "-e",

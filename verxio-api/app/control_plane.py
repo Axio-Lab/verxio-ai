@@ -103,13 +103,55 @@ def runtime_paths(workspace_id: str, agent_id: str) -> dict[str, str]:
     }
 
 
+def _runtime_fs_ids() -> tuple[int, int]:
+    uid = int(os.getenv("VERXIO_RUNTIME_UID", os.getenv("HERMES_UID", "10000")))
+    gid = int(os.getenv("VERXIO_RUNTIME_GID", os.getenv("HERMES_GID", "10000")))
+    return uid, gid
+
+
+def _chown_path(path: Path, uid: int, gid: int) -> None:
+    try:
+        os.chown(path, uid, gid)
+    except OSError:
+        pass
+
+
+def _chown_tree(path: Path, uid: int, gid: int) -> None:
+    """Best-effort ownership fix so the hermes UID can write bind mounts on Linux."""
+    _chown_path(path, uid, gid)
+    try:
+        for child in path.rglob("*"):
+            _chown_path(child, uid, gid)
+    except OSError:
+        pass
+
+
+def _is_under_runtime_root(path: Path) -> bool:
+    """True only for Verxio-managed runtime storage — never desktop user folders."""
+    try:
+        path.expanduser().resolve().relative_to(RUNTIME_ROOT.expanduser().resolve())
+        return True
+    except (OSError, ValueError):
+        return False
+
+
 def ensure_runtime_directories(runtime: RuntimeInstance) -> None:
     hermes_home = Path(runtime.hermes_home_path)
     workspace = Path(runtime.workspace_path)
     artifacts = Path(runtime.artifact_path)
+    uid, gid = _runtime_fs_ids()
 
     for path in (hermes_home, workspace, artifacts):
         path.mkdir(parents=True, exist_ok=True)
+
+    # Hosted/ECS: API mkdir as root, Hermes runs as UID 10000 — chown managed
+    # runtime dirs so /workspace is writable on Linux.
+    # Desktop: workspace is the user's real device folder (e.g. Documents/Verxio).
+    # Never chown that — only touch paths under RUNTIME_ROOT.
+    if _is_under_runtime_root(hermes_home):
+        _chown_path(hermes_home, uid, gid)
+    if _is_under_runtime_root(workspace):
+        _chown_tree(workspace, uid, gid)
 
     config_path = hermes_home / "config.yaml"
     default_config = "\n".join(
