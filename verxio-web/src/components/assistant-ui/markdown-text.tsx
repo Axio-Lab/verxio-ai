@@ -44,12 +44,12 @@ import { previewTargetFromMarkdownHref } from '@/lib/preview-targets'
 import { tailBoundedRemend } from '@/lib/remend-tail'
 import { cn } from '@/lib/utils'
 import { listVerxioArtifacts, verxioApiEnabled, verxioApiUrl, type VerxioArtifact } from '@/lib/verxio-api'
+import { extractWorkspaceArtifactPaths } from '@/lib/verxio-artifact-paths'
 import {
   artifactTargetForRecord,
   recordMatchesArtifactPath,
   verxioArtifactPreviewTarget
 } from '@/lib/verxio-artifact-preview'
-import { extractWorkspaceArtifactPaths } from '@/lib/verxio-artifact-paths'
 import { notifyError } from '@/store/notifications'
 import { type PreviewTarget, setCurrentSessionPreviewTarget } from '@/store/preview'
 import { $currentCwd } from '@/store/session'

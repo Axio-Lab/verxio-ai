@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { PreviewTarget } from '@/store/preview'
+
 const { isVerxioDesktop, getDesktopWorkspaceRoot, resolveDesktopWorkspaceCwd, verxioArtifactPreviewTarget } =
   vi.hoisted(() => ({
     getDesktopWorkspaceRoot: vi.fn(() => '/Users/me/project'),
@@ -15,7 +17,7 @@ const { isVerxioDesktop, getDesktopWorkspaceRoot, resolveDesktopWorkspaceCwd, ve
 
       return null
     }),
-    verxioArtifactPreviewTarget: vi.fn(async () => null)
+    verxioArtifactPreviewTarget: vi.fn(async (): Promise<PreviewTarget | null> => null)
   }))
 
 vi.mock('./desktop-workspace', () => ({
@@ -76,13 +78,15 @@ describe('normalizeOrLocalPreviewTarget', () => {
   })
 
   it('uses the Verxio artifacts API on hosted web for workspace HTML', async () => {
-    verxioArtifactPreviewTarget.mockResolvedValue({
+    const preview: PreviewTarget = {
       kind: 'url',
       label: 'webinar-landing.html',
       previewKind: 'html',
       source: '/workspace/artifacts/webinar-landing.html',
       url: 'https://app.verxio.xyz/api/artifacts/art_123/preview'
-    })
+    }
+
+    verxioArtifactPreviewTarget.mockResolvedValue(preview)
 
     const target = await normalizeOrLocalPreviewTarget('/workspace/artifacts/webinar-landing.html')
 

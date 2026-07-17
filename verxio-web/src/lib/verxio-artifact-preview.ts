@@ -1,5 +1,5 @@
-import { workspaceArtifactRelativePath } from '@/lib/verxio-artifact-paths'
 import { listVerxioArtifacts, verxioApiEnabled, verxioApiUrl, type VerxioArtifact } from '@/lib/verxio-api'
+import { workspaceArtifactRelativePath } from '@/lib/verxio-artifact-paths'
 import type { PreviewTarget } from '@/store/preview'
 
 function basename(value: string) {
