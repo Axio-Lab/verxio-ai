@@ -227,6 +227,21 @@ def _artifact_path_is_skipped(relative: Path) -> bool:
     return any(part in _WORKSPACE_ARTIFACT_SKIP_DIRS for part in relative.parts)
 
 
+def _iter_files_skipping_dirs(root: Path):
+    """Yield files under root without descending into dependency/build trees.
+
+    Path.rglob still visits every path under node_modules before a skip check,
+    which is what wedged /api/artifacts after a React scaffold.
+    """
+    if not root.is_dir():
+        return
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        dirnames[:] = [name for name in dirnames if name not in _WORKSPACE_ARTIFACT_SKIP_DIRS]
+        current = Path(dirpath)
+        for name in filenames:
+            yield current / name
+
+
 def _docker_binary() -> str:
     return os.getenv("VERXIO_DOCKER_BIN", "docker")
 
@@ -1049,14 +1064,12 @@ def _workspace_artifact_candidates(runtime: RuntimeInstance) -> list[tuple[Path,
     candidates: list[tuple[Path, str, str]] = []
 
     if artifact_root.exists():
-        for file_path in artifact_root.rglob("*"):
+        for file_path in _iter_files_skipping_dirs(artifact_root):
             if not file_path.is_file():
                 continue
             try:
                 relative = file_path.relative_to(artifact_root)
             except ValueError:
-                continue
-            if _artifact_path_is_skipped(relative):
                 continue
             resolved = file_path.resolve()
             if not _is_path_within(resolved, artifact_root):
@@ -1082,11 +1095,8 @@ def _workspace_artifact_candidates(runtime: RuntimeInstance) -> list[tuple[Path,
             folder = workspace_root / folder_name
             if not folder.is_dir():
                 continue
-            for file_path in folder.rglob("*"):
+            for file_path in _iter_files_skipping_dirs(folder):
                 if not file_path.is_file() or file_path.suffix.lower() not in _ARTIFACT_FILE_EXTENSIONS:
-                    continue
-                relative_to_folder = file_path.relative_to(folder)
-                if _artifact_path_is_skipped(relative_to_folder):
                     continue
                 resolved = file_path.resolve()
                 if not _is_path_within(resolved, workspace_root):
@@ -1098,14 +1108,12 @@ def _workspace_artifact_candidates(runtime: RuntimeInstance) -> list[tuple[Path,
                     return candidates
 
     if runtime_home_artifact_root.exists():
-        for file_path in runtime_home_artifact_root.rglob("*"):
+        for file_path in _iter_files_skipping_dirs(runtime_home_artifact_root):
             if not file_path.is_file() or file_path.suffix.lower() not in _ARTIFACT_FILE_EXTENSIONS:
                 continue
             try:
                 relative_path = file_path.relative_to(runtime_home_artifact_root)
             except ValueError:
-                continue
-            if _artifact_path_is_skipped(relative_path):
                 continue
             resolved = file_path.resolve()
             if not _is_path_within(resolved, runtime_home_artifact_root):
