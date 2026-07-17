@@ -106,7 +106,7 @@ export function useStatusbarItems({
             ? 'text-emerald-500'
             : serverConnecting
               ? 'text-amber-500'
-              : 'text-muted-foreground/45',
+              : 'text-amber-500/90',
         icon: gatewayRestarting ? (
           <GlyphSpinner ariaLabel={copy.gatewayRestarting} className="size-3.5" />
         ) : serverConnected ? (

@@ -746,6 +746,14 @@ canvas {
     display: none;
   }
 
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
   /* Variant for portaled overlays (Radix DropdownMenu, Popover, etc.) that
      render under document.body, outside the `.scrollbar-dt` scope on
      #root. Same visual treatment, applied directly to the overlay
