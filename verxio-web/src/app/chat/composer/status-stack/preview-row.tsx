@@ -12,7 +12,6 @@ import { ChevronRight, X } from '@/lib/icons'
 import { normalizeOrLocalPreviewTarget } from '@/lib/local-preview'
 import { PREVIEW_PANE_ID } from '@/lib/responsive'
 import { cn } from '@/lib/utils'
-import { verxioArtifactPreviewTarget } from '@/lib/verxio-artifact-preview'
 import { notifyError } from '@/store/notifications'
 import { $paneOpen } from '@/store/panes'
 import { $previewTarget, dismissPreviewTarget, setCurrentSessionPreviewTarget } from '@/store/preview'
@@ -31,28 +30,13 @@ export const PreviewStatusRow = memo(function PreviewStatusRow({ item, onDismiss
   const isOpen = activePreview?.source === item.target && previewPaneOpen
 
   const resolveTarget = async () => {
-    // Session status-stack rows are almost always /workspace/artifacts/*.html —
-    // resolve those through the Verxio artifacts API first (same as the eye icon).
-    if (!isVerxioDesktop()) {
-      try {
-        const verxioTarget = await verxioArtifactPreviewTarget(item.target)
-
-        if (verxioTarget) {
-          return verxioTarget
-        }
-      } catch (error) {
-        throw new Error(
-          `Could not resolve hosted preview for: ${item.target}${error instanceof Error ? ` (${error.message})` : ''}`
-        )
-      }
-    }
-
     const target = await normalizeOrLocalPreviewTarget(item.target, item.cwd || undefined)
 
     if (!target) {
       throw new Error(`Could not open preview target: ${item.target}`)
     }
 
+    // Hosted web cannot open container file:// paths.
     if (!isVerxioDesktop() && target.url.startsWith('file:')) {
       throw new Error(`Could not resolve hosted preview for: ${item.target}`)
     }
@@ -104,8 +88,8 @@ export const PreviewStatusRow = memo(function PreviewStatusRow({ item, onDismiss
     setOpening(true)
 
     try {
-      // Desktop has a right-rail preview pane. Hosted web does not surface that
-      // pane for status-stack rows, so open the preview URL directly.
+      // Desktop: right-rail preview pane (local file or URL).
+      // Hosted web: open the resolved preview URL in a browser tab.
       if (!isVerxioDesktop()) {
         await openResolvedInBrowser()
 
