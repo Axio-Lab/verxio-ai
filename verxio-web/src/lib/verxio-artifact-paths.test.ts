@@ -13,5 +13,6 @@ describe('verxio artifact paths', () => {
     expect(workspaceArtifactRelativePath('/workspace/artifacts/report.csv')).toBe('report.csv')
     expect(workspaceArtifactRelativePath('/artifacts/report.csv')).toBe('report.csv')
     expect(workspaceArtifactRelativePath('artifacts/report.csv')).toBe('report.csv')
+    expect(workspaceArtifactRelativePath('file:///workspace/artifacts/report.csv')).toBe('report.csv')
   })
 })

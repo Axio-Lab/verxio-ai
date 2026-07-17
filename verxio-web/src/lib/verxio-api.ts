@@ -644,8 +644,30 @@ export function authLogout(): Promise<{ ok: boolean }> {
   return verxioFetch<{ ok: boolean }>('/api/auth/logout', { method: 'POST' })
 }
 
-export function listVerxioArtifacts(): Promise<VerxioArtifactListResponse> {
-  return verxioFetch<VerxioArtifactListResponse>('/api/artifacts')
+let artifactsListCache: { at: number; promise: Promise<VerxioArtifactListResponse> } | null = null
+const ARTIFACTS_LIST_CACHE_MS = 15_000
+
+export function listVerxioArtifacts(options?: { refresh?: boolean }): Promise<VerxioArtifactListResponse> {
+  const now = Date.now()
+
+  if (!options?.refresh && artifactsListCache && now - artifactsListCache.at < ARTIFACTS_LIST_CACHE_MS) {
+    return artifactsListCache.promise
+  }
+
+  const promise = verxioFetch<VerxioArtifactListResponse>('/api/artifacts', {
+    // Indexing can take a while after React scaffolds; don't abort early.
+    timeoutMs: 60_000
+  }).catch(error => {
+    if (artifactsListCache?.promise === promise) {
+      artifactsListCache = null
+    }
+
+    throw error
+  })
+
+  artifactsListCache = { at: now, promise }
+
+  return promise
 }
 
 export function deleteVerxioArtifact(artifactId: string): Promise<{ ok: boolean }> {

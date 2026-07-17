@@ -6,6 +6,8 @@ import {
   isVerxioDesktop,
   resolveDesktopWorkspaceCwd
 } from './desktop-workspace'
+import { workspaceArtifactRelativePath } from './verxio-artifact-paths'
+import { verxioArtifactPreviewTarget } from './verxio-artifact-preview'
 
 const HTML_EXTENSIONS = new Set(['.htm', '.html'])
 const IMAGE_EXTENSIONS = new Set(['.bmp', '.gif', '.jpeg', '.jpg', '.png', '.svg', '.webp'])
@@ -73,6 +75,10 @@ function pathToFileUrl(path: string) {
   return `file://${encoded.startsWith('/') ? encoded : `/${encoded}`}`
 }
 
+function looksLikeLocalhostUrl(raw: string): boolean {
+  return /^(localhost|127\.0\.0\.1)(:\d+)?(\/|$|\?|#)/i.test(raw)
+}
+
 export function localPreviewTarget(rawTarget: string, cwd?: string | null): PreviewTarget | null {
   let raw = rawTarget.trim().replace(/^`|`$/g, '')
 
@@ -86,6 +92,11 @@ export function localPreviewTarget(rawTarget: string, cwd?: string | null): Prev
 
   if (/^https?:\/\//i.test(raw)) {
     return { kind: 'url', label: basename(raw), source: raw, url: raw }
+  }
+
+  // Tool rows often record bare "localhost:5173" / "localhost:8080".
+  if (looksLikeLocalhostUrl(raw)) {
+    return { kind: 'url', label: basename(raw), source: raw, url: `http://${raw}` }
   }
 
   let path = raw
@@ -125,6 +136,15 @@ export function localPreviewTarget(rawTarget: string, cwd?: string | null): Prev
   }
 }
 
+/**
+ * Resolve a preview target for both Verxio Desktop and hosted web.
+ *
+ * Priority:
+ * 1. Desktop IPC normalize (real local files)
+ * 2. Desktop local `/workspace` → user folder mapping
+ * 3. Hosted Verxio `/api/artifacts/.../preview` for workspace artifacts
+ * 4. Generic local/http classification
+ */
 export async function normalizeOrLocalPreviewTarget(
   rawTarget: string,
   cwd?: string | null
@@ -140,5 +160,39 @@ export async function normalizeOrLocalPreviewTarget(
     // through to renderer-side local classification so text/images still open.
   }
 
-  return localPreviewTarget(rawTarget, cwd)
+  // Desktop: prefer the on-device workspace file for the right-rail preview pane.
+  // Do this before the artifacts API so a slow/unavailable API cannot block local preview.
+  if (isVerxioDesktop()) {
+    const desktopLocal = localPreviewTarget(rawTarget, cwd)
+
+    if (desktopLocal) {
+      const mappedPath = desktopLocal.path || ''
+
+      // Mapped off `/workspace` onto a real host path, or already a local/http URL.
+      if (desktopLocal.kind === 'url' || (mappedPath && !isRuntimeWorkspacePath(mappedPath))) {
+        return desktopLocal
+      }
+    }
+  }
+
+  // Web (and desktop fallback): resolve workspace artifacts through the API.
+  try {
+    const verxioTarget = await verxioArtifactPreviewTarget(rawTarget)
+
+    if (verxioTarget) {
+      return verxioTarget
+    }
+  } catch {
+    // Artifacts API may be briefly unavailable; fall through to local target.
+  }
+
+  const local = localPreviewTarget(rawTarget, cwd)
+
+  // Never hand hosted web a container file:// URL for /workspace/artifacts — the
+  // browser blocks it and the status-stack "Open preview" looked broken.
+  if (!isVerxioDesktop() && local?.url.startsWith('file:') && workspaceArtifactRelativePath(rawTarget)) {
+    return null
+  }
+
+  return local
 }

@@ -2,10 +2,19 @@ const ARTIFACT_PATH_RE =
   /(?:\/workspace\/artifacts\/|\/artifacts\/|artifacts\/)[^\s<>"'()[\]{}]+?\.[a-z0-9]{1,8}(?:\?[^,\s<>"'()[\]{}]*)?/gi
 
 export function workspaceArtifactRelativePath(path: string): string | null {
-  const raw = path
+  let raw = path
     .trim()
     .replace(/^`|`$/g, '')
     .replace(/[.,;:!?]+$/g, '')
+
+  // Status-stack / desktop helpers sometimes pass file:// workspace URLs.
+  if (/^file:\/\//i.test(raw)) {
+    try {
+      raw = decodeURIComponent(new URL(raw).pathname)
+    } catch {
+      raw = raw.replace(/^file:\/\//i, '')
+    }
+  }
 
   if (raw.startsWith('/workspace/artifacts/')) {
     return raw.slice('/workspace/artifacts/'.length)

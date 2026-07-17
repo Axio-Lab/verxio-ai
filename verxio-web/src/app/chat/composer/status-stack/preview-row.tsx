@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { Tip } from '@/components/ui/tooltip'
 import { useI18n } from '@/i18n'
+import { isVerxioDesktop } from '@/lib/desktop-workspace'
+import { openExternalLink } from '@/lib/external-link'
 import { ChevronRight, X } from '@/lib/icons'
 import { normalizeOrLocalPreviewTarget } from '@/lib/local-preview'
 import { PREVIEW_PANE_ID } from '@/lib/responsive'
@@ -34,7 +36,42 @@ export const PreviewStatusRow = memo(function PreviewStatusRow({ item, onDismiss
       throw new Error(`Could not open preview target: ${item.target}`)
     }
 
+    // Hosted web cannot open container file:// paths.
+    if (!isVerxioDesktop() && target.url.startsWith('file:')) {
+      throw new Error(`Could not resolve hosted preview for: ${item.target}`)
+    }
+
     return target
+  }
+
+  const openResolvedInBrowser = async () => {
+    // Open the tab synchronously while we still have the user-gesture. Resolving
+    // the Verxio preview URL can take seconds (/api/artifacts), and window.open
+    // after await is blocked by popup rules — which looked like "Open preview
+    // does nothing".
+    const pending =
+      !window.hermesDesktop?.openExternal && !isVerxioDesktop() ? window.open('about:blank', '_blank') : null
+
+    try {
+      const resolved = await resolveTarget()
+
+      if (window.hermesDesktop?.openExternal) {
+        await window.hermesDesktop.openExternal(resolved.url)
+
+        return
+      }
+
+      if (pending) {
+        pending.location.href = resolved.url
+
+        return
+      }
+
+      openExternalLink(resolved.url)
+    } catch (error) {
+      pending?.close()
+      throw error
+    }
   }
 
   const togglePreview = async () => {
@@ -51,6 +88,14 @@ export const PreviewStatusRow = memo(function PreviewStatusRow({ item, onDismiss
     setOpening(true)
 
     try {
+      // Desktop: right-rail preview pane (local file or URL).
+      // Hosted web: open the resolved preview URL in a browser tab.
+      if (!isVerxioDesktop()) {
+        await openResolvedInBrowser()
+
+        return
+      }
+
       setCurrentSessionPreviewTarget(await resolveTarget(), 'tool-result', item.target)
     } catch (error) {
       notifyError(error, t.preview.unavailable)
@@ -61,15 +106,7 @@ export const PreviewStatusRow = memo(function PreviewStatusRow({ item, onDismiss
 
   const openInBrowser = async () => {
     try {
-      const resolved = await resolveTarget()
-
-      if (window.hermesDesktop?.openExternal) {
-        await window.hermesDesktop.openExternal(resolved.url)
-
-        return
-      }
-
-      window.open(resolved.url, '_blank', 'noopener,noreferrer')
+      await openResolvedInBrowser()
     } catch (error) {
       notifyError(error, t.preview.unavailable)
     }
