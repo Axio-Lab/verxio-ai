@@ -273,6 +273,10 @@ def test_sync_container_workspace_artifacts_mirrors_unreachable_host_path(monkey
         if args[:1] == ["inspect"]:
             return CompletedProcess(args, 0, stdout="true\n", stderr="")
         if args[:2] == ["exec", "verxio-ws-1-agent-1"]:
+            script = " ".join(args)
+            # Heavy-tree probe: no node_modules/.next/dist/build present.
+            if "-name node_modules" in script:
+                return CompletedProcess(args, 1, stdout="", stderr="")
             return CompletedProcess(args, 0, stdout="", stderr="")
         if args[:1] == ["cp"]:
             mirror.mkdir(parents=True, exist_ok=True)
