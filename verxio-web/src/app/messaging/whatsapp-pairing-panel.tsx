@@ -21,11 +21,12 @@ import type { MessagingPlatformInfo } from '@/types/hermes'
 import { ListRow } from '../settings/primitives'
 
 interface WhatsAppPairingPanelProps {
+  connectionId?: string
   onChanged: () => Promise<void>
   platform: MessagingPlatformInfo
 }
 
-export function WhatsAppPairingPanel({ onChanged, platform }: WhatsAppPairingPanelProps) {
+export function WhatsAppPairingPanel({ connectionId = 'default', onChanged, platform }: WhatsAppPairingPanelProps) {
   const { t } = useI18n()
   const m = t.messaging.whatsappPairing
   const [pairingId, setPairingId] = useState<string | null>(null)
@@ -68,7 +69,7 @@ export function WhatsAppPairingPanel({ onChanged, platform }: WhatsAppPairingPan
       setError('')
 
       try {
-        const res = await startWhatsAppPairing({ reset: forceReset })
+        const res = await startWhatsAppPairing({ reset: forceReset, connection_id: connectionId })
 
         if (res.paired || res.status === 'already_paired') {
           setStatus('connected')
@@ -91,7 +92,7 @@ export function WhatsAppPairingPanel({ onChanged, platform }: WhatsAppPairingPan
         setBusy(false)
       }
     },
-    [m.startFailed, onChanged, renderQr, reset]
+    [connectionId, m.startFailed, onChanged, renderQr, reset]
   )
 
   useEffect(() => {
