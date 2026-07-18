@@ -528,6 +528,17 @@ function MarkdownLink({ children, className, href, ...props }: ComponentProps<'a
 function InlineCode({ children, className, ...props }: ComponentProps<'code'>) {
   const cwd = useStore($currentCwd)
   const raw = childrenToText(children)
+  const emptyChildren =
+    children == null ||
+    children === false ||
+    children === '' ||
+    (Array.isArray(children) && children.every(child => child == null || child === false || child === ''))
+
+  // Provider errors often look like: The model `slug` does not exist…
+  // Empty/redacted `` ` ` `` must not leave a blank chip mid-sentence.
+  if (!raw && emptyChildren) {
+    return null
+  }
 
   if (raw && !/\s/.test(raw)) {
     const url = normalizeExternalUrl(raw)
