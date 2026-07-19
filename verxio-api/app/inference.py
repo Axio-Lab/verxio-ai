@@ -510,6 +510,107 @@ def _strip_hosted_model_assignment(runtime: RuntimeInstance, model: HostedModelD
     return True
 
 
+def _strip_any_hosted_model_assignment(runtime: RuntimeInstance) -> bool:
+    """Clear Hermes main-model assignment when it points at a Verxio hosted provider."""
+    config = _read_runtime_config(runtime)
+    raw_model = config.get("model")
+    if not isinstance(raw_model, dict):
+        return False
+
+    provider = str(raw_model.get("provider") or "").strip()
+    if provider not in set(_hosted_provider_slugs()) and provider not in set(LEGACY_HOSTED_PROVIDER_SLUGS):
+        return False
+
+    raw_model.pop("provider", None)
+    raw_model.pop("default", None)
+    if not raw_model:
+        config.pop("model", None)
+    else:
+        config["model"] = raw_model
+
+    _write_runtime_config(runtime, config)
+
+    state_path = _state_path(runtime)
+    if state_path.exists():
+        state_path.unlink()
+
+    return True
+
+
+def _strip_verxio_hosted_auth_for_byok(auth_path: Path) -> bool:
+    """Clear only Verxio-hosted Alibaba/Gemini env pool entries.
+
+    Does not touch OpenAI/Anthropic (or other) user BYOK credentials that
+    happen to live in the same ``auth.json`` credential pool.
+    """
+    if not auth_path.is_file():
+        return False
+
+    try:
+        payload = json.loads(auth_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+
+    if not isinstance(payload, dict):
+        return False
+
+    changed = False
+    env_sources = {f"env:{name}" for name in HOSTED_RUNTIME_ENV_VARS}
+    hosted_slugs = set(_hosted_provider_slugs())
+    pool = payload.get("credential_pool")
+    if isinstance(pool, dict):
+        for slug in list(hosted_slugs):
+            entries = pool.get(slug)
+            if not isinstance(entries, list):
+                continue
+            filtered = [
+                entry
+                for entry in entries
+                if not (
+                    isinstance(entry, dict)
+                    and str(entry.get("source") or "") in env_sources
+                )
+            ]
+            if len(filtered) != len(entries):
+                changed = True
+                if filtered:
+                    pool[slug] = filtered
+                else:
+                    pool.pop(slug, None)
+
+    active_provider = str(payload.get("active_provider") or "")
+    if active_provider in hosted_slugs:
+        pool = payload.get("credential_pool")
+        if not isinstance(pool, dict) or active_provider not in pool:
+            payload["active_provider"] = ""
+            changed = True
+
+    if not changed:
+        return False
+
+    payload["updated_at"] = now_iso()
+    auth_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return True
+
+
+def _clear_hosted_inference_for_byok(runtime: RuntimeInstance) -> bool:
+    """Remove leftover hosted Qwen/Gemini assignment so BYOK starts clean.
+
+    Keeps user-owned ``.env`` API keys (Tools & Keys). Clears config model
+    slot + env-sourced hosted auth pool entries so the picker/runtime do not
+    keep showing or calling Verxio-hosted defaults.
+    """
+    ensure_runtime_directories(runtime)
+    model_cleaned = _strip_any_hosted_model_assignment(runtime)
+    auth_cleaned = _strip_verxio_hosted_auth_for_byok(_runtime_auth_path(runtime))
+    state_path = _state_path(runtime)
+    state_cleaned = False
+    if state_path.exists():
+        state_path.unlink()
+        state_cleaned = True
+    return model_cleaned or auth_cleaned or state_cleaned
+
+
 def sync_inference_runtime_bridge(runtime: RuntimeInstance, user_id: str) -> InferenceRuntimeBridgeStatus:
     ensure_runtime_directories(runtime)
     settings = ensure_inference_settings(user_id)
@@ -520,10 +621,11 @@ def sync_inference_runtime_bridge(runtime: RuntimeInstance, user_id: str) -> Inf
     upstream_model_id = _upstream_model_id(model)
 
     if settings.mode != "hosted":
+        cleared = _clear_hosted_inference_for_byok(runtime)
         return InferenceRuntimeBridgeStatus(
             configured=True,
             enabled=False,
-            changed=False,
+            changed=cleared,
             mode=settings.mode,
             defaultModelId=settings.defaultModelId,
             providerSlug=model.provider_slug,

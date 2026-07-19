@@ -977,10 +977,22 @@ async def _sync_inference_bridge_for_user(
         bridge = sync_inference_runtime_bridge(runtime, str(user["id"]))
         runtime_env = runtime_env_for_user(str(user["id"]))
         # docker inspect must not run on the event loop — it freezes health/auth.
+        # Hosted mode: restart when injected secrets drift.
+        # BYOK mode: bridge.enabled is false, but bridge.changed means we
+        # stripped leftover hosted Qwen/Gemini — still restart so the container
+        # drops DASHSCOPE/GEMINI injected from the previous hosted session.
         runtime_env_changed = (
-            bridge.enabled
-            and runtime.status == "running"
-            and any(not runtime_container_env_matches(runtime, key, value) for key, value in runtime_env.items())
+            runtime.status == "running"
+            and (
+                (
+                    bridge.enabled
+                    and any(
+                        not runtime_container_env_matches(runtime, key, value)
+                        for key, value in runtime_env.items()
+                    )
+                )
+                or (not bridge.enabled and bridge.mode == "byok" and bridge.changed)
+            )
         )
         return bridge, runtime_env, runtime_env_changed
 
