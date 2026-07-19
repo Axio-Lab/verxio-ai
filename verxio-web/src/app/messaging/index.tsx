@@ -11,6 +11,7 @@ import {
   getMessagingPlatforms,
   type MessagingEnvVarInfo,
   type MessagingPlatformInfo,
+  updateMessagingConnection,
   updateMessagingPlatform
 } from '@/hermes'
 import { type Translations, useI18n } from '@/i18n'
@@ -26,6 +27,7 @@ import { CREDENTIAL_CONTROL_CLASS } from '../settings/credential-key-ui'
 import { ListRow } from '../settings/primitives'
 import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 
+import { MessagingConnectionsPanel } from './messaging-connections-panel'
 import { PairingRequestsPanel } from './pairing-requests-panel'
 import { PlatformAvatar } from './platform-icon'
 import { SlackManifestPanel } from './slack-manifest-panel'
@@ -326,6 +328,7 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
               <PlatformDetail
                 edits={edits[selected.id] || {}}
                 onClear={key => void handleClear(selected, key)}
+                onClearEdits={() => setEdits(current => ({ ...current, [selected.id]: {} }))}
                 onEdit={(key, value) =>
                   setEdits(current => ({
                     ...current,
@@ -381,6 +384,7 @@ function PlatformRow({
 function PlatformDetail({
   edits,
   onClear,
+  onClearEdits,
   onEdit,
   onRefresh,
   onSave,
@@ -390,6 +394,7 @@ function PlatformDetail({
 }: {
   edits: Record<string, string>
   onClear: (key: string) => void
+  onClearEdits: () => void
   onEdit: (key: string, value: string) => void
   onRefresh: () => Promise<void>
   onSave: () => void
@@ -400,18 +405,34 @@ function PlatformDetail({
   const { t } = useI18n()
   const m = t.messaging
   const [showAdvanced, setShowAdvanced] = useState(false)
+  const connections = platform.connections || []
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string>(
+    () => connections.find(row => row.is_default)?.id || connections[0]?.id || 'default'
+  )
+  const selectedConnection = connections.find(row => row.id === selectedConnectionId) || connections[0] || null
+
+  useEffect(() => {
+    const next = connections.find(row => row.is_default)?.id || connections[0]?.id || 'default'
+
+    if (!connections.some(row => row.id === selectedConnectionId)) {
+      setSelectedConnectionId(next)
+    }
+  }, [connections, platform.id, selectedConnectionId])
 
   const isWhatsApp = platform.id === 'whatsapp'
   const isWhatsAppCloud = platform.id === 'whatsapp_cloud'
   const isSlack = platform.id === 'slack'
   const supportsDmPairing = DM_PAIRING_PLATFORMS.has(platform.id)
   const usesCustomSetup = isWhatsApp || isWhatsAppCloud
+  const multiAccount = Boolean(platform.supports_multiple_connections)
   const hasEdits = Object.keys(trimEdits(edits)).length > 0
-  const requiredFields = platform.env_vars.filter(field => field.required)
-  const optionalFields = platform.env_vars.filter(field => !field.required && !fieldCopy(field, m).advanced)
-  const advancedFields = platform.env_vars.filter(field => !field.required && fieldCopy(field, m).advanced)
+  const activeEnvVars =
+    multiAccount && selectedConnection?.env_vars?.length ? selectedConnection.env_vars : platform.env_vars
+  const requiredFields = activeEnvVars.filter(field => field.required)
+  const optionalFields = activeEnvVars.filter(field => !field.required && !fieldCopy(field, m).advanced)
+  const advancedFields = activeEnvVars.filter(field => !field.required && fieldCopy(field, m).advanced)
   const hiddenCount = advancedFields.length
-  const isSavingEnv = saving === `env:${platform.id}`
+  const isSavingEnv = saving === `env:${platform.id}` || saving === `conn:${platform.id}`
 
   const showWhatsAppPairingError =
     platform.error_message && !(isWhatsApp && (platform.error_code === 'whatsapp_not_paired' || !platform.configured))
@@ -434,9 +455,12 @@ function PlatformDetail({
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <StatePill tone={stateTone(platform)}>{stateLabel(platform.state, m)}</StatePill>
-                <SetupPill active={platform.configured}>
-                  {platform.configured ? m.credentialsSet : m.needsSetup}
-                </SetupPill>
+                {/* Disabled + no credentials is "off", not unfinished setup. */}
+                {(platform.enabled || platform.configured) && (
+                  <SetupPill active={platform.configured}>
+                    {platform.configured ? m.credentialsSet : m.needsSetup}
+                  </SetupPill>
+                )}
                 {!platform.gateway_running && <SetupPill active={false}>{m.gatewayStopped}</SetupPill>}
               </div>
               <PlatformHint platform={platform} />
@@ -445,9 +469,24 @@ function PlatformDetail({
 
           {isSlack && <SlackManifestPanel />}
 
+          {multiAccount && (
+            <MessagingConnectionsPanel
+              onChanged={onRefresh}
+              onSelectConnection={setSelectedConnectionId}
+              platform={platform}
+              selectedConnectionId={selectedConnection?.id || selectedConnectionId}
+            />
+          )}
+
           {supportsDmPairing && <PairingRequestsPanel platform={platform} />}
 
-          {isWhatsApp && <WhatsAppPairingPanel onChanged={onRefresh} platform={platform} />}
+          {isWhatsApp && (
+            <WhatsAppPairingPanel
+              connectionId={selectedConnection?.id || selectedConnectionId || 'default'}
+              onChanged={onRefresh}
+              platform={platform}
+            />
+          )}
 
           {isWhatsApp && platform.configured && (
             <WhatsAppSettingsPanel
@@ -592,7 +631,42 @@ function PlatformDetail({
           {(isWhatsAppCloud || !isWhatsApp || platform.configured) && (
             <div className="ml-auto flex items-center gap-2">
               {hasEdits && <span className="text-xs text-muted-foreground">{m.unsavedChanges}</span>}
-              <Button disabled={!hasEdits || isSavingEnv} onClick={onSave} size="sm">
+              <Button
+                disabled={!hasEdits || isSavingEnv}
+                onClick={() => {
+                  if (multiAccount && selectedConnection) {
+                    void (async () => {
+                      const env = trimEdits(edits)
+
+                      if (Object.keys(env).length === 0) {
+                        return
+                      }
+
+                      try {
+                        await updateMessagingConnection(platform.id, selectedConnection.id, {
+                          env,
+                          enabled: true
+                        })
+                        onClearEdits()
+                        await onRefresh()
+                        await runGatewayRestart()
+                        notify({
+                          kind: 'success',
+                          title: m.setupSaved(platform.name),
+                          message: m.gatewayRestarting
+                        })
+                      } catch (err) {
+                        notifyError(err, m.failedSave(platform.name))
+                      }
+                    })()
+
+                    return
+                  }
+
+                  onSave()
+                }}
+                size="sm"
+              >
                 <Save />
                 {isSavingEnv ? m.saving : m.saveChanges}
               </Button>

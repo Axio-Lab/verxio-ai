@@ -166,8 +166,21 @@ export interface MessagingHomeChannel {
   thread_id?: string
 }
 
+export interface MessagingConnectionInfo {
+  configured: boolean
+  enabled: boolean
+  env_vars: MessagingEnvVarInfo[]
+  id: string
+  identity?: string
+  is_default?: boolean
+  label: string
+  meta?: Record<string, unknown>
+  state?: null | string
+}
+
 export interface MessagingPlatformInfo {
   configured: boolean
+  connections?: MessagingConnectionInfo[]
   description: string
   docs_url: string
   enabled: boolean
@@ -179,6 +192,7 @@ export interface MessagingPlatformInfo {
   id: string
   name: string
   state?: null | string
+  supports_multiple_connections?: boolean
   updated_at?: null | string
 }
 
@@ -190,6 +204,14 @@ export interface MessagingPlatformUpdate {
   clear_env?: string[]
   enabled?: boolean
   env?: Record<string, string>
+}
+
+export interface MessagingConnectionUpdate {
+  clear_env?: string[]
+  enabled?: boolean
+  env?: Record<string, string>
+  identity?: string
+  label?: string
 }
 
 export interface MessagingPlatformTestResponse {

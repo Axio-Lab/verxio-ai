@@ -20,6 +20,8 @@ import type {
   LogsResponse,
   MemoryProviderConfig,
   MemoryProviderOAuthStatus,
+  MessagingConnectionInfo,
+  MessagingConnectionUpdate,
   MessagingPlatformsResponse,
   MessagingPlatformTestResponse,
   MessagingPlatformUpdate,
@@ -519,6 +521,39 @@ export function updateMessagingPlatform(
   })
 }
 
+export function createMessagingConnection(
+  platformId: string,
+  body: MessagingConnectionUpdate
+): Promise<{ connection: MessagingConnectionInfo; ok: boolean; platform: string }> {
+  return window.hermesDesktop.api<{ connection: MessagingConnectionInfo; ok: boolean; platform: string }>({
+    path: `/api/messaging/platforms/${encodeURIComponent(platformId)}/connections`,
+    method: 'POST',
+    body
+  })
+}
+
+export function updateMessagingConnection(
+  platformId: string,
+  connectionId: string,
+  body: MessagingConnectionUpdate
+): Promise<{ connection: MessagingConnectionInfo; ok: boolean; platform: string }> {
+  return window.hermesDesktop.api<{ connection: MessagingConnectionInfo; ok: boolean; platform: string }>({
+    path: `/api/messaging/platforms/${encodeURIComponent(platformId)}/connections/${encodeURIComponent(connectionId)}`,
+    method: 'PUT',
+    body
+  })
+}
+
+export function deleteMessagingConnection(
+  platformId: string,
+  connectionId: string
+): Promise<{ connection_id: string; ok: boolean; platform: string }> {
+  return window.hermesDesktop.api<{ connection_id: string; ok: boolean; platform: string }>({
+    path: `/api/messaging/platforms/${encodeURIComponent(platformId)}/connections/${encodeURIComponent(connectionId)}`,
+    method: 'DELETE'
+  })
+}
+
 export function testMessagingPlatform(platformId: string): Promise<MessagingPlatformTestResponse> {
   return window.hermesDesktop.api<MessagingPlatformTestResponse>({
     path: `/api/messaging/platforms/${encodeURIComponent(platformId)}/test`,
@@ -572,7 +607,9 @@ export function revokePairing(platform: string, userId: string): Promise<{ ok: b
   })
 }
 
-export function startWhatsAppPairing(body: { reset?: boolean } = {}): Promise<WhatsAppPairingStartResponse> {
+export function startWhatsAppPairing(
+  body: { connection_id?: string; reset?: boolean } = {}
+): Promise<WhatsAppPairingStartResponse> {
   return window.hermesDesktop.api<WhatsAppPairingStartResponse>({
     path: '/api/messaging/whatsapp/pairing/start',
     method: 'POST',
