@@ -125,31 +125,31 @@ def test_ensure_verxio_agent_defaults_preserves_composio_prompt(tmp_path: Path) 
     assert "Google Sheets (`googlesheets`)" in prompt
 
 
-def test_ensure_verxio_agent_defaults_repairs_corrupt_config(tmp_path: Path) -> None:
+def test_ensure_verxio_agent_defaults_does_not_clobber_corrupt_config(tmp_path: Path) -> None:
+    """Corrupt YAML is backed up; we must not rewrite a slim stub that drops platforms."""
     hermes_home = tmp_path / "hermes-home"
     hermes_home.mkdir(parents=True)
-    (hermes_home / "config.yaml").write_text(
-        "\n".join(
-            [
-                "whatsapp:",
-                "  reply_prefix: ''",
-                "    - Sound natural and human, like a capable person texting.",
-                "",
-            ]
-        ),
-        encoding="utf-8",
+    corrupt = "\n".join(
+        [
+            "platforms:",
+            "  telegram:",
+            "    connections:",
+            "      - id: tele_abc",
+            "whatsapp:",
+            "  reply_prefix: ''",
+            "    - Sound natural and human, like a capable person texting.",
+            "",
+        ]
     )
+    (hermes_home / "config.yaml").write_text(corrupt, encoding="utf-8")
 
     ensure_verxio_agent_defaults(hermes_home)
 
     backups = list(hermes_home.glob("config.yaml.bak-*"))
     assert len(backups) == 1
-
-    loaded = yaml.safe_load((hermes_home / "config.yaml").read_text(encoding="utf-8"))
-    assert isinstance(loaded, dict)
-    assert VERXIO_VOICE_MARKER in str(loaded["agent"]["system_prompt"])
-    assert loaded["whatsapp"]["reply_prefix"] == ""
-    assert loaded["whatsapp"]["enabled"] is False
+    assert "tele_abc" in backups[0].read_text(encoding="utf-8")
+    # Leave config.yaml absent rather than writing agent/whatsapp-only defaults.
+    assert not (hermes_home / "config.yaml").exists()
 
 
 def test_ensure_verxio_agent_defaults_does_not_disable_paired_whatsapp(tmp_path: Path) -> None:

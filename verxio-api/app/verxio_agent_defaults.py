@@ -126,9 +126,16 @@ def _load_config(config_path: Path) -> dict[str, Any]:
     try:
         loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     except yaml.YAMLError:
+        # Keep a backup for forensics, but do NOT treat this as an empty config
+        # that is safe to rewrite. A later write of only agent/whatsapp defaults
+        # would wipe messaging platforms.*.connections and other user state.
         backup = config_path.with_name(f"{config_path.name}.bak-{int(time.time())}")
-        config_path.rename(backup)
-        return {}
+        try:
+            if not backup.exists():
+                config_path.replace(backup)
+        except OSError:
+            pass
+        return {"__verxio_config_unreadable__": True}
 
     return loaded if isinstance(loaded, dict) else {}
 
@@ -184,6 +191,10 @@ def ensure_verxio_agent_defaults(hermes_home: Path) -> None:
 
     config_path = hermes_home / "config.yaml"
     config = _load_config(config_path)
+    if config.get("__verxio_config_unreadable__"):
+        # Corrupt YAML was moved aside; refuse to clobber messaging / model state
+        # with a slim agent+whatsapp stub. Operator can restore from the .bak-*.
+        return
 
     agent = config.get("agent")
     if not isinstance(agent, dict):

@@ -455,9 +455,12 @@ function PlatformDetail({
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <StatePill tone={stateTone(platform)}>{stateLabel(platform.state, m)}</StatePill>
-                <SetupPill active={platform.configured}>
-                  {platform.configured ? m.credentialsSet : m.needsSetup}
-                </SetupPill>
+                {/* Disabled + no credentials is "off", not unfinished setup. */}
+                {(platform.enabled || platform.configured) && (
+                  <SetupPill active={platform.configured}>
+                    {platform.configured ? m.credentialsSet : m.needsSetup}
+                  </SetupPill>
+                )}
                 {!platform.gateway_running && <SetupPill active={false}>{m.gatewayStopped}</SetupPill>}
               </div>
               <PlatformHint platform={platform} />
