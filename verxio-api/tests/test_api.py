@@ -1126,9 +1126,12 @@ def test_composio_bridge_writes_runtime_mcp_server(client, monkeypatch):
     assert "https://mcp.composio.dev/session_123" in config
     assert "${COMPOSIO_API_KEY}" in config
     assert "## Verxio Connected Apps" in config
-    assert "Gmail (`gmail`)" in config
+    assert "Gmail" in config and "`gmail`" in config
     assert "/opt/data/google_token.json" in config
     assert "source of truth for Verxio" in config
+    assert "Google Docs / long content rules" in config
+    assert "stringified JSON blob" in config
+    assert "GOOGLEDOCS_UPDATE_DOCUMENT_MARKDOWN" in config
 
 
 def test_composio_accounts_use_current_api_and_parse_auth_config_toolkit(monkeypatch):
