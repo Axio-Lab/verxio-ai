@@ -21,10 +21,12 @@ def test_ensure_verxio_agent_defaults_is_idempotent(tmp_path: Path) -> None:
     assert "Anti-slop quality bar for all Verxio output" in soul
     assert "use the bundled `anti-ai-slop` skill" in soul
     assert "write with relative paths such as `artifacts/report.csv`" in soul
+    assert "MEDIA:/workspace/artifacts/<filename>" in soul
     assert VERXIO_VOICE_MARKER in config_text
     assert "Anti-slop quality bar for all Verxio output" in config_text
     assert "generic AI-looking output is never the default" in config_text
     assert "write with relative paths such as `artifacts/report.csv`" in config_text
+    assert "MEDIA:/workspace/artifacts/<filename>" in config_text
     assert 'reply_prefix: ""' in config_text or "reply_prefix: ''" in config_text
     assert "enabled: false" in config_text
 

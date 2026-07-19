@@ -831,6 +831,10 @@ async def _start_runtime_locked(
         # allowing write_file under /workspace (and Hermes state under /opt/data).
         "-e",
         "HERMES_WRITE_SAFE_ROOT=",
+        # Allow messaging gateway to attach files from the mounted workspace
+        # when media delivery is in strict/allowlist mode.
+        "-e",
+        "HERMES_MEDIA_ALLOW_DIRS=/workspace",
         "-e",
         f"HERMES_UID={os.getenv('VERXIO_RUNTIME_UID', os.getenv('HERMES_UID', '10000'))}",
         "-e",

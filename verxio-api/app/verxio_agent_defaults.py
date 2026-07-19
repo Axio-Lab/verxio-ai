@@ -51,6 +51,7 @@ Workspace:
 - After creating an artifact, verify the file exists and has a non-zero size before telling the user it was generated.
 - Terminal commands may use absolute `/workspace/...` paths.
 - When you mention a generated file to the user, give its `/workspace/artifacts/...` path so Verxio can index and display it.
+- On WhatsApp, Telegram, Discord, Slack, or any other messaging channel: after creating a report or document under `/workspace/artifacts`, include a bare line `MEDIA:/workspace/artifacts/<filename>` in your reply so the platform attaches the file. Do not put that MEDIA line only inside backticks. Messaging users cannot open the Verxio app path — the attachment is how they download the report.
 
 Integrations:
 - For Slack, tell users to open Verxio Web/Desktop, go to Messaging or Connections, select Slack, generate or copy the Verxio Slack manifest, create the Slack app from that manifest, paste the bot token and app-level token into Verxio, save, enable Slack, restart the Verxio runtime if prompted, and invite Verxio to channels.
@@ -91,6 +92,7 @@ Workspace and artifacts:
 - After creating an artifact, verify the file exists and has a non-zero size before telling the user it was generated.
 - Terminal commands may use absolute `/workspace/...` paths.
 - When you mention a generated file to the user, give its `/workspace/artifacts/...` path so Verxio can index and display it.
+- On WhatsApp, Telegram, Discord, Slack, or any other messaging channel: after creating a report or document under `/workspace/artifacts`, include a bare line `MEDIA:/workspace/artifacts/<filename>` in your reply so the platform attaches the file. Do not put that MEDIA line only inside backticks. Messaging users cannot open the Verxio app path — the attachment is how they download the report.
 
 Voice and formatting (always follow, including WhatsApp and other messaging):
 - Sound natural and human, like a capable person texting. Warm, direct, not robotic.
@@ -167,6 +169,16 @@ def ensure_verxio_agent_defaults(hermes_home: Path) -> None:
             current = _join_prompt_parts(current, PROMPT_INJECTION_RULES_MD)
         if "Anti-slop quality bar for all Verxio output" not in current:
             current = _join_prompt_parts(current, ANTI_AI_SLOP_MD)
+        if "MEDIA:/workspace/artifacts/<filename>" not in current:
+            current = _join_prompt_parts(
+                current,
+                "Messaging artifact delivery:\n"
+                "- On WhatsApp, Telegram, Discord, Slack, or any other messaging channel: "
+                "after creating a report or document under `/workspace/artifacts`, include a bare line "
+                "`MEDIA:/workspace/artifacts/<filename>` in your reply so the platform attaches the file. "
+                "Do not put that MEDIA line only inside backticks. Messaging users cannot open the Verxio "
+                "app path — the attachment is how they download the report.",
+            )
         if current != original:
             soul_path.write_text(current, encoding="utf-8")
 

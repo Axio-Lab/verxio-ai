@@ -1607,6 +1607,7 @@ def test_runtime_start_updates_registry_without_real_docker(client, monkeypatch)
     assert "/host/verxio/runtimes" in " ".join(run_call)
     assert "/workspace" in " ".join(run_call)
     assert "HERMES_WRITE_SAFE_ROOT=" in run_call
+    assert "HERMES_MEDIA_ALLOW_DIRS=/workspace" in run_call
 
 
 def _runtime_for_health(**overrides) -> RuntimeInstance:
