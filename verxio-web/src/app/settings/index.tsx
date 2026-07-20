@@ -267,6 +267,7 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
             />
           ) : activeView === 'providers' ? (
             <ProvidersSettings
+              onInferenceApplied={onConfigSaved}
               onInferenceModeChange={setProviderMode}
               onViewChange={setProviderView}
               requestGateway={requestGateway}

@@ -643,15 +643,9 @@ def test_inference_bridge_preserves_user_env_credentials_for_gemini(client, monk
     assert auth.get("active_provider") == "alibaba"
 
 
-def test_inference_bridge_byok_preserves_hermes_provider_settings(client, monkeypatch):
+def test_inference_bridge_byok_strips_hosted_model_assignment(client, monkeypatch):
     monkeypatch.setenv("VERXIO_HOSTED_QWEN_API_KEY", "verxio-qwen-key")
     payload, token = signup(client, "inference-byok@example.com")
-    response = client.put(
-        "/api/inference/settings",
-        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
-        json={"mode": "byok"},
-    )
-    assert response.status_code == 200
 
     runtime_row = db.fetch_one(
         "SELECT * FROM runtime_instances WHERE workspace_id = ?",
@@ -659,15 +653,76 @@ def test_inference_bridge_byok_preserves_hermes_provider_settings(client, monkey
     )
     assert runtime_row
     runtime = control_plane.runtime_from_row(runtime_row)
-    before = (Path(runtime.hermes_home_path) / "config.yaml").read_text(encoding="utf-8")
+
+    # Seed hosted leftovers the way a prior Hosted session would leave them.
+    hosted = inference.sync_inference_runtime_bridge(runtime, payload["user"]["id"])
+    assert hosted.enabled is True
+    hermes_home = Path(runtime.hermes_home_path)
+    (hermes_home / ".env").write_text(
+        "OPENAI_API_KEY=user-byok-openai\nDASHSCOPE_API_KEY=keep-user-or-stale\n",
+        encoding="utf-8",
+    )
+    (hermes_home / "auth.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "providers": {},
+                "active_provider": "alibaba",
+                "credential_pool": {
+                    "alibaba": [
+                        {
+                            "id": "hosted",
+                            "label": "DASHSCOPE_API_KEY",
+                            "auth_type": "api_key",
+                            "source": "env:DASHSCOPE_API_KEY",
+                        }
+                    ],
+                    "openai-api": [
+                        {
+                            "id": "user",
+                            "label": "OPENAI_API_KEY",
+                            "auth_type": "api_key",
+                            "source": "env:OPENAI_API_KEY",
+                        }
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    # Flip mode in DB without the route sync so we can assert the bridge clear.
+    db.execute(
+        "UPDATE user_inference_settings SET mode = ? WHERE user_id = ?",
+        ("byok", payload["user"]["id"]),
+    )
 
     status = inference.sync_inference_runtime_bridge(runtime, payload["user"]["id"])
 
     assert status.enabled is False
+    assert status.changed is True
     assert status.message == "BYOK mode uses Hermes provider settings."
-    after = (Path(runtime.hermes_home_path) / "config.yaml").read_text(encoding="utf-8")
-    assert after == before
     assert inference.runtime_env_for_user(payload["user"]["id"]) == {}
+
+    config = (hermes_home / "config.yaml").read_text(encoding="utf-8")
+    assert "provider: alibaba" not in config
+    assert "default: qwen3.6-plus" not in config
+    assert not (hermes_home / ".verxio" / "inference-runtime-bridge.json").exists()
+
+    # User-owned Tools & Keys credentials stay on disk; hosted auth pool is cleared.
+    env_text = (hermes_home / ".env").read_text(encoding="utf-8")
+    assert "OPENAI_API_KEY=user-byok-openai" in env_text
+    auth = json.loads((hermes_home / "auth.json").read_text(encoding="utf-8"))
+    assert "alibaba" not in auth.get("credential_pool", {})
+    assert "openai-api" in auth.get("credential_pool", {})
+
+    # Settings PUT still accepts byok once leftovers are gone.
+    response = client.put(
+        "/api/inference/settings",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"mode": "byok"},
+    )
+    assert response.status_code == 200
 
 
 def test_signup_creates_user_workspace_agent_and_runtime(client):

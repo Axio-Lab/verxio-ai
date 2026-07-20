@@ -10,6 +10,7 @@ import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overla
 import { Pane, PaneMain } from '@/components/pane-shell'
 import { RemoteDisplayBanner } from '@/components/remote-display-banner'
 import { readVerxioAuthScope } from '@/lib/auth-scope'
+import { clearCachedModelOptions, refreshModelOptionsQueries } from '@/lib/model-options-cache'
 import { useSkinCommand } from '@/themes/use-skin-command'
 
 import { formatRefValue } from '../components/assistant-ui/directive-text'
@@ -848,7 +849,8 @@ export function DesktopController() {
         onCompleted={() => {
           void refreshHermesConfig()
           void refreshCurrentModel()
-          void queryClient.invalidateQueries({ queryKey: ['model-options'] })
+          clearCachedModelOptions()
+          void refreshModelOptionsQueries(queryClient)
         }}
         requestGateway={requestGateway}
       />

@@ -25,6 +25,7 @@ import { triggerHaptic } from '@/lib/haptics'
 import { setMutableRef } from '@/lib/mutable-ref'
 import { isVerxioWeb } from '@/lib/platform'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
+import { getInferenceSettings, verxioApiEnabled } from '@/lib/verxio-api'
 import { preprocessWebLocalContextReferences } from '@/lib/web-local-context'
 import { resolveWebLocalWorkspaceCwd } from '@/lib/web-local-fs'
 import { setSessionYolo } from '@/lib/yolo-session'
@@ -43,6 +44,7 @@ import { $activeGatewayProfile, $newChatProfile, ensureGatewayProfile, normalize
 import {
   $busy,
   $currentCwd,
+  $currentModel,
   $messages,
   $sessions,
   $yoloActive,
@@ -68,6 +70,20 @@ function isProviderSetupError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
 
   return isProviderSetupErrorMessage(message)
+}
+
+async function isByokWithoutSelectedModel(): Promise<boolean> {
+  if (!verxioApiEnabled() || $currentModel.get().trim()) {
+    return false
+  }
+
+  try {
+    const settings = await getInferenceSettings()
+
+    return settings.mode === 'byok'
+  } catch {
+    return false
+  }
 }
 
 function inlineErrorMessage(error: unknown, fallback: string): string {
@@ -183,6 +199,7 @@ export function usePromptActions({
 }: PromptActionsOptions) {
   const { t } = useI18n()
   const copy = t.desktop
+  const statusbarCopy = t.shell.statusbar
 
   const appendSessionTextMessage = useCallback(
     (sessionId: string, role: ChatMessage['role'], text: string) => {
@@ -275,6 +292,17 @@ export function usePromptActions({
       // bounce the drained send. The drain lock serializes them; the user path
       // keeps the guard so a stray Enter mid-turn can't double-submit.
       if (!text || (!options?.fromQueue && busyRef.current)) {
+        return false
+      }
+
+      if (await isByokWithoutSelectedModel()) {
+        notify({
+          kind: 'error',
+          title: statusbarCopy.switchModel,
+          message: statusbarCopy.noModel
+        })
+        setModelPickerOpen(true)
+
         return false
       }
 
@@ -454,6 +482,8 @@ export function usePromptActions({
       requestGateway,
       resumeStoredSession,
       selectedStoredSessionIdRef,
+      statusbarCopy.noModel,
+      statusbarCopy.switchModel,
       syncImageAttachmentsForSubmit,
       updateSessionState
     ]

@@ -3,7 +3,11 @@ import { describe, expect, it } from 'vitest'
 import type { ModelOptionsResponse } from '@/types/hermes'
 
 import type { VerxioInferenceCatalogResponse, VerxioInferenceSettings } from './verxio-api'
-import { hostedModelOptionsFromInference, mergeHostedAndRuntimeModelOptions } from './verxio-model-options'
+import {
+  hostedModelOptionsFromInference,
+  mergeHostedAndRuntimeModelOptions,
+  prioritizeLinkedProviders
+} from './verxio-model-options'
 
 const catalog: VerxioInferenceCatalogResponse = {
   defaultModelId: 'verxio-qwen',
@@ -218,5 +222,72 @@ describe('mergeHostedAndRuntimeModelOptions', () => {
       models: ['llama-3.3-70b-versatile'],
       name: 'Groq'
     })
+  })
+})
+
+describe('prioritizeLinkedProviders', () => {
+  it('pins authenticated providers above unauthenticated ones and drops hosted in BYOK', () => {
+    const result = prioritizeLinkedProviders(
+      {
+        model: 'gpt-5-mini',
+        provider: 'openai',
+        providers: [
+          {
+            authenticated: false,
+            models: ['claude-sonnet-4'],
+            name: 'Anthropic',
+            slug: 'anthropic'
+          },
+          {
+            authenticated: true,
+            is_verxio_hosted: true,
+            models: ['qwen3.6-plus'],
+            name: 'Verxio Qwen',
+            slug: 'alibaba'
+          },
+          {
+            authenticated: true,
+            models: ['gpt-5-mini'],
+            name: 'OpenAI',
+            slug: 'openai'
+          },
+          {
+            authenticated: true,
+            models: ['claude-opus-4'],
+            name: 'Claude',
+            slug: 'anthropic-oauth'
+          }
+        ]
+      },
+      { dropHosted: true }
+    )
+
+    expect(result.providers?.map(provider => provider.slug)).toEqual(['openai', 'anthropic-oauth', 'anthropic'])
+    expect(result.providers?.some(provider => provider.is_verxio_hosted)).toBe(false)
+  })
+
+  it('keeps Verxio-hosted ahead of linked BYOK providers in hosted mode', () => {
+    const result = prioritizeLinkedProviders({
+      model: 'qwen3.6-plus',
+      provider: 'alibaba',
+      providers: [
+        {
+          authenticated: true,
+          models: ['gpt-5-mini'],
+          name: 'OpenAI',
+          slug: 'openai'
+        },
+        {
+          authenticated: true,
+          is_current: true,
+          is_verxio_hosted: true,
+          models: ['qwen3.6-plus'],
+          name: 'Verxio Qwen',
+          slug: 'alibaba'
+        }
+      ]
+    })
+
+    expect(result.providers?.map(provider => provider.slug)).toEqual(['alibaba', 'openai'])
   })
 })

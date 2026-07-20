@@ -14,8 +14,9 @@ import {
 } from '@/hermes'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
 import { evaluateRuntimeReadiness, type RuntimeReadinessResult } from '@/lib/runtime-readiness'
-import { verxioApiEnabled } from '@/lib/verxio-api'
+import { getInferenceSettings, verxioApiEnabled } from '@/lib/verxio-api'
 import { notify, notifyError } from '@/store/notifications'
+import { setCurrentModel, setCurrentProvider } from '@/store/session'
 import type { ModelOptionProvider, OAuthProvider, OAuthStartResponse } from '@/types/hermes'
 
 type PkceStart = Extract<OAuthStartResponse, { flow: 'pkce' }>
@@ -344,15 +345,28 @@ async function completeWithModelConfirm(
   }
 
   if (isManual) {
-    // Verxio Hosted keeps Qwen as the main inference route. Connecting a
-    // BYOK OAuth account from Settings must not switch (or wipe) the main model.
-    if (!verxioApiEnabled()) {
+    // Hosted mode keeps the Verxio main model. BYOK (and desktop without the
+    // control-plane API) should adopt the newly linked provider's default.
+    let shouldAssignModel = !verxioApiEnabled()
+
+    if (verxioApiEnabled()) {
+      try {
+        const settings = await getInferenceSettings()
+        shouldAssignModel = settings.mode === 'byok'
+      } catch {
+        shouldAssignModel = false
+      }
+    }
+
+    if (shouldAssignModel) {
       try {
         await setModelAssignment({
           scope: 'main',
           provider: defaults.providerSlug,
           model: defaults.defaultModel
         })
+        setCurrentModel(defaults.defaultModel)
+        setCurrentProvider(defaults.providerSlug)
       } catch {
         // Non-fatal for settings-driven connect flows.
       }

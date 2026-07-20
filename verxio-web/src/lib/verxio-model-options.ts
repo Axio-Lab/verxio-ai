@@ -112,6 +112,50 @@ function configuredRuntimeProviders(options: ModelOptionsResponse): ModelOptionP
   )
 }
 
+/** Pin Verxio-hosted, then linked/authenticated providers, above the rest. */
+export function prioritizeLinkedProviders(
+  options: ModelOptionsResponse,
+  opts: { dropHosted?: boolean } = {}
+): ModelOptionsResponse {
+  const dropHosted = opts.dropHosted === true
+  const currentProvider = (options.provider || '').trim()
+  const providers = (options.providers ?? [])
+    .filter(provider => !dropHosted || !provider.is_verxio_hosted)
+    .filter(provider => (provider.models ?? []).length > 0)
+    .slice()
+    .sort((a, b) => {
+      const hostedA = !!a.is_verxio_hosted
+      const hostedB = !!b.is_verxio_hosted
+
+      if (hostedA !== hostedB) {
+        return hostedA ? -1 : 1
+      }
+
+      const authA = a.authenticated !== false
+      const authB = b.authenticated !== false
+
+      if (authA !== authB) {
+        return authA ? -1 : 1
+      }
+
+      if (authA && authB) {
+        const currentA = a.slug === currentProvider || !!a.is_current
+        const currentB = b.slug === currentProvider || !!b.is_current
+
+        if (currentA !== currentB) {
+          return currentA ? -1 : 1
+        }
+      }
+
+      return (a.name || a.slug).localeCompare(b.name || b.slug)
+    })
+
+  return {
+    ...options,
+    providers
+  }
+}
+
 export function mergeHostedAndRuntimeModelOptions(
   hosted: ModelOptionsResponse,
   runtime: ModelOptionsResponse | null | undefined
@@ -208,14 +252,17 @@ export async function getScopedModelOptions(
 
     if (hosted) {
       try {
-        return mergeHostedAndRuntimeModelOptions(hosted, await runtimeOptionsPromise)
+        return prioritizeLinkedProviders(mergeHostedAndRuntimeModelOptions(hosted, await runtimeOptionsPromise))
       } catch {
-        return hosted
+        return prioritizeLinkedProviders(hosted)
       }
     }
+
+    // BYOK: only linked Hermes providers; never keep a stale Verxio-hosted row.
+    return prioritizeLinkedProviders(await runtimeOptionsPromise, { dropHosted: true })
   } catch {
     // If the Verxio control-plane call hiccups, keep the model picker usable.
   }
 
-  return runtimeOptionsPromise
+  return prioritizeLinkedProviders(await runtimeOptionsPromise, { dropHosted: true })
 }
