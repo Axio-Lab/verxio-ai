@@ -870,13 +870,19 @@ export const zh: Translations = {
       createDesc: '编写自定义技能 — YAML 前置元数据加 Markdown 说明。保存后可供代理使用并附加到 cron 任务。',
       editDesc: '重写此技能的 SKILL.md。保存时会验证前置元数据（name、description）。',
       nameLabel: '名称',
-      categoryLabel: '分类（可选）',
+      categoryLabel: '分类',
       contentLabel: 'SKILL.md',
       nameRequired: '技能名称必填。',
       contentRequired: 'SKILL.md 内容必填。',
       saving: '保存中…',
       saveChanges: '保存更改',
-      createSkill: '创建技能'
+      createSkill: '创建技能',
+      importPackage: '导入包',
+      importing: '正在解压…',
+      importHint: 'Zip 或 SKILL.md — 在浏览器本地解压后创建技能。',
+      importReady: '已解压。请检查内容后创建技能。',
+      importSupportFiles: count => `创建时将写入 ${count} 个附属文件。`,
+      importSkippedBinary: count => `已跳过 ${count} 个二进制文件（仅支持文本附属文件）。`
     }
   },
 

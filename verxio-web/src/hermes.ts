@@ -448,6 +448,19 @@ export function createCustomSkill(name: string, content: string, category?: stri
   })
 }
 
+export function writeSkillFiles(
+  name: string,
+  files: Array<{ path: string; content: string }>,
+  profile?: string | null
+): Promise<{ ok: boolean; name: string; written: string[] }> {
+  return window.hermesDesktop.api({
+    ...(profile ? { profile } : profileScoped()),
+    path: '/api/skills/files',
+    method: 'POST',
+    body: { name, files, profile: profile || undefined }
+  })
+}
+
 export function getSkillContent(name: string, profile?: string | null): Promise<SkillContent> {
   const suffix = profile ? `&profile=${encodeURIComponent(profile)}` : ''
 

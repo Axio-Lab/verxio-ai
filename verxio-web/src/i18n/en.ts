@@ -717,16 +717,22 @@ export const en: Translations = {
       createTitle: 'New skill',
       editTitle: name => `Edit skill: ${name}`,
       createDesc:
-        'Author a custom skill — YAML frontmatter plus markdown instructions. It becomes available to the agent and attachable to cron jobs.',
+        'Author a custom skill — YAML frontmatter plus markdown instructions. Import a local .zip or SKILL.md (extracted in your browser; the archive is not uploaded). New skills default to the custom category.',
       editDesc: "Rewrite this skill's SKILL.md. Frontmatter (name, description) is validated on save.",
       nameLabel: 'Name',
-      categoryLabel: 'Category (optional)',
+      categoryLabel: 'Category',
       contentLabel: 'SKILL.md',
       nameRequired: 'Skill name is required.',
       contentRequired: 'SKILL.md content is required.',
       saving: 'Saving…',
       saveChanges: 'Save changes',
-      createSkill: 'Create skill'
+      createSkill: 'Create skill',
+      importPackage: 'Import package',
+      importing: 'Extracting…',
+      importHint: 'Zip or SKILL.md — extracted locally, then you create the skill.',
+      importReady: 'Package extracted. Review and create the skill.',
+      importSupportFiles: count => `${count} supporting file${count === 1 ? '' : 's'} will be written on create.`,
+      importSkippedBinary: count => `${count} binary file${count === 1 ? '' : 's'} skipped (text support files only).`
     }
   },
 

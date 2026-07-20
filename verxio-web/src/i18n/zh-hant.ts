@@ -727,13 +727,19 @@ export const zhHant = defineLocale({
       createDesc: '撰寫自訂技能 — YAML 前置資料加上 Markdown 說明。儲存後可供代理使用並附加到 cron 工作。',
       editDesc: '重寫此技能的 SKILL.md。儲存時會驗證前置資料（name、description）。',
       nameLabel: '名稱',
-      categoryLabel: '分類（選填）',
+      categoryLabel: '分類',
       contentLabel: 'SKILL.md',
       nameRequired: '技能名稱為必填。',
       contentRequired: 'SKILL.md 內容為必填。',
       saving: '儲存中…',
       saveChanges: '儲存變更',
-      createSkill: '建立技能'
+      createSkill: '建立技能',
+      importPackage: '匯入套件',
+      importing: '正在解壓…',
+      importHint: 'Zip 或 SKILL.md — 在瀏覽器本機解壓後建立技能。',
+      importReady: '已解壓。請檢查內容後建立技能。',
+      importSupportFiles: count => `建立時將寫入 ${count} 個附屬檔案。`,
+      importSkippedBinary: count => `已略過 ${count} 個二進位檔案（僅支援文字附屬檔）。`
     }
   },
 
