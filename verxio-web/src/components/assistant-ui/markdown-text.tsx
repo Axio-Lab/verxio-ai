@@ -31,14 +31,8 @@ import { createMemoizedMathPlugin } from '@/lib/katex-memo'
 import { normalizeOrLocalPreviewTarget } from '@/lib/local-preview'
 import { looksLikeFilePath } from '@/lib/markdown-paths'
 import { preprocessMarkdown } from '@/lib/markdown-preprocess'
-import {
-  filePathFromMediaPath,
-  mediaExternalUrl,
-  mediaKind,
-  mediaName,
-  mediaPathFromMarkdownHref,
-  mediaStreamUrl
-} from '@/lib/media'
+import { mediaKind, mediaName, mediaPathFromMarkdownHref } from '@/lib/media'
+import { openMediaPath, resolveMediaPlaybackSrc } from '@/lib/media-playback'
 import { isVerxioDesktop } from '@/lib/platform'
 import { previewTargetFromMarkdownHref } from '@/lib/preview-targets'
 import { tailBoundedRemend } from '@/lib/remend-tail'
@@ -108,29 +102,11 @@ function parseMarkdownIntoBlocksCached(markdown: string): string[] {
   return blocks
 }
 
-async function mediaSrc(path: string): Promise<string> {
-  if (/^(?:https?|data):/i.test(path)) {
-    return path
-  }
-
-  // Stream audio/video through the custom protocol: data URLs are capped and
-  // load the whole file into memory, which broke playback for larger videos.
-  if (window.hermesDesktop && ['audio', 'video'].includes(mediaKind(path))) {
-    return mediaStreamUrl(path)
-  }
-
-  if (!window.hermesDesktop?.readFileDataUrl) {
-    return mediaExternalUrl(path)
-  }
-
-  return window.hermesDesktop.readFileDataUrl(filePathFromMediaPath(path))
-}
-
 function OpenMediaButton({ kind, path }: { kind: 'audio' | 'video'; path: string }) {
   return (
     <button
       className="mt-2 bg-transparent text-xs font-medium text-muted-foreground underline underline-offset-4 decoration-current/20 hover:text-foreground"
-      onClick={() => void window.hermesDesktop?.openExternal(mediaExternalUrl(path))}
+      onClick={() => void openMediaPath(path)}
       type="button"
     >
       Open {kind} file
@@ -150,7 +126,7 @@ function MediaAttachment({ path }: { path: string }) {
 
     setFailed(false)
     setSrc('')
-    void mediaSrc(path)
+    void resolveMediaPlaybackSrc(path)
       .then(value => {
         if (value.startsWith('blob:')) {
           objectUrl = value
@@ -216,7 +192,7 @@ function MediaAttachment({ path }: { path: string }) {
       href="#"
       onClick={event => {
         event.preventDefault()
-        openExternalLink(mediaExternalUrl(path))
+        void openMediaPath(path)
       }}
     >
       {failed ? `Open ${name}` : `Loading ${name}...`}

@@ -10,9 +10,11 @@ import {
   ImageLightbox
 } from '@/components/chat/zoomable-image'
 import { useI18n } from '@/i18n'
-import { generatedImageFromResult } from '@/lib/generated-images'
+import { generatedImageCandidates, generatedImageFromResult } from '@/lib/generated-images'
 import { filePathFromMediaPath, mediaExternalUrl, mediaName } from '@/lib/media'
+import { isVerxioDesktop, isVerxioWeb } from '@/lib/platform'
 import { cn } from '@/lib/utils'
+import { verxioArtifactPreviewTarget } from '@/lib/verxio-artifact-preview'
 import { notifyError } from '@/store/notifications'
 
 const ASPECT_HINTS: Record<string, number> = {
@@ -40,21 +42,52 @@ async function resolveImageSrc(path: string): Promise<string> {
     return path
   }
 
-  if (window.hermesDesktop?.readFileDataUrl) {
+  // Hosted web: serve workspace artifacts through the same-origin preview API.
+  // The web bridge's readFileDataUrl stub cannot load container file paths.
+  try {
+    const artifact = await verxioArtifactPreviewTarget(path)
+
+    if (artifact?.url) {
+      return artifact.url
+    }
+  } catch {
+    // Fall through to desktop / remote candidates.
+  }
+
+  if (isVerxioDesktop() && window.hermesDesktop?.readFileDataUrl) {
     return window.hermesDesktop.readFileDataUrl(filePathFromMediaPath(path))
   }
 
-  return mediaExternalUrl(path)
+  if (!isVerxioWeb() && window.hermesDesktop?.readFileDataUrl) {
+    return window.hermesDesktop.readFileDataUrl(filePathFromMediaPath(path))
+  }
+
+  throw new Error(`Cannot resolve generated image in browser: ${path}`)
+}
+
+async function resolveFirstImageSrc(candidates: readonly string[]): Promise<string> {
+  let lastError: unknown
+
+  for (const candidate of candidates) {
+    try {
+      return await resolveImageSrc(candidate)
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Cannot resolve generated image')
 }
 
 export const GeneratedImage: FC<{ aspectRatio?: string; result?: unknown }> = ({ aspectRatio, result }) => {
   const { t } = useI18n()
   const copy = t.desktop
+  const candidates = result === undefined ? [] : generatedImageCandidates(result)
   const image = result === undefined ? null : generatedImageFromResult(result)
   const pending = result === undefined
 
   const [ratio, setRatio] = useState(() => hintedRatio(aspectRatio))
-  const [src, setSrc] = useState(() => (image && isInlineSrc(image) ? image : ''))
+  const [src, setSrc] = useState(() => candidates.find(isInlineSrc) ?? '')
   const [loaded, setLoaded] = useState(false)
   const [canvasGone, setCanvasGone] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -63,25 +96,30 @@ export const GeneratedImage: FC<{ aspectRatio?: string; result?: unknown }> = ({
 
   useEffect(() => setRatio(hintedRatio(aspectRatio)), [aspectRatio])
 
+  const candidateKey = candidates.join('\0')
+
   useEffect(() => {
     let cancelled = false
+    const nextCandidates = candidateKey ? candidateKey.split('\0') : []
     setFailed(false)
     setLoaded(false)
     setCanvasGone(false)
-    setSrc(image && isInlineSrc(image) ? image : '')
 
-    if (!image || isInlineSrc(image)) {
+    const inline = nextCandidates.find(isInlineSrc) ?? ''
+    setSrc(inline)
+
+    if (!nextCandidates.length || inline) {
       return
     }
 
-    void resolveImageSrc(image)
+    void resolveFirstImageSrc(nextCandidates)
       .then(resolved => !cancelled && setSrc(resolved))
       .catch(() => !cancelled && setFailed(true))
 
     return () => {
       cancelled = true
     }
-  }, [image])
+  }, [candidateKey])
 
   const handleDownload = useCallback(async () => {
     if (!src || saving) {
@@ -110,7 +148,14 @@ export const GeneratedImage: FC<{ aspectRatio?: string; result?: unknown }> = ({
         href="#"
         onClick={event => {
           event.preventDefault()
-          void window.hermesDesktop?.openExternal(mediaExternalUrl(image))
+          void (async () => {
+            try {
+              const resolved = await resolveFirstImageSrc(candidates)
+              window.open(resolved, '_blank', 'noopener,noreferrer')
+            } catch {
+              void window.hermesDesktop?.openExternal(mediaExternalUrl(image))
+            }
+          })()
         }}
       >
         {copy.openImage}: {mediaName(image)}

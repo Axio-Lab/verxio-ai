@@ -24,6 +24,7 @@ import type {
   HermesTerminalSession
 } from '@/global'
 import { verxioApiBaseUrl, verxioApiEnabled, verxioApiUrl } from '@/lib/verxio-api'
+import { verxioArtifactPreviewTarget } from '@/lib/verxio-artifact-preview'
 import {
   getStoredWebLocalRoot,
   isWebLocalPath,
@@ -34,6 +35,32 @@ import {
   WEB_LOCAL_STORAGE_KEY
 } from '@/lib/web-local-fs'
 import { $currentCwd, setCurrentCwd } from '@/store/session'
+
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.onerror = () => reject(reader.error ?? new Error('Failed to read file'))
+    reader.readAsDataURL(blob)
+  })
+}
+
+async function readWebArtifactDataUrl(filePath: string): Promise<string> {
+  const preview = await verxioArtifactPreviewTarget(filePath)
+
+  if (!preview?.url) {
+    throw new Error('File preview is not available in Verxio Web yet.')
+  }
+
+  const response = await fetch(preview.url, { credentials: 'include' })
+
+  if (!response.ok) {
+    throw new Error(`Failed to load artifact preview (${response.status})`)
+  }
+
+  return blobToDataUrl(await response.blob())
+}
 
 declare global {
   interface Window {
@@ -608,9 +635,7 @@ export function installWebBridge(): void {
         return false
       }
     },
-    readFileDataUrl: async () => {
-      throw new Error('File preview is not available in Verxio Web yet.')
-    },
+    readFileDataUrl: async (filePath: string) => readWebArtifactDataUrl(filePath),
     readFileText: async (filePath: string) => {
       const local = await readWebLocalFileText(filePath)
 
