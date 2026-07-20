@@ -218,6 +218,20 @@ flowchart LR
   R -->|model inference| DS
 ```
 
+### DashScope media tools (image / video / TTS)
+
+Qwen Cloud / DashScope media models are **not** chat-model-picker entries.
+They use Hermes’ existing tools with a `dashscope` provider:
+
+| Tool             | Config                                                       | Example models                                                            |
+| ---------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| `image_generate` | `image_gen.provider: dashscope`                              | `qwen-image-2.0-pro` (text-to-image), `qwen-image-edit-plus` (image edit) |
+| `video_generate` | `video_gen.provider: dashscope` + enable `video_gen` toolset | `happyhorse-1.1` / `wan2.7` families (text-to-video / image-to-video)     |
+| `text_to_speech` | `tts.provider: dashscope`                                    | `qwen3-tts-flash`, CosyVoice when available                               |
+
+Auth reuses `DASHSCOPE_API_KEY` (hosted Verxio Qwen or BYOK Qwen Cloud).
+Configure via Settings → Voice / Advanced, or `hermes tools`.
+
 ## How It Is Built
 
 Verxio is a hosted AI agent product built on top of Hermes Agent, Nous
