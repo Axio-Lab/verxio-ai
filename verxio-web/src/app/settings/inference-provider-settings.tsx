@@ -27,11 +27,13 @@ function formatUsd(value: number): string {
 }
 
 interface InferenceProviderSettingsProps {
+  onInferenceApplied?: () => void
   onInferenceModeChange?: (mode: VerxioInferenceMode) => void
   onOpenProviderKeys: () => void
 }
 
 export function InferenceProviderSettings({
+  onInferenceApplied,
   onInferenceModeChange,
   onOpenProviderKeys
 }: InferenceProviderSettingsProps) {
@@ -102,13 +104,21 @@ export function InferenceProviderSettings({
         clearCachedModelOptions()
         await refreshModelOptionsQueries(queryClient)
         onInferenceModeChange?.(nextSettings.mode)
+        onInferenceApplied?.()
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
       } finally {
         setApplying(false)
       }
     },
-    [catalog?.defaultModelId, onInferenceModeChange, queryClient, selectedHostedModel?.id, settings?.defaultModelId]
+    [
+      catalog?.defaultModelId,
+      onInferenceApplied,
+      onInferenceModeChange,
+      queryClient,
+      selectedHostedModel?.id,
+      settings?.defaultModelId
+    ]
   )
 
   const applyHostedModel = useCallback(
@@ -127,13 +137,14 @@ export function InferenceProviderSettings({
         clearCachedModelOptions()
         await refreshModelOptionsQueries(queryClient)
         onInferenceModeChange?.(nextSettings.mode)
+        onInferenceApplied?.()
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
       } finally {
         setApplying(false)
       }
     },
-    [onInferenceModeChange, queryClient]
+    [onInferenceApplied, onInferenceModeChange, queryClient]
   )
 
   if (!verxioApiEnabled()) {

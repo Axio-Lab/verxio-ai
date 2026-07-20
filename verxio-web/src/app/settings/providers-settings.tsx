@@ -188,6 +188,7 @@ function NoProviderKeys() {
 }
 
 export function ProvidersSettings({
+  onInferenceApplied,
   onInferenceModeChange,
   onViewChange,
   requestGateway,
@@ -324,6 +325,7 @@ export function ProvidersSettings({
         ) : (
           <>
             <InferenceProviderSettings
+              onInferenceApplied={onInferenceApplied}
               onInferenceModeChange={handleInferenceModeChange}
               onOpenProviderKeys={() => onViewChange('keys')}
             />
@@ -353,6 +355,7 @@ interface ProviderKeyGroup {
 }
 
 interface ProvidersSettingsProps {
+  onInferenceApplied?: () => void
   onInferenceModeChange?: (mode: VerxioInferenceMode) => void
   onViewChange: (view: ProviderView) => void
   requestGateway: OnboardingContext['requestGateway']
