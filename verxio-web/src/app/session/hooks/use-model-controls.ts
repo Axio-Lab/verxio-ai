@@ -3,8 +3,9 @@ import { useCallback } from 'react'
 
 import { getGlobalModelInfo, setGlobalModel } from '@/hermes'
 import { useI18n } from '@/i18n'
-import { resolveHostedDefaultModel, resolveStatusbarModel } from '@/lib/hosted-default-model'
+import { isSelectableModel, resolveHostedDefaultModel, resolveStatusbarModel } from '@/lib/hosted-default-model'
 import { getInferenceCatalog, getInferenceSettings, verxioApiEnabled } from '@/lib/verxio-api'
+import { getScopedModelOptions } from '@/lib/verxio-model-options'
 import { notifyError } from '@/store/notifications'
 import { $currentModel, $currentProvider, setCurrentModel, setCurrentProvider } from '@/store/session'
 import type { ModelOptionsResponse } from '@/types/hermes'
@@ -27,6 +28,11 @@ async function loadInferenceModeAndHostedDefault(): Promise<{
   } catch {
     return { hostedDefault: null, mode: null }
   }
+}
+
+function clearStatusbarModel() {
+  setCurrentModel('')
+  setCurrentProvider('')
 }
 
 function applyModelSelection(selection: { model: string; provider: string }) {
@@ -68,17 +74,28 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
 
   const refreshCurrentModel = useCallback(async () => {
     try {
-      const result = await getGlobalModelInfo()
+      const [result, options] = await Promise.all([getGlobalModelInfo(), getScopedModelOptions()])
       const hermesModel = typeof result.model === 'string' ? result.model.trim() : ''
-      const needsMode = !hermesModel
-      const { hostedDefault, mode } = needsMode
-        ? await loadInferenceModeAndHostedDefault()
-        : { hostedDefault: null, mode: null as 'byok' | 'hosted' | null }
+      const hermesProvider = typeof result.provider === 'string' ? result.provider.trim() : ''
+      const selectable = isSelectableModel(hermesModel, hermesProvider, options)
+      const { hostedDefault, mode } = await loadInferenceModeAndHostedDefault()
+
+      // Stale config after disconnect/key delete: picker has no match — show No model.
+      if (hermesModel && !selectable) {
+        if (mode === 'hosted' && hostedDefault) {
+          applyModelSelection(hostedDefault)
+
+          return
+        }
+
+        clearStatusbarModel()
+
+        return
+      }
 
       // BYOK with no Hermes main model: show empty statusbar, never seed Qwen.
       if (mode === 'byok' && !hermesModel) {
-        setCurrentModel('')
-        setCurrentProvider('')
+        clearStatusbarModel()
 
         return
       }
@@ -86,6 +103,12 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
       const next = resolveStatusbarModel(result, $currentModel.get(), hostedDefault)
 
       if (next) {
+        if (!isSelectableModel(next.model, next.provider, options) && mode !== 'hosted') {
+          clearStatusbarModel()
+
+          return
+        }
+
         applyModelSelection(next)
       }
     } catch {
@@ -94,8 +117,7 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
         const { hostedDefault, mode } = await loadInferenceModeAndHostedDefault()
 
         if (mode === 'byok') {
-          setCurrentModel('')
-          setCurrentProvider('')
+          clearStatusbarModel()
 
           return
         }

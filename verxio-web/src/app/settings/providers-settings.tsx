@@ -318,7 +318,10 @@ export function ProvidersSettings({
         {canConfigureOwnProviders && activeProvider ? (
           <ProviderAccountSetup
             onBack={() => setActiveProviderId(null)}
-            onUpdated={refreshOAuthProviders}
+            onUpdated={async () => {
+              await refreshOAuthProviders()
+              onInferenceApplied?.()
+            }}
             provider={activeProvider}
             requestGateway={requestGateway}
           />

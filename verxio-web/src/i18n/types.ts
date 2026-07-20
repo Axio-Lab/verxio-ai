@@ -1661,6 +1661,7 @@ export interface Translations {
     createSessionFailed: string
     promptFailed: string
     providerCredentialRequired: string
+    noModelSelected: string
     emptySlashCommand: string
     desktopCommands: string
     skillCommandsAvailable: (count: number) => string

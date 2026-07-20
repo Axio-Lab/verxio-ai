@@ -3,12 +3,15 @@ import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { deleteEnvVar, getEnvVars, revealEnvVar, setEnvVar } from '@/hermes'
+import { deleteEnvVar, getEnvVars, getGlobalModelInfo, revealEnvVar, setEnvVar } from '@/hermes'
 import { useI18n } from '@/i18n'
+import { isSelectableModel } from '@/lib/hosted-default-model'
 import { type IconComponent } from '@/lib/icons'
 import { clearCachedModelOptions, refreshModelOptionsQueries } from '@/lib/model-options-cache'
 import { looksLikeToolCredentialEnv, shouldReloadToolCredential } from '@/lib/tool-credentials'
+import { getScopedModelOptions } from '@/lib/verxio-model-options'
 import { notify, notifyError } from '@/store/notifications'
+import { setCurrentModel, setCurrentProvider } from '@/store/session'
 import { runRuntimeEnvReload } from '@/store/system-actions'
 import type { EnvVarInfo } from '@/types/hermes'
 
@@ -95,6 +98,24 @@ export function useEnvCredentials(): UseEnvCredentials {
     setRevealed(c => withoutKey(c, key))
   }
 
+  async function syncStatusbarAfterCredentialChange() {
+    clearCachedModelOptions()
+    await refreshModelOptionsQueries(queryClient)
+
+    try {
+      const [info, options] = await Promise.all([getGlobalModelInfo(), getScopedModelOptions()])
+      const model = typeof info.model === 'string' ? info.model : ''
+      const provider = typeof info.provider === 'string' ? info.provider : ''
+
+      if (!isSelectableModel(model, provider, options)) {
+        setCurrentModel('')
+        setCurrentProvider('')
+      }
+    } catch {
+      // Best-effort — the next model refresh still corrects the statusbar.
+    }
+  }
+
   async function reloadIfToolCredential(key: string) {
     const info = vars?.[key]
 
@@ -103,8 +124,7 @@ export function useEnvCredentials(): UseEnvCredentials {
     }
 
     await runRuntimeEnvReload({ notifySuccess: false })
-    clearCachedModelOptions()
-    await refreshModelOptionsQueries(queryClient)
+    await syncStatusbarAfterCredentialChange()
   }
 
   async function handleSave(key: string) {
@@ -192,6 +212,9 @@ export function useEnvCredentials(): UseEnvCredentials {
 
       clearLocalState(key)
       await reloadIfToolCredential(key)
+      // Provider API-key deletes must drop a stale statusbar model even when the
+      // key is not a tool credential (no runtime reload path above).
+      await syncStatusbarAfterCredentialChange()
       notify({ kind: 'success', title: toolsets.removedTitle, message: toolsets.removedMessage(key) })
     } catch (err) {
       notifyError(err, toolsets.failedRemove(key))

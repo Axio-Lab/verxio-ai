@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { resolveHostedDefaultModel, resolveStatusbarModel } from './hosted-default-model'
+import { isSelectableModel, resolveHostedDefaultModel, resolveStatusbarModel } from './hosted-default-model'
 
 const catalog = {
   defaultModelId: 'verxio-qwen',
@@ -33,6 +33,25 @@ describe('resolveHostedDefaultModel', () => {
 
   it('ignores BYOK mode', () => {
     expect(resolveHostedDefaultModel({ defaultModelId: 'verxio-qwen', mode: 'byok' }, catalog)).toBeNull()
+  })
+})
+
+describe('isSelectableModel', () => {
+  it('requires an authenticated provider that lists the model', () => {
+    expect(
+      isSelectableModel('gpt-5.3-codex', 'openai-codex', {
+        providers: [
+          { authenticated: false, models: ['gpt-5.3-codex'], name: 'ChatGPT', slug: 'openai-codex' },
+          { authenticated: true, models: ['claude-opus-4'], name: 'Claude', slug: 'anthropic' }
+        ]
+      })
+    ).toBe(false)
+
+    expect(
+      isSelectableModel('gpt-5.3-codex', 'openai-codex', {
+        providers: [{ authenticated: true, models: ['gpt-5.3-codex'], name: 'ChatGPT', slug: 'openai-codex' }]
+      })
+    ).toBe(true)
   })
 })
 

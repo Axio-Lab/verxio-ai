@@ -2161,6 +2161,7 @@ export const en: Translations = {
     createSessionFailed: 'Could not create a new session',
     promptFailed: 'Prompt failed',
     providerCredentialRequired: 'Add a provider credential before sending your first message.',
+    noModelSelected: 'No model has been selected. Choose a model before sending.',
     emptySlashCommand: 'empty slash command',
     desktopCommands: 'Desktop commands',
     skillCommandsAvailable: count => `${count} skill commands available.`,

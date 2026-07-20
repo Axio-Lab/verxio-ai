@@ -299,7 +299,7 @@ export function usePromptActions({
         notify({
           kind: 'error',
           title: statusbarCopy.switchModel,
-          message: statusbarCopy.noModel
+          message: copy.noModelSelected
         })
         setModelPickerOpen(true)
 
@@ -482,7 +482,6 @@ export function usePromptActions({
       requestGateway,
       resumeStoredSession,
       selectedStoredSessionIdRef,
-      statusbarCopy.noModel,
       statusbarCopy.switchModel,
       syncImageAttachmentsForSubmit,
       updateSessionState

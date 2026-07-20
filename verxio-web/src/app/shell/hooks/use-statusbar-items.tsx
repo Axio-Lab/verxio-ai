@@ -208,10 +208,12 @@ export function useStatusbarItems({
         label: (
           <span className="inline-flex min-w-0 items-center gap-0.5">
             <span className="truncate">
-              {formatModelStatusLabel(currentModel, {
-                fastMode: currentFastMode,
-                reasoningEffort: currentReasoningEffort
-              })}
+              {currentModel.trim()
+                ? formatModelStatusLabel(currentModel, {
+                    fastMode: currentFastMode,
+                    reasoningEffort: currentReasoningEffort
+                  })
+                : copy.noModel}
             </span>
             <ChevronDown className="size-2.5 shrink-0 opacity-50" />
           </span>
