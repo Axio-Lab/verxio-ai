@@ -253,7 +253,7 @@ export const ENUM_OPTIONS: Record<string, string[]> = {
     'cosyvoice-v3.5-plus'
   ],
   'tts.dashscope.voice': ['Cherry', 'Serena', 'Ethan', 'Chelsie'],
-  'image_gen.provider': ['fal', 'openai', 'openai-codex', 'xai', 'krea', 'dashscope'],
+  'image_gen.provider': ['fal', 'openai', 'openai-codex', 'xai', 'krea', 'dashscope', 'google'],
   'image_gen.model': [
     'qwen-image-2.0-pro',
     'qwen-image-2.0',
@@ -266,6 +266,8 @@ export const ENUM_OPTIONS: Record<string, string[]> = {
     'wan2.7-image',
     'z-image-turbo'
   ],
+  'image_gen.google.model': ['nano-banana', 'nano-banana-pro'],
+  'image_gen.openai.model': ['gpt-image-2-medium', 'gpt-image-2-low', 'gpt-image-2-high'],
   'video_gen.provider': ['fal', 'xai', 'dashscope'],
   'video_gen.model': ['happyhorse-1.1', 'wan2.7'],
   'updates.non_interactive_local_changes': ['stash', 'discard']

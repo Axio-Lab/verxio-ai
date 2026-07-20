@@ -680,7 +680,12 @@ export const zhHant = defineLocale({
       ready: '就緒',
       nousIncluded: '包含在 Verxio 訂閱中；登入 Subscription portal 即可啟用。',
       noApiKeyRequired: '不需要 API 金鑰。',
-      postSetup: step => `此提供方需要額外設定步驟 (${step})。請在 Verxio 工具設定中完成。`
+      postSetup: step => `此提供方需要額外設定步驟 (${step})。請在 Verxio 工具設定中完成。`,
+      modelSectionTitle: '模型',
+      modelSectionHint: '選擇目前提供方下此工具集使用的模型。',
+      modelSavedTitle: '模型已更新',
+      modelSavedMessage: model => `${model} 現已生效。`,
+      failedModelSave: '儲存模型選擇失敗'
     }
   },
 

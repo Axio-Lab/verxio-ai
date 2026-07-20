@@ -548,6 +548,11 @@ export interface Translations {
       nousIncluded: string
       noApiKeyRequired: string
       postSetup: (step: string) => string
+      modelSectionTitle: string
+      modelSectionHint: string
+      modelSavedTitle: string
+      modelSavedMessage: (model: string) => string
+      failedModelSave: string
     }
   }
 

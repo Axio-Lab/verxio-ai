@@ -823,7 +823,12 @@ export const zh: Translations = {
       ready: '就绪',
       nousIncluded: '包含在 Verxio 订阅中；登录 Subscription portal 即可激活。',
       noApiKeyRequired: '不需要 API 密钥。',
-      postSetup: step => `此提供方需要额外设置步骤 (${step})。请在 Verxio 工具设置中完成。`
+      postSetup: step => `此提供方需要额外设置步骤 (${step})。请在 Verxio 工具设置中完成。`,
+      modelSectionTitle: '模型',
+      modelSectionHint: '选择当前提供方下此工具集使用的模型。',
+      modelSavedTitle: '模型已更新',
+      modelSavedMessage: model => `${model} 现已生效。`,
+      failedModelSave: '保存模型选择失败'
     }
   },
 

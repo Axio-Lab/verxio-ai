@@ -672,7 +672,12 @@ export const en: Translations = {
       ready: 'Ready',
       nousIncluded: 'Included with a Verxio subscription — sign in to Subscription portal to activate.',
       noApiKeyRequired: 'No API key required.',
-      postSetup: step => `This provider needs an extra setup step (${step}). Complete it in Verxio tools setup.`
+      postSetup: step => `This provider needs an extra setup step (${step}). Complete it in Verxio tools setup.`,
+      modelSectionTitle: 'Model',
+      modelSectionHint: 'Choose which model this toolset uses for the selected provider.',
+      modelSavedTitle: 'Model updated',
+      modelSavedMessage: model => `${model} is now active.`,
+      failedModelSave: 'Failed to save model selection'
     }
   },
 

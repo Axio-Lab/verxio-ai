@@ -705,7 +705,12 @@ export const ja = defineLocale({
         'Verxio サブスクリプションに含まれています。有効にするには Subscription portal にサインインしてください。',
       noApiKeyRequired: 'API キーは不要です。',
       postSetup: step =>
-        `このプロバイダーは追加のセットアップ手順 (${step}) が必要です。Verxio のツール設定で完了してください。`
+        `このプロバイダーは追加のセットアップ手順 (${step}) が必要です。Verxio のツール設定で完了してください。`,
+      modelSectionTitle: 'モデル',
+      modelSectionHint: '選択中のプロバイダーでこのツールセットが使うモデルを選びます。',
+      modelSavedTitle: 'モデルを更新しました',
+      modelSavedMessage: model => `${model} が有効になりました。`,
+      failedModelSave: 'モデル選択の保存に失敗しました'
     }
   },
 

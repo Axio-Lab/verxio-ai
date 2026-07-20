@@ -4,16 +4,63 @@ import { PageLoader } from '@/components/page-loader'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Input } from '@/components/ui/input'
-import { deleteEnvVar, getToolsetConfig, revealEnvVar, selectToolsetProvider, setEnvVar } from '@/hermes'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  deleteEnvVar,
+  getHermesConfigRecord,
+  getToolsetConfig,
+  revealEnvVar,
+  saveHermesConfig,
+  selectToolsetProvider,
+  setEnvVar
+} from '@/hermes'
 import { useI18n } from '@/i18n'
 import { Check, Loader2, Save } from '@/lib/icons'
+import {
+  defaultMediaModel,
+  isDashScopeProvider,
+  isGoogleImageProvider,
+  isMediaToolset,
+  isOpenAIImageProvider,
+  mediaOptionFields,
+  type MediaToolset
+} from '@/lib/media-tool-options'
+import { configValue, setConfigValue } from '@/lib/transcription-config'
+
+function imageGenProviderId(providerName: string | null | undefined): string | null {
+  if (isGoogleImageProvider(providerName)) {
+    return 'google'
+  }
+
+  if (isOpenAIImageProvider(providerName)) {
+    return 'openai'
+  }
+
+  if (isDashScopeProvider(providerName)) {
+    return 'dashscope'
+  }
+
+  return null
+}
+
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
 import { runRuntimeEnvReload } from '@/store/system-actions'
-import type { ToolEnvVar, ToolProvider, ToolsetConfig } from '@/types/hermes'
+import type { HermesConfigRecord, ToolEnvVar, ToolProvider, ToolsetConfig } from '@/types/hermes'
 
 import { EnvVarActionsMenu, EnvVarActionsTrigger } from './env-var-actions-menu'
 import { Pill } from './primitives'
+
+function isNousSubscriptionProvider(provider: ToolProvider): boolean {
+  const name = provider.name.trim().toLowerCase()
+
+  return (
+    provider.requires_nous_auth ||
+    name === 'nous subscription' ||
+    name.includes('nous subscription') ||
+    (provider.badge || '').toLowerCase() === 'subscription'
+  )
+}
 
 interface ToolsetConfigPanelProps {
   toolset: string
@@ -173,6 +220,161 @@ function EnvVarField({ envVar, isSet, onSaved, onCleared }: EnvVarFieldProps) {
   )
 }
 
+function MediaModelFields({ toolset, providerName }: { toolset: MediaToolset; providerName: string | null }) {
+  const { t } = useI18n()
+  const copy = t.settings.toolsets
+  const fields = mediaOptionFields(toolset, providerName)
+  const [config, setConfig] = useState<HermesConfigRecord | null>(null)
+  const [savingPath, setSavingPath] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+
+    void getHermesConfigRecord()
+      .then(async next => {
+        if (cancelled || !fields.length) {
+          if (!cancelled) {
+            setConfig(next)
+          }
+
+          return
+        }
+
+        let seeded = next
+        let changed = false
+
+        if (toolset === 'image_gen') {
+          const providerId = imageGenProviderId(providerName)
+
+          if (providerId && configValue(seeded, 'image_gen.provider') !== providerId) {
+            seeded = setConfigValue(seeded, 'image_gen.provider', providerId)
+            changed = true
+          }
+
+          const modelOptions = fields.find(field => field.path === 'image_gen.model')?.options ?? []
+          const currentModel = String(configValue(seeded, 'image_gen.model') ?? '')
+
+          if (!currentModel || (modelOptions.length > 0 && !modelOptions.includes(currentModel))) {
+            seeded = setConfigValue(seeded, 'image_gen.model', defaultMediaModel('image_gen', providerName))
+            changed = true
+          }
+        }
+
+        if (toolset === 'video_gen') {
+          if (!configValue(seeded, 'video_gen.provider')) {
+            seeded = setConfigValue(seeded, 'video_gen.provider', 'dashscope')
+            changed = true
+          }
+
+          if (!configValue(seeded, 'video_gen.model')) {
+            seeded = setConfigValue(seeded, 'video_gen.model', defaultMediaModel('video_gen'))
+            changed = true
+          }
+        }
+
+        if (toolset === 'tts') {
+          if (configValue(seeded, 'tts.provider') !== 'dashscope') {
+            seeded = setConfigValue(seeded, 'tts.provider', 'dashscope')
+            changed = true
+          }
+
+          if (!configValue(seeded, 'tts.dashscope.model')) {
+            seeded = setConfigValue(seeded, 'tts.dashscope.model', defaultMediaModel('tts'))
+            changed = true
+          }
+
+          if (!configValue(seeded, 'tts.dashscope.voice')) {
+            seeded = setConfigValue(seeded, 'tts.dashscope.voice', 'Cherry')
+            changed = true
+          }
+        }
+
+        if (changed) {
+          try {
+            await saveHermesConfig(seeded)
+          } catch {
+            // Keep the seeded local view even if persistence fails.
+          }
+        }
+
+        if (!cancelled) {
+          setConfig(seeded)
+        }
+      })
+      .catch(err => notifyError(err, copy.failedLoad))
+
+    return () => {
+      cancelled = true
+    }
+  }, [copy.failedLoad, fields, providerName, toolset])
+
+  if (!fields.length || !config) {
+    return null
+  }
+
+  async function saveField(path: string, value: string) {
+    setSavingPath(path)
+
+    try {
+      let next = setConfigValue(config!, path, value)
+
+      if (toolset === 'tts' && path.startsWith('tts.dashscope.')) {
+        next = setConfigValue(next, 'tts.provider', 'dashscope')
+      }
+
+      if (toolset === 'image_gen' && path === 'image_gen.model') {
+        const providerId = imageGenProviderId(providerName) ?? 'dashscope'
+        next = setConfigValue(next, 'image_gen.provider', providerId)
+      }
+
+      if (toolset === 'video_gen' && path === 'video_gen.model') {
+        next = setConfigValue(next, 'video_gen.provider', 'dashscope')
+      }
+
+      await saveHermesConfig(next)
+      setConfig(next)
+      notify({ kind: 'success', title: copy.modelSavedTitle, message: copy.modelSavedMessage(value) })
+    } catch (err) {
+      notifyError(err, copy.failedModelSave)
+    } finally {
+      setSavingPath(null)
+    }
+  }
+
+  return (
+    <div className="grid gap-2 rounded-lg border border-border/50 bg-background/70 p-2.5">
+      <p className="text-[0.72rem] font-medium text-foreground">{copy.modelSectionTitle}</p>
+      <p className="text-[0.7rem] text-muted-foreground">{copy.modelSectionHint}</p>
+      {fields.map(field => {
+        const current = String(configValue(config, field.path) ?? '')
+        const value = field.options.includes(current) ? current : field.options[0] || ''
+
+        return (
+          <label className="grid gap-1" key={field.path}>
+            <span className="text-[0.7rem] text-muted-foreground">{field.label}</span>
+            <Select
+              disabled={savingPath === field.path || field.options.length === 0}
+              onValueChange={next => void saveField(field.path, next)}
+              value={value}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder={field.label} />
+              </SelectTrigger>
+              <SelectContent>
+                {field.options.map(option => (
+                  <SelectItem key={option} value={option}>
+                    {option}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+        )
+      })}
+    </div>
+  )
+}
+
 export function ToolsetConfigPanel({ toolset, onConfiguredChange }: ToolsetConfigPanelProps) {
   const { t } = useI18n()
   const copy = t.settings.toolsets
@@ -209,26 +411,29 @@ export function ToolsetConfigPanel({ toolset, onConfiguredChange }: ToolsetConfi
     void refresh()
   }, [refresh])
 
-  const providers = useMemo(() => cfg?.providers ?? [], [cfg])
+  const providers = useMemo(
+    () => (cfg?.providers ?? []).filter(provider => !isNousSubscriptionProvider(provider)),
+    [cfg]
+  )
 
   // Default the expanded provider to the one actually active in config
   // (`is_active` / `cfg.active_provider`, mirroring the CLI picker), then the
-  // first fully-configured provider, else the first provider. Without this the
-  // panel highlighted the first keyless provider (e.g. subscription portal) even when
-  // the user had already selected another (e.g. DuckDuckGo).
+  // first fully-configured provider, else the first provider. Prefer DashScope
+  // for media toolsets so Verxio Qwen Cloud is the obvious default.
   useEffect(() => {
     if (activeProvider || providers.length === 0) {
       return
     }
 
     const selected =
-      providers.find(p => p.is_active) ??
+      providers.find(p => p.is_active && !isNousSubscriptionProvider(p)) ??
       (cfg?.active_provider ? providers.find(p => p.name === cfg.active_provider) : undefined) ??
+      (isMediaToolset(toolset) ? providers.find(p => isDashScopeProvider(p.name)) : undefined) ??
       providers.find(p => providerConfigured(p, envState)) ??
       providers[0]
 
     setActiveProvider(selected.name)
-  }, [activeProvider, providers, envState, cfg])
+  }, [activeProvider, providers, envState, cfg, toolset])
 
   async function handleSelect(provider: ToolProvider) {
     setActiveProvider(provider.name)
@@ -236,6 +441,55 @@ export function ToolsetConfigPanel({ toolset, onConfiguredChange }: ToolsetConfi
 
     try {
       await selectToolsetProvider(toolset, provider.name)
+
+      if (isMediaToolset(toolset)) {
+        try {
+          const current = await getHermesConfigRecord()
+          let next = current
+          let changed = false
+
+          if (toolset === 'image_gen') {
+            const providerId = imageGenProviderId(provider.name)
+
+            if (providerId) {
+              next = setConfigValue(next, 'image_gen.provider', providerId)
+              next = setConfigValue(next, 'image_gen.model', defaultMediaModel('image_gen', provider.name))
+              changed = true
+            }
+          }
+
+          if (toolset === 'video_gen' && isDashScopeProvider(provider.name)) {
+            next = setConfigValue(next, 'video_gen.provider', 'dashscope')
+
+            if (!configValue(next, 'video_gen.model')) {
+              next = setConfigValue(next, 'video_gen.model', defaultMediaModel('video_gen'))
+            }
+
+            changed = true
+          }
+
+          if (toolset === 'tts' && isDashScopeProvider(provider.name)) {
+            next = setConfigValue(next, 'tts.provider', 'dashscope')
+
+            if (!configValue(next, 'tts.dashscope.model')) {
+              next = setConfigValue(next, 'tts.dashscope.model', defaultMediaModel('tts'))
+            }
+
+            if (!configValue(next, 'tts.dashscope.voice')) {
+              next = setConfigValue(next, 'tts.dashscope.voice', 'Cherry')
+            }
+
+            changed = true
+          }
+
+          if (changed) {
+            await saveHermesConfig(next)
+          }
+        } catch {
+          // Provider selection already succeeded; model defaults are best-effort.
+        }
+      }
+
       notify({ kind: 'success', title: copy.selectedTitle, message: copy.selectedMessage(provider.name) })
       onConfiguredChange?.()
     } catch (err) {
@@ -307,9 +561,6 @@ export function ToolsetConfigPanel({ toolset, onConfiguredChange }: ToolsetConfi
             {isActive && (
               <div className="grid gap-2 bg-muted/20 p-3">
                 {provider.tag && <p className="text-[0.72rem] text-muted-foreground">{provider.tag}</p>}
-                {provider.requires_nous_auth && (
-                  <p className="text-[0.72rem] text-muted-foreground">{copy.nousIncluded}</p>
-                )}
                 {provider.env_vars.length === 0 ? (
                   <p className="text-[0.72rem] text-muted-foreground">{copy.noApiKeyRequired}</p>
                 ) : (
@@ -323,6 +574,7 @@ export function ToolsetConfigPanel({ toolset, onConfiguredChange }: ToolsetConfi
                     />
                   ))
                 )}
+                {isMediaToolset(toolset) && <MediaModelFields providerName={provider.name} toolset={toolset} />}
                 {provider.post_setup && (
                   <p className="text-[0.72rem] text-muted-foreground">{copy.postSetup(provider.post_setup)}</p>
                 )}
