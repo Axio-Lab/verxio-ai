@@ -14,6 +14,7 @@ import type {
   DesktopVersionInfo
 } from '@/global'
 import { translateNow } from '@/i18n'
+import { isVerxioWeb } from '@/lib/platform'
 import { persistString, storedString } from '@/lib/storage'
 import { dismissNotification, notify } from '@/store/notifications'
 
@@ -77,8 +78,18 @@ const SKEW_TOAST_ID = 'backend-contract-skew'
  * (e.g. a bb/gui-built app pointed at a `main` checkout). Rather than failing
  * cryptically downstream, surface a persistent warning with a one-click align
  * that runs the normal update flow (which self-heals to the right branch).
+ *
+ * Hosted Verxio Web skips this check: the toast's "Update Verxio" path is a
+ * desktop self-update flow, and soft-fail resume payloads can omit the field
+ * without meaning the control-plane runtime is ancient.
  */
 export function reportBackendContract(contract: number | undefined): void {
+  if (isVerxioWeb()) {
+    dismissNotification(SKEW_TOAST_ID)
+
+    return
+  }
+
   if ((contract ?? 0) >= REQUIRED_BACKEND_CONTRACT) {
     dismissNotification(SKEW_TOAST_ID)
 
