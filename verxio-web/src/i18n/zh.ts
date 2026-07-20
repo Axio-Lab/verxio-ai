@@ -2230,6 +2230,7 @@ export const zh: Translations = {
     createSessionFailed: '无法创建新会话',
     promptFailed: '提示词发送失败',
     providerCredentialRequired: '发送第一条消息前请先添加提供方凭据。',
+    noModelSelected: '尚未选择模型。请先选择模型再发送。',
     emptySlashCommand: '空 slash 命令',
     desktopCommands: '桌面端命令',
     skillCommandsAvailable: count => `${count} 个技能命令可用。`,

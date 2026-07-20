@@ -1,8 +1,44 @@
 import type { VerxioInferenceCatalogResponse, VerxioInferenceSettings } from '@/lib/verxio-api'
+import type { ModelOptionsResponse } from '@/types/hermes'
 
 export interface HostedDefaultModelSelection {
   model: string
   provider: string
+}
+
+/** True when the model still appears under an authenticated picker provider. */
+export function isSelectableModel(
+  model: string,
+  provider: string,
+  options: Pick<ModelOptionsResponse, 'providers'> | null | undefined
+): boolean {
+  const targetModel = model.trim()
+
+  if (!targetModel) {
+    return false
+  }
+
+  const targetProvider = provider.trim().toLowerCase()
+
+  return (options?.providers ?? []).some(entry => {
+    if (entry.authenticated === false) {
+      return false
+    }
+
+    if (!(entry.models ?? []).includes(targetModel)) {
+      return false
+    }
+
+    if (!targetProvider) {
+      return true
+    }
+
+    return (
+      String(entry.slug || '')
+        .trim()
+        .toLowerCase() === targetProvider
+    )
+  })
 }
 
 /** Pick the upstream model/provider for the user's hosted Verxio default. */
