@@ -449,3 +449,10 @@ Most importantly, learning changes the product. A chatbot starts every
 conversation from scratch. A self-improving agent builds knowledge, remembers
 successful workflows, creates reusable skills, and becomes more valuable with
 continued use.
+
+## License
+
+Verxio AI is public and open source under the [MIT License](./LICENSE).
+
+The license file is included at the repository root so GitHub can detect it and
+show it in the About section on the repository page.
