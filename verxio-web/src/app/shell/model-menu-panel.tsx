@@ -329,9 +329,8 @@ function groupModels(
     }
   })
 
-  // Verxio-hosted rows are deliberately composed at the top of the scoped
-  // catalog. Keep that order, then sort the rest alphabetically so connected
-  // BYOK providers stay stable.
+  // Verxio-hosted first (hosted mode), then linked/authenticated BYOK
+  // providers (current provider first), then the rest by name.
   groups.sort((a, b) => {
     const hostedA = !!a.provider.is_verxio_hosted
     const hostedB = !!b.provider.is_verxio_hosted
@@ -342,6 +341,22 @@ function groupModels(
 
     if (hostedA && hostedB) {
       return a.order - b.order
+    }
+
+    const authA = a.provider.authenticated !== false
+    const authB = b.provider.authenticated !== false
+
+    if (authA !== authB) {
+      return authA ? -1 : 1
+    }
+
+    if (authA && authB) {
+      const currentA = a.provider.slug === current.provider || !!a.provider.is_current
+      const currentB = b.provider.slug === current.provider || !!b.provider.is_current
+
+      if (currentA !== currentB) {
+        return currentA ? -1 : 1
+      }
     }
 
     return a.provider.name.localeCompare(b.provider.name)

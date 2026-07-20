@@ -9,17 +9,23 @@ import { notifyError } from '@/store/notifications'
 import { $currentModel, $currentProvider, setCurrentModel, setCurrentProvider } from '@/store/session'
 import type { ModelOptionsResponse } from '@/types/hermes'
 
-async function loadHostedDefaultModel() {
+async function loadInferenceModeAndHostedDefault(): Promise<{
+  hostedDefault: Awaited<ReturnType<typeof resolveHostedDefaultModel>>
+  mode: 'byok' | 'hosted' | null
+}> {
   if (!verxioApiEnabled()) {
-    return null
+    return { hostedDefault: null, mode: null }
   }
 
   try {
     const [settings, catalog] = await Promise.all([getInferenceSettings(), getInferenceCatalog()])
 
-    return resolveHostedDefaultModel(settings, catalog)
+    return {
+      hostedDefault: resolveHostedDefaultModel(settings, catalog),
+      mode: settings.mode
+    }
   } catch {
-    return null
+    return { hostedDefault: null, mode: null }
   }
 }
 
@@ -64,7 +70,19 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
     try {
       const result = await getGlobalModelInfo()
       const hermesModel = typeof result.model === 'string' ? result.model.trim() : ''
-      const hostedDefault = !hermesModel && !$currentModel.get() ? await loadHostedDefaultModel() : null
+      const needsMode = !hermesModel
+      const { hostedDefault, mode } = needsMode
+        ? await loadInferenceModeAndHostedDefault()
+        : { hostedDefault: null, mode: null as 'byok' | 'hosted' | null }
+
+      // BYOK with no Hermes main model: show empty statusbar, never seed Qwen.
+      if (mode === 'byok' && !hermesModel) {
+        setCurrentModel('')
+        setCurrentProvider('')
+
+        return
+      }
+
       const next = resolveStatusbarModel(result, $currentModel.get(), hostedDefault)
 
       if (next) {
@@ -73,10 +91,17 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
     } catch {
       // The delayed session.info event still updates this once the agent is ready.
       if (!$currentModel.get()) {
-        const hosted = await loadHostedDefaultModel()
+        const { hostedDefault, mode } = await loadInferenceModeAndHostedDefault()
 
-        if (hosted) {
-          applyModelSelection(hosted)
+        if (mode === 'byok') {
+          setCurrentModel('')
+          setCurrentProvider('')
+
+          return
+        }
+
+        if (hostedDefault) {
+          applyModelSelection(hostedDefault)
         }
       }
     }
