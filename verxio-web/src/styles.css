@@ -299,7 +299,10 @@
        markdown block and between consecutive prose parts. Single knob; tweak
        freely. */
     --paragraph-gap: 0.45rem;
-    --sticky-human-top: 0.23rem;
+    /* Flush to the thread viewport. A non-zero offset left a gap where tall
+       media (generated images/video) could peek above the sticky prompt and
+       look duplicated underneath it. */
+    --sticky-human-top: 0;
     --file-tree-row-height: 1.375rem;
 
     --composer-width: 48.75rem;
@@ -862,6 +865,18 @@ canvas {
 
 [data-slot='aui_user-message-root'] {
   top: var(--sticky-human-top);
+}
+
+/* Opaque shelf above the sticky prompt so scrolling media cannot show through
+   any residual sticky offset / subpixel gap and read as a second copy. */
+[data-slot='aui_user-message-root']::before {
+  background: var(--ui-chat-surface-background);
+  bottom: 100%;
+  content: '';
+  height: max(0.75rem, var(--sticky-human-top));
+  inset-inline: 0;
+  pointer-events: none;
+  position: absolute;
 }
 
 [data-slot='aui_user-message-root'],
