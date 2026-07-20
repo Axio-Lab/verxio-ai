@@ -125,11 +125,25 @@ def _runtime_whatsapp_paired(runtime: RuntimeInstance) -> bool:
     )
 
 
+def _verxio_api_internal_url() -> str:
+    """Base URL the Hermes container uses to call verxio-api (Notepad, etc.)."""
+    return (
+        os.getenv("VERXIO_API_INTERNAL_URL", "").strip()
+        or os.getenv("VERXIO_API_URL", "").strip()
+        or "http://verxio-api:8787"
+    )
+
+
 def _runtime_container_env(runtime: RuntimeInstance, extra_env: dict[str, str] | None = None) -> dict[str, str]:
     env: dict[str, str] = {
         "VERXIO_HOSTED": "1",
         "WHATSAPP_BROWSER_NAME": "Verxio Agent",
         "WHATSAPP_REPLY_PREFIX": "",
+        # Lets Hermes tools reach the Verxio control plane (Notepad, shares).
+        "VERXIO_API_URL": _verxio_api_internal_url(),
+        "VERXIO_WORKSPACE_ID": runtime.workspace_id,
+        "VERXIO_AGENT_ID": runtime.agent_id,
+        "VERXIO_PUBLIC_WEB_URL": os.getenv("VERXIO_PUBLIC_WEB_URL", "http://127.0.0.1:8080").strip(),
     }
 
     if not _runtime_whatsapp_paired(runtime):
@@ -824,6 +838,10 @@ async def _start_runtime_locked(
         "HERMES_DASHBOARD_PORT=9119",
         "-e",
         f"HERMES_DASHBOARD_SESSION_TOKEN={dashboard_token}",
+        # Same secret as the dashboard token — Hermes notepad/control-plane tools
+        # send it as Authorization: Bearer to verxio-api.
+        "-e",
+        f"VERXIO_RUNTIME_TOKEN={dashboard_token}",
         "-e",
         "TERMINAL_CWD=/workspace",
         # Image default is /opt/data, but Verxio mounts the agent workspace at

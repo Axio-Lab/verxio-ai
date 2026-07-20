@@ -1051,6 +1051,47 @@ def test_notepad_notes_folders_and_public_shares(client):
     assert client.get(f"/api/public/notepad/{share_payload['token']}").status_code == 404
 
 
+def test_notepad_runtime_bearer_token_can_list_and_share(client):
+    """Hermes containers auth to Notepad with the runtime dashboard token."""
+    payload, token = signup(client, "runtime-notes@example.com")
+    cookie_headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    note = client.post(
+        "/api/notepad/notes",
+        json={"title": "Gateway note", "content": "From Telegram later.", "summary": "Short summary."},
+        headers=cookie_headers,
+    )
+    assert note.status_code == 200
+    note_id = note.json()["id"]
+
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    runtime_token = str(runtime_row.get("dashboard_token") or "")
+    if not runtime_token:
+        runtime_token = "test-runtime-token"
+        db.execute(
+            "UPDATE runtime_instances SET dashboard_token = ? WHERE id = ?",
+            (runtime_token, runtime_row["id"]),
+        )
+
+    bearer = {"Authorization": f"Bearer {runtime_token}"}
+    listing = client.get("/api/notepad", headers=bearer)
+    assert listing.status_code == 200
+    assert any(item["id"] == note_id for item in listing.json()["notes"])
+
+    share = client.post(f"/api/notepad/notes/{note_id}/share", headers=bearer)
+    assert share.status_code == 200
+    assert share.json()["url"].endswith(f"/share/notepad/{share.json()['token']}")
+
+    # Use a fresh client so signup cookies cannot satisfy auth.
+    with TestClient(app) as anon:
+        assert anon.get("/api/notepad").status_code == 401
+        assert anon.get("/api/notepad", headers={"Authorization": "Bearer wrong"}).status_code == 401
+
+
 def test_notepad_summarize_uses_runtime_dashboard(client, monkeypatch):
     monkeypatch.setenv("VERXIO_RUNTIME_MODE", "auto")
 

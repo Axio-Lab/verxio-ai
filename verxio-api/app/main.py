@@ -629,8 +629,9 @@ def _share_url(_request: Request, token: str) -> str:
 
 @app.get("/api/notepad", response_model=NotepadListResponse)
 async def list_notepad_route(request: Request) -> NotepadListResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    from app.runtime_auth import get_context_for_request
+
+    workspace, profile, _runtime_instance = get_context_for_request(request)
     return list_notepad(workspace, profile)
 
 
@@ -639,8 +640,9 @@ async def create_notepad_folder_route(
     payload: NotepadFolderCreateRequest,
     request: Request,
 ) -> NotepadFolderRecord:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    from app.runtime_auth import get_context_for_request
+
+    workspace, profile, _runtime_instance = get_context_for_request(request)
     return create_folder(workspace, profile, payload)
 
 
@@ -650,15 +652,17 @@ async def update_notepad_folder_route(
     payload: NotepadFolderUpdateRequest,
     request: Request,
 ) -> NotepadFolderRecord:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    from app.runtime_auth import get_context_for_request
+
+    workspace, profile, _runtime_instance = get_context_for_request(request)
     return update_folder(workspace, profile, folder_id, payload)
 
 
 @app.delete("/api/notepad/folders/{folder_id}")
 async def delete_notepad_folder_route(folder_id: str, request: Request) -> dict[str, bool]:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    from app.runtime_auth import get_context_for_request
+
+    workspace, profile, _runtime_instance = get_context_for_request(request)
     return delete_folder(workspace, profile, folder_id)
 
 
@@ -667,8 +671,9 @@ async def create_notepad_note_route(
     payload: NotepadNoteCreateRequest,
     request: Request,
 ) -> NotepadNoteRecord:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    from app.runtime_auth import get_context_for_request
+
+    workspace, profile, _runtime_instance = get_context_for_request(request)
     return create_note(workspace, profile, payload)
 
 
@@ -678,36 +683,41 @@ async def update_notepad_note_route(
     payload: NotepadNoteUpdateRequest,
     request: Request,
 ) -> NotepadNoteRecord:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    from app.runtime_auth import get_context_for_request
+
+    workspace, profile, _runtime_instance = get_context_for_request(request)
     return update_note(workspace, profile, note_id, payload)
 
 
 @app.delete("/api/notepad/notes/{note_id}")
 async def delete_notepad_note_route(note_id: str, request: Request) -> dict[str, bool]:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    from app.runtime_auth import get_context_for_request
+
+    workspace, profile, _runtime_instance = get_context_for_request(request)
     return delete_note(workspace, profile, note_id)
 
 
 @app.post("/api/notepad/notes/{note_id}/summarize", response_model=NotepadNoteRecord)
 async def summarize_notepad_note_route(note_id: str, request: Request) -> NotepadNoteRecord:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    from app.runtime_auth import get_context_for_request
+
+    workspace, profile, _runtime_instance = get_context_for_request(request)
     return await summarize_note(workspace, profile, note_id)
 
 
 @app.post("/api/notepad/notes/{note_id}/share", response_model=NotepadShareResponse)
 async def create_notepad_share_route(note_id: str, request: Request) -> NotepadShareResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    from app.runtime_auth import get_context_for_request
+
+    workspace, profile, _runtime_instance = get_context_for_request(request)
     return create_share(workspace, profile, note_id, lambda token: _share_url(request, token))
 
 
 @app.delete("/api/notepad/notes/{note_id}/share")
 async def revoke_notepad_share_route(note_id: str, request: Request) -> dict[str, bool]:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    from app.runtime_auth import get_context_for_request
+
+    workspace, profile, _runtime_instance = get_context_for_request(request)
     return revoke_share(workspace, profile, note_id)
 
 
