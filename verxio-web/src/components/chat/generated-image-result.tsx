@@ -4,7 +4,7 @@ import { type FC, useCallback, useEffect, useState } from 'react'
 
 import { DiffusionCanvas } from '@/components/chat/image-generation-placeholder'
 import {
-  downloadImageFromSrc,
+  downloadImageFromCandidates,
   ImageActionButton,
   type ImageActionCopy,
   ImageLightbox
@@ -122,20 +122,26 @@ export const GeneratedImage: FC<{ aspectRatio?: string; result?: unknown }> = ({
   }, [candidateKey])
 
   const handleDownload = useCallback(async () => {
-    if (!src || saving) {
+    if (saving) {
+      return
+    }
+
+    const downloadCandidates = [...candidates, src].filter((value): value is string => Boolean(value))
+
+    if (!downloadCandidates.length) {
       return
     }
 
     setSaving(true)
 
     try {
-      await downloadImageFromSrc(src, copy as ImageActionCopy)
+      await downloadImageFromCandidates(downloadCandidates, copy as ImageActionCopy)
     } catch (error) {
       notifyError(error, copy.imageDownloadFailed)
     } finally {
       setSaving(false)
     }
-  }, [copy, saving, src])
+  }, [candidates, copy, saving, src])
 
   if (!pending && !image) {
     return null
@@ -148,6 +154,7 @@ export const GeneratedImage: FC<{ aspectRatio?: string; result?: unknown }> = ({
         href="#"
         onClick={event => {
           event.preventDefault()
+
           void (async () => {
             try {
               const resolved = await resolveFirstImageSrc(candidates)

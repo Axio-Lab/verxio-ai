@@ -681,6 +681,8 @@ export function installWebBridge(): void {
         return false
       }
     },
+    // Web has no native save dialog — return false so callers fall back to
+    // browser download (fetch + <a download> / artifact /download endpoint).
     saveImageFromUrl: async () => false,
     saveImageBuffer: async () => '',
     saveClipboardImage: async () => '',

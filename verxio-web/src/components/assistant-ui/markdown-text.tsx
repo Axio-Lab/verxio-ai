@@ -32,6 +32,7 @@ import { normalizeOrLocalPreviewTarget } from '@/lib/local-preview'
 import { looksLikeFilePath } from '@/lib/markdown-paths'
 import { preprocessMarkdown } from '@/lib/markdown-preprocess'
 import { mediaKind, mediaName, mediaPathFromMarkdownHref } from '@/lib/media'
+import { downloadMediaFromCandidates } from '@/lib/media-download'
 import { openMediaPath, resolveMediaPlaybackSrc } from '@/lib/media-playback'
 import { isVerxioDesktop } from '@/lib/platform'
 import { previewTargetFromMarkdownHref } from '@/lib/preview-targets'
@@ -44,7 +45,7 @@ import {
   recordMatchesArtifactPath,
   verxioArtifactPreviewTarget
 } from '@/lib/verxio-artifact-preview'
-import { notifyError } from '@/store/notifications'
+import { notify, notifyError } from '@/store/notifications'
 import { type PreviewTarget, setCurrentSessionPreviewTarget } from '@/store/preview'
 import { $currentCwd } from '@/store/session'
 
@@ -114,6 +115,33 @@ function OpenMediaButton({ kind, path }: { kind: 'audio' | 'video'; path: string
   )
 }
 
+function MediaDownloadButton({ path, src }: { path: string; src: string }) {
+  const [saving, setSaving] = useState(false)
+
+  return (
+    <button
+      aria-label={`Download ${mediaName(path)}`}
+      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+      disabled={saving}
+      onClick={() => {
+        if (saving) {
+          return
+        }
+
+        setSaving(true)
+        void downloadMediaFromCandidates([path, src])
+          .then(name => notify({ kind: 'success', title: 'Download started', message: name }))
+          .catch(error => notifyError(error, 'Download failed'))
+          .finally(() => setSaving(false))
+      }}
+      type="button"
+    >
+      <Download className="size-3.5" />
+      {saving ? 'Saving…' : 'Download'}
+    </button>
+  )
+}
+
 function MediaAttachment({ path }: { path: string }) {
   const [src, setSrc] = useState('')
   const [failed, setFailed] = useState(false)
@@ -164,7 +192,10 @@ function MediaAttachment({ path }: { path: string }) {
   if (kind === 'audio' && src) {
     return (
       <span className="my-3 block max-w-md rounded-xl border border-border bg-muted/35 p-3">
-        <span className="mb-2 block truncate text-xs font-medium text-muted-foreground">{name}</span>
+        <span className="mb-2 flex items-center justify-between gap-2">
+          <span className="truncate text-xs font-medium text-muted-foreground">{name}</span>
+          <MediaDownloadButton path={path} src={src} />
+        </span>
         <audio className="block w-full" controls onError={() => setFailed(true)} preload="metadata" src={src} />
         {failed && <OpenMediaButton kind="audio" path={path} />}
       </span>
@@ -174,7 +205,10 @@ function MediaAttachment({ path }: { path: string }) {
   if (kind === 'video' && src) {
     return (
       <span className="my-3 block max-w-2xl rounded-xl border border-border bg-muted/35 p-3">
-        <span className="mb-2 block truncate text-xs font-medium text-muted-foreground">{name}</span>
+        <span className="mb-2 flex items-center justify-between gap-2">
+          <span className="truncate text-xs font-medium text-muted-foreground">{name}</span>
+          <MediaDownloadButton path={path} src={src} />
+        </span>
         <video
           className="block max-h-112 w-full rounded-lg bg-black"
           controls
@@ -388,14 +422,18 @@ function GeneratedArtifactCard({ artifact }: { artifact: ResolvedArtifact }) {
           <Eye className="size-4" />
         </button>
         {artifact.downloadUrl ? (
-          <a
+          <button
             aria-label={`Download ${fileName}`}
             className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-            download={fileName}
-            href={artifact.downloadUrl}
+            onClick={() => {
+              void downloadMediaFromCandidates([artifact.downloadUrl!, artifact.path, artifact.previewUrl || ''])
+                .then(name => notify({ kind: 'success', title: 'Download started', message: name }))
+                .catch(error => notifyError(error, 'Download failed'))
+            }}
+            type="button"
           >
             <Download className="size-4" />
-          </a>
+          </button>
         ) : (
           <span className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground/40">
             <Download className="size-4" />
@@ -504,6 +542,7 @@ function MarkdownLink({ children, className, href, ...props }: ComponentProps<'a
 function InlineCode({ children, className, ...props }: ComponentProps<'code'>) {
   const cwd = useStore($currentCwd)
   const raw = childrenToText(children)
+
   const emptyChildren =
     children == null ||
     children === false ||
