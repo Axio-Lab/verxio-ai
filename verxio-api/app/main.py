@@ -1195,13 +1195,16 @@ def _dashboard_request_is_read(method: str) -> bool:
 
 def _dashboard_path_is_lightweight(path: str) -> bool:
     normalized = path.strip("/")
+    # api/model/options builds a priced/capabilities catalog and routinely
+    # exceeds the 2s lightweight proxy budget — treating it as lightweight
+    # made BYOK connect look "green" (status) while the model selector stayed
+    # on "no model" until a later lucky refetch.
     return normalized in {
         "api/status",
         "api/config",
         "api/sessions",
         "api/models",
         "api/model/info",
-        "api/model/options",
     }
 
 
