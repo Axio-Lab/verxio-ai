@@ -10,9 +10,9 @@ import type { HermesGateway } from '@/hermes'
 import { getGlobalModelOptions } from '@/hermes'
 import { useI18n } from '@/i18n'
 import {
+  consumeModelOptionsForceRefresh,
   readCachedModelOptions,
-  writeCachedModelOptions,
-  consumeModelOptionsForceRefresh
+  writeCachedModelOptions
 } from '@/lib/model-options-cache'
 import { displayModelName, modelDisplayParts } from '@/lib/model-status-label'
 import { getScopedModelOptions } from '@/lib/verxio-model-options'

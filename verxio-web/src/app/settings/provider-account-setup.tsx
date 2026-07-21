@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { disconnectOAuthProvider } from '@/hermes'
 import { useI18n } from '@/i18n'
-import { clearModelOptionsQueries } from '@/lib/model-options-cache'
 import { ChevronLeft, Loader2 } from '@/lib/icons'
+import { clearModelOptionsQueries } from '@/lib/model-options-cache'
 import { notify, notifyError } from '@/store/notifications'
 import {
   type OnboardingContext,

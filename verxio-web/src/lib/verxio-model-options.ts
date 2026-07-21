@@ -121,6 +121,7 @@ export function prioritizeLinkedProviders(
   // BYOK / post-disconnect: never keep skeleton rows that still advertise models.
   const authenticatedOnly = opts.authenticatedOnly === true || dropHosted
   const currentProvider = (options.provider || '').trim()
+
   const providers = (options.providers ?? [])
     .filter(provider => !dropHosted || !provider.is_verxio_hosted)
     .filter(provider => !authenticatedOnly || provider.authenticated !== false)
