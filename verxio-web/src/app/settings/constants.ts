@@ -244,6 +244,32 @@ export const ENUM_OPTIONS: Record<string, string[]> = {
   'stt.groq.model': ['whisper-large-v3-turbo', 'whisper-large-v3'],
   'stt.local.model': ['tiny', 'base', 'small', 'medium', 'large-v3'],
   'tts.openai.voice': ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'],
+  'tts.provider': ['edge', 'elevenlabs', 'openai', 'neutts', 'dashscope'],
+  'tts.dashscope.model': [
+    'qwen3-tts-flash',
+    'qwen3-tts-instruct-flash',
+    'cosyvoice-v3-plus',
+    'cosyvoice-v3-flash',
+    'cosyvoice-v3.5-plus'
+  ],
+  'tts.dashscope.voice': ['Cherry', 'Serena', 'Ethan', 'Chelsie'],
+  'image_gen.provider': ['fal', 'openai', 'openai-codex', 'xai', 'krea', 'dashscope', 'google'],
+  'image_gen.model': [
+    'qwen-image-2.0-pro',
+    'qwen-image-2.0',
+    'qwen-image-max',
+    'qwen-image-plus',
+    'qwen-image-edit-plus',
+    'qwen-image-edit-max',
+    'qwen-image-edit',
+    'wan2.7-image-pro',
+    'wan2.7-image',
+    'z-image-turbo'
+  ],
+  'image_gen.google.model': ['nano-banana', 'nano-banana-pro'],
+  'image_gen.openai.model': ['gpt-image-2-medium', 'gpt-image-2-low', 'gpt-image-2-high'],
+  'video_gen.provider': ['fal', 'xai', 'dashscope'],
+  'video_gen.model': ['happyhorse-1.1', 'wan2.7'],
   'updates.non_interactive_local_changes': ['stash', 'discard']
 }
 
@@ -332,7 +358,19 @@ export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
     elevenlabs: {
       voiceId: 'ElevenLabs Voice',
       modelId: 'ElevenLabs Model'
+    },
+    dashscope: {
+      model: 'DashScope TTS Model',
+      voice: 'DashScope Voice'
     }
+  },
+  image_gen: {
+    provider: 'Image Generation Provider',
+    model: 'Image Generation Model'
+  },
+  video_gen: {
+    provider: 'Video Generation Provider',
+    model: 'Video Generation Model'
   },
   memory: {
     memoryEnabled: 'Persistent Memory',
@@ -494,6 +532,8 @@ export const SECTIONS: DesktopConfigSection[] = [
     icon: Mic,
     keys: [
       'tts.provider',
+      'tts.dashscope.model',
+      'tts.dashscope.voice',
       'stt.enabled',
       'stt.provider',
       'stt.groq.model',
@@ -519,6 +559,10 @@ export const SECTIONS: DesktopConfigSection[] = [
     icon: Wrench,
     keys: [
       'toolsets',
+      'image_gen.provider',
+      'image_gen.model',
+      'video_gen.provider',
+      'video_gen.model',
       'terminal.backend',
       'terminal.timeout',
       'tool_output.max_bytes',

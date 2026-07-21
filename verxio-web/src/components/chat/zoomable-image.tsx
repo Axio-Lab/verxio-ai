@@ -5,45 +5,15 @@ import { type ComponentProps, useState } from 'react'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { useI18n } from '@/i18n'
 import { Download } from '@/lib/icons'
+import { downloadMediaFromCandidates, mediaFilename, startBrowserDownload } from '@/lib/media-download'
+import { isVerxioDesktop } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
-
-function imageFilename(src?: string): string {
-  if (!src) {
-    return 'image'
-  }
-
-  try {
-    const { pathname } = new URL(src, window.location.href)
-
-    return pathname.split('/').filter(Boolean).pop() || 'image'
-  } catch {
-    return src.split(/[\\/]/).filter(Boolean).pop() || 'image'
-  }
-}
 
 function isMissingIpcHandler(error: unknown): boolean {
   const message = error instanceof Error ? error.message : typeof error === 'string' ? error : ''
 
   return message.includes("No handler registered for 'hermes:saveImageFromUrl'")
-}
-
-async function startBrowserDownload(src: string) {
-  const response = await fetch(src)
-
-  if (!response.ok) {
-    throw new Error(`Could not fetch image: ${response.status}`)
-  }
-
-  const blobUrl = URL.createObjectURL(await response.blob())
-  const link = document.createElement('a')
-  link.href = blobUrl
-  link.download = imageFilename(src)
-  link.rel = 'noopener noreferrer'
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  window.setTimeout(() => URL.revokeObjectURL(blobUrl), 30_000)
 }
 
 export interface ZoomableImageProps extends ComponentProps<'img'> {
@@ -55,21 +25,57 @@ export interface ZoomableImageProps extends ComponentProps<'img'> {
 
 export interface ImageActionCopy {
   downloadImage: string
+  downloadStarted?: string
+  imageDownloadFailed?: string
+  restartToSaveImages?: string
+  restartToUseSaveImage?: string
   savingImage: string
 }
 
 export async function downloadImageFromSrc(src: string, copy: ImageActionCopy): Promise<void> {
-  if (window.hermesDesktop?.saveImageFromUrl) {
-    const saved = await window.hermesDesktop.saveImageFromUrl(src)
+  await downloadImageFromCandidates([src], copy)
+}
 
-    if (saved) {
-      notify({ kind: 'success', title: copy.downloadImage, message: imageFilename(src) })
-    }
+export async function downloadImageFromCandidates(candidates: readonly string[], copy: ImageActionCopy): Promise<void> {
+  const unique = [...new Set(candidates.filter(Boolean))]
 
-    return
+  if (!unique.length) {
+    throw new Error('Nothing to download')
   }
 
-  await startBrowserDownload(src)
+  if (isVerxioDesktop() && window.hermesDesktop?.saveImageFromUrl) {
+    for (const src of unique) {
+      try {
+        const saved = await window.hermesDesktop.saveImageFromUrl(src)
+
+        if (saved) {
+          notify({ kind: 'success', title: copy.downloadImage, message: mediaFilename(src) })
+
+          return
+        }
+      } catch (error) {
+        if (isMissingIpcHandler(error)) {
+          try {
+            const name = await downloadMediaFromCandidates(unique)
+            notify({
+              kind: 'info',
+              title: copy.downloadStarted ?? copy.downloadImage,
+              message: copy.restartToUseSaveImage ?? name
+            })
+
+            return
+          } catch (fallbackError) {
+            notifyError(fallbackError, copy.restartToSaveImages ?? copy.imageDownloadFailed ?? 'Download failed')
+
+            return
+          }
+        }
+      }
+    }
+  }
+
+  const name = await downloadMediaFromCandidates(unique)
+  notify({ kind: 'success', title: copy.downloadStarted ?? copy.downloadImage, message: name })
 }
 
 export function ZoomableImage({

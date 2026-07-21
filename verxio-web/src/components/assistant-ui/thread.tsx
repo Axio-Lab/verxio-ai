@@ -738,7 +738,7 @@ function messageAttachmentRefs(value: unknown): string[] {
 function StickyHumanMessageContainer({ children, messageId }: { children: ReactNode; messageId?: string }) {
   return (
     <div
-      className="group/user-message sticky z-40 -mx-4 flex w-[calc(100%+2rem)] min-w-0 max-w-none flex-col items-stretch gap-0 self-end overflow-visible bg-(--ui-chat-surface-background) px-4 pb-(--conversation-turn-gap) pt-2"
+      className="group/user-message sticky z-40 -mx-4 flex w-[calc(100%+2rem)] min-w-0 max-w-none flex-col items-stretch gap-0 self-end overflow-visible bg-(--ui-chat-surface-background) px-4 pb-(--conversation-turn-gap) pt-2 isolate"
       data-message-id={messageId}
       data-role="user"
       data-slot="aui_user-message-root"

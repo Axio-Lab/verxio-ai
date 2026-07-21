@@ -262,8 +262,9 @@ describe('prioritizeLinkedProviders', () => {
       { dropHosted: true }
     )
 
-    expect(result.providers?.map(provider => provider.slug)).toEqual(['openai', 'anthropic-oauth', 'anthropic'])
+    expect(result.providers?.map(provider => provider.slug)).toEqual(['openai', 'anthropic-oauth'])
     expect(result.providers?.some(provider => provider.is_verxio_hosted)).toBe(false)
+    expect(result.providers?.some(provider => provider.authenticated === false)).toBe(false)
   })
 
   it('keeps Verxio-hosted ahead of linked BYOK providers in hosted mode', () => {

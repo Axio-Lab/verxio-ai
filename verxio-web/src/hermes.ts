@@ -448,6 +448,19 @@ export function createCustomSkill(name: string, content: string, category?: stri
   })
 }
 
+export function writeSkillFiles(
+  name: string,
+  files: Array<{ path: string; content: string }>,
+  profile?: string | null
+): Promise<{ ok: boolean; name: string; written: string[] }> {
+  return window.hermesDesktop.api({
+    ...(profile ? { profile } : profileScoped()),
+    path: '/api/skills/files',
+    method: 'POST',
+    body: { name, files, profile: profile || undefined }
+  })
+}
+
 export function getSkillContent(name: string, profile?: string | null): Promise<SkillContent> {
   const suffix = profile ? `&profile=${encodeURIComponent(profile)}` : ''
 
@@ -768,10 +781,10 @@ export function getUsageAnalytics(days = 30): Promise<AnalyticsResponse> {
   })
 }
 
-export function getGlobalModelOptions(): Promise<ModelOptionsResponse> {
+export function getGlobalModelOptions(opts?: { refresh?: boolean }): Promise<ModelOptionsResponse> {
   return window.hermesDesktop.api<ModelOptionsResponse>({
     ...profileScoped(),
-    path: '/api/model/options'
+    path: opts?.refresh ? '/api/model/options?refresh=1' : '/api/model/options'
   })
 }
 

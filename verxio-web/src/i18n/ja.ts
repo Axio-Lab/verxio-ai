@@ -705,7 +705,12 @@ export const ja = defineLocale({
         'Verxio サブスクリプションに含まれています。有効にするには Subscription portal にサインインしてください。',
       noApiKeyRequired: 'API キーは不要です。',
       postSetup: step =>
-        `このプロバイダーは追加のセットアップ手順 (${step}) が必要です。Verxio のツール設定で完了してください。`
+        `このプロバイダーは追加のセットアップ手順 (${step}) が必要です。Verxio のツール設定で完了してください。`,
+      modelSectionTitle: 'モデル',
+      modelSectionHint: '選択中のプロバイダーでこのツールセットが使うモデルを選びます。',
+      modelSavedTitle: 'モデルを更新しました',
+      modelSavedMessage: model => `${model} が有効になりました。`,
+      failedModelSave: 'モデル選択の保存に失敗しました'
     }
   },
 
@@ -748,13 +753,19 @@ export const ja = defineLocale({
         'カスタムスキルを作成します — YAML フロントマターと Markdown の手順。エージェントで利用でき、cron ジョブにも添付できます。',
       editDesc: 'このスキルの SKILL.md を書き換えます。保存時にフロントマター（name、description）が検証されます。',
       nameLabel: '名前',
-      categoryLabel: 'カテゴリ（任意）',
+      categoryLabel: 'カテゴリ',
       contentLabel: 'SKILL.md',
       nameRequired: 'スキル名は必須です。',
       contentRequired: 'SKILL.md の内容は必須です。',
       saving: '保存中…',
       saveChanges: '変更を保存',
-      createSkill: 'スキルを作成'
+      createSkill: 'スキルを作成',
+      importPackage: 'パッケージを読み込む',
+      importing: '展開中…',
+      importHint: 'Zip または SKILL.md — ブラウザで展開し、作成します。',
+      importReady: '展開しました。内容を確認してスキルを作成してください。',
+      importSupportFiles: count => `作成時に ${count} 個の付属ファイルを書き込みます。`,
+      importSkippedBinary: count => `バイナリ ${count} 件はスキップしました（テキストのみ）。`
     }
   },
 

@@ -7,6 +7,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 
 import { ZoomableImage } from '@/components/chat/zoomable-image'
 import { extractEmbeddedImages } from '@/lib/embedded-images'
+import { resolveMediaPlaybackSrc } from '@/lib/media-playback'
 
 const HERMES_REF_TYPES = ['file', 'folder', 'url', 'image', 'tool', 'line', 'terminal', 'session'] as const
 type HermesRefType = (typeof HERMES_REF_TYPES)[number]
@@ -382,8 +383,7 @@ const DirectiveImage: FC<{ id: string; label: string }> = ({ id, label }) => {
     }
 
     let alive = true
-    void window.hermesDesktop
-      ?.readFileDataUrl(id)
+    void resolveMediaPlaybackSrc(id)
       .then(url => alive && setSrc(url))
       .catch(() => alive && setFailed(true))
 

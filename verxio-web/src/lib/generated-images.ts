@@ -12,8 +12,11 @@ type TextLike = {
 // Path-ish result fields the model may echo into its prose. Display prefers the
 // host path (gateway-deliverable); stripping must catch every variant so a
 // sandbox path the model restated doesn't slip through as a duplicate image.
+// `remote_url` is a same-result HTTPS fallback for hosted web when the local
+// cache path cannot be read in-browser.
 const DISPLAY_KEYS = ['host_image', 'image'] as const
-const ECHO_KEYS = ['host_image', 'image', 'agent_visible_image'] as const
+const REMOTE_KEYS = ['remote_url'] as const
+const ECHO_KEYS = ['host_image', 'image', 'agent_visible_image', 'remote_url'] as const
 
 function recordFromUnknown(value: unknown): Record<string, unknown> | null {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -55,15 +58,22 @@ function imageResult(part: ToolLike): Record<string, unknown> | null {
   return record && record.success !== false ? record : null
 }
 
-/** Display source for a completed `image_generate` result (host path wins). */
-export function generatedImageFromResult(result: unknown): string | null {
+/** Display candidates for a completed `image_generate` result (host path first). */
+export function generatedImageCandidates(result: unknown): string[] {
   const record = recordFromUnknown(result)
 
   if (!record || record.success === false) {
-    return null
+    return []
   }
 
-  return stringFields(record, DISPLAY_KEYS)[0] ?? null
+  const remote = stringFields(record, REMOTE_KEYS).filter(value => /^https?:\/\//i.test(value))
+
+  return unique([...stringFields(record, DISPLAY_KEYS), ...remote])
+}
+
+/** Display source for a completed `image_generate` result (host path wins). */
+export function generatedImageFromResult(result: unknown): string | null {
+  return generatedImageCandidates(result)[0] ?? null
 }
 
 /** Every path/URL a generated image might appear as in prose, for de-duping. */

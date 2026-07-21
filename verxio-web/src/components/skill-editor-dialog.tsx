@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { createCustomSkill, getSkillContent, updateSkillContent } from '@/hermes'
+import { createCustomSkill, getSkillContent, updateSkillContent, writeSkillFiles } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { Loader2 } from '@/lib/icons'
+import { type ExtractedSkillFile, extractSkillPackage } from '@/lib/skill-package'
 
 const CREATE_TEMPLATE = `---
 name: my-skill
@@ -16,6 +17,8 @@ description: One-line description of when to use this skill.
 
 Numbered steps, exact commands, and pitfalls go here.
 `
+
+const DEFAULT_CATEGORY = 'custom'
 
 export interface SkillEditorDialogProps {
   open: boolean
@@ -50,10 +53,15 @@ function EditorBody({ editName, profile, onClose, onSaved }: Omit<SkillEditorDia
   const { t } = useI18n()
   const e = t.skills.editor
   const isEdit = editName !== null
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [name, setName] = useState('')
-  const [category, setCategory] = useState('')
+  const [category, setCategory] = useState(isEdit ? '' : DEFAULT_CATEGORY)
   const [content, setContent] = useState(isEdit ? '' : CREATE_TEMPLATE)
+  const [supportFiles, setSupportFiles] = useState<ExtractedSkillFile[]>([])
+  const [skippedBinary, setSkippedBinary] = useState<string[]>([])
+  const [importNote, setImportNote] = useState<string | null>(null)
   const [loading, setLoading] = useState(isEdit)
+  const [importing, setImporting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -73,6 +81,45 @@ function EditorBody({ editName, profile, onClose, onSaved }: Omit<SkillEditorDia
       cancelled = true
     }
   }, [editName, profile])
+
+  const handleImportFile = async (file: File | undefined) => {
+    if (!file) {
+      return
+    }
+
+    setError(null)
+    setImportNote(null)
+    setImporting(true)
+
+    try {
+      const extracted = await extractSkillPackage(file)
+      setName(extracted.name)
+      setCategory(extracted.category || DEFAULT_CATEGORY)
+      setContent(extracted.content)
+      setSupportFiles(extracted.files)
+      setSkippedBinary(extracted.skippedBinary)
+
+      const parts: string[] = [e.importReady]
+
+      if (extracted.files.length > 0) {
+        parts.push(e.importSupportFiles(extracted.files.length))
+      }
+
+      if (extracted.skippedBinary.length > 0) {
+        parts.push(e.importSkippedBinary(extracted.skippedBinary.length))
+      }
+
+      setImportNote(parts.join(' '))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setImporting(false)
+
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
 
   const handleSave = async () => {
     setError(null)
@@ -97,7 +144,13 @@ function EditorBody({ editName, profile, onClose, onSaved }: Omit<SkillEditorDia
         onSaved(editName)
       } else {
         const trimmed = name.trim()
-        await createCustomSkill(trimmed, content, category.trim() || undefined)
+        const cat = category.trim() || DEFAULT_CATEGORY
+        await createCustomSkill(trimmed, content, cat)
+
+        if (supportFiles.length > 0) {
+          await writeSkillFiles(trimmed, supportFiles, profile || undefined)
+        }
+
         onSaved(trimmed)
       }
 
@@ -118,31 +171,60 @@ function EditorBody({ editName, profile, onClose, onSaved }: Omit<SkillEditorDia
 
       <div className="grid gap-3">
         {!isEdit && (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="grid gap-1.5">
-              <label className="text-sm font-medium" htmlFor="skill-editor-name">
-                {e.nameLabel}
-              </label>
-              <Input
-                autoFocus
-                id="skill-editor-name"
-                onChange={event => setName(event.target.value)}
-                placeholder="my-skill"
-                value={name}
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                accept=".zip,.md,text/markdown,application/zip"
+                className="sr-only"
+                onChange={event => void handleImportFile(event.target.files?.[0])}
+                ref={fileInputRef}
+                type="file"
               />
+              <Button
+                disabled={importing || saving}
+                onClick={() => fileInputRef.current?.click()}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {importing && <Loader2 className="size-3.5 animate-spin" />}
+                {importing ? e.importing : e.importPackage}
+              </Button>
+              <p className="text-xs text-muted-foreground">{e.importHint}</p>
             </div>
-            <div className="grid gap-1.5">
-              <label className="text-sm font-medium" htmlFor="skill-editor-category">
-                {e.categoryLabel}
-              </label>
-              <Input
-                id="skill-editor-category"
-                onChange={event => setCategory(event.target.value)}
-                placeholder="devops"
-                value={category}
-              />
+            {importNote && <p className="text-xs text-muted-foreground">{importNote}</p>}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="grid gap-1.5">
+                <label className="text-sm font-medium" htmlFor="skill-editor-name">
+                  {e.nameLabel}
+                </label>
+                <Input
+                  autoFocus
+                  id="skill-editor-name"
+                  onChange={event => setName(event.target.value)}
+                  placeholder="my-skill"
+                  value={name}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <label className="text-sm font-medium" htmlFor="skill-editor-category">
+                  {e.categoryLabel}
+                </label>
+                <Input
+                  id="skill-editor-category"
+                  onChange={event => setCategory(event.target.value)}
+                  placeholder={DEFAULT_CATEGORY}
+                  value={category}
+                />
+              </div>
             </div>
-          </div>
+            {supportFiles.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {e.importSupportFiles(supportFiles.length)}
+                {skippedBinary.length > 0 ? ` ${e.importSkippedBinary(skippedBinary.length)}` : ''}
+              </p>
+            )}
+          </>
         )}
 
         <div className="grid gap-1.5">
@@ -170,7 +252,7 @@ function EditorBody({ editName, profile, onClose, onSaved }: Omit<SkillEditorDia
           <Button disabled={saving} onClick={onClose} size="sm" variant="ghost">
             {t.common.cancel}
           </Button>
-          <Button disabled={saving || loading} onClick={() => void handleSave()} size="sm">
+          <Button disabled={saving || loading || importing} onClick={() => void handleSave()} size="sm">
             {saving && <Loader2 className="size-3.5 animate-spin" />}
             {saving ? e.saving : isEdit ? e.saveChanges : e.createSkill}
           </Button>

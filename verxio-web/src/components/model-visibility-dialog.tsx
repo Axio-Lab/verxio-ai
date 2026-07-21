@@ -9,7 +9,11 @@ import { Switch } from '@/components/ui/switch'
 import type { HermesGateway } from '@/hermes'
 import { getGlobalModelOptions } from '@/hermes'
 import { useI18n } from '@/i18n'
-import { readCachedModelOptions, writeCachedModelOptions } from '@/lib/model-options-cache'
+import {
+  consumeModelOptionsForceRefresh,
+  readCachedModelOptions,
+  writeCachedModelOptions
+} from '@/lib/model-options-cache'
 import { displayModelName, modelDisplayParts } from '@/lib/model-status-label'
 import { getScopedModelOptions } from '@/lib/verxio-model-options'
 import {
@@ -45,12 +49,13 @@ export function ModelVisibilityDialog({
   const modelOptions = useQuery({
     queryKey: ['model-options', modelOptionsScope],
     queryFn: async (): Promise<ModelOptionsResponse> => {
+      const refresh = consumeModelOptionsForceRefresh()
       let next: ModelOptionsResponse
 
       next = await getScopedModelOptions(() =>
         gw && sessionId
-          ? gw.request<ModelOptionsResponse>('model.options', { session_id: sessionId })
-          : getGlobalModelOptions()
+          ? gw.request<ModelOptionsResponse>('model.options', { session_id: sessionId, refresh })
+          : getGlobalModelOptions({ refresh })
       )
 
       writeCachedModelOptions(modelOptionsScope, next)
@@ -58,7 +63,9 @@ export function ModelVisibilityDialog({
       return next
     },
     enabled: open,
-    initialData: () => readCachedModelOptions(modelOptionsScope)
+    initialData: () => readCachedModelOptions(modelOptionsScope),
+    initialDataUpdatedAt: 0,
+    staleTime: 0
   })
 
   const providers = useMemo(

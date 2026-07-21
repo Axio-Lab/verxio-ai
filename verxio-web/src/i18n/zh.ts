@@ -823,7 +823,12 @@ export const zh: Translations = {
       ready: '就绪',
       nousIncluded: '包含在 Verxio 订阅中；登录 Subscription portal 即可激活。',
       noApiKeyRequired: '不需要 API 密钥。',
-      postSetup: step => `此提供方需要额外设置步骤 (${step})。请在 Verxio 工具设置中完成。`
+      postSetup: step => `此提供方需要额外设置步骤 (${step})。请在 Verxio 工具设置中完成。`,
+      modelSectionTitle: '模型',
+      modelSectionHint: '选择当前提供方下此工具集使用的模型。',
+      modelSavedTitle: '模型已更新',
+      modelSavedMessage: model => `${model} 现已生效。`,
+      failedModelSave: '保存模型选择失败'
     }
   },
 
@@ -865,13 +870,19 @@ export const zh: Translations = {
       createDesc: '编写自定义技能 — YAML 前置元数据加 Markdown 说明。保存后可供代理使用并附加到 cron 任务。',
       editDesc: '重写此技能的 SKILL.md。保存时会验证前置元数据（name、description）。',
       nameLabel: '名称',
-      categoryLabel: '分类（可选）',
+      categoryLabel: '分类',
       contentLabel: 'SKILL.md',
       nameRequired: '技能名称必填。',
       contentRequired: 'SKILL.md 内容必填。',
       saving: '保存中…',
       saveChanges: '保存更改',
-      createSkill: '创建技能'
+      createSkill: '创建技能',
+      importPackage: '导入包',
+      importing: '正在解压…',
+      importHint: 'Zip 或 SKILL.md — 在浏览器本地解压后创建技能。',
+      importReady: '已解压。请检查内容后创建技能。',
+      importSupportFiles: count => `创建时将写入 ${count} 个附属文件。`,
+      importSkippedBinary: count => `已跳过 ${count} 个二进制文件（仅支持文本附属文件）。`
     }
   },
 

@@ -5,6 +5,9 @@ import type { ModelOptionsResponse } from '@/types/hermes'
 
 const MODEL_OPTIONS_CACHE_KEY = 'verxio.model-options.cache.v2'
 
+/** While true, model-options loaders should pass refresh=1 to Hermes. */
+let forceRefreshActive = false
+
 function cacheKey(scope: string): string {
   return `${MODEL_OPTIONS_CACHE_KEY}:${readVerxioAuthScope()}:${scope}`
 }
@@ -61,7 +64,40 @@ export function clearCachedModelOptions(): void {
   }
 }
 
+export function markModelOptionsForceRefresh(): void {
+  forceRefreshActive = true
+}
+
+/** True while a connect/disconnect hard-refresh is in flight (safe for parallel queries). */
+export function shouldForceModelOptionsRefresh(): boolean {
+  return forceRefreshActive
+}
+
+/** @deprecated Prefer shouldForceModelOptionsRefresh — kept for call sites mid-migration. */
+export function consumeModelOptionsForceRefresh(): boolean {
+  return forceRefreshActive
+}
+
+/** Immediately clear statusbar/picker lists (e.g. after disconnect). */
+export function clearModelOptionsQueries(queryClient: QueryClient): void {
+  clearCachedModelOptions()
+  queryClient.setQueriesData<ModelOptionsResponse>({ queryKey: ['model-options'] }, { providers: [] })
+}
+
+/**
+ * Bust localStorage + React Query and refetch every model-options query.
+ *
+ * Uses type:'all' so Settings-driven connect/disconnect still updates the
+ * statusbar even when the model menu dropdown is closed (inactive).
+ */
 export async function refreshModelOptionsQueries(queryClient: QueryClient): Promise<void> {
-  await queryClient.invalidateQueries({ queryKey: ['model-options'] })
-  await queryClient.refetchQueries({ queryKey: ['model-options'], type: 'active' })
+  clearCachedModelOptions()
+  forceRefreshActive = true
+
+  try {
+    await queryClient.invalidateQueries({ queryKey: ['model-options'] })
+    await queryClient.refetchQueries({ queryKey: ['model-options'], type: 'all' })
+  } finally {
+    forceRefreshActive = false
+  }
 }

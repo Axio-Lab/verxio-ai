@@ -61,8 +61,14 @@ export async function verxioArtifactPreviewTarget(path: string): Promise<Preview
     return null
   }
 
-  const response = await listVerxioArtifacts()
-  const record = response.artifacts.find(artifact => recordMatchesArtifactPath(artifact, path))
+  let response = await listVerxioArtifacts()
+  let record = response.artifacts.find(artifact => recordMatchesArtifactPath(artifact, path))
+
+  // Just-generated files can miss the short-lived artifacts list cache.
+  if (!record) {
+    response = await listVerxioArtifacts({ refresh: true })
+    record = response.artifacts.find(artifact => recordMatchesArtifactPath(artifact, path))
+  }
 
   if (!record) {
     return null
