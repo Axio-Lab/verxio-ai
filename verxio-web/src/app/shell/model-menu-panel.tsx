@@ -18,7 +18,11 @@ import { Skeleton } from '@/components/ui/skeleton'
 import type { HermesGateway } from '@/hermes'
 import { getGlobalModelOptions } from '@/hermes'
 import { useI18n } from '@/i18n'
-import { readCachedModelOptions, writeCachedModelOptions } from '@/lib/model-options-cache'
+import {
+  consumeModelOptionsForceRefresh,
+  readCachedModelOptions,
+  writeCachedModelOptions
+} from '@/lib/model-options-cache'
 import {
   currentPickerSelection,
   displayModelName,
@@ -79,19 +83,26 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
   const modelOptions = useQuery({
     queryKey: ['model-options', modelOptionsScope],
     queryFn: async (): Promise<ModelOptionsResponse> => {
+      const refresh = consumeModelOptionsForceRefresh()
       let next: ModelOptionsResponse
 
       next = await getScopedModelOptions(() =>
         gateway && activeSessionId
-          ? gateway.request<ModelOptionsResponse>('model.options', { session_id: activeSessionId })
-          : getGlobalModelOptions()
+          ? gateway.request<ModelOptionsResponse>('model.options', {
+              session_id: activeSessionId,
+              refresh
+            })
+          : getGlobalModelOptions({ refresh })
       )
 
       writeCachedModelOptions(modelOptionsScope, next)
 
       return next
     },
-    initialData: () => readCachedModelOptions(modelOptionsScope)
+    // localStorage seed must not count as fresh under the global 60s staleTime
+    initialData: () => readCachedModelOptions(modelOptionsScope),
+    initialDataUpdatedAt: 0,
+    staleTime: 0
   })
 
   const { model: optionsModel, provider: optionsProvider } = currentPickerSelection(

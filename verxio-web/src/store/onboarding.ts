@@ -321,9 +321,10 @@ async function completeWithModelConfirm(
 ) {
   const isManual = $desktopOnboarding.get().manual
 
-  if (!isManual) {
-    await ctx.requestGateway('reload.env').catch(() => undefined)
-  }
+  // Always reload env so a Settings-driven ChatGPT/OAuth connect sees the new
+  // credentials before model.options / statusbar refresh (manual used to skip
+  // this and left the picker on stale "no model" until a later refetch).
+  await ctx.requestGateway('reload.env').catch(() => undefined)
 
   const runtime =
     isManual || ignoreRuntimeGate

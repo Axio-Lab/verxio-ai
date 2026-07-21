@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 
 import { ConnectedTag, providerTitle } from '@/components/desktop-onboarding-overlay'
@@ -5,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { disconnectOAuthProvider } from '@/hermes'
 import { useI18n } from '@/i18n'
+import { clearModelOptionsQueries } from '@/lib/model-options-cache'
 import { ChevronLeft, Loader2 } from '@/lib/icons'
 import { notify, notifyError } from '@/store/notifications'
 import {
@@ -39,6 +41,7 @@ function ProviderCliCommand({ command, copied, onCopy }: { command: string; copi
 
 export function ProviderAccountSetup({ onBack, onUpdated, provider, requestGateway }: ProviderAccountSetupProps) {
   const { t } = useI18n()
+  const queryClient = useQueryClient()
   const copy = t.settings.providers
   const title = providerTitle(provider)
   const loggedIn = provider.status?.logged_in
@@ -107,6 +110,9 @@ export function ProviderAccountSetup({ onBack, onUpdated, provider, requestGatew
         title: copy.removedTitle,
         message: copy.removedMessage(title)
       })
+      // Drop GPT models from the statusbar immediately — don't wait for refetch.
+      clearModelOptionsQueries(queryClient)
+      await requestGateway('reload.env').catch(() => undefined)
       await onUpdated()
     } catch (error) {
       notifyError(error, copy.failedRemove(title))

@@ -2,7 +2,11 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 
 import { useI18n } from '@/i18n'
-import { readCachedModelOptions, writeCachedModelOptions } from '@/lib/model-options-cache'
+import {
+  readCachedModelOptions,
+  writeCachedModelOptions,
+  consumeModelOptionsForceRefresh
+} from '@/lib/model-options-cache'
 import { getScopedModelOptions } from '@/lib/verxio-model-options'
 import type { ModelOptionProvider, ModelOptionsResponse, ModelPricing } from '@/types/hermes'
 
@@ -59,14 +63,16 @@ export function ModelPickerDialog({
   const modelOptions = useQuery({
     queryKey: ['model-options', modelOptionsScope],
     queryFn: async () => {
+      const refresh = consumeModelOptionsForceRefresh()
       let next: ModelOptionsResponse
 
       next = await getScopedModelOptions(() =>
         gw && sessionId
           ? gw.request<ModelOptionsResponse>('model.options', {
-              session_id: sessionId
+              session_id: sessionId,
+              refresh
             })
-          : getGlobalModelOptions()
+          : getGlobalModelOptions({ refresh })
       )
 
       writeCachedModelOptions(modelOptionsScope, next)
@@ -74,7 +80,9 @@ export function ModelPickerDialog({
       return next
     },
     enabled: open,
-    initialData: () => readCachedModelOptions(modelOptionsScope)
+    initialData: () => readCachedModelOptions(modelOptionsScope),
+    initialDataUpdatedAt: 0,
+    staleTime: 0
   })
 
   const providers = modelOptions.data?.providers ?? []

@@ -115,12 +115,15 @@ function configuredRuntimeProviders(options: ModelOptionsResponse): ModelOptionP
 /** Pin Verxio-hosted, then linked/authenticated providers, above the rest. */
 export function prioritizeLinkedProviders(
   options: ModelOptionsResponse,
-  opts: { dropHosted?: boolean } = {}
+  opts: { dropHosted?: boolean; authenticatedOnly?: boolean } = {}
 ): ModelOptionsResponse {
   const dropHosted = opts.dropHosted === true
+  // BYOK / post-disconnect: never keep skeleton rows that still advertise models.
+  const authenticatedOnly = opts.authenticatedOnly === true || dropHosted
   const currentProvider = (options.provider || '').trim()
   const providers = (options.providers ?? [])
     .filter(provider => !dropHosted || !provider.is_verxio_hosted)
+    .filter(provider => !authenticatedOnly || provider.authenticated !== false)
     .filter(provider => (provider.models ?? []).length > 0)
     .slice()
     .sort((a, b) => {

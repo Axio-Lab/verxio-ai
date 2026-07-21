@@ -10,7 +10,7 @@ import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overla
 import { Pane, PaneMain } from '@/components/pane-shell'
 import { RemoteDisplayBanner } from '@/components/remote-display-banner'
 import { readVerxioAuthScope } from '@/lib/auth-scope'
-import { clearCachedModelOptions, refreshModelOptionsQueries } from '@/lib/model-options-cache'
+import { clearModelOptionsQueries, refreshModelOptionsQueries } from '@/lib/model-options-cache'
 import { useSkinCommand } from '@/themes/use-skin-command'
 
 import { formatRefValue } from '../components/assistant-ui/directive-text'
@@ -848,9 +848,8 @@ export function DesktopController() {
         enabled={gatewayState === 'open'}
         onCompleted={() => {
           void refreshHermesConfig()
-          void refreshCurrentModel()
-          clearCachedModelOptions()
-          void refreshModelOptionsQueries(queryClient)
+          clearModelOptionsQueries(queryClient)
+          void refreshModelOptionsQueries(queryClient).then(() => refreshCurrentModel())
         }}
         requestGateway={requestGateway}
       />
@@ -870,8 +869,8 @@ export function DesktopController() {
             onClose={closeOverlayToPreviousRoute}
             onConfigSaved={() => {
               void refreshHermesConfig()
-              void refreshCurrentModel()
-              void queryClient.invalidateQueries({ queryKey: ['model-options'] })
+              clearModelOptionsQueries(queryClient)
+              void refreshModelOptionsQueries(queryClient).then(() => refreshCurrentModel())
             }}
             onMainModelChanged={(provider, model) => {
               setCurrentProvider(provider)
