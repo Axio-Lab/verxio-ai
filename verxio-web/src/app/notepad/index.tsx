@@ -13,6 +13,17 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tip } from '@/components/ui/tooltip'
@@ -287,10 +298,17 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   const pageStart = (currentPage - 1) * NOTES_PER_PAGE
   const paginatedNotes = filteredNotes.slice(pageStart, pageStart + NOTES_PER_PAGE)
 
-  const selectedNote = useMemo(
-    () => paginatedNotes.find(note => note.id === selectedNoteId) ?? paginatedNotes[0] ?? null,
-    [paginatedNotes, selectedNoteId]
-  )
+  const selectedNote = useMemo(() => {
+    if (selectedNoteId) {
+      const fromAll = notes.find(note => note.id === selectedNoteId)
+
+      if (fromAll) {
+        return fromAll
+      }
+    }
+
+    return paginatedNotes[0] ?? null
+  }, [notes, paginatedNotes, selectedNoteId])
 
   const dirty = Boolean(selectedNote && draft && draftChanged(selectedNote, draft))
 
@@ -380,16 +398,17 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   }, [notePage, pageCount])
 
   useEffect(() => {
-    if (paginatedNotes.length === 0) {
+    if (notes.length === 0) {
       setSelectedNoteId(null)
 
       return
     }
 
-    if (!selectedNoteId || !paginatedNotes.some(note => note.id === selectedNoteId)) {
-      setSelectedNoteId(paginatedNotes[0].id)
+    // Keep selection when a note moves out of the active folder filter.
+    if (!selectedNoteId || !notes.some(note => note.id === selectedNoteId)) {
+      setSelectedNoteId(paginatedNotes[0]?.id ?? notes[0].id)
     }
-  }, [paginatedNotes, selectedNoteId])
+  }, [notes, paginatedNotes, selectedNoteId])
 
   useEffect(() => {
     let cancelled = false
@@ -450,6 +469,8 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     []
   )
 
+  const selectedNoteIdentity = selectedNote?.id ?? null
+
   useEffect(() => {
     if (!selectedNote) {
       setDraft(null)
@@ -457,9 +478,12 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       return
     }
 
+    // Only remount the editor when switching notes. In-place updates (move /
+    // save) must not wipe unsaved title/content/summary edits.
     setDraft(draftFromNote(selectedNote))
     setSummaryEditing(false)
-  }, [selectedNote])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- identity-only remount
+  }, [selectedNoteIdentity])
 
   useEffect(() => {
     setStatusbarItemGroup?.('notepad', [
@@ -627,6 +651,33 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       await persistDraft(draft, 'Note saved')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleMoveNote(note: VerxioNotepadNote, folderId: string | null) {
+    const nextFolderId = folderId || null
+
+    if ((note.folder_id ?? null) === nextFolderId) {
+      return
+    }
+
+    setBusyAction(`move-${note.id}`)
+
+    try {
+      const updated = await updateNotepadNote(note.id, { folder_id: nextFolderId })
+      setNotes(current => replaceNote(current, updated))
+
+      if (selectedNoteId === note.id) {
+        setDraft(current => (current ? { ...current, folder_id: nextFolderId } : current))
+      }
+
+      const folderName = nextFolderId ? (folderById.get(nextFolderId)?.name ?? 'folder') : DEFAULT_FOLDER_LABEL
+
+      notify({ kind: 'success', message: `Moved to ${folderName}` })
+    } catch (error) {
+      notifyError(error, 'Could not move note')
+    } finally {
+      setBusyAction(null)
     }
   }
 
@@ -1239,30 +1290,84 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
               <div className="px-4 py-8 text-sm text-muted-foreground">No notes found.</div>
             ) : (
               paginatedNotes.map(note => (
-                <button
+                <div
                   className={cn(
-                    'block w-full border-b border-(--ui-stroke-secondary) px-3 py-3 text-left hover:bg-(--ui-control-hover-background)',
+                    'group relative flex w-full items-stretch border-b border-(--ui-stroke-secondary) hover:bg-(--ui-control-hover-background)',
                     selectedNote?.id === note.id && 'bg-(--ui-control-active-background)'
                   )}
                   key={note.id}
-                  onClick={() => setSelectedNoteId(note.id)}
-                  type="button"
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium">{note.title}</span>
-                    {note.share_token && <Codicon className="text-muted-foreground" name="link" />}
+                  <button
+                    className="min-w-0 flex-1 px-3 py-3 text-left"
+                    onClick={() => setSelectedNoteId(note.id)}
+                    type="button"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">{note.title}</span>
+                      {note.share_token && <Codicon className="text-muted-foreground" name="link" />}
+                    </div>
+                    <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                      <span className="truncate">
+                        {folderById.get(note.folder_id || '')?.name || DEFAULT_FOLDER_LABEL}
+                      </span>
+                      <span aria-hidden="true">·</span>
+                      <span>{noteTime(note.updated_at)}</span>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                      {note.summary || noteBody(note) || 'Empty note'}
+                    </p>
+                  </button>
+                  <div className="flex shrink-0 items-start pr-1.5 pt-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          aria-label={`Note actions for ${note.title}`}
+                          disabled={busyAction === `move-${note.id}`}
+                          onClick={event => event.stopPropagation()}
+                          size="icon-xs"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Codicon
+                            name={busyAction === `move-${note.id}` ? 'loading' : 'ellipsis'}
+                            spinning={busyAction === `move-${note.id}`}
+                          />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="min-w-44" onClick={event => event.stopPropagation()}>
+                        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                          Organize
+                        </DropdownMenuLabel>
+                        <DropdownMenuSub>
+                          <DropdownMenuSubTrigger>
+                            <Codicon name="folder" />
+                            Move to folder
+                          </DropdownMenuSubTrigger>
+                          <DropdownMenuSubContent className="min-w-40">
+                            <DropdownMenuItem
+                              disabled={!note.folder_id}
+                              onSelect={() => void handleMoveNote(note, null)}
+                            >
+                              <Codicon name={!note.folder_id ? 'check' : 'folder'} />
+                              {DEFAULT_FOLDER_LABEL}
+                            </DropdownMenuItem>
+                            {folders.length > 0 && <DropdownMenuSeparator />}
+                            {folders.map(folder => (
+                              <DropdownMenuItem
+                                disabled={note.folder_id === folder.id}
+                                key={folder.id}
+                                onSelect={() => void handleMoveNote(note, folder.id)}
+                              >
+                                <Codicon name={note.folder_id === folder.id ? 'check' : 'folder'} />
+                                {folder.name}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuSubContent>
+                        </DropdownMenuSub>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
-                  <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                    <span className="truncate">
-                      {folderById.get(note.folder_id || '')?.name || DEFAULT_FOLDER_LABEL}
-                    </span>
-                    <span aria-hidden="true">·</span>
-                    <span>{noteTime(note.updated_at)}</span>
-                  </div>
-                  <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                    {note.summary || noteBody(note) || 'Empty note'}
-                  </p>
-                </button>
+                </div>
               ))
             )}
           </div>
@@ -1324,10 +1429,13 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                   value={draft.title}
                 />
                 <select
-                  className="h-8 min-w-0 flex-1 rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 text-xs outline-none sm:flex-none"
-                  onChange={event =>
-                    setDraft(current => (current ? { ...current, folder_id: event.target.value || null } : current))
-                  }
+                  aria-label="Move note to folder"
+                  className="h-8 min-w-0 flex-1 rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 text-xs outline-none sm:max-w-48 sm:flex-none"
+                  disabled={busyAction === `move-${selectedNote.id}`}
+                  onChange={event => {
+                    void handleMoveNote(selectedNote, event.target.value || null)
+                  }}
+                  title="Move to folder"
                   value={draft.folder_id ?? ''}
                 >
                   <option value="">{DEFAULT_FOLDER_LABEL}</option>
