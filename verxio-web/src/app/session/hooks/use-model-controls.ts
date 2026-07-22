@@ -3,7 +3,11 @@ import { useCallback } from 'react'
 
 import { getGlobalModelInfo, setGlobalModel } from '@/hermes'
 import { useI18n } from '@/i18n'
-import { isSelectableModel, resolveHostedDefaultModel, resolveStatusbarModel } from '@/lib/hosted-default-model'
+import {
+  resolveHostedDefaultModel,
+  resolveStatusbarModel,
+  shouldClearStaleStatusbarModel
+} from '@/lib/hosted-default-model'
 import { getInferenceCatalog, getInferenceSettings, verxioApiEnabled } from '@/lib/verxio-api'
 import { getScopedModelOptions } from '@/lib/verxio-model-options'
 import { notifyError } from '@/store/notifications'
@@ -77,11 +81,12 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
       const [result, options] = await Promise.all([getGlobalModelInfo(), getScopedModelOptions()])
       const hermesModel = typeof result.model === 'string' ? result.model.trim() : ''
       const hermesProvider = typeof result.provider === 'string' ? result.provider.trim() : ''
-      const selectable = isSelectableModel(hermesModel, hermesProvider, options)
+      const stale = shouldClearStaleStatusbarModel(hermesModel, hermesProvider, options)
       const { hostedDefault, mode } = await loadInferenceModeAndHostedDefault()
 
-      // Stale config after disconnect/key delete: picker has no match — show No model.
-      if (hermesModel && !selectable) {
+      // Stale config after disconnect/key delete: picker loaded and has no match.
+      // Do not clear when providers are empty (catalog still warming / BYOK auth lag).
+      if (hermesModel && stale) {
         if (mode === 'hosted' && hostedDefault) {
           applyModelSelection(hostedDefault)
 
@@ -103,7 +108,7 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
       const next = resolveStatusbarModel(result, $currentModel.get(), hostedDefault)
 
       if (next) {
-        if (!isSelectableModel(next.model, next.provider, options) && mode !== 'hosted') {
+        if (shouldClearStaleStatusbarModel(next.model, next.provider, options) && mode !== 'hosted') {
           clearStatusbarModel()
 
           return

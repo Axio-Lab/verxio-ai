@@ -41,6 +41,26 @@ export function isSelectableModel(
   })
 }
 
+/**
+ * Whether the statusbar should drop a Hermes-reported model as stale.
+ *
+ * Only clear after the picker catalog has loaded with at least one provider.
+ * An empty providers list usually means "still loading / cache cleared / BYOK
+ * auth not ready yet" — wiping the pill then is what made ChatGPT/BYOK show
+ * "no model" after refresh even when config.yaml still had gpt-5.6.
+ */
+export function shouldClearStaleStatusbarModel(
+  model: string,
+  provider: string,
+  options: Pick<ModelOptionsResponse, 'providers'> | null | undefined
+): boolean {
+  if (!(options?.providers ?? []).length) {
+    return false
+  }
+
+  return !isSelectableModel(model, provider, options)
+}
+
 /** Pick the upstream model/provider for the user's hosted Verxio default. */
 export function resolveHostedDefaultModel(
   settings: Pick<VerxioInferenceSettings, 'defaultModelId' | 'mode'>,

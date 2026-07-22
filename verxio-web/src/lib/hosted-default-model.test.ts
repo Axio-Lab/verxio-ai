@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { isSelectableModel, resolveHostedDefaultModel, resolveStatusbarModel } from './hosted-default-model'
+import {
+  isSelectableModel,
+  resolveHostedDefaultModel,
+  resolveStatusbarModel,
+  shouldClearStaleStatusbarModel
+} from './hosted-default-model'
 
 const catalog = {
   defaultModelId: 'verxio-qwen',
@@ -52,6 +57,27 @@ describe('isSelectableModel', () => {
         providers: [{ authenticated: true, models: ['gpt-5.3-codex'], name: 'ChatGPT', slug: 'openai-codex' }]
       })
     ).toBe(true)
+  })
+})
+
+describe('shouldClearStaleStatusbarModel', () => {
+  it('does not clear while the picker catalog is empty (refresh race)', () => {
+    expect(shouldClearStaleStatusbarModel('gpt-5.6-sol', 'openai-codex', { providers: [] })).toBe(false)
+    expect(shouldClearStaleStatusbarModel('gpt-5.6-sol', 'openai-codex', { providers: undefined })).toBe(false)
+  })
+
+  it('clears only after a loaded catalog proves the model is gone', () => {
+    expect(
+      shouldClearStaleStatusbarModel('gpt-5.6-sol', 'openai-codex', {
+        providers: [{ authenticated: true, models: ['llama-3.3-70b-versatile'], name: 'Groq', slug: 'groq' }]
+      })
+    ).toBe(true)
+
+    expect(
+      shouldClearStaleStatusbarModel('gpt-5.6-sol', 'openai-codex', {
+        providers: [{ authenticated: true, models: ['gpt-5.6-sol'], name: 'ChatGPT', slug: 'openai-codex' }]
+      })
+    ).toBe(false)
   })
 })
 
