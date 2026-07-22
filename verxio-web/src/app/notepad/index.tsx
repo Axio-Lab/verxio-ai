@@ -1267,7 +1267,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
           </div>
         </aside>
 
-        <section className="flex h-80 min-w-0 w-full shrink-0 flex-col overflow-hidden border-b border-(--ui-stroke-secondary) sm:h-[22rem] lg:h-full lg:w-[22rem] lg:border-b-0 lg:border-r">
+        <section className="flex h-80 min-w-0 w-full shrink-0 flex-col overflow-hidden border-b border-(--ui-stroke-secondary) sm:h-88 lg:h-full lg:w-88 lg:border-b-0 lg:border-r">
           <div className="flex h-12 items-center gap-2 border-b border-(--ui-stroke-secondary) px-3">
             <div className="relative min-w-0 flex-1">
               <Codicon
