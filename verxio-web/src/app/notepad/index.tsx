@@ -1969,7 +1969,10 @@ export function PublicNotepadShareView() {
   }
 
   const note = payload.note
-  const summary = note.summary.trim()
+  // Public URL is the shareable document surface. Prefer summary; fall back to
+  // notes/transcript so agent-published playbooks still render when the model
+  // wrote only `content`.
+  const body = note.summary.trim() || note.content.trim() || note.transcript.trim()
 
   return (
     <>
@@ -1985,10 +1988,10 @@ export function PublicNotepadShareView() {
             </div>
           </div>
 
-          {summary ? (
+          {body ? (
             <section className="py-6">
               <h2 className="sr-only">Summary</h2>
-              <NotepadMarkdown text={summary} />
+              <NotepadMarkdown text={body} />
             </section>
           ) : (
             <section className="grid min-h-64 place-items-center py-8 text-center text-sm text-muted-foreground">

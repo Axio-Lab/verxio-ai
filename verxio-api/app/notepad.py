@@ -330,6 +330,25 @@ async def summarize_note(workspace: Workspace, profile: AgentProfile, note_id: s
     )
 
 
+def _ensure_shareable_summary(
+    workspace: Workspace,
+    profile: AgentProfile,
+    note: NotepadNoteRecord,
+) -> NotepadNoteRecord:
+    """Public share URLs render ``summary``. Promote notes/transcript if empty."""
+    if (note.summary or "").strip():
+        return note
+    fallback = (note.content or "").strip() or (note.transcript or "").strip()
+    if not fallback:
+        return note
+    return update_note(
+        workspace,
+        profile,
+        note.id,
+        NotepadNoteUpdateRequest(summary=fallback),
+    )
+
+
 def create_share(
     workspace: Workspace,
     profile: AgentProfile,
@@ -337,6 +356,7 @@ def create_share(
     share_url_for_token: Any,
 ) -> NotepadShareResponse:
     note = _note_from_row(_ensure_note(workspace, profile, note_id))
+    note = _ensure_shareable_summary(workspace, profile, note)
     if note.share_token:
         return NotepadShareResponse(token=note.share_token, url=share_url_for_token(note.share_token), note=note)
 

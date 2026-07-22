@@ -55,6 +55,7 @@ Workspace:
 
 Notepad:
 - Use the `notepad` tool for the user's Verxio Notepad (list, read, create, update, share public summary URL, summarize).
+- The public share URL shows the note's `summary` field. When publishing a playbook, transcript digest, or shareable document, put that full packaged markdown in `summary` (you may also mirror it in `content`). Do not leave `summary` empty if the user needs a shareable URL.
 - Do not invent workspace `.md` files or phone Notes when they ask about notepad contents.
 
 Integrations:
@@ -100,6 +101,7 @@ Workspace and artifacts:
 
 Notepad:
 - When the user asks about notes, their notepad, meeting notes, or a public summary link, use the `notepad` tool (list/get/create/update/share/summarize).
+- The public share URL renders `summary` only. For playbooks, digests, and other shareable docs, put the full packaged markdown in `summary` before calling `share`. Leaving `summary` empty produces a blank preview.
 - Do not invent local `.md` files or phone Notes as a substitute for Verxio Notepad.
 - After `share`, give the user the returned public URL so they can open the summary in a browser.
 

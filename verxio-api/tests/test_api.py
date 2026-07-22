@@ -1051,6 +1051,32 @@ def test_notepad_notes_folders_and_public_shares(client):
     assert client.get(f"/api/public/notepad/{share_payload['token']}").status_code == 404
 
 
+def test_notepad_share_promotes_content_into_empty_summary(client):
+    _payload, token = signup(client, "share-fallback@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    note = client.post(
+        "/api/notepad/notes",
+        json={
+            "title": "Playbook only in notes",
+            "content": "# Hook\n\nShip daily. Own the audience.",
+            "summary": "",
+        },
+        headers=headers,
+    )
+    assert note.status_code == 200
+    note_id = note.json()["id"]
+    assert note.json()["summary"] == ""
+
+    share = client.post(f"/api/notepad/notes/{note_id}/share", headers=headers)
+    assert share.status_code == 200
+    assert "Ship daily" in share.json()["note"]["summary"]
+
+    public = client.get(f"/api/public/notepad/{share.json()['token']}")
+    assert public.status_code == 200
+    assert "Ship daily" in public.json()["note"]["summary"]
+
+
 def test_notepad_runtime_bearer_token_can_list_and_share(client):
     """Hermes containers auth to Notepad with the runtime dashboard token."""
     payload, token = signup(client, "runtime-notes@example.com")
