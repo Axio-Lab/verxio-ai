@@ -86,6 +86,7 @@ export function isVerxioHostedDefaultSelection(
     const hostedProvider = String(entry.providerSlug || '')
       .trim()
       .toLowerCase()
+
     const hostedIds = new Set(
       [entry.upstreamModelId, ...(entry.availableModelIds ?? [])].filter((id): id is string => Boolean(id?.trim()))
     )

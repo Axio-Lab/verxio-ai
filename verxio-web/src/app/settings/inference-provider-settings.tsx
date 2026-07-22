@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Check, KeyRound, Loader2, Sparkles } from '@/lib/icons'
 import { clearCachedModelOptions, refreshModelOptionsQueries } from '@/lib/model-options-cache'
-import { setCurrentModel, setCurrentProvider } from '@/store/session'
 import {
   getInferenceCatalog,
   getInferenceUsage,
@@ -15,6 +14,7 @@ import {
   type VerxioInferenceModel,
   type VerxioInferenceUsageResponse
 } from '@/lib/verxio-api'
+import { setCurrentModel, setCurrentProvider } from '@/store/session'
 
 import { CONTROL_TEXT } from './constants'
 import { ListRow, Pill, SectionHeading } from './primitives'
