@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import {
   isSelectableModel,
+  isVerxioHostedDefaultSelection,
   resolveHostedDefaultModel,
   resolveStatusbarModel,
-  shouldClearStaleStatusbarModel
+  shouldClearStaleStatusbarModel,
+  shouldShowByokStatusbarModel
 } from './hosted-default-model'
 
 const catalog = {
@@ -24,6 +26,21 @@ const catalog = {
       requiredEnvVars: [],
       tier: 'standard',
       upstreamModelId: 'qwen3.6-plus'
+    },
+    {
+      byokAvailable: true,
+      capabilities: [],
+      default: false,
+      description: 'Hosted Gemini',
+      displayName: 'Verxio Gemini',
+      hostedAvailable: true,
+      id: 'verxio-gemini',
+      availableModelIds: ['gemini-flash-lite-latest'],
+      pricing: { currency: 'USD', inputPerMillion: 0.1, outputPerMillion: 0.4 },
+      providerSlug: 'gemini',
+      requiredEnvVars: [],
+      tier: 'fast',
+      upstreamModelId: 'gemini-flash-lite-latest'
     }
   ]
 }
@@ -58,6 +75,22 @@ describe('isSelectableModel', () => {
       })
     ).toBe(true)
   })
+
+  it('never treats Verxio Hosted rows as selectable', () => {
+    expect(
+      isSelectableModel('qwen3.6-plus', 'alibaba', {
+        providers: [
+          {
+            authenticated: true,
+            is_verxio_hosted: true,
+            models: ['qwen3.6-plus'],
+            name: 'Verxio Qwen',
+            slug: 'alibaba'
+          }
+        ]
+      })
+    ).toBe(false)
+  })
 })
 
 describe('shouldClearStaleStatusbarModel', () => {
@@ -77,6 +110,67 @@ describe('shouldClearStaleStatusbarModel', () => {
       shouldClearStaleStatusbarModel('gpt-5.6-sol', 'openai-codex', {
         providers: [{ authenticated: true, models: ['gpt-5.6-sol'], name: 'ChatGPT', slug: 'openai-codex' }]
       })
+    ).toBe(false)
+  })
+})
+
+describe('isVerxioHostedDefaultSelection', () => {
+  it('matches hosted Qwen/Gemini catalog entries', () => {
+    expect(isVerxioHostedDefaultSelection('qwen3.6-plus', 'alibaba', catalog)).toBe(true)
+    expect(isVerxioHostedDefaultSelection('gemini-flash-lite-latest', 'gemini', catalog)).toBe(true)
+    expect(isVerxioHostedDefaultSelection('gpt-5.6-sol', 'openai-codex', catalog)).toBe(false)
+  })
+})
+
+describe('shouldShowByokStatusbarModel', () => {
+  it('never shows Verxio Hosted defaults in BYOK', () => {
+    expect(shouldShowByokStatusbarModel('qwen3.6-plus', 'alibaba', { providers: [] }, catalog)).toBe(false)
+    expect(
+      shouldShowByokStatusbarModel(
+        'qwen3.6-plus',
+        'alibaba',
+        {
+          providers: [
+            {
+              authenticated: true,
+              is_verxio_hosted: true,
+              models: ['qwen3.6-plus'],
+              name: 'Verxio Qwen',
+              slug: 'alibaba'
+            }
+          ]
+        },
+        catalog
+      )
+    ).toBe(false)
+  })
+
+  it('keeps ChatGPT/Claude pins while options are still empty', () => {
+    expect(shouldShowByokStatusbarModel('gpt-5.6-sol', 'openai-codex', { providers: [] }, catalog)).toBe(true)
+    expect(shouldShowByokStatusbarModel('claude-opus-4', 'anthropic', { providers: [] }, catalog)).toBe(true)
+  })
+
+  it('requires a selectable BYOK provider once options have loaded', () => {
+    expect(
+      shouldShowByokStatusbarModel(
+        'gpt-5.6-sol',
+        'openai-codex',
+        {
+          providers: [{ authenticated: true, models: ['gpt-5.6-sol'], name: 'ChatGPT', slug: 'openai-codex' }]
+        },
+        catalog
+      )
+    ).toBe(true)
+
+    expect(
+      shouldShowByokStatusbarModel(
+        'gpt-5.6-sol',
+        'openai-codex',
+        {
+          providers: [{ authenticated: true, models: ['grok-3'], name: 'xAI', slug: 'xai' }]
+        },
+        catalog
+      )
     ).toBe(false)
   })
 })

@@ -6,31 +6,39 @@ import { useI18n } from '@/i18n'
 import {
   resolveHostedDefaultModel,
   resolveStatusbarModel,
-  shouldClearStaleStatusbarModel
+  shouldClearStaleStatusbarModel,
+  shouldShowByokStatusbarModel
 } from '@/lib/hosted-default-model'
-import { getInferenceCatalog, getInferenceSettings, verxioApiEnabled } from '@/lib/verxio-api'
+import {
+  getInferenceCatalog,
+  getInferenceSettings,
+  verxioApiEnabled,
+  type VerxioInferenceCatalogResponse
+} from '@/lib/verxio-api'
 import { getScopedModelOptions } from '@/lib/verxio-model-options'
 import { notifyError } from '@/store/notifications'
 import { $currentModel, $currentProvider, setCurrentModel, setCurrentProvider } from '@/store/session'
 import type { ModelOptionsResponse } from '@/types/hermes'
 
 async function loadInferenceModeAndHostedDefault(): Promise<{
+  catalog: Pick<VerxioInferenceCatalogResponse, 'models'> | null
   hostedDefault: Awaited<ReturnType<typeof resolveHostedDefaultModel>>
   mode: 'byok' | 'hosted' | null
 }> {
   if (!verxioApiEnabled()) {
-    return { hostedDefault: null, mode: null }
+    return { catalog: null, hostedDefault: null, mode: null }
   }
 
   try {
     const [settings, catalog] = await Promise.all([getInferenceSettings(), getInferenceCatalog()])
 
     return {
+      catalog,
       hostedDefault: resolveHostedDefaultModel(settings, catalog),
       mode: settings.mode
     }
   } catch {
-    return { hostedDefault: null, mode: null }
+    return { catalog: null, hostedDefault: null, mode: null }
   }
 }
 
@@ -81,13 +89,26 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
       const [result, options] = await Promise.all([getGlobalModelInfo(), getScopedModelOptions()])
       const hermesModel = typeof result.model === 'string' ? result.model.trim() : ''
       const hermesProvider = typeof result.provider === 'string' ? result.provider.trim() : ''
+      const { catalog, hostedDefault, mode } = await loadInferenceModeAndHostedDefault()
+
+      // BYOK: never show Verxio Hosted defaults. Empty / leftover Qwen·Gemini → "no model".
+      if (mode === 'byok') {
+        if (!shouldShowByokStatusbarModel(hermesModel, hermesProvider, options, catalog)) {
+          clearStatusbarModel()
+
+          return
+        }
+
+        applyModelSelection({ model: hermesModel, provider: hermesProvider })
+
+        return
+      }
+
       const stale = shouldClearStaleStatusbarModel(hermesModel, hermesProvider, options)
-      const { hostedDefault, mode } = await loadInferenceModeAndHostedDefault()
 
       // Stale config after disconnect/key delete: picker loaded and has no match.
-      // Do not clear when providers are empty (catalog still warming / BYOK auth lag).
       if (hermesModel && stale) {
-        if (mode === 'hosted' && hostedDefault) {
+        if (hostedDefault) {
           applyModelSelection(hostedDefault)
 
           return
@@ -98,17 +119,16 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
         return
       }
 
-      // BYOK with no Hermes main model: show empty statusbar, never seed Qwen.
-      if (mode === 'byok' && !hermesModel) {
-        clearStatusbarModel()
-
-        return
-      }
-
       const next = resolveStatusbarModel(result, $currentModel.get(), hostedDefault)
 
       if (next) {
-        if (shouldClearStaleStatusbarModel(next.model, next.provider, options) && mode !== 'hosted') {
+        if (shouldClearStaleStatusbarModel(next.model, next.provider, options)) {
+          if (hostedDefault) {
+            applyModelSelection(hostedDefault)
+
+            return
+          }
+
           clearStatusbarModel()
 
           return

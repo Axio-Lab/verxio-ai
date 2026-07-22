@@ -19,8 +19,10 @@ import { playCompletionSound } from '@/lib/completion-sound'
 import { gatewayEventRequiresSessionId } from '@/lib/gateway-events'
 import { dedupeGeneratedImageEchoesInParts } from '@/lib/generated-images'
 import { triggerHaptic } from '@/lib/haptics'
+import { isVerxioHostedDefaultSelection } from '@/lib/hosted-default-model'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
 import { parseTodos } from '@/lib/todos'
+import { getInferenceCatalog, getInferenceSettings, verxioApiEnabled } from '@/lib/verxio-api'
 import { setClarifyRequest } from '@/store/clarify'
 import { setSessionCompacting } from '@/store/compaction'
 import { refreshBackgroundProcesses } from '@/store/composer-status'
@@ -29,6 +31,7 @@ import { notify } from '@/store/notifications'
 import { requestDesktopOnboarding } from '@/store/onboarding'
 import { clearAllPrompts, setApprovalRequest, setSecretRequest, setSudoRequest } from '@/store/prompts'
 import {
+  $currentProvider,
   setCurrentBranch,
   setCurrentCwd,
   setCurrentFastMode,
@@ -669,7 +672,23 @@ export function useMessageStream({
           const runtimeInfo: { branch?: string; cwd?: string } = {}
 
           if (modelChanged) {
-            setCurrentModel(payload!.model || '')
+            const nextModel = payload!.model || ''
+            const nextProvider = typeof payload?.provider === 'string' ? payload.provider : $currentProvider.get()
+
+            setCurrentModel(nextModel)
+
+            // BYOK must never keep a Verxio Hosted default on the statusbar if
+            // session.info still echoes a leftover Qwen/Gemini assignment.
+            if (verxioApiEnabled() && nextModel) {
+              void Promise.all([getInferenceSettings(), getInferenceCatalog()])
+                .then(([settings, catalog]) => {
+                  if (settings.mode === 'byok' && isVerxioHostedDefaultSelection(nextModel, nextProvider, catalog)) {
+                    setCurrentModel('')
+                    setCurrentProvider('')
+                  }
+                })
+                .catch(() => undefined)
+            }
           }
 
           if (providerChanged) {

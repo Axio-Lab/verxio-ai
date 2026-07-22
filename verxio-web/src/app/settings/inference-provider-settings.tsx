@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Check, KeyRound, Loader2, Sparkles } from '@/lib/icons'
 import { clearCachedModelOptions, refreshModelOptionsQueries } from '@/lib/model-options-cache'
+import { setCurrentModel, setCurrentProvider } from '@/store/session'
 import {
   getInferenceCatalog,
   getInferenceUsage,
@@ -98,6 +99,12 @@ export function InferenceProviderSettings({
               : (settings?.defaultModelId ?? catalog?.defaultModelId),
           mode: nextMode
         })
+
+        // BYOK must never keep a Verxio Hosted default on the statusbar.
+        if (nextMode === 'byok') {
+          setCurrentModel('')
+          setCurrentProvider('')
+        }
 
         const nextUsage = await getInferenceUsage()
         setUsage({ ...nextUsage, settings: nextSettings })
