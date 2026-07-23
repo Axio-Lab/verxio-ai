@@ -10,6 +10,7 @@ import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qsl, urlencode
 
 import httpx
@@ -47,6 +48,19 @@ from app.composio_catalog import (
     list_composio_accounts,
     list_composio_apps,
     sync_composio_runtime_bridge,
+)
+from app.postiz import (
+    disable_for_workspace as disable_postiz_for_workspace,
+    enable_for_workspace as enable_postiz_for_workspace,
+    extract_integrations as extract_postiz_integrations,
+    extract_posts as extract_postiz_posts,
+    get_binding as get_postiz_binding,
+    is_postiz_configured,
+    postiz_health,
+    public_v1_json as postiz_public_v1_json,
+    public_v1_request as postiz_public_v1_request,
+    runtime_env_for_workspace,
+    sync_postiz_runtime_bridge,
 )
 from app.control_plane import ensure_runtime_directories, get_context_for_user, get_runtime_for_user
 from app.inference import (
@@ -92,6 +106,8 @@ from app.models import (
     NotepadRecordingUploadResponse,
     NotepadShareResponse,
     PasswordResetRequest,
+    PostizStatusResponse,
+    PostizWorkspaceRecord,
     PulseAnalyticsResponse,
     PulseAutomationCreateRequest,
     PulseAutomationGenerateRequest,
@@ -427,6 +443,7 @@ async def get_runtime(request: Request) -> RuntimeControlResponse:
 async def start_runtime_route(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
     await _sync_composio_bridge_for_user(user)
+    await _sync_postiz_bridge_for_user(user)
     await _sync_inference_bridge_for_user(user, refresh_running=True)
     runtime = await start_runtime(get_runtime_for_user(user), extra_env=runtime_env_for_user(str(user["id"])))
     connected, detail = await runtime_health(runtime)
@@ -445,6 +462,7 @@ async def stop_runtime_route(request: Request) -> RuntimeControlResponse:
 async def restart_runtime_route(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
     await _sync_composio_bridge_for_user(user)
+    await _sync_postiz_bridge_for_user(user)
     await _sync_inference_bridge_for_user(user, refresh_running=True)
     runtime = await restart_runtime(get_runtime_for_user(user), extra_env=runtime_env_for_user(str(user["id"])))
     connected, detail = await runtime_health(runtime)
@@ -975,6 +993,34 @@ async def _sync_composio_bridge_for_user(user: dict, *, apply_live: bool = False
     return accounts, bridge
 
 
+async def _sync_postiz_bridge_for_user(user: dict, *, apply_live: bool = False, allow_restart: bool = True):
+    """Sync Postiz MCP bridge and inject runtime env when the workspace binding is active."""
+
+    runtime = get_runtime_for_user(user, fresh=True)
+
+    def _prepare() -> tuple:
+        bridge = sync_postiz_runtime_bridge(runtime)
+        postiz_env = runtime_env_for_workspace(runtime.workspace_id)
+        runtime_env_changed = (
+            bridge.enabled
+            and runtime.status == "running"
+            and any(
+                not runtime_container_env_matches(runtime, key, value)
+                for key, value in postiz_env.items()
+            )
+        )
+        return bridge, runtime_env_changed
+
+    bridge, runtime_env_changed = await asyncio.to_thread(_prepare)
+
+    if allow_restart and runtime.status == "running" and runtime_env_changed:
+        await restart_runtime(runtime, extra_env=runtime_env_for_user(str(user["id"])))
+    elif apply_live and runtime.status in {"running", "starting"} and (bridge.changed or bridge.enabled):
+        await soft_reload_runtime_mcp(runtime)
+
+    return bridge
+
+
 async def _sync_inference_bridge_for_user(
     user: dict,
     *,
@@ -1092,6 +1138,157 @@ async def delete_composio_connection_route(account_id: str, request: Request) ->
     result = delete_composio_account(account_id)
     await _sync_composio_bridge_for_user(user, apply_live=True)
     return result
+
+
+def _postiz_status_response(
+    *,
+    binding,
+    bridge,
+    channel_count: int = 0,
+    health: dict[str, Any] | None = None,
+) -> PostizStatusResponse:
+    from app.postiz import public_url as postiz_public_url
+
+    return PostizStatusResponse(
+        configured=is_postiz_configured(),
+        publicUrl=postiz_public_url(),
+        channelCount=channel_count,
+        health=health or {},
+        binding=binding,
+        toolBridge=bridge,
+    )
+
+
+@app.get("/api/postiz/status", response_model=PostizStatusResponse)
+async def get_postiz_status_route(request: Request) -> PostizStatusResponse:
+    user = require_user(request)
+    workspace, _profile, runtime = get_context_for_user(user)
+    binding = get_postiz_binding(workspace.id)
+    bridge = await _sync_postiz_bridge_for_user(user, apply_live=True)
+    channel_count = 0
+    if binding and binding.status == "active":
+        try:
+            channel_count = len(extract_postiz_integrations(postiz_public_v1_json(workspace.id, "GET", "integrations")))
+        except HTTPException:
+            channel_count = 0
+    return _postiz_status_response(
+        binding=binding,
+        bridge=bridge,
+        channel_count=channel_count,
+        health=postiz_health() if is_postiz_configured() else {"ok": False, "status": "disabled"},
+    )
+
+
+@app.post("/api/postiz/enable", response_model=PostizStatusResponse)
+async def enable_postiz_route(request: Request) -> PostizStatusResponse:
+    user = require_user(request)
+    workspace, profile, runtime = get_context_for_user(user)
+    binding = enable_postiz_for_workspace(workspace, profile, runtime)
+    bridge = await _sync_postiz_bridge_for_user(user, apply_live=True)
+    return _postiz_status_response(binding=binding, bridge=bridge)
+
+
+@app.post("/api/postiz/disable", response_model=PostizStatusResponse)
+async def disable_postiz_route(request: Request) -> PostizStatusResponse:
+    user = require_user(request)
+    workspace, _profile, runtime = get_context_for_user(user)
+    binding = disable_postiz_for_workspace(workspace.id, runtime)
+    bridge = await _sync_postiz_bridge_for_user(user, apply_live=True)
+    return _postiz_status_response(binding=binding, bridge=bridge)
+
+
+@app.get("/api/postiz/calendar-session")
+async def get_postiz_calendar_session_route(request: Request) -> dict:
+    """Return the browser URL for the Postiz calendar (Dialog / new window)."""
+    user = require_user(request)
+    workspace, _profile, _runtime = get_context_for_user(user)
+    from app.postiz import public_url as postiz_public_url
+
+    binding = get_postiz_binding(workspace.id)
+    if not binding or binding.status not in {"active", "needs_api_key"}:
+        raise HTTPException(status_code=400, detail="Enable Socials before opening the calendar.")
+    return {"ok": True, "url": postiz_public_url(), "publicUrl": postiz_public_url()}
+
+
+@app.get("/api/postiz/integrations")
+async def list_postiz_integrations_route(request: Request) -> dict:
+    user = require_user(request)
+    workspace, _profile, _runtime = get_context_for_user(user)
+    payload = postiz_public_v1_json(workspace.id, "GET", "integrations")
+    return {"integrations": extract_postiz_integrations(payload)}
+
+
+@app.delete("/api/postiz/integrations/{integration_id}")
+async def delete_postiz_integration_route(integration_id: str, request: Request) -> dict:
+    user = require_user(request)
+    workspace, _profile, _runtime = get_context_for_user(user)
+    payload = postiz_public_v1_json(workspace.id, "DELETE", f"integrations/{integration_id}")
+    return {"ok": True, "result": payload}
+
+
+@app.get("/api/postiz/posts")
+async def list_postiz_posts_route(request: Request) -> dict:
+    user = require_user(request)
+    workspace, _profile, _runtime = get_context_for_user(user)
+    payload = postiz_public_v1_json(workspace.id, "GET", "posts", params=dict(request.query_params))
+    return {"posts": extract_postiz_posts(payload)}
+
+
+@app.post("/api/postiz/connect-url")
+async def create_postiz_connect_url_route(request: Request) -> dict:
+    user = require_user(request)
+    workspace, _profile, _runtime = get_context_for_user(user)
+    body = await request.json()
+    provider = str(body.get("provider") or "").strip()
+    if not provider:
+        raise HTTPException(status_code=400, detail="provider is required.")
+    payload = postiz_public_v1_json(workspace.id, "GET", f"social/{provider}")
+    if isinstance(payload, str):
+        return {"url": payload}
+    if isinstance(payload, dict):
+        return payload
+    return {"url": ""}
+
+
+@app.api_route(
+    "/api/postiz/v1/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+)
+async def proxy_postiz_v1_route(path: str, request: Request) -> Response:
+    user = require_user(request)
+    workspace, _profile, _runtime = get_context_for_user(user)
+
+    json_body: Any | None = None
+    content: bytes | None = None
+    headers: dict[str, str] = {}
+    content_type = request.headers.get("content-type", "")
+    if content_type:
+        headers["Content-Type"] = content_type
+
+    if request.method in {"POST", "PUT", "PATCH"}:
+        if "application/json" in content_type.lower():
+            try:
+                json_body = await request.json()
+            except Exception as exc:
+                raise HTTPException(status_code=400, detail="Invalid JSON body.") from exc
+        else:
+            content = await request.body()
+
+    upstream = postiz_public_v1_request(
+        workspace.id,
+        request.method,
+        path,
+        params=dict(request.query_params),
+        json_body=json_body,
+        content=content,
+        headers=headers,
+    )
+    response_headers = {
+        key: value
+        for key, value in upstream.headers.items()
+        if key.lower() not in {"content-encoding", "transfer-encoding", "connection"}
+    }
+    return Response(content=upstream.content, status_code=upstream.status_code, headers=response_headers)
 
 
 @app.get("/api/leash/agent-config")
