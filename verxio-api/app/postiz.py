@@ -309,6 +309,38 @@ def runtime_env_for_workspace(workspace_id: str) -> dict[str, str]:
     }
 
 
+def browser_session_for_workspace(workspace_id: str) -> dict[str, str]:
+    row = db.fetch_one(
+        """
+        SELECT credentials_encrypted, status FROM postiz_workspaces
+        WHERE workspace_id = ?
+        """,
+        (workspace_id,),
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Postiz is not enabled for this workspace.")
+
+    status = str(row.get("status") or "")
+    if status not in {_STATUS_ACTIVE, _STATUS_NEEDS_API_KEY}:
+        raise HTTPException(status_code=409, detail=f"Postiz workspace status is '{status}'.")
+
+    credentials = _binding_credentials(row)
+    email = str(credentials.get("email") or "").strip()
+    password = str(credentials.get("password") or "").strip()
+    if not email or not password:
+        raise HTTPException(
+            status_code=409,
+            detail="This workspace uses a shared Postiz API key and cannot open an automatic Postiz browser session.",
+        )
+
+    try:
+        return _login(email, password)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Postiz browser session failed: {exc}") from exc
+
+
 def public_v1_request(
     workspace_id: str,
     method: str,
@@ -461,17 +493,21 @@ def _register_or_login(email: str, password: str, company: str) -> dict[str, str
         "provider": "LOCAL",
         "company": company,
     }
-    login_payload = {
-        "email": email,
-        "password": password,
-        "provider": "LOCAL",
-    }
-
     with httpx.Client(base_url=_internal_url(), timeout=30, follow_redirects=True) as client:
         register = _post_first_available(client, ["/api/auth/register", "/auth/register"], register_payload)
         if register.status_code >= 400 and register.status_code not in {400, 409}:
             register.raise_for_status()
 
+    return _login(email, password)
+
+
+def _login(email: str, password: str) -> dict[str, str]:
+    login_payload = {
+        "email": email,
+        "password": password,
+        "provider": "LOCAL",
+    }
+    with httpx.Client(base_url=_internal_url(), timeout=30, follow_redirects=True) as client:
         login = _post_first_available(client, ["/api/auth/login", "/auth/login"], login_payload)
         if login.status_code >= 400:
             detail = login.text.strip() or f"Postiz login failed ({login.status_code})."

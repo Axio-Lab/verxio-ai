@@ -11,13 +11,13 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qsl, urlencode
+from urllib.parse import parse_qsl, urlencode, urlparse
 
 import httpx
 import websockets
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.websockets import WebSocketDisconnect
 
@@ -50,6 +50,7 @@ from app.composio_catalog import (
     sync_composio_runtime_bridge,
 )
 from app.postiz import (
+    browser_session_for_workspace as postiz_browser_session_for_workspace,
     disable_for_workspace as disable_postiz_for_workspace,
     enable_for_workspace as enable_postiz_for_workspace,
     extract_integrations as extract_postiz_integrations,
@@ -1207,7 +1208,46 @@ async def get_postiz_calendar_session_route(request: Request) -> dict:
     binding = get_postiz_binding(workspace.id)
     if not binding or binding.status not in {"active", "needs_api_key"}:
         raise HTTPException(status_code=400, detail="Enable Socials before opening the calendar.")
-    return {"ok": True, "url": postiz_public_url(), "publicUrl": postiz_public_url()}
+    return {
+        "ok": True,
+        "url": str(request.url_for("open_postiz_calendar_route")),
+        "publicUrl": postiz_public_url(),
+    }
+
+
+@app.get("/api/postiz/calendar-open")
+async def open_postiz_calendar_route(request: Request) -> RedirectResponse:
+    user = require_user(request)
+    workspace, _profile, _runtime = get_context_for_user(user)
+    from app.postiz import public_url as postiz_public_url
+
+    binding = get_postiz_binding(workspace.id)
+    if not binding or binding.status not in {"active", "needs_api_key"}:
+        raise HTTPException(status_code=400, detail="Enable Socials before opening the calendar.")
+
+    target = postiz_public_url()
+    session = postiz_browser_session_for_workspace(workspace.id)
+    response = RedirectResponse(url=target, status_code=302)
+
+    parsed_target = urlparse(target)
+    target_host = parsed_target.hostname or ""
+    secure = parsed_target.scheme == "https"
+    same_site = "none" if secure else "lax"
+    request_host = request.url.hostname or ""
+    cookie_domain = target_host if target_host and request_host and target_host != request_host else None
+
+    for name, value in session.items():
+        response.set_cookie(
+            name,
+            value,
+            domain=cookie_domain,
+            httponly=True,
+            secure=secure,
+            samesite=same_site,
+            path="/",
+        )
+
+    return response
 
 
 @app.get("/api/postiz/integrations")

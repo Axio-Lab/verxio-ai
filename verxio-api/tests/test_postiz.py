@@ -300,6 +300,42 @@ def test_postiz_named_routes_wrap_public_api(client, monkeypatch):
     assert ("GET", "posts", {"params": {"from": "2026-07-23"}}) in calls
 
 
+def test_postiz_calendar_session_returns_verxio_login_url(client, monkeypatch):
+    _payload, token = signup(client, "postiz-calendar-session@example.com")
+    monkeypatch.setenv("POSTIZ_PLATFORM_API_KEY", "calendar-key")
+    client.post("/api/postiz/enable", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+
+    response = client.get(
+        "/api/postiz/calendar-session",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["publicUrl"] == "http://127.0.0.1:4007"
+    assert body["url"].endswith("/api/postiz/calendar-open")
+
+
+def test_postiz_calendar_open_sets_session_cookie_and_redirects(client, monkeypatch):
+    payload, token = signup(client, "postiz-calendar-open@example.com")
+    monkeypatch.setenv("POSTIZ_PLATFORM_API_KEY", "calendar-key")
+    client.post("/api/postiz/enable", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+    monkeypatch.setattr(main, "postiz_browser_session_for_workspace", lambda workspace_id: {"auth": "jwt", "showorg": "org_1"})
+
+    response = client.get(
+        "/api/postiz/calendar-open",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert response.headers["location"] == "http://127.0.0.1:4007"
+    set_cookie = response.headers.get("set-cookie", "")
+    assert "auth=jwt" in set_cookie
+    assert "showorg=org_1" in set_cookie
+    assert payload["workspace"]["id"]
+
+
 def test_postiz_disable_clears_binding(client, monkeypatch):
     payload, token = signup(client, "postiz-disable@example.com")
     monkeypatch.setenv("POSTIZ_PLATFORM_API_KEY", "disable-key")

@@ -18,6 +18,7 @@ services:
       TEMPORAL_ADDRESS: temporal:7233
       IS_GENERAL: 'true'
       DISABLE_REGISTRATION: 'false'
+      NOT_SECURED: ${POSTIZ_NOT_SECURED:-true}
       STORAGE_PROVIDER: local
       UPLOAD_DIRECTORY: /uploads
       NEXT_PUBLIC_UPLOAD_DIRECTORY: /uploads
