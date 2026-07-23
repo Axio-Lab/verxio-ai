@@ -313,7 +313,43 @@ def test_postiz_calendar_session_returns_verxio_login_url(client, monkeypatch):
     assert response.status_code == 200
     body = response.json()
     assert body["publicUrl"] == "http://127.0.0.1:4007"
-    assert body["url"].endswith("/api/postiz/calendar-open")
+    assert body["url"] == "/api/postiz/calendar-open"
+
+
+def test_postiz_connect_url_unwraps_data_response(client, monkeypatch):
+    payload, token = signup(client, "postiz-connect-wrapped@example.com")
+    monkeypatch.setenv("POSTIZ_PLATFORM_API_KEY", "connect-wrapped-key")
+    client.post("/api/postiz/enable", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+    monkeypatch.setattr(
+        main,
+        "postiz_public_v1_json",
+        lambda workspace_id, method, path: {"data": {"url": "https://provider.test/oauth"}},
+    )
+
+    response = client.post(
+        "/api/postiz/connect-url",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"provider": "x"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"url": "https://provider.test/oauth"}
+
+
+def test_postiz_connect_url_explains_missing_oauth_config(client, monkeypatch):
+    _payload, token = signup(client, "postiz-connect-unconfigured@example.com")
+    monkeypatch.setenv("POSTIZ_PLATFORM_API_KEY", "connect-unconfigured-key")
+    client.post("/api/postiz/enable", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+    monkeypatch.setattr(main, "postiz_public_v1_json", lambda workspace_id, method, path: {})
+
+    response = client.post(
+        "/api/postiz/connect-url",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"provider": "linkedin"},
+    )
+
+    assert response.status_code == 409
+    assert "LinkedIn OAuth is not configured" in response.json()["detail"]
 
 
 def test_postiz_calendar_open_sets_session_cookie_and_redirects(client, monkeypatch):

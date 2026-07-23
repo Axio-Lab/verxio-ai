@@ -1210,7 +1210,7 @@ async def get_postiz_calendar_session_route(request: Request) -> dict:
         raise HTTPException(status_code=400, detail="Enable Socials before opening the calendar.")
     return {
         "ok": True,
-        "url": str(request.url_for("open_postiz_calendar_route")),
+        "url": request.url_for("open_postiz_calendar_route").path,
         "publicUrl": postiz_public_url(),
     }
 
@@ -1284,10 +1284,29 @@ async def create_postiz_connect_url_route(request: Request) -> dict:
         raise HTTPException(status_code=400, detail="provider is required.")
     payload = postiz_public_v1_json(workspace.id, "GET", f"social/{provider}")
     if isinstance(payload, str):
-        return {"url": payload}
+        url = payload.strip()
+        if url:
+            return {"url": url}
     if isinstance(payload, dict):
-        return payload
-    return {"url": ""}
+        candidates = [payload, payload.get("data"), payload.get("result")]
+        for candidate in candidates:
+            if isinstance(candidate, dict):
+                url = str(candidate.get("url") or "").strip()
+                if url:
+                    return {"url": url}
+
+    provider_name = {
+        "x": "X",
+        "linkedin": "LinkedIn",
+        "linkedin-page": "LinkedIn",
+    }.get(provider, provider)
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            f"{provider_name} OAuth is not configured in this self-hosted Postiz instance. "
+            f"Add the provider credentials to the Postiz environment and restart Postiz."
+        ),
+    )
 
 
 @app.api_route(
