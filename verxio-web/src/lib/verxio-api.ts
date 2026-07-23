@@ -947,3 +947,121 @@ export function simulatePulseAutomation(input: {
 export function getPulseAnalytics(): Promise<PulseAnalyticsResponse> {
   return verxioFetch<PulseAnalyticsResponse>('/api/pulse/analytics')
 }
+
+export interface PostizWorkspaceBinding {
+  id: string
+  workspaceId: string
+  agentId: string
+  postizOrgId: string
+  postizUserId: string
+  status: string
+  message: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PostizToolBridgeStatus {
+  changed: boolean
+  configured: boolean
+  enabled: boolean
+  message: string
+  serverName: string
+}
+
+export interface PostizStatusResponse {
+  configured: boolean
+  publicUrl: string
+  channelCount: number
+  health: Record<string, unknown>
+  binding: PostizWorkspaceBinding | null
+  toolBridge: PostizToolBridgeStatus | null
+}
+
+export interface PostizIntegration {
+  id: string
+  name?: string
+  identifier?: string
+  providerIdentifier?: string
+  picture?: string
+  disabled?: boolean
+}
+
+export interface PostizPost {
+  id: string
+  content?: string
+  text?: string
+  status?: string
+  state?: string
+  publishDate?: string
+  scheduledAt?: string
+  createdAt?: string
+}
+
+export function getPostizStatus(): Promise<PostizStatusResponse> {
+  return verxioFetch<PostizStatusResponse>('/api/postiz/status')
+}
+
+export function enablePostiz(): Promise<PostizStatusResponse> {
+  return verxioFetch<PostizStatusResponse>('/api/postiz/enable', { method: 'POST' })
+}
+
+export function disablePostiz(): Promise<PostizStatusResponse> {
+  return verxioFetch<PostizStatusResponse>('/api/postiz/disable', { method: 'POST' })
+}
+
+export function getPostizCalendarSession(): Promise<{ ok: boolean; url: string; publicUrl: string }> {
+  return verxioFetch<{ ok: boolean; url: string; publicUrl: string }>('/api/postiz/calendar-session')
+}
+
+export async function listPostizIntegrations(): Promise<PostizIntegration[]> {
+  const payload = await verxioFetch<PostizIntegration[] | { integrations?: PostizIntegration[] }>(
+    '/api/postiz/integrations'
+  )
+
+  if (Array.isArray(payload)) {
+    return payload
+  }
+
+  if (payload && Array.isArray(payload.integrations)) {
+    return payload.integrations
+  }
+
+  return []
+}
+
+export async function openPostizConnectUrl(provider: string): Promise<{ url: string }> {
+  const payload = await verxioFetch<{ url?: string } | string>('/api/postiz/connect-url', {
+    body: JSON.stringify({ provider }),
+    method: 'POST'
+  })
+
+  if (typeof payload === 'string' && payload) {
+    return { url: payload }
+  }
+
+  if (payload && typeof payload === 'object' && typeof payload.url === 'string') {
+    return { url: payload.url }
+  }
+
+  throw new Error('Postiz did not return a connect URL.')
+}
+
+export function removePostizIntegration(integrationId: string): Promise<unknown> {
+  return verxioFetch<unknown>(`/api/postiz/integrations/${encodeURIComponent(integrationId)}`, {
+    method: 'DELETE'
+  })
+}
+
+export async function listPostizPosts(): Promise<PostizPost[]> {
+  const payload = await verxioFetch<PostizPost[] | { posts?: PostizPost[] }>('/api/postiz/posts')
+
+  if (Array.isArray(payload)) {
+    return payload
+  }
+
+  if (payload && Array.isArray(payload.posts)) {
+    return payload.posts
+  }
+
+  return []
+}

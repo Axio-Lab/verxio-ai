@@ -7,7 +7,20 @@ import { Tip } from '@/components/ui/tooltip'
 import { getHermesConfigDefaults, getHermesConfigRecord, saveHermesConfig } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
-import { Archive, Bell, Globe, Info, KeyRound, Mic, RefreshCw, Settings2, Sparkles, Wrench, Zap } from '@/lib/icons'
+import {
+  Archive,
+  Bell,
+  Globe,
+  Info,
+  KeyRound,
+  Mic,
+  RefreshCw,
+  Settings2,
+  Share2,
+  Sparkles,
+  Wrench,
+  Zap
+} from '@/lib/icons'
 import type { VerxioInferenceMode } from '@/lib/verxio-api'
 import { notifyError } from '@/store/notifications'
 
@@ -27,6 +40,7 @@ import { NotificationsSettings } from './notifications-settings'
 import { PROVIDER_VIEWS, ProvidersSettings, type ProviderView } from './providers-settings'
 import { RuntimeSettings } from './runtime-settings'
 import { SessionsSettings } from './sessions-settings'
+import { SocialsSettings } from './socials-settings'
 import type { SettingsPageProps, SettingsView as SettingsViewId } from './types'
 
 const SETTINGS_VIEWS: readonly SettingsViewId[] = [
@@ -36,6 +50,7 @@ const SETTINGS_VIEWS: readonly SettingsViewId[] = [
   'gateway',
   'keys',
   'mcp',
+  'socials',
   'notifications',
   'sessions',
   'about'
@@ -202,6 +217,12 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
             onClick={() => setActiveView('mcp')}
           />
           <OverlayNavItem
+            active={activeView === 'socials'}
+            icon={Share2}
+            label={t.settings.nav.socials}
+            onClick={() => setActiveView('socials')}
+          />
+          <OverlayNavItem
             active={activeView === 'notifications'}
             icon={Bell}
             label={t.settings.nav.notifications}
@@ -277,6 +298,8 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
             <KeysSettings view={keysView} />
           ) : activeView === 'mcp' ? (
             <McpSettings gateway={gateway} onConfigSaved={onConfigSaved} />
+          ) : activeView === 'socials' ? (
+            <SocialsSettings />
           ) : activeView === 'notifications' ? (
             <NotificationsSettings />
           ) : (
