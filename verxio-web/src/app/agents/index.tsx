@@ -282,11 +282,11 @@ export function AgentsView({ onClose }: AgentsViewProps) {
   return (
     <OverlayView
       closeLabel="Close agents"
-      contentClassName="px-5 pt-5 pb-4 sm:px-6"
+      contentClassName="px-5 pt-[calc(var(--titlebar-height)+1rem)] pb-4 sm:px-6"
       onClose={onClose}
       rootClassName="mx-auto max-w-6xl"
     >
-      <header className="mb-4 flex shrink-0 items-start justify-between gap-3">
+      <header className="mb-4 flex shrink-0 flex-wrap items-start justify-between gap-3 pr-11">
         <div>
           <h2 className="text-sm font-semibold text-foreground">Agents</h2>
           <p className="text-xs text-muted-foreground/80">
@@ -313,8 +313,8 @@ export function AgentsView({ onClose }: AgentsViewProps) {
       ) : null}
 
       {loading ? (
-        <div className="grid min-h-80 place-items-center">
-          <Loader label="Loading agents" type="rose-curve" />
+        <div className="grid min-h-80 flex-1 place-items-center">
+          <Loader className="size-10 text-primary" label="Loading agents" strokeScale={0.72} type="rose-curve" />
         </div>
       ) : (
         <div className="grid min-h-0 flex-1 gap-4 overflow-hidden lg:grid-cols-[18rem_minmax(0,1fr)]">

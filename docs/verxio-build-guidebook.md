@@ -23,6 +23,7 @@ Use this guide to keep Verxio consistent across the web app, desktop shell, API 
 
 - Show a spinner whenever a user action, route transition, save, connection check, or provider switch is being processed.
 - Loading spinners should use Verxio primary color everywhere.
+- Full-page, overlay, route, and panel-blocking loading states should center the spinner in the available content area.
 - Settings tab changes such as `/settings?tab=socials` and `/settings?tab=providers` should clearly show processing with a primary-color spinner when data is loading or switching.
 - Disable only the controls affected by an in-flight action where possible; avoid freezing the whole page unless the whole page is genuinely blocked.
 - Preserve layout dimensions during loading so text, buttons, and panels do not jump.
