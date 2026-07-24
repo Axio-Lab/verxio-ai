@@ -19,6 +19,7 @@ import {
   listKnowledgeBases,
   listWorkflowAgents,
   listWorkflowIntegrationCapabilities,
+  listWorkflowRunEvents,
   listWorkflowRuns,
   listWorkflowSkillCapabilities,
   listWorkflowToolCapabilities,
@@ -29,6 +30,7 @@ import {
   type WorkflowAgent,
   type WorkflowIntegrationCapability,
   type WorkflowRun,
+  type WorkflowRunEvent,
   type WorkflowSkillCapability,
   type WorkflowToolCapability,
   type WorkflowTrigger,
@@ -1318,6 +1320,8 @@ function RunsPanel({
   runs: WorkflowRun[]
 }) {
   const [input, setInput] = useState('{\n  "example": true\n}')
+  const [eventsByRunId, setEventsByRunId] = useState<Record<string, WorkflowRunEvent[]>>({})
+  const [loadingEventsRunId, setLoadingEventsRunId] = useState<string | null>(null)
 
   const run = async () => {
     let parsed: Record<string, unknown>
@@ -1340,6 +1344,25 @@ function RunsPanel({
       onError(err instanceof Error ? err.message : 'Could not run agent.')
     } finally {
       onBusy(false)
+    }
+  }
+
+  const loadEvents = async (runId: string) => {
+    if (eventsByRunId[runId] || loadingEventsRunId === runId) {
+      return
+    }
+
+    setLoadingEventsRunId(runId)
+    onError(null)
+
+    try {
+      const result = await listWorkflowRunEvents(agent.id, runId)
+
+      setEventsByRunId(current => ({ ...current, [runId]: result.events }))
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Could not load run events.')
+    } finally {
+      setLoadingEventsRunId(null)
     }
   }
 
@@ -1386,6 +1409,34 @@ function RunsPanel({
               <pre className="mt-2 overflow-x-auto rounded-md bg-muted/35 p-2">
                 {JSON.stringify(run.input, null, 2)}
               </pre>
+            </details>
+            <details
+              className="text-[0.68rem] text-muted-foreground"
+              onToggle={event => {
+                if (event.currentTarget.open) {
+                  void loadEvents(run.id)
+                }
+              }}
+            >
+              <summary className="cursor-pointer">Events</summary>
+              <div className="mt-2 grid gap-2 rounded-md bg-muted/35 p-2">
+                {loadingEventsRunId === run.id ? (
+                  <Loader className="size-4" label="Loading run events" strokeScale={0.7} type="rose-two" />
+                ) : null}
+                {(eventsByRunId[run.id] || []).map(event => (
+                  <div className="grid gap-1 border-l-2 border-primary/45 pl-2" key={event.id}>
+                    <span className="font-medium text-foreground/90">
+                      {event.event_type} · {formatDate(event.created_at)}
+                    </span>
+                    {event.message ? <span>{event.message}</span> : null}
+                    {Object.keys(event.metadata || {}).length > 0 ? (
+                      <pre className="overflow-x-auto rounded-md bg-background/70 p-2">
+                        {JSON.stringify(event.metadata, null, 2)}
+                      </pre>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
             </details>
           </div>
         ))}

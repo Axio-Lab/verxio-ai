@@ -262,6 +262,18 @@ export interface WorkflowRun {
   updated_at: string
 }
 
+export interface WorkflowRunEvent {
+  id: string
+  tenant_id: string
+  workspace_id: string
+  workflow_agent_id: string
+  workflow_run_id: string
+  event_type: string
+  message: string
+  metadata: Record<string, unknown>
+  created_at: string
+}
+
 export interface ComposioConnectedAccount {
   id: string
   appSlug: string
@@ -998,6 +1010,12 @@ export function runWorkflowAgent(agentId: string, input: Record<string, unknown>
     method: 'POST',
     timeoutMs: 240_000
   })
+}
+
+export function listWorkflowRunEvents(agentId: string, runId: string): Promise<{ events: WorkflowRunEvent[] }> {
+  return verxioFetch<{ events: WorkflowRunEvent[] }>(
+    `/api/workflow-agents/${encodeURIComponent(agentId)}/runs/${encodeURIComponent(runId)}/events`
+  )
 }
 
 export async function getPublicNotepadShare(token: string): Promise<VerxioPublicNotepadShareResponse> {
