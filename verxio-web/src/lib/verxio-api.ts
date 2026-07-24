@@ -168,6 +168,34 @@ export interface WorkflowSkillCapabilitiesResponse {
   skills: WorkflowSkillCapability[]
 }
 
+export interface WorkflowToolCapability {
+  category: string
+  description: string
+  enabled: boolean
+  name: string
+  source: string
+}
+
+export interface WorkflowToolCapabilitiesResponse {
+  errors: string[]
+  tools: WorkflowToolCapability[]
+}
+
+export interface WorkflowIntegrationCapability {
+  authMode: string | null
+  categories: string[]
+  connected: boolean
+  description: string
+  name: string
+  slug: string
+}
+
+export interface WorkflowIntegrationCapabilitiesResponse {
+  configured: boolean
+  errors: string[]
+  integrations: WorkflowIntegrationCapability[]
+}
+
 export interface KnowledgeBase {
   id: string
   tenant_id: string
@@ -860,6 +888,14 @@ export function listWorkflowAgents(): Promise<{ agents: WorkflowAgent[] }> {
 
 export function listWorkflowSkillCapabilities(): Promise<WorkflowSkillCapabilitiesResponse> {
   return verxioFetch<WorkflowSkillCapabilitiesResponse>('/api/workflow-agents/capabilities/skills')
+}
+
+export function listWorkflowToolCapabilities(): Promise<WorkflowToolCapabilitiesResponse> {
+  return verxioFetch<WorkflowToolCapabilitiesResponse>('/api/workflow-agents/capabilities/tools')
+}
+
+export function listWorkflowIntegrationCapabilities(): Promise<WorkflowIntegrationCapabilitiesResponse> {
+  return verxioFetch<WorkflowIntegrationCapabilitiesResponse>('/api/workflow-agents/capabilities/integrations')
 }
 
 export function listKnowledgeBases(): Promise<{ knowledge_bases: KnowledgeBase[] }> {

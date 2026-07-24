@@ -367,6 +367,71 @@ def test_workflow_skill_capabilities_use_runtime_metadata(client, monkeypatch):
     ]
 
 
+def test_workflow_tool_capabilities_use_runtime_metadata(client, monkeypatch):
+    _payload, token = signup(client, "workflow-tools@example.com")
+
+    class FakeMetadata:
+        skills = []
+        toolsets = [
+            {
+                "name": "messaging",
+                "tools": [
+                    {"name": "send_whatsapp", "description": "Send WhatsApp messages.", "enabled": True},
+                    {"name": "send_email", "description": "Send email.", "enabled": True},
+                ],
+            }
+        ]
+        errors = []
+
+    class FakeAdapter:
+        async def metadata(self):
+            return FakeMetadata()
+
+    monkeypatch.setattr(workflow_agents, "HermesRuntimeAdapter", FakeAdapter)
+    response = client.get("/api/workflow-agents/capabilities/tools", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [tool["name"] for tool in body["tools"]] == ["send_email", "send_whatsapp"]
+    assert body["tools"][0]["category"] == "messaging"
+
+
+def test_workflow_integration_capabilities_include_connected_composio_accounts(client, monkeypatch):
+    payload, token = signup(client, "workflow-integrations@example.com")
+
+    monkeypatch.setattr(workflow_agents, "is_composio_configured", lambda: True)
+    monkeypatch.setattr(workflow_agents, "get_composio_catalog_error", lambda: None)
+    monkeypatch.setattr(
+        workflow_agents,
+        "list_composio_accounts",
+        lambda user_id: [ComposioConnectedAccount(id="acct_1", appSlug="slack", status="ACTIVE")],
+    )
+    monkeypatch.setattr(
+        workflow_agents,
+        "list_composio_apps",
+        lambda: [
+            composio_catalog.ComposioApp(
+                categories=["team"],
+                description="Post updates.",
+                name="Slack",
+                slug="slack",
+            )
+        ],
+    )
+
+    response = client.get(
+        "/api/workflow-agents/capabilities/integrations",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+    )
+
+    assert payload["user"]["id"]
+    assert response.status_code == 200
+    body = response.json()
+    assert body["configured"] is True
+    assert body["integrations"][0]["slug"] == "slack"
+    assert body["integrations"][0]["connected"] is True
+
+
 def test_protected_runtime_endpoint_rejects_anonymous_users(client):
     response = client.get("/api/runtime")
 

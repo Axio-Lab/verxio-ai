@@ -18,15 +18,19 @@ import {
   type KnowledgeBase,
   listKnowledgeBases,
   listWorkflowAgents,
+  listWorkflowIntegrationCapabilities,
   listWorkflowRuns,
   listWorkflowSkillCapabilities,
+  listWorkflowToolCapabilities,
   listWorkflowTriggers,
   runWorkflowAgent,
   updateWorkflowAgent,
   updateWorkflowTrigger,
   type WorkflowAgent,
+  type WorkflowIntegrationCapability,
   type WorkflowRun,
   type WorkflowSkillCapability,
+  type WorkflowToolCapability,
   type WorkflowTrigger,
   type WorkflowTriggerType
 } from '@/lib/verxio-api'
@@ -107,8 +111,12 @@ export function AgentsView({ onClose }: AgentsViewProps) {
   const [triggers, setTriggers] = useState<WorkflowTrigger[]>([])
   const [runs, setRuns] = useState<WorkflowRun[]>([])
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([])
+  const [integrationCapabilities, setIntegrationCapabilities] = useState<WorkflowIntegrationCapability[]>([])
+  const [integrationCapabilityErrors, setIntegrationCapabilityErrors] = useState<string[]>([])
   const [skillCapabilities, setSkillCapabilities] = useState<WorkflowSkillCapability[]>([])
   const [skillCapabilityErrors, setSkillCapabilityErrors] = useState<string[]>([])
+  const [toolCapabilities, setToolCapabilities] = useState<WorkflowToolCapability[]>([])
+  const [toolCapabilityErrors, setToolCapabilityErrors] = useState<string[]>([])
   const [tab, setTab] = useState<AgentTab>('instructions')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -121,10 +129,12 @@ export function AgentsView({ onClose }: AgentsViewProps) {
     setLoading(true)
 
     try {
-      const [result, skillsResult, knowledgeResult] = await Promise.allSettled([
+      const [result, skillsResult, knowledgeResult, toolsResult, integrationsResult] = await Promise.allSettled([
         listWorkflowAgents(),
         listWorkflowSkillCapabilities(),
-        listKnowledgeBases()
+        listKnowledgeBases(),
+        listWorkflowToolCapabilities(),
+        listWorkflowIntegrationCapabilities()
       ])
 
       if (skillsResult.status === 'fulfilled') {
@@ -143,6 +153,28 @@ export function AgentsView({ onClose }: AgentsViewProps) {
 
       if (knowledgeResult.status === 'fulfilled') {
         setKnowledgeBases(knowledgeResult.value.knowledge_bases)
+      }
+
+      if (toolsResult.status === 'fulfilled') {
+        setToolCapabilities(toolsResult.value.tools)
+        setToolCapabilityErrors(toolsResult.value.errors)
+      } else {
+        setToolCapabilities([])
+        setToolCapabilityErrors([
+          toolsResult.reason instanceof Error ? toolsResult.reason.message : 'Could not load tools.'
+        ])
+      }
+
+      if (integrationsResult.status === 'fulfilled') {
+        setIntegrationCapabilities(integrationsResult.value.integrations)
+        setIntegrationCapabilityErrors(integrationsResult.value.errors)
+      } else {
+        setIntegrationCapabilities([])
+        setIntegrationCapabilityErrors([
+          integrationsResult.reason instanceof Error
+            ? integrationsResult.reason.message
+            : 'Could not load integrations.'
+        ])
       }
 
       setAgents(result.value.agents)
@@ -289,6 +321,8 @@ export function AgentsView({ onClose }: AgentsViewProps) {
             <AgentEditor
               busy={busy}
               draft={draft}
+              integrationCapabilities={integrationCapabilities}
+              integrationCapabilityErrors={integrationCapabilityErrors}
               knowledgeBases={knowledgeBases}
               onChange={setDraft}
               onDelete={selected ? removeAgent : undefined}
@@ -299,6 +333,8 @@ export function AgentsView({ onClose }: AgentsViewProps) {
               skillCapabilities={skillCapabilities}
               skillCapabilityErrors={skillCapabilityErrors}
               tab={tab}
+              toolCapabilities={toolCapabilities}
+              toolCapabilityErrors={toolCapabilityErrors}
             />
             {selected ? (
               <>
@@ -390,6 +426,8 @@ function AgentList({
 function AgentEditor({
   busy,
   draft,
+  integrationCapabilities,
+  integrationCapabilityErrors,
   knowledgeBases,
   onChange,
   onDelete,
@@ -399,10 +437,14 @@ function AgentEditor({
   setTab,
   skillCapabilities,
   skillCapabilityErrors,
-  tab
+  tab,
+  toolCapabilities,
+  toolCapabilityErrors
 }: {
   busy: boolean
   draft: DraftState
+  integrationCapabilities: WorkflowIntegrationCapability[]
+  integrationCapabilityErrors: string[]
   knowledgeBases: KnowledgeBase[]
   onChange: (draft: DraftState) => void
   onDelete?: () => void
@@ -413,6 +455,8 @@ function AgentEditor({
   skillCapabilities: WorkflowSkillCapability[]
   skillCapabilityErrors: string[]
   tab: AgentTab
+  toolCapabilities: WorkflowToolCapability[]
+  toolCapabilityErrors: string[]
 }) {
   const patch = (updates: Partial<DraftState>) => onChange({ ...draft, ...updates })
 
@@ -536,51 +580,212 @@ function AgentEditor({
         />
       ) : null}
       {tab === 'tools' ? (
-        <ListEditor
+        <ToolSelector
           disabled={busy}
-          label="Allowed Verxio/Hermes tools"
-          onChange={value => patch({ toolsText: value })}
-          value={draft.toolsText}
+          errors={toolCapabilityErrors}
+          onChange={items => patch({ toolsText: items.join('\n') })}
+          selected={lines(draft.toolsText)}
+          tools={toolCapabilities}
         />
       ) : null}
       {tab === 'integrations' ? (
-        <ListEditor
+        <IntegrationSelector
           disabled={busy}
-          label="Allowed Composio integrations"
-          onChange={value => patch({ integrationsText: value })}
-          value={draft.integrationsText}
+          errors={integrationCapabilityErrors}
+          integrations={integrationCapabilities}
+          onChange={items => patch({ integrationsText: items.join('\n') })}
+          selected={lines(draft.integrationsText)}
         />
       ) : null}
     </section>
   )
 }
 
-function ListEditor({
+function ToolSelector({
   disabled,
-  label,
+  errors,
   onChange,
-  value
+  selected,
+  tools
 }: {
   disabled: boolean
-  label: string
-  onChange: (value: string) => void
-  value: string
+  errors: string[]
+  onChange: (items: string[]) => void
+  selected: string[]
+  tools: WorkflowToolCapability[]
 }) {
+  const selectedSet = useMemo(() => new Set(selected), [selected])
+  const missingSelected = selected.filter(name => !tools.some(tool => tool.name === name))
+
+  const toggle = (name: string) => {
+    if (disabled) {
+      return
+    }
+
+    const next = new Set(selectedSet)
+
+    if (next.has(name)) {
+      next.delete(name)
+    } else {
+      next.add(name)
+    }
+
+    onChange(Array.from(next).sort((a, b) => a.localeCompare(b)))
+  }
+
   return (
-    <label className="grid gap-1.5 text-xs font-medium">
-      {label}
-      <Textarea
-        className="min-h-44"
-        disabled={disabled}
-        onChange={event => onChange(event.target.value)}
-        placeholder="One item per line. Use existing Verxio tools, Hermes skills, knowledge source names, or Composio app slugs."
-        value={value}
-      />
-      <span className="text-[0.7rem] font-normal text-muted-foreground">
-        These are allowlists for the agent. Runtime execution still uses existing Verxio/Hermes tools and connected
-        integrations.
-      </span>
-    </label>
+    <div className="grid gap-3">
+      {errors.length > 0 ? (
+        <div className="rounded-md border border-(--stroke-nous) bg-muted/25 px-3 py-2 text-[0.7rem] leading-relaxed text-muted-foreground">
+          {errors.join(' ')}
+        </div>
+      ) : null}
+      {tools.length === 0 ? (
+        <div className="rounded-md border border-dashed border-(--stroke-nous) p-4 text-xs text-muted-foreground">
+          No live tools were reported by the runtime. Saved selections remain attached, and this list will populate when
+          Hermes exposes tool metadata.
+        </div>
+      ) : (
+        <div className="grid gap-2">
+          {tools.map(tool => {
+            const checked = selectedSet.has(tool.name)
+
+            return (
+              <button
+                className={cn(
+                  'grid gap-1 rounded-md border border-(--stroke-nous) p-3 text-left transition-colors hover:bg-(--chrome-action-hover)',
+                  checked && 'border-primary/45 bg-primary/8'
+                )}
+                disabled={disabled}
+                key={tool.name}
+                onClick={() => toggle(tool.name)}
+                type="button"
+              >
+                <span className="flex items-center gap-2 text-xs font-medium">
+                  <span
+                    className={cn(
+                      'grid size-3 place-items-center rounded-sm border',
+                      checked && 'border-primary bg-primary'
+                    )}
+                  >
+                    {checked ? <CheckCircle2 className="size-2.5 text-primary-foreground" /> : null}
+                  </span>
+                  {tool.name}
+                  {tool.category ? (
+                    <span className="text-[0.65rem] font-normal text-muted-foreground">{tool.category}</span>
+                  ) : null}
+                </span>
+                {tool.description ? (
+                  <span className="text-[0.7rem] leading-relaxed text-muted-foreground">{tool.description}</span>
+                ) : null}
+              </button>
+            )
+          })}
+        </div>
+      )}
+      {missingSelected.length > 0 ? (
+        <div className="grid gap-1 rounded-md border border-(--stroke-nous) p-3">
+          <p className="text-xs font-medium">Saved tools not in live catalog</p>
+          <p className="text-[0.7rem] leading-relaxed text-muted-foreground">{missingSelected.join(', ')}</p>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function IntegrationSelector({
+  disabled,
+  errors,
+  integrations,
+  onChange,
+  selected
+}: {
+  disabled: boolean
+  errors: string[]
+  integrations: WorkflowIntegrationCapability[]
+  onChange: (items: string[]) => void
+  selected: string[]
+}) {
+  const selectedSet = useMemo(() => new Set(selected), [selected])
+  const missingSelected = selected.filter(slug => !integrations.some(integration => integration.slug === slug))
+
+  const toggle = (slug: string) => {
+    if (disabled) {
+      return
+    }
+
+    const next = new Set(selectedSet)
+
+    if (next.has(slug)) {
+      next.delete(slug)
+    } else {
+      next.add(slug)
+    }
+
+    onChange(Array.from(next).sort((a, b) => a.localeCompare(b)))
+  }
+
+  return (
+    <div className="grid gap-3">
+      {errors.length > 0 ? (
+        <div className="rounded-md border border-(--stroke-nous) bg-muted/25 px-3 py-2 text-[0.7rem] leading-relaxed text-muted-foreground">
+          {errors.join(' ')}
+        </div>
+      ) : null}
+      {integrations.length === 0 ? (
+        <div className="rounded-md border border-dashed border-(--stroke-nous) p-4 text-xs text-muted-foreground">
+          No Composio integrations are available yet. Connect apps in Settings, then attach them here.
+        </div>
+      ) : (
+        <div className="grid gap-2">
+          {integrations.map(integration => {
+            const checked = selectedSet.has(integration.slug)
+
+            return (
+              <button
+                className={cn(
+                  'grid gap-1 rounded-md border border-(--stroke-nous) p-3 text-left transition-colors hover:bg-(--chrome-action-hover)',
+                  checked && 'border-primary/45 bg-primary/8'
+                )}
+                disabled={disabled}
+                key={integration.slug}
+                onClick={() => toggle(integration.slug)}
+                type="button"
+              >
+                <span className="flex items-center gap-2 text-xs font-medium">
+                  <span
+                    className={cn(
+                      'grid size-3 place-items-center rounded-sm border',
+                      checked && 'border-primary bg-primary'
+                    )}
+                  >
+                    {checked ? <CheckCircle2 className="size-2.5 text-primary-foreground" /> : null}
+                  </span>
+                  {integration.name}
+                  <span
+                    className={cn(
+                      'text-[0.65rem] font-normal',
+                      integration.connected ? 'text-primary' : 'text-muted-foreground'
+                    )}
+                  >
+                    {integration.connected ? 'connected' : 'not connected'}
+                  </span>
+                </span>
+                {integration.description ? (
+                  <span className="text-[0.7rem] leading-relaxed text-muted-foreground">{integration.description}</span>
+                ) : null}
+              </button>
+            )
+          })}
+        </div>
+      )}
+      {missingSelected.length > 0 ? (
+        <div className="grid gap-1 rounded-md border border-(--stroke-nous) p-3">
+          <p className="text-xs font-medium">Saved integrations not in live catalog</p>
+          <p className="text-[0.7rem] leading-relaxed text-muted-foreground">{missingSelected.join(', ')}</p>
+        </div>
+      ) : null}
+    </div>
   )
 }
 

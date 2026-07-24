@@ -813,6 +813,34 @@ class WorkflowSkillCapabilitiesResponse(BaseModel):
     errors: list[str] = Field(default_factory=list)
 
 
+class WorkflowToolCapability(BaseModel):
+    name: str
+    description: str = ""
+    category: str = ""
+    source: str = "hermes"
+    enabled: bool = True
+
+
+class WorkflowToolCapabilitiesResponse(BaseModel):
+    tools: list[WorkflowToolCapability]
+    errors: list[str] = Field(default_factory=list)
+
+
+class WorkflowIntegrationCapability(BaseModel):
+    slug: str
+    name: str
+    description: str = ""
+    categories: list[str] = Field(default_factory=list)
+    connected: bool = False
+    authMode: str | None = None
+
+
+class WorkflowIntegrationCapabilitiesResponse(BaseModel):
+    integrations: list[WorkflowIntegrationCapability]
+    configured: bool
+    errors: list[str] = Field(default_factory=list)
+
+
 class KnowledgeBaseRecord(BaseModel):
     id: str
     tenant_id: str

@@ -15,6 +15,8 @@ from app.models import (
     WorkflowAgentRecord,
     WorkflowAgentsResponse,
     WorkflowAgentUpdateRequest,
+    WorkflowIntegrationCapabilitiesResponse,
+    WorkflowIntegrationCapability,
     WorkflowRunCreateRequest,
     WorkflowRunEventRecord,
     WorkflowRunEventsResponse,
@@ -22,12 +24,20 @@ from app.models import (
     WorkflowRunsResponse,
     WorkflowSkillCapabilitiesResponse,
     WorkflowSkillCapability,
+    WorkflowToolCapabilitiesResponse,
+    WorkflowToolCapability,
     WorkflowTriggerCreateRequest,
     WorkflowTriggerRecord,
     WorkflowTriggersResponse,
     WorkflowTriggerUpdateRequest,
     Workspace,
     new_id,
+)
+from app.composio_catalog import (
+    get_composio_catalog_error,
+    is_composio_configured,
+    list_composio_accounts,
+    list_composio_apps,
 )
 from app.runtime import HermesRuntimeAdapter
 from app.runtime_dashboard import run_agent_via_dashboard
@@ -153,11 +163,72 @@ def _skill_from_payload(item: Any) -> WorkflowSkillCapability | None:
     )
 
 
+def _tool_from_payload(item: Any, category: str = "") -> WorkflowToolCapability | None:
+    if isinstance(item, str):
+        name = item.strip()
+        return WorkflowToolCapability(name=name, category=category) if name else None
+    if not isinstance(item, dict):
+        return None
+    name = str(item.get("name") or item.get("id") or item.get("slug") or "").strip()
+    if not name:
+        return None
+    return WorkflowToolCapability(
+        name=name,
+        description=str(item.get("description") or item.get("summary") or ""),
+        category=str(item.get("category") or item.get("toolset") or category or item.get("source") or ""),
+        source=str(item.get("source") or "hermes"),
+        enabled=bool(item.get("enabled", True)),
+    )
+
+
 async def list_skill_capabilities() -> WorkflowSkillCapabilitiesResponse:
     metadata = await HermesRuntimeAdapter().metadata()
     skills = [skill for item in metadata.skills if (skill := _skill_from_payload(item))]
     skills.sort(key=lambda item: item.name.lower())
     return WorkflowSkillCapabilitiesResponse(skills=skills, errors=metadata.errors)
+
+
+async def list_tool_capabilities() -> WorkflowToolCapabilitiesResponse:
+    metadata = await HermesRuntimeAdapter().metadata()
+    seen: set[str] = set()
+    tools: list[WorkflowToolCapability] = []
+    for item in metadata.toolsets:
+        if isinstance(item, dict) and isinstance(item.get("tools"), list):
+            category = str(item.get("name") or item.get("id") or item.get("slug") or "")
+            candidates = item["tools"]
+        else:
+            category = ""
+            candidates = [item]
+        for candidate in candidates:
+            tool = _tool_from_payload(candidate, category)
+            if tool and tool.name not in seen:
+                seen.add(tool.name)
+                tools.append(tool)
+    tools.sort(key=lambda item: (item.category.lower(), item.name.lower()))
+    return WorkflowToolCapabilitiesResponse(tools=tools, errors=metadata.errors)
+
+
+def list_integration_capabilities(user_id: str) -> WorkflowIntegrationCapabilitiesResponse:
+    accounts = list_composio_accounts(user_id)
+    connected = {account.appSlug.lower() for account in accounts if account.status.upper() == "ACTIVE"}
+    integrations = [
+        WorkflowIntegrationCapability(
+            slug=app.slug,
+            name=app.name,
+            description=app.description,
+            categories=app.categories,
+            connected=app.slug.lower() in connected,
+            authMode=app.authMode,
+        )
+        for app in list_composio_apps()
+    ]
+    integrations.sort(key=lambda item: (not item.connected, item.name.lower()))
+    errors = [error] if (error := get_composio_catalog_error()) else []
+    return WorkflowIntegrationCapabilitiesResponse(
+        integrations=integrations,
+        configured=is_composio_configured(),
+        errors=errors,
+    )
 
 
 def list_agents(workspace: Workspace, profile: AgentProfile) -> WorkflowAgentsResponse:

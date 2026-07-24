@@ -158,11 +158,13 @@ from app.models import (
     WorkflowAgentRecord,
     WorkflowAgentsResponse,
     WorkflowAgentUpdateRequest,
+    WorkflowIntegrationCapabilitiesResponse,
     WorkflowRunCreateRequest,
     WorkflowRunEventsResponse,
     WorkflowRunRecord,
     WorkflowRunsResponse,
     WorkflowSkillCapabilitiesResponse,
+    WorkflowToolCapabilitiesResponse,
     WorkflowTriggerCreateRequest,
     WorkflowTriggerRecord,
     WorkflowTriggersResponse,
@@ -234,9 +236,11 @@ from app.workflow_agents import (
     delete_trigger as delete_workflow_trigger,
     get_agent as get_workflow_agent,
     list_agents as list_workflow_agents,
+    list_integration_capabilities as list_workflow_integration_capabilities,
     list_run_events as list_workflow_run_events,
     list_runs as list_workflow_runs,
     list_skill_capabilities as list_workflow_skill_capabilities,
+    list_tool_capabilities as list_workflow_tool_capabilities,
     list_triggers as list_workflow_triggers,
     run_agent as run_workflow_agent,
     run_webhook_trigger,
@@ -835,6 +839,18 @@ async def list_workflow_agents_route(request: Request) -> WorkflowAgentsResponse
 async def list_workflow_skill_capabilities_route(request: Request) -> WorkflowSkillCapabilitiesResponse:
     require_user(request)
     return await list_workflow_skill_capabilities()
+
+
+@app.get("/api/workflow-agents/capabilities/tools", response_model=WorkflowToolCapabilitiesResponse)
+async def list_workflow_tool_capabilities_route(request: Request) -> WorkflowToolCapabilitiesResponse:
+    require_user(request)
+    return await list_workflow_tool_capabilities()
+
+
+@app.get("/api/workflow-agents/capabilities/integrations", response_model=WorkflowIntegrationCapabilitiesResponse)
+async def list_workflow_integration_capabilities_route(request: Request) -> WorkflowIntegrationCapabilitiesResponse:
+    user = require_user(request)
+    return list_workflow_integration_capabilities(str(user["id"]))
 
 
 @app.get("/api/knowledge-bases", response_model=KnowledgeBasesResponse)
