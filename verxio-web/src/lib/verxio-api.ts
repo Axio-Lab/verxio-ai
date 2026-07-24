@@ -121,6 +121,84 @@ export interface VerxioNotepadNoteInput {
   source?: string
 }
 
+export type WorkflowTriggerType = 'api' | 'app_event' | 'chat' | 'manual' | 'schedule' | 'webhook'
+export type WorkflowRunStatus = 'completed' | 'failed' | 'queued' | 'running'
+
+export interface WorkflowAgent {
+  id: string
+  tenant_id: string
+  workspace_id: string
+  runtime_agent_id: string
+  name: string
+  role: string
+  description: string
+  instructions: string
+  enabled: boolean
+  skills: string[]
+  knowledge: string[]
+  tools: string[]
+  integrations: string[]
+  approval_policy: string
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowAgentInput {
+  approval_policy?: string
+  description?: string
+  enabled?: boolean
+  instructions?: string
+  integrations?: string[]
+  knowledge?: string[]
+  name?: string
+  role?: string
+  skills?: string[]
+  tools?: string[]
+}
+
+export interface WorkflowTrigger {
+  id: string
+  tenant_id: string
+  workspace_id: string
+  workflow_agent_id: string
+  trigger_type: WorkflowTriggerType
+  event_name: string
+  name: string
+  enabled: boolean
+  secret: string
+  config: Record<string, unknown>
+  webhook_url: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowTriggerInput {
+  config?: Record<string, unknown>
+  enabled?: boolean
+  event_name?: string
+  name?: string
+  rotate_secret?: boolean
+  trigger_type?: WorkflowTriggerType
+}
+
+export interface WorkflowRun {
+  id: string
+  tenant_id: string
+  workspace_id: string
+  runtime_agent_id: string
+  workflow_agent_id: string
+  trigger_id: string | null
+  trigger_type: WorkflowTriggerType
+  status: WorkflowRunStatus
+  input: Record<string, unknown>
+  output_text: string
+  error: string | null
+  started_at: string | null
+  completed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
 export interface ComposioConnectedAccount {
   id: string
   appSlug: string
@@ -738,6 +816,79 @@ export function shareNotepadNote(noteId: string): Promise<VerxioNotepadShareResp
 export function revokeNotepadShare(noteId: string): Promise<{ ok: boolean }> {
   return verxioFetch<{ ok: boolean }>(`/api/notepad/notes/${encodeURIComponent(noteId)}/share`, {
     method: 'DELETE'
+  })
+}
+
+export function listWorkflowAgents(): Promise<{ agents: WorkflowAgent[] }> {
+  return verxioFetch<{ agents: WorkflowAgent[] }>('/api/workflow-agents')
+}
+
+export function createWorkflowAgent(input: WorkflowAgentInput & { name: string }): Promise<WorkflowAgent> {
+  return verxioFetch<WorkflowAgent>('/api/workflow-agents', {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
+}
+
+export function updateWorkflowAgent(agentId: string, input: WorkflowAgentInput): Promise<WorkflowAgent> {
+  return verxioFetch<WorkflowAgent>(`/api/workflow-agents/${encodeURIComponent(agentId)}`, {
+    body: JSON.stringify(input),
+    method: 'PUT'
+  })
+}
+
+export function deleteWorkflowAgent(agentId: string): Promise<{ ok: boolean }> {
+  return verxioFetch<{ ok: boolean }>(`/api/workflow-agents/${encodeURIComponent(agentId)}`, {
+    method: 'DELETE'
+  })
+}
+
+export function listWorkflowTriggers(agentId: string): Promise<{ triggers: WorkflowTrigger[] }> {
+  return verxioFetch<{ triggers: WorkflowTrigger[] }>(`/api/workflow-agents/${encodeURIComponent(agentId)}/triggers`)
+}
+
+export function createWorkflowTrigger(
+  agentId: string,
+  input: WorkflowTriggerInput & { trigger_type: WorkflowTriggerType }
+): Promise<WorkflowTrigger> {
+  return verxioFetch<WorkflowTrigger>(`/api/workflow-agents/${encodeURIComponent(agentId)}/triggers`, {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
+}
+
+export function updateWorkflowTrigger(
+  agentId: string,
+  triggerId: string,
+  input: WorkflowTriggerInput
+): Promise<WorkflowTrigger> {
+  return verxioFetch<WorkflowTrigger>(
+    `/api/workflow-agents/${encodeURIComponent(agentId)}/triggers/${encodeURIComponent(triggerId)}`,
+    {
+      body: JSON.stringify(input),
+      method: 'PUT'
+    }
+  )
+}
+
+export function deleteWorkflowTrigger(agentId: string, triggerId: string): Promise<{ ok: boolean }> {
+  return verxioFetch<{ ok: boolean }>(
+    `/api/workflow-agents/${encodeURIComponent(agentId)}/triggers/${encodeURIComponent(triggerId)}`,
+    {
+      method: 'DELETE'
+    }
+  )
+}
+
+export function listWorkflowRuns(agentId: string): Promise<{ runs: WorkflowRun[] }> {
+  return verxioFetch<{ runs: WorkflowRun[] }>(`/api/workflow-agents/${encodeURIComponent(agentId)}/runs`)
+}
+
+export function runWorkflowAgent(agentId: string, input: Record<string, unknown>): Promise<WorkflowRun> {
+  return verxioFetch<WorkflowRun>(`/api/workflow-agents/${encodeURIComponent(agentId)}/runs`, {
+    body: JSON.stringify({ input }),
+    method: 'POST',
+    timeoutMs: 240_000
   })
 }
 

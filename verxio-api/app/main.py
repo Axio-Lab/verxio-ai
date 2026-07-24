@@ -141,6 +141,18 @@ from app.models import (
     RuntimeWorkspaceSyncRequest,
     SignupRequest,
     TranscriptionCatalogResponse,
+    WorkflowAgentCreateRequest,
+    WorkflowAgentRecord,
+    WorkflowAgentsResponse,
+    WorkflowAgentUpdateRequest,
+    WorkflowRunCreateRequest,
+    WorkflowRunRecord,
+    WorkflowRunsResponse,
+    WorkflowTriggerCreateRequest,
+    WorkflowTriggerRecord,
+    WorkflowTriggersResponse,
+    WorkflowTriggerUpdateRequest,
+    WorkflowWebhookIngestResponse,
 )
 from app.notepad import (
     create_folder,
@@ -200,6 +212,20 @@ from app.runtime_manager import (
 )
 from app.store import AUDIT_LOG, PROFILE, RUNS, WORKSPACE
 from app.transcription_catalog import list_transcription_catalog
+from app.workflow_agents import (
+    create_agent as create_workflow_agent,
+    create_trigger as create_workflow_trigger,
+    delete_agent as delete_workflow_agent,
+    delete_trigger as delete_workflow_trigger,
+    get_agent as get_workflow_agent,
+    list_agents as list_workflow_agents,
+    list_runs as list_workflow_runs,
+    list_triggers as list_workflow_triggers,
+    run_agent as run_workflow_agent,
+    run_webhook_trigger,
+    update_agent as update_workflow_agent,
+    update_trigger as update_workflow_trigger,
+)
 
 
 APP_ROOT = Path(__file__).resolve().parent.parent
@@ -779,6 +805,116 @@ async def ingest_tiktok_pulse_webhook() -> PulseWebhookIngestResponse:
 @app.post("/api/pulse/webhooks/linkedin", response_model=PulseWebhookIngestResponse)
 async def ingest_linkedin_pulse_webhook() -> PulseWebhookIngestResponse:
     raise HTTPException(status_code=409, detail="LinkedIn messaging APIs are partner-gated.")
+
+
+@app.get("/api/workflow-agents", response_model=WorkflowAgentsResponse)
+async def list_workflow_agents_route(request: Request) -> WorkflowAgentsResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return list_workflow_agents(workspace, profile)
+
+
+@app.post("/api/workflow-agents", response_model=WorkflowAgentRecord)
+async def create_workflow_agent_route(
+    payload: WorkflowAgentCreateRequest,
+    request: Request,
+) -> WorkflowAgentRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return create_workflow_agent(workspace, profile, payload)
+
+
+@app.get("/api/workflow-agents/{agent_id}", response_model=WorkflowAgentRecord)
+async def get_workflow_agent_route(agent_id: str, request: Request) -> WorkflowAgentRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return get_workflow_agent(workspace, profile, agent_id)
+
+
+@app.put("/api/workflow-agents/{agent_id}", response_model=WorkflowAgentRecord)
+async def update_workflow_agent_route(
+    agent_id: str,
+    payload: WorkflowAgentUpdateRequest,
+    request: Request,
+) -> WorkflowAgentRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return update_workflow_agent(workspace, profile, agent_id, payload)
+
+
+@app.delete("/api/workflow-agents/{agent_id}")
+async def delete_workflow_agent_route(agent_id: str, request: Request) -> dict[str, bool]:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return delete_workflow_agent(workspace, profile, agent_id)
+
+
+@app.get("/api/workflow-agents/{agent_id}/triggers", response_model=WorkflowTriggersResponse)
+async def list_workflow_triggers_route(agent_id: str, request: Request) -> WorkflowTriggersResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return list_workflow_triggers(workspace, profile, agent_id, request)
+
+
+@app.post("/api/workflow-agents/{agent_id}/triggers", response_model=WorkflowTriggerRecord)
+async def create_workflow_trigger_route(
+    agent_id: str,
+    payload: WorkflowTriggerCreateRequest,
+    request: Request,
+) -> WorkflowTriggerRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return create_workflow_trigger(workspace, profile, agent_id, payload, request)
+
+
+@app.put("/api/workflow-agents/{agent_id}/triggers/{trigger_id}", response_model=WorkflowTriggerRecord)
+async def update_workflow_trigger_route(
+    agent_id: str,
+    trigger_id: str,
+    payload: WorkflowTriggerUpdateRequest,
+    request: Request,
+) -> WorkflowTriggerRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return update_workflow_trigger(workspace, profile, agent_id, trigger_id, payload, request)
+
+
+@app.delete("/api/workflow-agents/{agent_id}/triggers/{trigger_id}")
+async def delete_workflow_trigger_route(agent_id: str, trigger_id: str, request: Request) -> dict[str, bool]:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return delete_workflow_trigger(workspace, profile, agent_id, trigger_id)
+
+
+@app.get("/api/workflow-agents/{agent_id}/runs", response_model=WorkflowRunsResponse)
+async def list_workflow_runs_route(agent_id: str, request: Request, limit: int = 50) -> WorkflowRunsResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return list_workflow_runs(workspace, profile, agent_id, limit)
+
+
+@app.post("/api/workflow-agents/{agent_id}/runs", response_model=WorkflowRunRecord)
+async def run_workflow_agent_route(
+    agent_id: str,
+    payload: WorkflowRunCreateRequest,
+    request: Request,
+) -> WorkflowRunRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return await run_workflow_agent(workspace, profile, agent_id, payload)
+
+
+@app.post("/api/workflow-webhooks/{trigger_id}", response_model=WorkflowWebhookIngestResponse)
+async def ingest_workflow_webhook_route(trigger_id: str, request: Request) -> WorkflowWebhookIngestResponse:
+    secret = request.headers.get("X-Verxio-Webhook-Secret") or request.query_params.get("secret") or ""
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid workflow webhook JSON.") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Workflow webhook payload must be an object.")
+    run = await run_webhook_trigger(trigger_id, secret, payload)
+    return WorkflowWebhookIngestResponse(run=run)
 
 
 @app.get("/api/pulse/channels", response_model=PulseChannelsResponse)

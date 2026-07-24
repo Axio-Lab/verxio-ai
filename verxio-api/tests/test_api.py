@@ -11,7 +11,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from app import composio_catalog, control_plane, db, emailer, inference, main, runtime_manager, transcription_catalog
+from app import composio_catalog, control_plane, db, emailer, inference, main, runtime_manager, transcription_catalog, workflow_agents
 from app.auth import SESSION_COOKIE
 from app.main import app
 from app.models import ComposioConnectedAccount, ComposioToolBridgeStatus, RuntimeInstance
@@ -116,6 +116,120 @@ def test_unknown_agent_returns_404(client):
     )
 
     assert response.status_code == 404
+
+
+def test_workflow_agent_crud_is_workspace_scoped(client):
+    _payload, token = signup(client, "workflow-agent@example.com")
+
+    create = client.post(
+        "/api/workflow-agents",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={
+            "name": "Lead Research Agent",
+            "role": "Research and qualify new leads",
+            "description": "Checks fit and drafts next steps.",
+            "instructions": "Research the company and produce a concise qualification summary.",
+            "skills": ["lead-scoring"],
+            "knowledge": ["saas-playbook"],
+            "tools": ["web_search"],
+            "integrations": ["hubspot"],
+            "approval_policy": "ask_before_external_actions",
+        },
+    )
+
+    assert create.status_code == 200
+    agent = create.json()
+    assert agent["name"] == "Lead Research Agent"
+    assert agent["enabled"] is True
+    assert agent["skills"] == ["lead-scoring"]
+    assert agent["knowledge"] == ["saas-playbook"]
+    assert agent["tools"] == ["web_search"]
+    assert agent["integrations"] == ["hubspot"]
+
+    listed = client.get("/api/workflow-agents", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()["agents"]] == [agent["id"]]
+
+    update = client.put(
+        f"/api/workflow-agents/{agent['id']}",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"enabled": False, "tools": ["web_search", "gmail"]},
+    )
+    assert update.status_code == 200
+    assert update.json()["enabled"] is False
+    assert update.json()["tools"] == ["web_search", "gmail"]
+
+    other_payload, other_token = signup(client, "workflow-agent-other@example.com")
+    assert other_payload["workspace"]["id"] != agent["workspace_id"]
+    blocked = client.get(f"/api/workflow-agents/{agent['id']}", headers={"Cookie": f"{SESSION_COOKIE}={other_token}"})
+    assert blocked.status_code == 404
+
+
+def test_workflow_agent_manual_and_webhook_runs(client, monkeypatch):
+    _payload, token = signup(client, "workflow-run@example.com")
+
+    async def fake_oneshot(workspace, profile, user_input, *, instructions=None):
+        assert workspace.id
+        assert profile.id
+        assert "Payment Delivery Agent" in str(instructions)
+        assert "Allowed integrations: paystack" in str(instructions)
+        assert "payment.succeeded" in user_input or "manual" in user_input
+        return "Sent the delivery confirmation and logged the result."
+
+    monkeypatch.setattr(workflow_agents, "run_agent_via_dashboard", fake_oneshot)
+
+    create = client.post(
+        "/api/workflow-agents",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={
+            "name": "Payment Delivery Agent",
+            "role": "Notify customers after successful payment",
+            "instructions": "When payment succeeds, send delivery instructions through the available channel.",
+            "tools": ["send_whatsapp"],
+            "integrations": ["paystack"],
+        },
+    )
+    assert create.status_code == 200
+    agent = create.json()
+
+    manual = client.post(
+        f"/api/workflow-agents/{agent['id']}/runs",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"input": {"customer": "Ada", "amount": 12000}},
+    )
+    assert manual.status_code == 200
+    assert manual.json()["status"] == "completed"
+    assert "delivery confirmation" in manual.json()["output_text"]
+
+    trigger = client.post(
+        f"/api/workflow-agents/{agent['id']}/triggers",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"trigger_type": "webhook", "event_name": "payment.succeeded", "name": "Paystack payment"},
+    )
+    assert trigger.status_code == 200
+    trigger_body = trigger.json()
+    assert trigger_body["secret"]
+    assert trigger_body["webhook_url"].endswith(f"/api/workflow-webhooks/{trigger_body['id']}")
+
+    rejected = client.post(
+        f"/api/workflow-webhooks/{trigger_body['id']}",
+        headers={"X-Verxio-Webhook-Secret": "wrong"},
+        json={"customer": "Ada"},
+    )
+    assert rejected.status_code == 403
+
+    webhook = client.post(
+        f"/api/workflow-webhooks/{trigger_body['id']}",
+        headers={"X-Verxio-Webhook-Secret": trigger_body["secret"]},
+        json={"customer": "Ada", "status": "successful"},
+    )
+    assert webhook.status_code == 200
+    assert webhook.json()["run"]["trigger_type"] == "webhook"
+    assert webhook.json()["run"]["status"] == "completed"
+
+    runs = client.get(f"/api/workflow-agents/{agent['id']}/runs", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+    assert runs.status_code == 200
+    assert len(runs.json()["runs"]) == 2
 
 
 def test_protected_runtime_endpoint_rejects_anonymous_users(client):

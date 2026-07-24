@@ -748,6 +748,125 @@ class RunRecord(BaseModel):
     usage: dict[str, int] = Field(default_factory=dict)
 
 
+WorkflowTriggerType = Literal["manual", "webhook", "schedule", "api", "app_event", "chat"]
+WorkflowRunStatus = Literal["queued", "running", "completed", "failed"]
+
+
+class WorkflowAgentRecord(BaseModel):
+    id: str
+    tenant_id: str
+    workspace_id: str
+    runtime_agent_id: str
+    name: str
+    role: str = ""
+    description: str = ""
+    instructions: str = ""
+    enabled: bool = True
+    skills: list[str] = Field(default_factory=list)
+    knowledge: list[str] = Field(default_factory=list)
+    tools: list[str] = Field(default_factory=list)
+    integrations: list[str] = Field(default_factory=list)
+    approval_policy: str = "default"
+    created_at: str
+    updated_at: str
+
+
+class WorkflowAgentCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=180)
+    role: str = Field(default="", max_length=240)
+    description: str = Field(default="", max_length=1000)
+    instructions: str = Field(default="", max_length=12000)
+    enabled: bool = True
+    skills: list[str] = Field(default_factory=list)
+    knowledge: list[str] = Field(default_factory=list)
+    tools: list[str] = Field(default_factory=list)
+    integrations: list[str] = Field(default_factory=list)
+    approval_policy: str = Field(default="default", max_length=80)
+
+
+class WorkflowAgentUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=180)
+    role: str | None = Field(default=None, max_length=240)
+    description: str | None = Field(default=None, max_length=1000)
+    instructions: str | None = Field(default=None, max_length=12000)
+    enabled: bool | None = None
+    skills: list[str] | None = None
+    knowledge: list[str] | None = None
+    tools: list[str] | None = None
+    integrations: list[str] | None = None
+    approval_policy: str | None = Field(default=None, max_length=80)
+
+
+class WorkflowAgentsResponse(BaseModel):
+    agents: list[WorkflowAgentRecord]
+
+
+class WorkflowTriggerRecord(BaseModel):
+    id: str
+    tenant_id: str
+    workspace_id: str
+    workflow_agent_id: str
+    trigger_type: WorkflowTriggerType
+    event_name: str = ""
+    name: str = ""
+    enabled: bool = True
+    secret: str = ""
+    config: dict[str, Any] = Field(default_factory=dict)
+    webhook_url: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class WorkflowTriggerCreateRequest(BaseModel):
+    trigger_type: WorkflowTriggerType
+    event_name: str = Field(default="", max_length=180)
+    name: str = Field(default="", max_length=180)
+    enabled: bool = True
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowTriggerUpdateRequest(BaseModel):
+    event_name: str | None = Field(default=None, max_length=180)
+    name: str | None = Field(default=None, max_length=180)
+    enabled: bool | None = None
+    config: dict[str, Any] | None = None
+    rotate_secret: bool = False
+
+
+class WorkflowTriggersResponse(BaseModel):
+    triggers: list[WorkflowTriggerRecord]
+
+
+class WorkflowRunRecord(BaseModel):
+    id: str
+    tenant_id: str
+    workspace_id: str
+    runtime_agent_id: str
+    workflow_agent_id: str
+    trigger_id: str | None = None
+    trigger_type: WorkflowTriggerType
+    status: WorkflowRunStatus
+    input: dict[str, Any] = Field(default_factory=dict)
+    output_text: str = ""
+    error: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class WorkflowRunCreateRequest(BaseModel):
+    input: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowRunsResponse(BaseModel):
+    runs: list[WorkflowRunRecord]
+
+
+class WorkflowWebhookIngestResponse(BaseModel):
+    run: WorkflowRunRecord
+
+
 class BootstrapResponse(BaseModel):
     workspace: Workspace
     profile: AgentProfile
