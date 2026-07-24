@@ -238,6 +238,68 @@ def test_workflow_agent_manual_and_webhook_runs(client, monkeypatch):
     assert len(runs.json()["runs"]) == 2
 
 
+def test_workflow_agent_uses_attached_knowledge_context(client, monkeypatch):
+    _payload, token = signup(client, "workflow-knowledge@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+    seen: dict[str, str] = {}
+
+    async def fake_oneshot(workspace, profile, user_input, *, instructions=None):
+        seen["input"] = user_input
+        seen["instructions"] = str(instructions)
+        return "Used the return policy knowledge."
+
+    monkeypatch.setattr(workflow_agents, "run_agent_via_dashboard", fake_oneshot)
+
+    knowledge_base = client.post(
+        "/api/knowledge-bases",
+        headers=headers,
+        json={"name": "Retail Returns", "description": "Store return policy"},
+    )
+    assert knowledge_base.status_code == 200
+    kb = knowledge_base.json()
+
+    document = client.post(
+        f"/api/knowledge-bases/{kb['id']}/documents",
+        headers=headers,
+        json={
+            "title": "Return policy",
+            "source": "manual",
+            "content": "VIP customers can return damaged shoes within 45 days with free pickup.",
+        },
+    )
+    assert document.status_code == 200
+
+    create = client.post(
+        "/api/workflow-agents",
+        headers=headers,
+        json={
+            "name": "Support Research Agent",
+            "instructions": "Answer from approved retail policy.",
+            "knowledge": [kb["id"]],
+        },
+    )
+    assert create.status_code == 200
+    agent = create.json()
+
+    run = client.post(
+        f"/api/workflow-agents/{agent['id']}/runs",
+        headers=headers,
+        json={"input": {"question": "Can a VIP return damaged shoes?"}},
+    )
+    assert run.status_code == 200
+    assert run.json()["status"] == "completed"
+    assert "damaged shoes" in seen["instructions"]
+    assert "knowledge_context" in seen["input"]
+
+    events = client.get(
+        f"/api/workflow-agents/{agent['id']}/runs/{run.json()['id']}/events",
+        headers=headers,
+    )
+    assert events.status_code == 200
+    event_types = [event["event_type"] for event in events.json()["events"]]
+    assert event_types == ["queued", "running", "knowledge_retrieved", "completed"]
+
+
 def test_workflow_trigger_validation(client):
     _payload, token = signup(client, "workflow-trigger-validation@example.com")
     create = client.post(

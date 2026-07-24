@@ -8,10 +8,15 @@ import { Textarea } from '@/components/ui/textarea'
 import { AlertCircle, CheckCircle2, Plus, RefreshCw, Save, Send, Sparkles, Trash2, Zap } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import {
+  createKnowledgeBase,
+  createKnowledgeDocument,
   createWorkflowAgent,
   createWorkflowTrigger,
+  deleteKnowledgeBase,
   deleteWorkflowAgent,
   deleteWorkflowTrigger,
+  type KnowledgeBase,
+  listKnowledgeBases,
   listWorkflowAgents,
   listWorkflowRuns,
   listWorkflowSkillCapabilities,
@@ -101,6 +106,7 @@ export function AgentsView({ onClose }: AgentsViewProps) {
   const [draft, setDraft] = useState<DraftState>(() => draftFromAgent())
   const [triggers, setTriggers] = useState<WorkflowTrigger[]>([])
   const [runs, setRuns] = useState<WorkflowRun[]>([])
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([])
   const [skillCapabilities, setSkillCapabilities] = useState<WorkflowSkillCapability[]>([])
   const [skillCapabilityErrors, setSkillCapabilityErrors] = useState<string[]>([])
   const [tab, setTab] = useState<AgentTab>('instructions')
@@ -115,7 +121,11 @@ export function AgentsView({ onClose }: AgentsViewProps) {
     setLoading(true)
 
     try {
-      const [result, skillsResult] = await Promise.allSettled([listWorkflowAgents(), listWorkflowSkillCapabilities()])
+      const [result, skillsResult, knowledgeResult] = await Promise.allSettled([
+        listWorkflowAgents(),
+        listWorkflowSkillCapabilities(),
+        listKnowledgeBases()
+      ])
 
       if (skillsResult.status === 'fulfilled') {
         setSkillCapabilities(skillsResult.value.skills)
@@ -129,6 +139,10 @@ export function AgentsView({ onClose }: AgentsViewProps) {
 
       if (result.status === 'rejected') {
         throw result.reason
+      }
+
+      if (knowledgeResult.status === 'fulfilled') {
+        setKnowledgeBases(knowledgeResult.value.knowledge_bases)
       }
 
       setAgents(result.value.agents)
@@ -275,8 +289,10 @@ export function AgentsView({ onClose }: AgentsViewProps) {
             <AgentEditor
               busy={busy}
               draft={draft}
+              knowledgeBases={knowledgeBases}
               onChange={setDraft}
               onDelete={selected ? removeAgent : undefined}
+              onKnowledgeBasesChange={setKnowledgeBases}
               onSave={saveAgent}
               selected={selected}
               setTab={setTab}
@@ -374,8 +390,10 @@ function AgentList({
 function AgentEditor({
   busy,
   draft,
+  knowledgeBases,
   onChange,
   onDelete,
+  onKnowledgeBasesChange,
   onSave,
   selected,
   setTab,
@@ -385,8 +403,10 @@ function AgentEditor({
 }: {
   busy: boolean
   draft: DraftState
+  knowledgeBases: KnowledgeBase[]
   onChange: (draft: DraftState) => void
   onDelete?: () => void
+  onKnowledgeBasesChange: (knowledgeBases: KnowledgeBase[]) => void
   onSave: () => void
   selected: WorkflowAgent | null
   setTab: (tab: AgentTab) => void
@@ -507,11 +527,12 @@ function AgentEditor({
         />
       ) : null}
       {tab === 'knowledge' ? (
-        <ListEditor
+        <KnowledgeSelector
           disabled={busy}
-          label="Knowledge bases / domain sources"
-          onChange={value => patch({ knowledgeText: value })}
-          value={draft.knowledgeText}
+          knowledgeBases={knowledgeBases}
+          onChange={items => patch({ knowledgeText: items.join('\n') })}
+          onKnowledgeBasesChange={onKnowledgeBasesChange}
+          selected={lines(draft.knowledgeText)}
         />
       ) : null}
       {tab === 'tools' ? (
@@ -560,6 +581,260 @@ function ListEditor({
         integrations.
       </span>
     </label>
+  )
+}
+
+function KnowledgeSelector({
+  disabled,
+  knowledgeBases,
+  onChange,
+  onKnowledgeBasesChange,
+  selected
+}: {
+  disabled: boolean
+  knowledgeBases: KnowledgeBase[]
+  onChange: (items: string[]) => void
+  onKnowledgeBasesChange: (knowledgeBases: KnowledgeBase[]) => void
+  selected: string[]
+}) {
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [documentBaseId, setDocumentBaseId] = useState('')
+  const [documentTitle, setDocumentTitle] = useState('')
+  const [documentContent, setDocumentContent] = useState('')
+  const [localBusy, setLocalBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const selectedSet = useMemo(() => new Set(selected), [selected])
+  const missingSelected = selected.filter(item => !knowledgeBases.some(base => base.id === item || base.name === item))
+
+  const refreshKnowledgeBases = async () => {
+    const result = await listKnowledgeBases()
+    onKnowledgeBasesChange(result.knowledge_bases)
+  }
+
+  const toggle = (id: string) => {
+    if (disabled || localBusy) {
+      return
+    }
+
+    const next = new Set(selectedSet)
+
+    if (next.has(id)) {
+      next.delete(id)
+    } else {
+      next.add(id)
+    }
+
+    onChange(Array.from(next).sort((a, b) => a.localeCompare(b)))
+  }
+
+  const addKnowledgeBase = async () => {
+    if (!name.trim()) {
+      setError('Knowledge base name is required.')
+
+      return
+    }
+
+    setLocalBusy(true)
+    setError(null)
+
+    try {
+      const created = await createKnowledgeBase({ description, name })
+      setName('')
+      setDescription('')
+      await refreshKnowledgeBases()
+      onChange(Array.from(new Set([...selected, created.id])).sort((a, b) => a.localeCompare(b)))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create knowledge base.')
+    } finally {
+      setLocalBusy(false)
+    }
+  }
+
+  const addDocument = async () => {
+    if (!documentBaseId || !documentTitle.trim() || !documentContent.trim()) {
+      setError('Select a knowledge base and add a document title and content.')
+
+      return
+    }
+
+    setLocalBusy(true)
+    setError(null)
+
+    try {
+      await createKnowledgeDocument(documentBaseId, {
+        content: documentContent,
+        source: 'manual',
+        title: documentTitle
+      })
+      setDocumentTitle('')
+      setDocumentContent('')
+      await refreshKnowledgeBases()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not add knowledge document.')
+    } finally {
+      setLocalBusy(false)
+    }
+  }
+
+  const removeBase = async (id: string) => {
+    setLocalBusy(true)
+    setError(null)
+
+    try {
+      await deleteKnowledgeBase(id)
+      await refreshKnowledgeBases()
+      onChange(selected.filter(item => item !== id))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete knowledge base.')
+    } finally {
+      setLocalBusy(false)
+    }
+  }
+
+  return (
+    <div className="grid gap-4">
+      {error ? (
+        <div className="flex items-center gap-2 rounded-md border border-destructive/25 bg-destructive/8 px-3 py-2 text-xs text-destructive">
+          <AlertCircle className="size-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      ) : null}
+
+      <div className="grid gap-3 rounded-md border border-(--stroke-nous) p-4">
+        <h3 className="text-xs font-semibold">Create knowledge base</h3>
+        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+          <Input
+            disabled={disabled || localBusy}
+            onChange={event => setName(event.target.value)}
+            placeholder="Retail Returns"
+            value={name}
+          />
+          <Input
+            disabled={disabled || localBusy}
+            onChange={event => setDescription(event.target.value)}
+            placeholder="Industry policies, delivery rules, qualification criteria"
+            value={description}
+          />
+          <Button disabled={disabled || localBusy} onClick={addKnowledgeBase} size="sm">
+            {localBusy ? (
+              <Loader className="size-4" label="Creating knowledge base" strokeScale={0.7} type="rose-two" />
+            ) : (
+              <Plus className="size-4" />
+            )}
+            Create
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid gap-3 rounded-md border border-(--stroke-nous) p-4">
+        <h3 className="text-xs font-semibold">Add document</h3>
+        <div className="grid gap-2 md:grid-cols-[14rem_minmax(0,1fr)_auto]">
+          <Select
+            disabled={disabled || localBusy || knowledgeBases.length === 0}
+            onValueChange={setDocumentBaseId}
+            value={documentBaseId}
+          >
+            <SelectTrigger size="sm">
+              <SelectValue placeholder="Knowledge base" />
+            </SelectTrigger>
+            <SelectContent>
+              {knowledgeBases.map(base => (
+                <SelectItem key={base.id} value={base.id}>
+                  {base.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            disabled={disabled || localBusy}
+            onChange={event => setDocumentTitle(event.target.value)}
+            placeholder="Return policy"
+            value={documentTitle}
+          />
+          <Button disabled={disabled || localBusy} onClick={addDocument} size="sm">
+            {localBusy ? (
+              <Loader className="size-4" label="Adding document" strokeScale={0.7} type="rose-two" />
+            ) : (
+              <Plus className="size-4" />
+            )}
+            Add
+          </Button>
+        </div>
+        <Textarea
+          className="min-h-28"
+          disabled={disabled || localBusy}
+          onChange={event => setDocumentContent(event.target.value)}
+          placeholder="Paste product, policy, ICP, support, industry, or domain knowledge for this agent to retrieve during runs."
+          value={documentContent}
+        />
+      </div>
+
+      <div className="grid gap-2">
+        {knowledgeBases.length === 0 ? (
+          <div className="rounded-md border border-dashed border-(--stroke-nous) p-4 text-xs text-muted-foreground">
+            No knowledge bases yet. Create one, add documents, then attach it to the agent.
+          </div>
+        ) : (
+          knowledgeBases.map(base => {
+            const checked = selectedSet.has(base.id) || selectedSet.has(base.name)
+
+            return (
+              <div
+                className={cn(
+                  'grid gap-2 rounded-md border border-(--stroke-nous) p-3',
+                  checked && 'border-primary/45 bg-primary/8'
+                )}
+                key={base.id}
+              >
+                <button
+                  className="grid gap-1 text-left"
+                  disabled={disabled || localBusy}
+                  onClick={() => toggle(base.id)}
+                  type="button"
+                >
+                  <span className="flex items-center gap-2 text-xs font-medium">
+                    <span
+                      className={cn(
+                        'grid size-3 place-items-center rounded-sm border',
+                        checked && 'border-primary bg-primary'
+                      )}
+                    >
+                      {checked ? <CheckCircle2 className="size-2.5 text-primary-foreground" /> : null}
+                    </span>
+                    {base.name}
+                    <span className="text-[0.65rem] font-normal text-muted-foreground">
+                      {base.document_count} {base.document_count === 1 ? 'document' : 'documents'}
+                    </span>
+                  </span>
+                  {base.description ? (
+                    <span className="text-[0.7rem] leading-relaxed text-muted-foreground">{base.description}</span>
+                  ) : null}
+                </button>
+                <div className="flex justify-end">
+                  <Button
+                    disabled={disabled || localBusy}
+                    onClick={() => void removeBase(base.id)}
+                    size="sm"
+                    variant="ghost"
+                  >
+                    <Trash2 className="size-4" />
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            )
+          })
+        )}
+      </div>
+
+      {missingSelected.length > 0 ? (
+        <div className="grid gap-1 rounded-md border border-(--stroke-nous) p-3">
+          <p className="text-xs font-medium">Saved knowledge selections not found</p>
+          <p className="text-[0.7rem] leading-relaxed text-muted-foreground">{missingSelected.join(', ')}</p>
+        </div>
+      ) : null}
+    </div>
   )
 }
 

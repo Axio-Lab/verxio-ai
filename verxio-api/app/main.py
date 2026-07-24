@@ -73,6 +73,13 @@ from app.inference import (
     ensure_inference_settings,
 )
 from app.leash_agent import clear_leash_agent, read_leash_agent, write_leash_agent
+from app.knowledge_bases import (
+    create_document as create_knowledge_document,
+    create_knowledge_base,
+    delete_knowledge_base,
+    list_documents as list_knowledge_documents,
+    list_knowledge_bases,
+)
 from app.slack_manifest import build_slack_manifest
 from app.models import (
     ArtifactListResponse,
@@ -95,6 +102,12 @@ from app.models import (
     InferenceSettings,
     InferenceSettingsUpdate,
     InferenceUsageResponse,
+    KnowledgeBaseCreateRequest,
+    KnowledgeBaseRecord,
+    KnowledgeBasesResponse,
+    KnowledgeDocumentCreateRequest,
+    KnowledgeDocumentRecord,
+    KnowledgeDocumentsResponse,
     LoginRequest,
     NotepadFolderCreateRequest,
     NotepadFolderRecord,
@@ -822,6 +835,48 @@ async def list_workflow_agents_route(request: Request) -> WorkflowAgentsResponse
 async def list_workflow_skill_capabilities_route(request: Request) -> WorkflowSkillCapabilitiesResponse:
     require_user(request)
     return await list_workflow_skill_capabilities()
+
+
+@app.get("/api/knowledge-bases", response_model=KnowledgeBasesResponse)
+async def list_knowledge_bases_route(request: Request) -> KnowledgeBasesResponse:
+    user = require_user(request)
+    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    return list_knowledge_bases(workspace)
+
+
+@app.post("/api/knowledge-bases", response_model=KnowledgeBaseRecord)
+async def create_knowledge_base_route(
+    payload: KnowledgeBaseCreateRequest,
+    request: Request,
+) -> KnowledgeBaseRecord:
+    user = require_user(request)
+    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    return create_knowledge_base(workspace, payload)
+
+
+@app.delete("/api/knowledge-bases/{knowledge_base_id}")
+async def delete_knowledge_base_route(knowledge_base_id: str, request: Request) -> dict[str, bool]:
+    user = require_user(request)
+    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    return delete_knowledge_base(workspace, knowledge_base_id)
+
+
+@app.get("/api/knowledge-bases/{knowledge_base_id}/documents", response_model=KnowledgeDocumentsResponse)
+async def list_knowledge_documents_route(knowledge_base_id: str, request: Request) -> KnowledgeDocumentsResponse:
+    user = require_user(request)
+    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    return list_knowledge_documents(workspace, knowledge_base_id)
+
+
+@app.post("/api/knowledge-bases/{knowledge_base_id}/documents", response_model=KnowledgeDocumentRecord)
+async def create_knowledge_document_route(
+    knowledge_base_id: str,
+    payload: KnowledgeDocumentCreateRequest,
+    request: Request,
+) -> KnowledgeDocumentRecord:
+    user = require_user(request)
+    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    return create_knowledge_document(workspace, knowledge_base_id, payload)
 
 
 @app.post("/api/workflow-agents", response_model=WorkflowAgentRecord)

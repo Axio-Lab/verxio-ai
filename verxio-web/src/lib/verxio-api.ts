@@ -168,6 +168,29 @@ export interface WorkflowSkillCapabilitiesResponse {
   skills: WorkflowSkillCapability[]
 }
 
+export interface KnowledgeBase {
+  id: string
+  tenant_id: string
+  workspace_id: string
+  name: string
+  description: string
+  document_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface KnowledgeDocument {
+  id: string
+  tenant_id: string
+  workspace_id: string
+  knowledge_base_id: string
+  title: string
+  source: string
+  content: string
+  created_at: string
+  updated_at: string
+}
+
 export interface WorkflowTrigger {
   id: string
   tenant_id: string
@@ -837,6 +860,39 @@ export function listWorkflowAgents(): Promise<{ agents: WorkflowAgent[] }> {
 
 export function listWorkflowSkillCapabilities(): Promise<WorkflowSkillCapabilitiesResponse> {
   return verxioFetch<WorkflowSkillCapabilitiesResponse>('/api/workflow-agents/capabilities/skills')
+}
+
+export function listKnowledgeBases(): Promise<{ knowledge_bases: KnowledgeBase[] }> {
+  return verxioFetch<{ knowledge_bases: KnowledgeBase[] }>('/api/knowledge-bases')
+}
+
+export function createKnowledgeBase(input: { description?: string; name: string }): Promise<KnowledgeBase> {
+  return verxioFetch<KnowledgeBase>('/api/knowledge-bases', {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
+}
+
+export function deleteKnowledgeBase(knowledgeBaseId: string): Promise<{ ok: boolean }> {
+  return verxioFetch<{ ok: boolean }>(`/api/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}`, {
+    method: 'DELETE'
+  })
+}
+
+export function listKnowledgeDocuments(knowledgeBaseId: string): Promise<{ documents: KnowledgeDocument[] }> {
+  return verxioFetch<{ documents: KnowledgeDocument[] }>(
+    `/api/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/documents`
+  )
+}
+
+export function createKnowledgeDocument(
+  knowledgeBaseId: string,
+  input: { content: string; source?: string; title: string }
+): Promise<KnowledgeDocument> {
+  return verxioFetch<KnowledgeDocument>(`/api/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/documents`, {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
 }
 
 export function createWorkflowAgent(input: WorkflowAgentInput & { name: string }): Promise<WorkflowAgent> {

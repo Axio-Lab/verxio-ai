@@ -813,6 +813,48 @@ class WorkflowSkillCapabilitiesResponse(BaseModel):
     errors: list[str] = Field(default_factory=list)
 
 
+class KnowledgeBaseRecord(BaseModel):
+    id: str
+    tenant_id: str
+    workspace_id: str
+    name: str
+    description: str = ""
+    document_count: int = 0
+    created_at: str
+    updated_at: str
+
+
+class KnowledgeBaseCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=180)
+    description: str = Field(default="", max_length=1000)
+
+
+class KnowledgeBasesResponse(BaseModel):
+    knowledge_bases: list[KnowledgeBaseRecord]
+
+
+class KnowledgeDocumentRecord(BaseModel):
+    id: str
+    tenant_id: str
+    workspace_id: str
+    knowledge_base_id: str
+    title: str
+    source: str = "manual"
+    content: str
+    created_at: str
+    updated_at: str
+
+
+class KnowledgeDocumentCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=220)
+    source: str = Field(default="manual", max_length=120)
+    content: str = Field(min_length=1, max_length=200000)
+
+
+class KnowledgeDocumentsResponse(BaseModel):
+    documents: list[KnowledgeDocumentRecord]
+
+
 class WorkflowTriggerRecord(BaseModel):
     id: str
     tenant_id: str

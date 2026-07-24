@@ -8,6 +8,7 @@ from fastapi import HTTPException, Request
 
 from app import db
 from app.control_plane import now_iso
+from app.knowledge_bases import retrieve_context
 from app.models import (
     AgentProfile,
     WorkflowAgentCreateRequest,
@@ -488,8 +489,12 @@ def _set_run_status(run_id: str, status: str, *, output: str = "", error: str | 
         _record_run_event(_run_from_row(row), status, message, metadata)
 
 
-def _build_instructions(agent: WorkflowAgentRecord) -> str:
+def _build_instructions(agent: WorkflowAgentRecord, knowledge_context: list[dict[str, Any]] | None = None) -> str:
     skill_lines = [f"- {name}" for name in agent.skills]
+    context_lines = [
+        f"- {item['knowledge_base_name']} / {item['document_title']} chunk {item['chunk_index']}: {item['content']}"
+        for item in knowledge_context or []
+    ]
     parts = [
         f"You are the Verxio workflow agent named {agent.name}.",
         f"Role: {agent.role or 'Complete the assigned workflow run.'}",
@@ -497,6 +502,7 @@ def _build_instructions(agent: WorkflowAgentRecord) -> str:
         "Respect the per-agent setup below.",
         "Selected skills:\n" + ("\n".join(skill_lines) if skill_lines else "none"),
         f"Knowledge sources enabled: {', '.join(agent.knowledge) or 'none'}",
+        "Retrieved knowledge context:\n" + ("\n".join(context_lines) if context_lines else "none"),
         f"Allowed tools: {', '.join(agent.tools) or 'default workspace tools'}",
         f"Allowed integrations: {', '.join(agent.integrations) or 'none explicitly selected'}",
         f"Approval policy: {agent.approval_policy}",
@@ -519,12 +525,37 @@ async def run_agent(
         raise HTTPException(status_code=409, detail="Workflow agent is disabled.")
     run = _create_run_row(workspace, profile, agent, trigger_type, payload.input, trigger_id)
     _set_run_status(run.id, "running")
+    knowledge_context = retrieve_context(workspace, agent.knowledge, payload.input)
+    if knowledge_context:
+        _record_run_event(
+            run,
+            "knowledge_retrieved",
+            "Retrieved knowledge context for the workflow run.",
+            {
+                "chunks": [
+                    {
+                        "knowledgeBase": item["knowledge_base_name"],
+                        "documentTitle": item["document_title"],
+                        "chunkIndex": item["chunk_index"],
+                        "score": item["score"],
+                    }
+                    for item in knowledge_context
+                ]
+            },
+        )
     try:
         output = await run_agent_via_dashboard(
             workspace,
             profile,
-            _json_dumps({"trigger_type": trigger_type, "trigger_id": trigger_id, "input": payload.input}),
-            instructions=_build_instructions(agent),
+            _json_dumps(
+                {
+                    "trigger_type": trigger_type,
+                    "trigger_id": trigger_id,
+                    "input": payload.input,
+                    "knowledge_context": knowledge_context,
+                }
+            ),
+            instructions=_build_instructions(agent, knowledge_context),
         )
     except Exception as exc:
         _set_run_status(run.id, "failed", error=str(exc), completed=True)
