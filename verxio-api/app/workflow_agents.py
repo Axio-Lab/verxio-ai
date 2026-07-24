@@ -15,6 +15,8 @@ from app.models import (
     WorkflowAgentsResponse,
     WorkflowAgentUpdateRequest,
     WorkflowRunCreateRequest,
+    WorkflowRunEventRecord,
+    WorkflowRunEventsResponse,
     WorkflowRunRecord,
     WorkflowRunsResponse,
     WorkflowTriggerCreateRequest,
@@ -80,6 +82,54 @@ def _run_from_row(row: dict[str, Any]) -> WorkflowRunRecord:
     payload = dict(row)
     payload["input"] = _json_loads(payload.pop("input_json", "{}"), {})
     return WorkflowRunRecord(**payload)
+
+
+def _event_from_row(row: dict[str, Any]) -> WorkflowRunEventRecord:
+    payload = dict(row)
+    payload["metadata"] = _json_loads(payload.pop("metadata_json", "{}"), {})
+    return WorkflowRunEventRecord(**payload)
+
+
+def _validate_trigger_payload(trigger_type: str, event_name: str, config: dict[str, Any]) -> None:
+    if trigger_type == "webhook" and not event_name.strip():
+        raise HTTPException(status_code=422, detail="Webhook triggers require an event name.")
+    if trigger_type == "schedule":
+        schedule = str(config.get("schedule") or config.get("cron") or "").strip()
+        if not schedule:
+            raise HTTPException(status_code=422, detail="Schedule triggers require config.schedule or config.cron.")
+    if trigger_type == "app_event":
+        app_slug = str(config.get("appSlug") or config.get("app_slug") or "").strip()
+        event = str(config.get("event") or event_name or "").strip()
+        if not app_slug or not event:
+            raise HTTPException(status_code=422, detail="App event triggers require config.appSlug and an event name.")
+
+
+def _record_run_event(
+    run: WorkflowRunRecord,
+    event_type: str,
+    message: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    db.execute(
+        """
+        INSERT INTO workflow_run_events (
+            id, tenant_id, workspace_id, workflow_agent_id, workflow_run_id,
+            event_type, message, metadata_json, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            new_id("workflow_event"),
+            run.tenant_id,
+            run.workspace_id,
+            run.workflow_agent_id,
+            run.id,
+            event_type,
+            message,
+            _json_dumps(metadata or {}),
+            now_iso(),
+        ),
+    )
 
 
 def list_agents(workspace: Workspace, profile: AgentProfile) -> WorkflowAgentsResponse:
@@ -214,6 +264,7 @@ def create_trigger(
     request: Request | None = None,
 ) -> WorkflowTriggerRecord:
     get_agent(workspace, profile, agent_id)
+    _validate_trigger_payload(payload.trigger_type, payload.event_name, payload.config)
     created_at = now_iso()
     trigger_id = new_id("workflow_trigger")
     db.execute(
@@ -274,6 +325,11 @@ def update_trigger(
     data = current.model_dump()
     updates = payload.model_dump(exclude_unset=True)
     data.update({key: value for key, value in updates.items() if value is not None and key != "rotate_secret"})
+    _validate_trigger_payload(
+        current.trigger_type,
+        str(data.get("event_name") or ""),
+        data.get("config") if isinstance(data.get("config"), dict) else {},
+    )
     secret = _secret() if payload.rotate_secret and current.trigger_type == "webhook" else current.secret
     db.execute(
         """
@@ -319,6 +375,33 @@ def list_runs(workspace: Workspace, profile: AgentProfile, agent_id: str, limit:
     return WorkflowRunsResponse(runs=[_run_from_row(row) for row in rows])
 
 
+def list_run_events(
+    workspace: Workspace,
+    profile: AgentProfile,
+    agent_id: str,
+    run_id: str,
+) -> WorkflowRunEventsResponse:
+    get_agent(workspace, profile, agent_id)
+    run = db.fetch_one(
+        """
+        SELECT id FROM workflow_runs
+        WHERE id = ? AND workspace_id = ? AND workflow_agent_id = ?
+        """,
+        (run_id, workspace.id, agent_id),
+    )
+    if not run:
+        raise HTTPException(status_code=404, detail="Workflow run not found.")
+    rows = db.fetch_all(
+        """
+        SELECT * FROM workflow_run_events
+        WHERE workflow_run_id = ?
+        ORDER BY created_at ASC
+        """,
+        (run_id,),
+    )
+    return WorkflowRunEventsResponse(events=[_event_from_row(row) for row in rows])
+
+
 def _create_run_row(
     workspace: Workspace,
     profile: AgentProfile,
@@ -350,7 +433,9 @@ def _create_run_row(
             created_at,
         ),
     )
-    return _run_from_row(db.fetch_one("SELECT * FROM workflow_runs WHERE id = ?", (run_id,)) or {})
+    run = _run_from_row(db.fetch_one("SELECT * FROM workflow_runs WHERE id = ?", (run_id,)) or {})
+    _record_run_event(run, "queued", "Workflow run was queued.", {"trigger_type": trigger_type, "trigger_id": trigger_id})
+    return run
 
 
 def _set_run_status(run_id: str, status: str, *, output: str = "", error: str | None = None, completed: bool = False) -> None:
@@ -365,6 +450,15 @@ def _set_run_status(run_id: str, status: str, *, output: str = "", error: str | 
         """,
         (status, output, error, now, 1 if completed else 0, now, now, run_id),
     )
+    row = db.fetch_one("SELECT * FROM workflow_runs WHERE id = ?", (run_id,))
+    if row:
+        message = f"Workflow run {status}."
+        metadata: dict[str, Any] = {}
+        if error:
+            metadata["error"] = error
+        if output:
+            metadata["outputPreview"] = output[:500]
+        _record_run_event(_run_from_row(row), status, message, metadata)
 
 
 def _build_instructions(agent: WorkflowAgentRecord) -> str:

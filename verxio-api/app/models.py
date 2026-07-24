@@ -855,12 +855,28 @@ class WorkflowRunRecord(BaseModel):
     updated_at: str
 
 
+class WorkflowRunEventRecord(BaseModel):
+    id: str
+    tenant_id: str
+    workspace_id: str
+    workflow_agent_id: str
+    workflow_run_id: str
+    event_type: str
+    message: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+
+
 class WorkflowRunCreateRequest(BaseModel):
     input: dict[str, Any] = Field(default_factory=dict)
 
 
 class WorkflowRunsResponse(BaseModel):
     runs: list[WorkflowRunRecord]
+
+
+class WorkflowRunEventsResponse(BaseModel):
+    events: list[WorkflowRunEventRecord]
 
 
 class WorkflowWebhookIngestResponse(BaseModel):

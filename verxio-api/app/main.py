@@ -146,6 +146,7 @@ from app.models import (
     WorkflowAgentsResponse,
     WorkflowAgentUpdateRequest,
     WorkflowRunCreateRequest,
+    WorkflowRunEventsResponse,
     WorkflowRunRecord,
     WorkflowRunsResponse,
     WorkflowTriggerCreateRequest,
@@ -219,6 +220,7 @@ from app.workflow_agents import (
     delete_trigger as delete_workflow_trigger,
     get_agent as get_workflow_agent,
     list_agents as list_workflow_agents,
+    list_run_events as list_workflow_run_events,
     list_runs as list_workflow_runs,
     list_triggers as list_workflow_triggers,
     run_agent as run_workflow_agent,
@@ -891,6 +893,13 @@ async def list_workflow_runs_route(agent_id: str, request: Request, limit: int =
     user = require_user(request)
     workspace, profile, _runtime_instance = get_context_for_user(user)
     return list_workflow_runs(workspace, profile, agent_id, limit)
+
+
+@app.get("/api/workflow-agents/{agent_id}/runs/{run_id}/events", response_model=WorkflowRunEventsResponse)
+async def list_workflow_run_events_route(agent_id: str, run_id: str, request: Request) -> WorkflowRunEventsResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return list_workflow_run_events(workspace, profile, agent_id, run_id)
 
 
 @app.post("/api/workflow-agents/{agent_id}/runs", response_model=WorkflowRunRecord)

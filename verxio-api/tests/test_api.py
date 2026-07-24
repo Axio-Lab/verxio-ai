@@ -200,6 +200,12 @@ def test_workflow_agent_manual_and_webhook_runs(client, monkeypatch):
     assert manual.status_code == 200
     assert manual.json()["status"] == "completed"
     assert "delivery confirmation" in manual.json()["output_text"]
+    events = client.get(
+        f"/api/workflow-agents/{agent['id']}/runs/{manual.json()['id']}/events",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+    )
+    assert events.status_code == 200
+    assert [event["event_type"] for event in events.json()["events"]] == ["queued", "running", "completed"]
 
     trigger = client.post(
         f"/api/workflow-agents/{agent['id']}/triggers",
@@ -230,6 +236,38 @@ def test_workflow_agent_manual_and_webhook_runs(client, monkeypatch):
     runs = client.get(f"/api/workflow-agents/{agent['id']}/runs", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
     assert runs.status_code == 200
     assert len(runs.json()["runs"]) == 2
+
+
+def test_workflow_trigger_validation(client):
+    _payload, token = signup(client, "workflow-trigger-validation@example.com")
+    create = client.post(
+        "/api/workflow-agents",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"name": "Ops Agent"},
+    )
+    assert create.status_code == 200
+    agent_id = create.json()["id"]
+
+    webhook = client.post(
+        f"/api/workflow-agents/{agent_id}/triggers",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"trigger_type": "webhook", "event_name": ""},
+    )
+    assert webhook.status_code == 422
+
+    schedule = client.post(
+        f"/api/workflow-agents/{agent_id}/triggers",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"trigger_type": "schedule", "event_name": "daily"},
+    )
+    assert schedule.status_code == 422
+
+    app_event = client.post(
+        f"/api/workflow-agents/{agent_id}/triggers",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"trigger_type": "app_event", "event_name": "new_record", "config": {"appSlug": "airtable"}},
+    )
+    assert app_event.status_code == 200
 
 
 def test_protected_runtime_endpoint_rejects_anonymous_users(client):
