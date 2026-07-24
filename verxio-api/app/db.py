@@ -461,6 +461,7 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         role TEXT NOT NULL DEFAULT '',
         description TEXT NOT NULL DEFAULT '',
         instructions TEXT NOT NULL DEFAULT '',
+        model_id TEXT NOT NULL DEFAULT '',
         enabled INTEGER NOT NULL DEFAULT 1,
         skills_json TEXT NOT NULL DEFAULT '[]',
         knowledge_json TEXT NOT NULL DEFAULT '[]',

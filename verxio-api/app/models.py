@@ -761,6 +761,7 @@ class WorkflowAgentRecord(BaseModel):
     role: str = ""
     description: str = ""
     instructions: str = ""
+    model_id: str = ""
     enabled: bool = True
     skills: list[str] = Field(default_factory=list)
     knowledge: list[str] = Field(default_factory=list)
@@ -776,6 +777,7 @@ class WorkflowAgentCreateRequest(BaseModel):
     role: str = Field(default="", max_length=240)
     description: str = Field(default="", max_length=1000)
     instructions: str = Field(default="", max_length=12000)
+    model_id: str = Field(default="", max_length=180)
     enabled: bool = True
     skills: list[str] = Field(default_factory=list)
     knowledge: list[str] = Field(default_factory=list)
@@ -789,6 +791,7 @@ class WorkflowAgentUpdateRequest(BaseModel):
     role: str | None = Field(default=None, max_length=240)
     description: str | None = Field(default=None, max_length=1000)
     instructions: str | None = Field(default=None, max_length=12000)
+    model_id: str | None = Field(default=None, max_length=180)
     enabled: bool | None = None
     skills: list[str] | None = None
     knowledge: list[str] | None = None

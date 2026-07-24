@@ -133,6 +133,7 @@ export interface WorkflowAgent {
   role: string
   description: string
   instructions: string
+  model_id: string
   enabled: boolean
   skills: string[]
   knowledge: string[]
@@ -148,6 +149,7 @@ export interface WorkflowAgentInput {
   description?: string
   enabled?: boolean
   instructions?: string
+  model_id?: string
   integrations?: string[]
   knowledge?: string[]
   name?: string

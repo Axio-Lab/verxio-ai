@@ -36,6 +36,7 @@ import {
   type WorkflowTrigger,
   type WorkflowTriggerType
 } from '@/lib/verxio-api'
+import { getScopedModelOptions } from '@/lib/verxio-model-options'
 
 import { OverlayView } from '../overlays/overlay-view'
 
@@ -65,6 +66,7 @@ interface DraftState {
   instructions: string
   integrationsText: string
   knowledgeText: string
+  model_id: string
   name: string
   role: string
   skillsText: string
@@ -78,10 +80,17 @@ function draftFromAgent(agent?: WorkflowAgent | null): DraftState {
     instructions: agent?.instructions ?? '',
     integrationsText: (agent?.integrations ?? []).join('\n'),
     knowledgeText: (agent?.knowledge ?? []).join('\n'),
+    model_id: agent?.model_id ?? '',
     name: agent?.name ?? '',
     role: agent?.role ?? '',
     skillsText: (agent?.skills ?? []).join('\n')
   }
+}
+
+interface AgentModelOption {
+  id: string
+  label: string
+  provider: string
 }
 
 function lines(value: string): string[] {
@@ -116,6 +125,9 @@ export function AgentsView({ onClose }: AgentsViewProps) {
   const [integrationCapabilityErrors, setIntegrationCapabilityErrors] = useState<string[]>([])
   const [skillCapabilities, setSkillCapabilities] = useState<WorkflowSkillCapability[]>([])
   const [skillCapabilityErrors, setSkillCapabilityErrors] = useState<string[]>([])
+  const [modelOptions, setModelOptions] = useState<AgentModelOption[]>([])
+  const [defaultModelId, setDefaultModelId] = useState('')
+  const [modelErrors, setModelErrors] = useState<string[]>([])
   const [tab, setTab] = useState<AgentTab>('instructions')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -128,11 +140,12 @@ export function AgentsView({ onClose }: AgentsViewProps) {
     setLoading(true)
 
     try {
-      const [result, skillsResult, knowledgeResult, integrationsResult] = await Promise.allSettled([
+      const [result, skillsResult, knowledgeResult, integrationsResult, modelsResult] = await Promise.allSettled([
         listWorkflowAgents(),
         listWorkflowSkillCapabilities(),
         listKnowledgeBases(),
-        listWorkflowIntegrationCapabilities()
+        listWorkflowIntegrationCapabilities(),
+        getScopedModelOptions()
       ])
 
       if (skillsResult.status === 'fulfilled') {
@@ -163,6 +176,34 @@ export function AgentsView({ onClose }: AgentsViewProps) {
             ? integrationsResult.reason.message
             : 'Could not load integrations.'
         ])
+      }
+
+      if (modelsResult.status === 'fulfilled') {
+        const nextModels: AgentModelOption[] = []
+        const seen = new Set<string>()
+
+        for (const provider of modelsResult.value.providers ?? []) {
+          for (const model of provider.models ?? []) {
+            if (!model || seen.has(model)) {
+              continue
+            }
+
+            seen.add(model)
+            nextModels.push({
+              id: model,
+              label: model,
+              provider: provider.name || provider.slug
+            })
+          }
+        }
+
+        setModelOptions(nextModels)
+        setDefaultModelId(modelsResult.value.model || nextModels[0]?.id || '')
+        setModelErrors([])
+      } else {
+        setModelOptions([])
+        setDefaultModelId('')
+        setModelErrors([modelsResult.reason instanceof Error ? modelsResult.reason.message : 'Could not load models.'])
       }
 
       setAgents(result.value.agents)
@@ -200,7 +241,11 @@ export function AgentsView({ onClose }: AgentsViewProps) {
   }, [refreshAgents])
 
   useEffect(() => {
-    setDraft(draftFromAgent(selected))
+    setDraft(() => {
+      const next = draftFromAgent(selected)
+
+      return selected ? next : { ...next, model_id: defaultModelId }
+    })
 
     if (selected) {
       void refreshDetails(selected.id)
@@ -208,7 +253,7 @@ export function AgentsView({ onClose }: AgentsViewProps) {
       setTriggers([])
       setRuns([])
     }
-  }, [refreshDetails, selected])
+  }, [defaultModelId, refreshDetails, selected])
 
   const saveAgent = async () => {
     if (!draft.name.trim()) {
@@ -227,6 +272,7 @@ export function AgentsView({ onClose }: AgentsViewProps) {
       instructions: draft.instructions,
       integrations: lines(draft.integrationsText),
       knowledge: lines(draft.knowledgeText),
+      model_id: draft.model_id || defaultModelId,
       name: draft.name,
       role: draft.role,
       skills: lines(draft.skillsText)
@@ -269,7 +315,7 @@ export function AgentsView({ onClose }: AgentsViewProps) {
 
   const createNew = () => {
     setSelectedId(null)
-    setDraft(draftFromAgent())
+    setDraft({ ...draftFromAgent(), model_id: defaultModelId })
     setTriggers([])
     setRuns([])
     setTab('instructions')
@@ -318,10 +364,13 @@ export function AgentsView({ onClose }: AgentsViewProps) {
           <main className="min-h-0 min-w-0 overflow-y-auto pr-1">
             <AgentEditor
               busy={busy}
+              defaultModelId={defaultModelId}
               draft={draft}
               integrationCapabilities={integrationCapabilities}
               integrationCapabilityErrors={integrationCapabilityErrors}
               knowledgeBases={knowledgeBases}
+              modelErrors={modelErrors}
+              modelOptions={modelOptions}
               onChange={setDraft}
               onDelete={selected ? removeAgent : undefined}
               onKnowledgeBasesChange={setKnowledgeBases}
@@ -441,10 +490,13 @@ function AgentList({
 
 function AgentEditor({
   busy,
+  defaultModelId,
   draft,
   integrationCapabilities,
   integrationCapabilityErrors,
   knowledgeBases,
+  modelErrors,
+  modelOptions,
   onChange,
   onDelete,
   onKnowledgeBasesChange,
@@ -457,10 +509,13 @@ function AgentEditor({
   tab
 }: {
   busy: boolean
+  defaultModelId: string
   draft: DraftState
   integrationCapabilities: WorkflowIntegrationCapability[]
   integrationCapabilityErrors: string[]
   knowledgeBases: KnowledgeBase[]
+  modelErrors: string[]
+  modelOptions: AgentModelOption[]
   onChange: (draft: DraftState) => void
   onDelete?: () => void
   onKnowledgeBasesChange: (knowledgeBases: KnowledgeBase[]) => void
@@ -473,6 +528,7 @@ function AgentEditor({
   tab: AgentTab
 }) {
   const patch = (updates: Partial<DraftState>) => onChange({ ...draft, ...updates })
+  const savedModelMissing = draft.model_id && !modelOptions.some(model => model.id === draft.model_id)
 
   return (
     <section className="grid gap-4">
@@ -505,6 +561,29 @@ function AgentEditor({
             placeholder="What this agent owns"
             value={draft.description}
           />
+        </label>
+        <label className="grid gap-1.5 text-xs font-medium">
+          Brain model
+          <Select
+            disabled={busy || modelOptions.length === 0}
+            onValueChange={value => patch({ model_id: value })}
+            value={draft.model_id || defaultModelId}
+          >
+            <SelectTrigger size="sm">
+              <SelectValue placeholder="Select model" />
+            </SelectTrigger>
+            <SelectContent>
+              {savedModelMissing ? <SelectItem value={draft.model_id}>{draft.model_id} (saved)</SelectItem> : null}
+              {modelOptions.map(model => (
+                <SelectItem key={model.id} value={model.id}>
+                  {model.label} · {model.provider}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {modelErrors.length > 0 ? (
+            <span className="text-[0.7rem] leading-relaxed text-muted-foreground">{modelErrors.join(' ')}</span>
+          ) : null}
         </label>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <button

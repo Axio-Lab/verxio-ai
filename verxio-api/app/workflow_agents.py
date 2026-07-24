@@ -267,10 +267,10 @@ def create_agent(workspace: Workspace, profile: AgentProfile, payload: WorkflowA
         """
         INSERT INTO workflow_agents (
             id, tenant_id, workspace_id, runtime_agent_id, name, role, description,
-            instructions, enabled, skills_json, knowledge_json, tools_json,
+            instructions, model_id, enabled, skills_json, knowledge_json, tools_json,
             integrations_json, approval_policy, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             agent_id,
@@ -281,6 +281,7 @@ def create_agent(workspace: Workspace, profile: AgentProfile, payload: WorkflowA
             payload.role.strip(),
             payload.description.strip(),
             payload.instructions.strip(),
+            payload.model_id.strip(),
             1 if payload.enabled else 0,
             _json_dumps(_string_list(payload.skills)),
             _json_dumps(_string_list(payload.knowledge)),
@@ -320,7 +321,7 @@ def update_agent(
     db.execute(
         """
         UPDATE workflow_agents
-        SET name = ?, role = ?, description = ?, instructions = ?, enabled = ?,
+        SET name = ?, role = ?, description = ?, instructions = ?, model_id = ?, enabled = ?,
             skills_json = ?, knowledge_json = ?, tools_json = ?, integrations_json = ?,
             approval_policy = ?, updated_at = ?
         WHERE id = ? AND workspace_id = ? AND runtime_agent_id = ?
@@ -330,6 +331,7 @@ def update_agent(
             str(data.get("role") or "").strip(),
             str(data.get("description") or "").strip(),
             str(data.get("instructions") or "").strip(),
+            str(data.get("model_id") or "").strip(),
             1 if data.get("enabled") else 0,
             _json_dumps(_string_list(data.get("skills"))),
             _json_dumps(_string_list(data.get("knowledge"))),
@@ -589,6 +591,7 @@ def _build_instructions(agent: WorkflowAgentRecord, knowledge_context: list[dict
         agent.instructions or "Complete the task using the provided event/input payload.",
         "Respect the per-agent setup below.",
         "Selected skills:\n" + ("\n".join(skill_lines) if skill_lines else "none"),
+        f"Brain model selected for this workflow agent: {agent.model_id or 'workspace default'}",
         f"Knowledge sources enabled: {', '.join(agent.knowledge) or 'none'}",
         "Retrieved knowledge context:\n" + ("\n".join(context_lines) if context_lines else "none"),
         f"Allowed tools: {', '.join(agent.tools) or 'default workspace tools'}",
@@ -612,6 +615,8 @@ async def run_agent(
     if not agent.enabled:
         raise HTTPException(status_code=409, detail="Workflow agent is disabled.")
     run = _create_run_row(workspace, profile, agent, trigger_type, payload.input, trigger_id)
+    if agent.model_id:
+        _record_run_event(run, "model_selected", "Selected workflow agent brain model.", {"model_id": agent.model_id})
     _set_run_status(run.id, "running")
     knowledge_context = retrieve_context(workspace, agent.knowledge, payload.input)
     if knowledge_context:
