@@ -226,19 +226,20 @@ async def list_tool_capabilities() -> WorkflowToolCapabilitiesResponse:
 
 def list_integration_capabilities(user_id: str) -> WorkflowIntegrationCapabilitiesResponse:
     accounts = list_composio_accounts(user_id)
-    connected = {account.appSlug.lower() for account in accounts if account.status.upper() == "ACTIVE"}
+    connected = {account.appSlug.lower(): account for account in accounts if account.status.upper() == "ACTIVE"}
     integrations = [
         WorkflowIntegrationCapability(
             slug=app.slug,
             name=app.name,
             description=app.description,
             categories=app.categories,
-            connected=app.slug.lower() in connected,
+            connected=True,
             authMode=app.authMode,
         )
         for app in list_composio_apps()
+        if app.slug.lower() in connected
     ]
-    integrations.sort(key=lambda item: (not item.connected, item.name.lower()))
+    integrations.sort(key=lambda item: item.name.lower())
     errors = [error] if (error := get_composio_catalog_error()) else []
     return WorkflowIntegrationCapabilitiesResponse(
         integrations=integrations,

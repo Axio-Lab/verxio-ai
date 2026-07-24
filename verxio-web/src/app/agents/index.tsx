@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { SkillEditorDialog } from '@/components/skill-editor-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Loader } from '@/components/ui/loader'
@@ -183,6 +184,17 @@ export function AgentsView({ onClose }: AgentsViewProps) {
     }
   }, [])
 
+  const refreshSkills = useCallback(async () => {
+    try {
+      const result = await listWorkflowSkillCapabilities()
+      setSkillCapabilities(result.skills)
+      setSkillCapabilityErrors(result.errors)
+    } catch (err) {
+      setSkillCapabilities([])
+      setSkillCapabilityErrors([err instanceof Error ? err.message : 'Could not load skills.'])
+    }
+  }, [])
+
   useEffect(() => {
     void refreshAgents()
   }, [refreshAgents])
@@ -314,6 +326,7 @@ export function AgentsView({ onClose }: AgentsViewProps) {
               onDelete={selected ? removeAgent : undefined}
               onKnowledgeBasesChange={setKnowledgeBases}
               onSave={saveAgent}
+              onSkillsRefresh={refreshSkills}
               selected={selected}
               setTab={setTab}
               skillCapabilities={skillCapabilities}
@@ -436,6 +449,7 @@ function AgentEditor({
   onDelete,
   onKnowledgeBasesChange,
   onSave,
+  onSkillsRefresh,
   selected,
   setTab,
   skillCapabilities,
@@ -451,6 +465,7 @@ function AgentEditor({
   onDelete?: () => void
   onKnowledgeBasesChange: (knowledgeBases: KnowledgeBase[]) => void
   onSave: () => void
+  onSkillsRefresh: () => Promise<void>
   selected: WorkflowAgent | null
   setTab: (tab: AgentTab) => void
   skillCapabilities: WorkflowSkillCapability[]
@@ -565,6 +580,7 @@ function AgentEditor({
           disabled={busy}
           errors={skillCapabilityErrors}
           onChange={items => patch({ skillsText: items.join('\n') })}
+          onRefresh={onSkillsRefresh}
           selected={lines(draft.skillsText)}
           skills={skillCapabilities}
         />
@@ -981,18 +997,22 @@ function SkillSelector({
   disabled,
   errors,
   onChange,
+  onRefresh,
   selected,
   skills
 }: {
   disabled: boolean
   errors: string[]
   onChange: (items: string[]) => void
+  onRefresh: () => Promise<void>
   selected: string[]
   skills: WorkflowSkillCapability[]
 }) {
   const selectedSet = useMemo(() => new Set(selected), [selected])
   const missingSelected = selected.filter(name => !skills.some(skill => skill.name === name))
   const [page, setPage] = useState(1)
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [editorSkill, setEditorSkill] = useState<string | null>(null)
   const visibleSkills = skills.slice((page - 1) * PANEL_PAGE_SIZE, page * PANEL_PAGE_SIZE)
 
   useEffect(() => {
@@ -1019,8 +1039,30 @@ function SkillSelector({
     onChange(Array.from(next).sort((a, b) => a.localeCompare(b)))
   }
 
+  const openCreateEditor = () => {
+    setEditorSkill(null)
+    setEditorOpen(true)
+  }
+
+  const openEditEditor = (name: string) => {
+    setEditorSkill(name)
+    setEditorOpen(true)
+  }
+
+  const handleSaved = (name: string) => {
+    void onRefresh()
+    onChange(Array.from(new Set([...selected, name])).sort((a, b) => a.localeCompare(b)))
+  }
+
   return (
     <div className="grid gap-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-muted-foreground">Attach existing skills or create a custom skill for this agent.</p>
+        <Button disabled={disabled} onClick={openCreateEditor} size="sm" type="button" variant="ghost">
+          <Plus className="size-4" />
+          New skill
+        </Button>
+      </div>
       {errors.length > 0 ? (
         <div className="rounded-md border border-(--stroke-nous) bg-muted/25 px-3 py-2 text-[0.7rem] leading-relaxed text-muted-foreground">
           {errors.join(' ')}
@@ -1037,34 +1079,43 @@ function SkillSelector({
             const checked = selectedSet.has(skill.name)
 
             return (
-              <button
+              <div
                 className={cn(
-                  'grid gap-1 rounded-md border border-(--stroke-nous) p-3 text-left transition-colors hover:bg-(--chrome-action-hover)',
+                  'grid gap-2 rounded-md border border-(--stroke-nous) p-3 text-left transition-colors hover:bg-(--chrome-action-hover)',
                   checked && 'border-primary/45 bg-primary/8'
                 )}
-                disabled={disabled}
                 key={skill.name}
-                onClick={() => toggle(skill.name)}
-                type="button"
               >
-                <span className="flex items-center gap-2 text-xs font-medium">
-                  <span
-                    className={cn(
-                      'grid size-3 place-items-center rounded-sm border',
-                      checked && 'border-primary bg-primary'
-                    )}
-                  >
-                    {checked ? <CheckCircle2 className="size-2.5 text-primary-foreground" /> : null}
+                <button
+                  className="grid gap-1 text-left"
+                  disabled={disabled}
+                  onClick={() => toggle(skill.name)}
+                  type="button"
+                >
+                  <span className="flex items-center gap-2 text-xs font-medium">
+                    <span
+                      className={cn(
+                        'grid size-3 place-items-center rounded-sm border',
+                        checked && 'border-primary bg-primary'
+                      )}
+                    >
+                      {checked ? <CheckCircle2 className="size-2.5 text-primary-foreground" /> : null}
+                    </span>
+                    {skill.name}
+                    {skill.category ? (
+                      <span className="text-[0.65rem] font-normal text-muted-foreground">{skill.category}</span>
+                    ) : null}
                   </span>
-                  {skill.name}
-                  {skill.category ? (
-                    <span className="text-[0.65rem] font-normal text-muted-foreground">{skill.category}</span>
+                  {skill.description ? (
+                    <span className="text-[0.7rem] leading-relaxed text-muted-foreground">{skill.description}</span>
                   ) : null}
-                </span>
-                {skill.description ? (
-                  <span className="text-[0.7rem] leading-relaxed text-muted-foreground">{skill.description}</span>
-                ) : null}
-              </button>
+                </button>
+                <div className="flex justify-end">
+                  <Button disabled={disabled} onClick={() => openEditEditor(skill.name)} size="sm" variant="ghost">
+                    Edit
+                  </Button>
+                </div>
+              </div>
             )
           })}
           <PaginationControl
@@ -1082,6 +1133,12 @@ function SkillSelector({
           <p className="text-[0.7rem] leading-relaxed text-muted-foreground">{missingSelected.join(', ')}</p>
         </div>
       ) : null}
+      <SkillEditorDialog
+        editName={editorSkill}
+        onClose={() => setEditorOpen(false)}
+        onSaved={handleSaved}
+        open={editorOpen}
+      />
     </div>
   )
 }
