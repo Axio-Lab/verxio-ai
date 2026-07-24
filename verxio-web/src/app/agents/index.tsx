@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Loader } from '@/components/ui/loader'
+import { PaginationControl } from '@/components/ui/pagination'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { AlertCircle, CheckCircle2, Plus, RefreshCw, Save, Send, Sparkles, Trash2, Zap } from '@/lib/icons'
@@ -22,7 +23,6 @@ import {
   listWorkflowRunEvents,
   listWorkflowRuns,
   listWorkflowSkillCapabilities,
-  listWorkflowToolCapabilities,
   listWorkflowTriggers,
   runWorkflowAgent,
   updateWorkflowAgent,
@@ -32,26 +32,26 @@ import {
   type WorkflowRun,
   type WorkflowRunEvent,
   type WorkflowSkillCapability,
-  type WorkflowToolCapability,
   type WorkflowTrigger,
   type WorkflowTriggerType
 } from '@/lib/verxio-api'
 
 import { OverlayView } from '../overlays/overlay-view'
 
-type AgentTab = 'instructions' | 'skills' | 'knowledge' | 'tools' | 'integrations' | 'triggers' | 'runs'
+type AgentTab = 'instructions' | 'skills' | 'knowledge' | 'integrations' | 'triggers' | 'runs'
 
 const AGENT_TABS: Array<{ id: AgentTab; label: string }> = [
   { id: 'instructions', label: 'Instructions' },
   { id: 'skills', label: 'Skills' },
   { id: 'knowledge', label: 'Knowledge' },
-  { id: 'tools', label: 'Tools' },
   { id: 'integrations', label: 'Integrations' },
   { id: 'triggers', label: 'Triggers' },
   { id: 'runs', label: 'Runs' }
 ]
 
 const TRIGGER_TYPES: WorkflowTriggerType[] = ['manual', 'webhook', 'schedule', 'api', 'app_event', 'chat']
+const AGENT_PAGE_SIZE = 8
+const PANEL_PAGE_SIZE = 6
 
 interface AgentsViewProps {
   onClose: () => void
@@ -67,7 +67,6 @@ interface DraftState {
   name: string
   role: string
   skillsText: string
-  toolsText: string
 }
 
 function draftFromAgent(agent?: WorkflowAgent | null): DraftState {
@@ -80,8 +79,7 @@ function draftFromAgent(agent?: WorkflowAgent | null): DraftState {
     knowledgeText: (agent?.knowledge ?? []).join('\n'),
     name: agent?.name ?? '',
     role: agent?.role ?? '',
-    skillsText: (agent?.skills ?? []).join('\n'),
-    toolsText: (agent?.tools ?? []).join('\n')
+    skillsText: (agent?.skills ?? []).join('\n')
   }
 }
 
@@ -117,8 +115,6 @@ export function AgentsView({ onClose }: AgentsViewProps) {
   const [integrationCapabilityErrors, setIntegrationCapabilityErrors] = useState<string[]>([])
   const [skillCapabilities, setSkillCapabilities] = useState<WorkflowSkillCapability[]>([])
   const [skillCapabilityErrors, setSkillCapabilityErrors] = useState<string[]>([])
-  const [toolCapabilities, setToolCapabilities] = useState<WorkflowToolCapability[]>([])
-  const [toolCapabilityErrors, setToolCapabilityErrors] = useState<string[]>([])
   const [tab, setTab] = useState<AgentTab>('instructions')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -131,11 +127,10 @@ export function AgentsView({ onClose }: AgentsViewProps) {
     setLoading(true)
 
     try {
-      const [result, skillsResult, knowledgeResult, toolsResult, integrationsResult] = await Promise.allSettled([
+      const [result, skillsResult, knowledgeResult, integrationsResult] = await Promise.allSettled([
         listWorkflowAgents(),
         listWorkflowSkillCapabilities(),
         listKnowledgeBases(),
-        listWorkflowToolCapabilities(),
         listWorkflowIntegrationCapabilities()
       ])
 
@@ -155,16 +150,6 @@ export function AgentsView({ onClose }: AgentsViewProps) {
 
       if (knowledgeResult.status === 'fulfilled') {
         setKnowledgeBases(knowledgeResult.value.knowledge_bases)
-      }
-
-      if (toolsResult.status === 'fulfilled') {
-        setToolCapabilities(toolsResult.value.tools)
-        setToolCapabilityErrors(toolsResult.value.errors)
-      } else {
-        setToolCapabilities([])
-        setToolCapabilityErrors([
-          toolsResult.reason instanceof Error ? toolsResult.reason.message : 'Could not load tools.'
-        ])
       }
 
       if (integrationsResult.status === 'fulfilled') {
@@ -232,8 +217,7 @@ export function AgentsView({ onClose }: AgentsViewProps) {
       knowledge: lines(draft.knowledgeText),
       name: draft.name,
       role: draft.role,
-      skills: lines(draft.skillsText),
-      tools: lines(draft.toolsText)
+      skills: lines(draft.skillsText)
     }
 
     try {
@@ -335,8 +319,6 @@ export function AgentsView({ onClose }: AgentsViewProps) {
               skillCapabilities={skillCapabilities}
               skillCapabilityErrors={skillCapabilityErrors}
               tab={tab}
-              toolCapabilities={toolCapabilities}
-              toolCapabilityErrors={toolCapabilityErrors}
             />
             {selected ? (
               <>
@@ -380,6 +362,17 @@ function AgentList({
   onSelect: (id: string) => void
   selectedId: null | string
 }) {
+  const [page, setPage] = useState(1)
+  const visibleAgents = agents.slice((page - 1) * AGENT_PAGE_SIZE, page * AGENT_PAGE_SIZE)
+
+  useEffect(() => {
+    const pageCount = Math.max(1, Math.ceil(agents.length / AGENT_PAGE_SIZE))
+
+    if (page > pageCount) {
+      setPage(pageCount)
+    }
+  }, [agents.length, page])
+
   if (agents.length === 0) {
     return (
       <aside className="grid place-items-center rounded-md border border-dashed border-(--stroke-nous) p-5 text-center">
@@ -399,9 +392,9 @@ function AgentList({
   }
 
   return (
-    <aside className="min-h-0 overflow-y-auto rounded-md border border-(--stroke-nous) p-2">
-      <div className="grid gap-1">
-        {agents.map(agent => (
+    <aside className="flex min-h-0 flex-col rounded-md border border-(--stroke-nous) p-2">
+      <div className="grid min-h-0 flex-1 content-start gap-1 overflow-y-auto">
+        {visibleAgents.map(agent => (
           <button
             className={cn(
               'grid gap-1 rounded-md px-3 py-2 text-left transition-colors hover:bg-(--chrome-action-hover)',
@@ -421,6 +414,14 @@ function AgentList({
           </button>
         ))}
       </div>
+      <PaginationControl
+        className="mt-2 border-t border-(--stroke-nous) pt-2"
+        itemLabel="agents"
+        onPageChange={setPage}
+        page={page}
+        pageSize={AGENT_PAGE_SIZE}
+        total={agents.length}
+      />
     </aside>
   )
 }
@@ -439,9 +440,7 @@ function AgentEditor({
   setTab,
   skillCapabilities,
   skillCapabilityErrors,
-  tab,
-  toolCapabilities,
-  toolCapabilityErrors
+  tab
 }: {
   busy: boolean
   draft: DraftState
@@ -457,8 +456,6 @@ function AgentEditor({
   skillCapabilities: WorkflowSkillCapability[]
   skillCapabilityErrors: string[]
   tab: AgentTab
-  toolCapabilities: WorkflowToolCapability[]
-  toolCapabilityErrors: string[]
 }) {
   const patch = (updates: Partial<DraftState>) => onChange({ ...draft, ...updates })
 
@@ -581,15 +578,6 @@ function AgentEditor({
           selected={lines(draft.knowledgeText)}
         />
       ) : null}
-      {tab === 'tools' ? (
-        <ToolSelector
-          disabled={busy}
-          errors={toolCapabilityErrors}
-          onChange={items => patch({ toolsText: items.join('\n') })}
-          selected={lines(draft.toolsText)}
-          tools={toolCapabilities}
-        />
-      ) : null}
       {tab === 'integrations' ? (
         <IntegrationSelector
           disabled={busy}
@@ -600,98 +588,6 @@ function AgentEditor({
         />
       ) : null}
     </section>
-  )
-}
-
-function ToolSelector({
-  disabled,
-  errors,
-  onChange,
-  selected,
-  tools
-}: {
-  disabled: boolean
-  errors: string[]
-  onChange: (items: string[]) => void
-  selected: string[]
-  tools: WorkflowToolCapability[]
-}) {
-  const selectedSet = useMemo(() => new Set(selected), [selected])
-  const missingSelected = selected.filter(name => !tools.some(tool => tool.name === name))
-
-  const toggle = (name: string) => {
-    if (disabled) {
-      return
-    }
-
-    const next = new Set(selectedSet)
-
-    if (next.has(name)) {
-      next.delete(name)
-    } else {
-      next.add(name)
-    }
-
-    onChange(Array.from(next).sort((a, b) => a.localeCompare(b)))
-  }
-
-  return (
-    <div className="grid gap-3">
-      {errors.length > 0 ? (
-        <div className="rounded-md border border-(--stroke-nous) bg-muted/25 px-3 py-2 text-[0.7rem] leading-relaxed text-muted-foreground">
-          {errors.join(' ')}
-        </div>
-      ) : null}
-      {tools.length === 0 ? (
-        <div className="rounded-md border border-dashed border-(--stroke-nous) p-4 text-xs text-muted-foreground">
-          No live tools were reported by the runtime. Saved selections remain attached, and this list will populate when
-          Hermes exposes tool metadata.
-        </div>
-      ) : (
-        <div className="grid gap-2">
-          {tools.map(tool => {
-            const checked = selectedSet.has(tool.name)
-
-            return (
-              <button
-                className={cn(
-                  'grid gap-1 rounded-md border border-(--stroke-nous) p-3 text-left transition-colors hover:bg-(--chrome-action-hover)',
-                  checked && 'border-primary/45 bg-primary/8'
-                )}
-                disabled={disabled}
-                key={tool.name}
-                onClick={() => toggle(tool.name)}
-                type="button"
-              >
-                <span className="flex items-center gap-2 text-xs font-medium">
-                  <span
-                    className={cn(
-                      'grid size-3 place-items-center rounded-sm border',
-                      checked && 'border-primary bg-primary'
-                    )}
-                  >
-                    {checked ? <CheckCircle2 className="size-2.5 text-primary-foreground" /> : null}
-                  </span>
-                  {tool.name}
-                  {tool.category ? (
-                    <span className="text-[0.65rem] font-normal text-muted-foreground">{tool.category}</span>
-                  ) : null}
-                </span>
-                {tool.description ? (
-                  <span className="text-[0.7rem] leading-relaxed text-muted-foreground">{tool.description}</span>
-                ) : null}
-              </button>
-            )
-          })}
-        </div>
-      )}
-      {missingSelected.length > 0 ? (
-        <div className="grid gap-1 rounded-md border border-(--stroke-nous) p-3">
-          <p className="text-xs font-medium">Saved tools not in live catalog</p>
-          <p className="text-[0.7rem] leading-relaxed text-muted-foreground">{missingSelected.join(', ')}</p>
-        </div>
-      ) : null}
-    </div>
   )
 }
 
@@ -710,6 +606,16 @@ function IntegrationSelector({
 }) {
   const selectedSet = useMemo(() => new Set(selected), [selected])
   const missingSelected = selected.filter(slug => !integrations.some(integration => integration.slug === slug))
+  const [page, setPage] = useState(1)
+  const visibleIntegrations = integrations.slice((page - 1) * PANEL_PAGE_SIZE, page * PANEL_PAGE_SIZE)
+
+  useEffect(() => {
+    const pageCount = Math.max(1, Math.ceil(integrations.length / PANEL_PAGE_SIZE))
+
+    if (page > pageCount) {
+      setPage(pageCount)
+    }
+  }, [integrations.length, page])
 
   const toggle = (slug: string) => {
     if (disabled) {
@@ -740,7 +646,7 @@ function IntegrationSelector({
         </div>
       ) : (
         <div className="grid gap-2">
-          {integrations.map(integration => {
+          {visibleIntegrations.map(integration => {
             const checked = selectedSet.has(integration.slug)
 
             return (
@@ -779,6 +685,13 @@ function IntegrationSelector({
               </button>
             )
           })}
+          <PaginationControl
+            itemLabel="integrations"
+            onPageChange={setPage}
+            page={page}
+            pageSize={PANEL_PAGE_SIZE}
+            total={integrations.length}
+          />
         </div>
       )}
       {missingSelected.length > 0 ? (
@@ -811,8 +724,18 @@ function KnowledgeSelector({
   const [documentContent, setDocumentContent] = useState('')
   const [localBusy, setLocalBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
   const selectedSet = useMemo(() => new Set(selected), [selected])
   const missingSelected = selected.filter(item => !knowledgeBases.some(base => base.id === item || base.name === item))
+  const visibleKnowledgeBases = knowledgeBases.slice((page - 1) * PANEL_PAGE_SIZE, page * PANEL_PAGE_SIZE)
+
+  useEffect(() => {
+    const pageCount = Math.max(1, Math.ceil(knowledgeBases.length / PANEL_PAGE_SIZE))
+
+    if (page > pageCount) {
+      setPage(pageCount)
+    }
+  }, [knowledgeBases.length, page])
 
   const refreshKnowledgeBases = async () => {
     const result = await listKnowledgeBases()
@@ -983,7 +906,7 @@ function KnowledgeSelector({
             No knowledge bases yet. Create one, add documents, then attach it to the agent.
           </div>
         ) : (
-          knowledgeBases.map(base => {
+          visibleKnowledgeBases.map(base => {
             const checked = selectedSet.has(base.id) || selectedSet.has(base.name)
 
             return (
@@ -1033,6 +956,15 @@ function KnowledgeSelector({
             )
           })
         )}
+        {knowledgeBases.length > 0 ? (
+          <PaginationControl
+            itemLabel="knowledge bases"
+            onPageChange={setPage}
+            page={page}
+            pageSize={PANEL_PAGE_SIZE}
+            total={knowledgeBases.length}
+          />
+        ) : null}
       </div>
 
       {missingSelected.length > 0 ? (
@@ -1060,6 +992,16 @@ function SkillSelector({
 }) {
   const selectedSet = useMemo(() => new Set(selected), [selected])
   const missingSelected = selected.filter(name => !skills.some(skill => skill.name === name))
+  const [page, setPage] = useState(1)
+  const visibleSkills = skills.slice((page - 1) * PANEL_PAGE_SIZE, page * PANEL_PAGE_SIZE)
+
+  useEffect(() => {
+    const pageCount = Math.max(1, Math.ceil(skills.length / PANEL_PAGE_SIZE))
+
+    if (page > pageCount) {
+      setPage(pageCount)
+    }
+  }, [page, skills.length])
 
   const toggle = (name: string) => {
     if (disabled) {
@@ -1091,7 +1033,7 @@ function SkillSelector({
         </div>
       ) : (
         <div className="grid gap-2">
-          {skills.map(skill => {
+          {visibleSkills.map(skill => {
             const checked = selectedSet.has(skill.name)
 
             return (
@@ -1125,6 +1067,13 @@ function SkillSelector({
               </button>
             )
           })}
+          <PaginationControl
+            itemLabel="skills"
+            onPageChange={setPage}
+            page={page}
+            pageSize={PANEL_PAGE_SIZE}
+            total={skills.length}
+          />
         </div>
       )}
       {missingSelected.length > 0 ? (
@@ -1156,6 +1105,16 @@ function TriggersPanel({
   const [eventName, setEventName] = useState('payment.succeeded')
   const [configText, setConfigText] = useState('{}')
   const [name, setName] = useState('')
+  const [page, setPage] = useState(1)
+  const visibleTriggers = triggers.slice((page - 1) * PANEL_PAGE_SIZE, page * PANEL_PAGE_SIZE)
+
+  useEffect(() => {
+    const pageCount = Math.max(1, Math.ceil(triggers.length / PANEL_PAGE_SIZE))
+
+    if (page > pageCount) {
+      setPage(pageCount)
+    }
+  }, [page, triggers.length])
 
   const setTriggerType = (value: WorkflowTriggerType) => {
     setType(value)
@@ -1267,7 +1226,7 @@ function TriggersPanel({
         {triggers.length === 0 ? (
           <p className="text-xs text-muted-foreground">No triggers yet. Start with a webhook or manual trigger.</p>
         ) : null}
-        {triggers.map(trigger => (
+        {visibleTriggers.map(trigger => (
           <div className="grid gap-2 rounded-md border border-(--stroke-nous) p-3" key={trigger.id}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -1299,6 +1258,15 @@ function TriggersPanel({
             ) : null}
           </div>
         ))}
+        {triggers.length > 0 ? (
+          <PaginationControl
+            itemLabel="triggers"
+            onPageChange={setPage}
+            page={page}
+            pageSize={PANEL_PAGE_SIZE}
+            total={triggers.length}
+          />
+        ) : null}
       </div>
     </section>
   )
@@ -1322,6 +1290,16 @@ function RunsPanel({
   const [input, setInput] = useState('{\n  "example": true\n}')
   const [eventsByRunId, setEventsByRunId] = useState<Record<string, WorkflowRunEvent[]>>({})
   const [loadingEventsRunId, setLoadingEventsRunId] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const visibleRuns = runs.slice((page - 1) * PANEL_PAGE_SIZE, page * PANEL_PAGE_SIZE)
+
+  useEffect(() => {
+    const pageCount = Math.max(1, Math.ceil(runs.length / PANEL_PAGE_SIZE))
+
+    if (page > pageCount) {
+      setPage(pageCount)
+    }
+  }, [page, runs.length])
 
   const run = async () => {
     let parsed: Record<string, unknown>
@@ -1387,7 +1365,7 @@ function RunsPanel({
       </div>
       <div className="grid gap-2">
         {runs.length === 0 ? <p className="text-xs text-muted-foreground">No runs yet.</p> : null}
-        {runs.map(run => (
+        {visibleRuns.map(run => (
           <div className="grid gap-2 rounded-md border border-(--stroke-nous) p-3" key={run.id}>
             <div className="flex items-center justify-between gap-2">
               <p className="flex items-center gap-2 text-xs font-medium">
@@ -1440,6 +1418,15 @@ function RunsPanel({
             </details>
           </div>
         ))}
+        {runs.length > 0 ? (
+          <PaginationControl
+            itemLabel="runs"
+            onPageChange={setPage}
+            page={page}
+            pageSize={PANEL_PAGE_SIZE}
+            total={runs.length}
+          />
+        ) : null}
       </div>
     </section>
   )
