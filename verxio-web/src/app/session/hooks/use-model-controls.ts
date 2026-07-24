@@ -93,13 +93,16 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
 
       // BYOK: never show Verxio Hosted defaults. Empty / leftover Qwen·Gemini → "no model".
       if (mode === 'byok') {
-        if (!shouldShowByokStatusbarModel(hermesModel, hermesProvider, options, catalog)) {
+        const byokModel = hermesModel || String(options.model || '').trim()
+        const byokProvider = hermesProvider || String(options.provider || '').trim()
+
+        if (!shouldShowByokStatusbarModel(byokModel, byokProvider, options, catalog)) {
           clearStatusbarModel()
 
           return
         }
 
-        applyModelSelection({ model: hermesModel, provider: hermesProvider })
+        applyModelSelection({ model: byokModel, provider: byokProvider })
 
         return
       }

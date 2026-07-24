@@ -1,13 +1,22 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { setModelAssignment } from '@/hermes'
 import type { ModelOptionsResponse } from '@/types/hermes'
 
 import type { VerxioInferenceCatalogResponse, VerxioInferenceSettings } from './verxio-api'
 import {
+  ensureByokDefaultModel,
   hostedModelOptionsFromInference,
   mergeHostedAndRuntimeModelOptions,
   prioritizeLinkedProviders
 } from './verxio-model-options'
+
+vi.mock('@/hermes', () => ({
+  getGlobalModelOptions: vi.fn(),
+  setModelAssignment: vi.fn()
+}))
+
+const mockedSetModelAssignment = vi.mocked(setModelAssignment)
 
 const catalog: VerxioInferenceCatalogResponse = {
   defaultModelId: 'verxio-qwen',
@@ -47,6 +56,10 @@ const catalog: VerxioInferenceCatalogResponse = {
     }
   ]
 }
+
+beforeEach(() => {
+  mockedSetModelAssignment.mockReset()
+})
 
 describe('hostedModelOptionsFromInference', () => {
   it('returns the selected Verxio hosted model group when hosted mode is active', () => {
@@ -290,5 +303,38 @@ describe('prioritizeLinkedProviders', () => {
     })
 
     expect(result.providers?.map(provider => provider.slug)).toEqual(['alibaba', 'openai'])
+  })
+})
+
+describe('ensureByokDefaultModel', () => {
+  it('persists the first authenticated provider model when BYOK has no selected model', async () => {
+    mockedSetModelAssignment.mockResolvedValue({
+      gateway_tools: [],
+      model_info: null,
+      ok: true,
+      provider: 'openai-codex',
+      model: 'gpt-5.6-sol'
+    })
+
+    const result = await ensureByokDefaultModel({
+      providers: [
+        {
+          authenticated: true,
+          models: ['gpt-5.6-sol', 'gpt-5-mini'],
+          name: 'ChatGPT',
+          slug: 'openai-codex'
+        }
+      ]
+    })
+
+    expect(result).toMatchObject({
+      model: 'gpt-5.6-sol',
+      provider: 'openai-codex'
+    })
+    expect(mockedSetModelAssignment).toHaveBeenCalledWith({
+      model: 'gpt-5.6-sol',
+      provider: 'openai-codex',
+      scope: 'main'
+    })
   })
 })

@@ -1,4 +1,4 @@
-import { getGlobalModelOptions } from '@/hermes'
+import { getGlobalModelOptions, setModelAssignment } from '@/hermes'
 import {
   getInferenceCatalog,
   getInferenceSettings,
@@ -110,6 +110,52 @@ function configuredRuntimeProviders(options: ModelOptionsResponse): ModelOptionP
   return (options.providers ?? []).filter(
     provider => provider.authenticated !== false && (provider.models ?? []).length > 0
   )
+}
+
+function firstConfiguredRuntimeModel(options: ModelOptionsResponse): { model: string; provider: string } | null {
+  const provider = configuredRuntimeProviders(options)[0]
+  const model = provider?.models?.[0]
+
+  if (!provider?.slug || !model) {
+    return null
+  }
+
+  return {
+    model: String(model),
+    provider: String(provider.slug)
+  }
+}
+
+export async function ensureByokDefaultModel(options: ModelOptionsResponse): Promise<ModelOptionsResponse> {
+  const currentModel = String(options.model || '').trim()
+  const currentProvider = String(options.provider || '').trim()
+
+  if (currentModel && currentProvider) {
+    return options
+  }
+
+  const fallback = firstConfiguredRuntimeModel(options)
+
+  if (!fallback) {
+    return options
+  }
+
+  try {
+    await setModelAssignment({
+      model: fallback.model,
+      provider: fallback.provider,
+      scope: 'main'
+    })
+  } catch {
+    // The picker/statusbar can still use this session-safe default. Persistence
+    // will retry the next time the user explicitly selects a model.
+  }
+
+  return {
+    ...options,
+    model: fallback.model,
+    provider: fallback.provider
+  }
 }
 
 /** Pin Verxio-hosted, then linked/authenticated providers, above the rest. */
@@ -263,10 +309,10 @@ export async function getScopedModelOptions(
     }
 
     // BYOK: only linked Hermes providers; never keep a stale Verxio-hosted row.
-    return prioritizeLinkedProviders(await runtimeOptionsPromise, { dropHosted: true })
+    return ensureByokDefaultModel(prioritizeLinkedProviders(await runtimeOptionsPromise, { dropHosted: true }))
   } catch {
     // If the Verxio control-plane call hiccups, keep the model picker usable.
   }
 
-  return prioritizeLinkedProviders(await runtimeOptionsPromise, { dropHosted: true })
+  return ensureByokDefaultModel(prioritizeLinkedProviders(await runtimeOptionsPromise, { dropHosted: true }))
 }
