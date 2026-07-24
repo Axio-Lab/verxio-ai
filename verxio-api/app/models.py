@@ -801,6 +801,18 @@ class WorkflowAgentsResponse(BaseModel):
     agents: list[WorkflowAgentRecord]
 
 
+class WorkflowSkillCapability(BaseModel):
+    name: str
+    description: str = ""
+    category: str = ""
+    enabled: bool = True
+
+
+class WorkflowSkillCapabilitiesResponse(BaseModel):
+    skills: list[WorkflowSkillCapability]
+    errors: list[str] = Field(default_factory=list)
+
+
 class WorkflowTriggerRecord(BaseModel):
     id: str
     tenant_id: str

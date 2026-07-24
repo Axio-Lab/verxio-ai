@@ -149,6 +149,7 @@ from app.models import (
     WorkflowRunEventsResponse,
     WorkflowRunRecord,
     WorkflowRunsResponse,
+    WorkflowSkillCapabilitiesResponse,
     WorkflowTriggerCreateRequest,
     WorkflowTriggerRecord,
     WorkflowTriggersResponse,
@@ -222,6 +223,7 @@ from app.workflow_agents import (
     list_agents as list_workflow_agents,
     list_run_events as list_workflow_run_events,
     list_runs as list_workflow_runs,
+    list_skill_capabilities as list_workflow_skill_capabilities,
     list_triggers as list_workflow_triggers,
     run_agent as run_workflow_agent,
     run_webhook_trigger,
@@ -814,6 +816,12 @@ async def list_workflow_agents_route(request: Request) -> WorkflowAgentsResponse
     user = require_user(request)
     workspace, profile, _runtime_instance = get_context_for_user(user)
     return list_workflow_agents(workspace, profile)
+
+
+@app.get("/api/workflow-agents/capabilities/skills", response_model=WorkflowSkillCapabilitiesResponse)
+async def list_workflow_skill_capabilities_route(request: Request) -> WorkflowSkillCapabilitiesResponse:
+    require_user(request)
+    return await list_workflow_skill_capabilities()
 
 
 @app.post("/api/workflow-agents", response_model=WorkflowAgentRecord)

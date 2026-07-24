@@ -14,12 +14,14 @@ import {
   deleteWorkflowTrigger,
   listWorkflowAgents,
   listWorkflowRuns,
+  listWorkflowSkillCapabilities,
   listWorkflowTriggers,
   runWorkflowAgent,
   updateWorkflowAgent,
   updateWorkflowTrigger,
   type WorkflowAgent,
   type WorkflowRun,
+  type WorkflowSkillCapability,
   type WorkflowTrigger,
   type WorkflowTriggerType
 } from '@/lib/verxio-api'
@@ -99,6 +101,8 @@ export function AgentsView({ onClose }: AgentsViewProps) {
   const [draft, setDraft] = useState<DraftState>(() => draftFromAgent())
   const [triggers, setTriggers] = useState<WorkflowTrigger[]>([])
   const [runs, setRuns] = useState<WorkflowRun[]>([])
+  const [skillCapabilities, setSkillCapabilities] = useState<WorkflowSkillCapability[]>([])
+  const [skillCapabilityErrors, setSkillCapabilityErrors] = useState<string[]>([])
   const [tab, setTab] = useState<AgentTab>('instructions')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -111,9 +115,24 @@ export function AgentsView({ onClose }: AgentsViewProps) {
     setLoading(true)
 
     try {
-      const result = await listWorkflowAgents()
-      setAgents(result.agents)
-      setSelectedId(current => current ?? result.agents[0]?.id ?? null)
+      const [result, skillsResult] = await Promise.allSettled([listWorkflowAgents(), listWorkflowSkillCapabilities()])
+
+      if (skillsResult.status === 'fulfilled') {
+        setSkillCapabilities(skillsResult.value.skills)
+        setSkillCapabilityErrors(skillsResult.value.errors)
+      } else {
+        setSkillCapabilities([])
+        setSkillCapabilityErrors([
+          skillsResult.reason instanceof Error ? skillsResult.reason.message : 'Could not load skills.'
+        ])
+      }
+
+      if (result.status === 'rejected') {
+        throw result.reason
+      }
+
+      setAgents(result.value.agents)
+      setSelectedId(current => current ?? result.value.agents[0]?.id ?? null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load agents.')
     } finally {
@@ -261,6 +280,8 @@ export function AgentsView({ onClose }: AgentsViewProps) {
               onSave={saveAgent}
               selected={selected}
               setTab={setTab}
+              skillCapabilities={skillCapabilities}
+              skillCapabilityErrors={skillCapabilityErrors}
               tab={tab}
             />
             {selected ? (
@@ -358,6 +379,8 @@ function AgentEditor({
   onSave,
   selected,
   setTab,
+  skillCapabilities,
+  skillCapabilityErrors,
   tab
 }: {
   busy: boolean
@@ -367,6 +390,8 @@ function AgentEditor({
   onSave: () => void
   selected: WorkflowAgent | null
   setTab: (tab: AgentTab) => void
+  skillCapabilities: WorkflowSkillCapability[]
+  skillCapabilityErrors: string[]
   tab: AgentTab
 }) {
   const patch = (updates: Partial<DraftState>) => onChange({ ...draft, ...updates })
@@ -473,11 +498,12 @@ function AgentEditor({
         </div>
       ) : null}
       {tab === 'skills' ? (
-        <ListEditor
+        <SkillSelector
           disabled={busy}
-          label="Skills"
-          onChange={value => patch({ skillsText: value })}
-          value={draft.skillsText}
+          errors={skillCapabilityErrors}
+          onChange={items => patch({ skillsText: items.join('\n') })}
+          selected={lines(draft.skillsText)}
+          skills={skillCapabilities}
         />
       ) : null}
       {tab === 'knowledge' ? (
@@ -534,6 +560,98 @@ function ListEditor({
         integrations.
       </span>
     </label>
+  )
+}
+
+function SkillSelector({
+  disabled,
+  errors,
+  onChange,
+  selected,
+  skills
+}: {
+  disabled: boolean
+  errors: string[]
+  onChange: (items: string[]) => void
+  selected: string[]
+  skills: WorkflowSkillCapability[]
+}) {
+  const selectedSet = useMemo(() => new Set(selected), [selected])
+  const missingSelected = selected.filter(name => !skills.some(skill => skill.name === name))
+
+  const toggle = (name: string) => {
+    if (disabled) {
+      return
+    }
+
+    const next = new Set(selectedSet)
+
+    if (next.has(name)) {
+      next.delete(name)
+    } else {
+      next.add(name)
+    }
+
+    onChange(Array.from(next).sort((a, b) => a.localeCompare(b)))
+  }
+
+  return (
+    <div className="grid gap-3">
+      {errors.length > 0 ? (
+        <div className="rounded-md border border-(--stroke-nous) bg-muted/25 px-3 py-2 text-[0.7rem] leading-relaxed text-muted-foreground">
+          {errors.join(' ')}
+        </div>
+      ) : null}
+      {skills.length === 0 ? (
+        <div className="rounded-md border border-dashed border-(--stroke-nous) p-4 text-xs text-muted-foreground">
+          No live skills were reported by the runtime. Saved selections remain attached, and this list will populate
+          when the runtime exposes skills metadata.
+        </div>
+      ) : (
+        <div className="grid gap-2">
+          {skills.map(skill => {
+            const checked = selectedSet.has(skill.name)
+
+            return (
+              <button
+                className={cn(
+                  'grid gap-1 rounded-md border border-(--stroke-nous) p-3 text-left transition-colors hover:bg-(--chrome-action-hover)',
+                  checked && 'border-primary/45 bg-primary/8'
+                )}
+                disabled={disabled}
+                key={skill.name}
+                onClick={() => toggle(skill.name)}
+                type="button"
+              >
+                <span className="flex items-center gap-2 text-xs font-medium">
+                  <span
+                    className={cn(
+                      'grid size-3 place-items-center rounded-sm border',
+                      checked && 'border-primary bg-primary'
+                    )}
+                  >
+                    {checked ? <CheckCircle2 className="size-2.5 text-primary-foreground" /> : null}
+                  </span>
+                  {skill.name}
+                  {skill.category ? (
+                    <span className="text-[0.65rem] font-normal text-muted-foreground">{skill.category}</span>
+                  ) : null}
+                </span>
+                {skill.description ? (
+                  <span className="text-[0.7rem] leading-relaxed text-muted-foreground">{skill.description}</span>
+                ) : null}
+              </button>
+            )
+          })}
+        </div>
+      )}
+      {missingSelected.length > 0 ? (
+        <div className="grid gap-1 rounded-md border border-(--stroke-nous) p-3">
+          <p className="text-xs font-medium">Saved selections not in live catalog</p>
+          <p className="text-[0.7rem] leading-relaxed text-muted-foreground">{missingSelected.join(', ')}</p>
+        </div>
+      ) : null}
+    </div>
   )
 }
 

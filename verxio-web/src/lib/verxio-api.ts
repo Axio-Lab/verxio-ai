@@ -156,6 +156,18 @@ export interface WorkflowAgentInput {
   tools?: string[]
 }
 
+export interface WorkflowSkillCapability {
+  category: string
+  description: string
+  enabled: boolean
+  name: string
+}
+
+export interface WorkflowSkillCapabilitiesResponse {
+  errors: string[]
+  skills: WorkflowSkillCapability[]
+}
+
 export interface WorkflowTrigger {
   id: string
   tenant_id: string
@@ -821,6 +833,10 @@ export function revokeNotepadShare(noteId: string): Promise<{ ok: boolean }> {
 
 export function listWorkflowAgents(): Promise<{ agents: WorkflowAgent[] }> {
   return verxioFetch<{ agents: WorkflowAgent[] }>('/api/workflow-agents')
+}
+
+export function listWorkflowSkillCapabilities(): Promise<WorkflowSkillCapabilitiesResponse> {
+  return verxioFetch<WorkflowSkillCapabilitiesResponse>('/api/workflow-agents/capabilities/skills')
 }
 
 export function createWorkflowAgent(input: WorkflowAgentInput & { name: string }): Promise<WorkflowAgent> {

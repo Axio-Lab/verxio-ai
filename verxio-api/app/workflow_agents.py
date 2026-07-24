@@ -19,6 +19,8 @@ from app.models import (
     WorkflowRunEventsResponse,
     WorkflowRunRecord,
     WorkflowRunsResponse,
+    WorkflowSkillCapabilitiesResponse,
+    WorkflowSkillCapability,
     WorkflowTriggerCreateRequest,
     WorkflowTriggerRecord,
     WorkflowTriggersResponse,
@@ -26,6 +28,7 @@ from app.models import (
     Workspace,
     new_id,
 )
+from app.runtime import HermesRuntimeAdapter
 from app.runtime_dashboard import run_agent_via_dashboard
 
 
@@ -130,6 +133,30 @@ def _record_run_event(
             now_iso(),
         ),
     )
+
+
+def _skill_from_payload(item: Any) -> WorkflowSkillCapability | None:
+    if isinstance(item, str):
+        name = item.strip()
+        return WorkflowSkillCapability(name=name) if name else None
+    if not isinstance(item, dict):
+        return None
+    name = str(item.get("name") or item.get("id") or "").strip()
+    if not name:
+        return None
+    return WorkflowSkillCapability(
+        name=name,
+        description=str(item.get("description") or item.get("summary") or ""),
+        category=str(item.get("category") or item.get("source") or ""),
+        enabled=bool(item.get("enabled", True)),
+    )
+
+
+async def list_skill_capabilities() -> WorkflowSkillCapabilitiesResponse:
+    metadata = await HermesRuntimeAdapter().metadata()
+    skills = [skill for item in metadata.skills if (skill := _skill_from_payload(item))]
+    skills.sort(key=lambda item: item.name.lower())
+    return WorkflowSkillCapabilitiesResponse(skills=skills, errors=metadata.errors)
 
 
 def list_agents(workspace: Workspace, profile: AgentProfile) -> WorkflowAgentsResponse:
@@ -462,12 +489,13 @@ def _set_run_status(run_id: str, status: str, *, output: str = "", error: str | 
 
 
 def _build_instructions(agent: WorkflowAgentRecord) -> str:
+    skill_lines = [f"- {name}" for name in agent.skills]
     parts = [
         f"You are the Verxio workflow agent named {agent.name}.",
         f"Role: {agent.role or 'Complete the assigned workflow run.'}",
         agent.instructions or "Complete the task using the provided event/input payload.",
         "Respect the per-agent setup below.",
-        f"Skills enabled: {', '.join(agent.skills) or 'none'}",
+        "Selected skills:\n" + ("\n".join(skill_lines) if skill_lines else "none"),
         f"Knowledge sources enabled: {', '.join(agent.knowledge) or 'none'}",
         f"Allowed tools: {', '.join(agent.tools) or 'default workspace tools'}",
         f"Allowed integrations: {', '.join(agent.integrations) or 'none explicitly selected'}",

@@ -270,6 +270,41 @@ def test_workflow_trigger_validation(client):
     assert app_event.status_code == 200
 
 
+def test_workflow_skill_capabilities_use_runtime_metadata(client, monkeypatch):
+    _payload, token = signup(client, "workflow-skills@example.com")
+
+    class FakeAdapter:
+        async def metadata(self):
+            return type(
+                "Metadata",
+                (),
+                {
+                    "skills": [
+                        {
+                            "name": "lead-scoring",
+                            "description": "Score leads against the ICP.",
+                            "category": "sales",
+                            "enabled": True,
+                        }
+                    ],
+                    "errors": [],
+                },
+            )()
+
+    monkeypatch.setattr(workflow_agents, "HermesRuntimeAdapter", FakeAdapter)
+    response = client.get("/api/workflow-agents/capabilities/skills", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+
+    assert response.status_code == 200
+    assert response.json()["skills"] == [
+        {
+            "name": "lead-scoring",
+            "description": "Score leads against the ICP.",
+            "category": "sales",
+            "enabled": True,
+        }
+    ]
+
+
 def test_protected_runtime_endpoint_rejects_anonymous_users(client):
     response = client.get("/api/runtime")
 
