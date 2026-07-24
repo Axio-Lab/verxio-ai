@@ -24,13 +24,7 @@ import { OverlayView } from '../overlays/overlay-view'
 // same visual vocabulary as the chat tool blocks.
 function statusGlyph(status: SubagentStatus, a: Translations['agents']): ReactNode {
   if (status === 'running' || status === 'queued') {
-    return (
-      <BrailleSpinner
-        ariaLabel={a.running}
-        className="size-3.5 shrink-0 text-[0.95rem] text-muted-foreground/80"
-        spinner="breathe"
-      />
-    )
+    return <BrailleSpinner ariaLabel={a.running} className="size-3.5 shrink-0 text-[0.95rem]" spinner="breathe" />
   }
 
   if (status === 'failed' || status === 'interrupted') {
@@ -292,7 +286,7 @@ function StreamLine({
         {active ? (
           <BrailleSpinner
             ariaLabel={t.agents.streaming}
-            className="ml-1 inline-block size-2.5 align-middle text-muted-foreground/70"
+            className="ml-1 inline-block size-2.5 align-middle"
             spinner="breathe"
           />
         ) : null}

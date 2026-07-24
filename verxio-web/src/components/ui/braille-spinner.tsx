@@ -52,7 +52,10 @@ export function BrailleSpinner({ ariaLabel = 'Loading', className, spinner = 'br
   return (
     <span
       aria-label={ariaLabel}
-      className={cn('inline-flex items-center justify-center font-mono leading-none tabular-nums', className)}
+      className={cn(
+        'inline-flex items-center justify-center font-mono leading-none tabular-nums text-primary',
+        className
+      )}
       role="status"
     >
       {spin.frames[frame]}
