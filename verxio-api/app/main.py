@@ -167,6 +167,8 @@ from app.models import (
     WorkflowToolCapabilitiesResponse,
     WorkflowTriggerCreateRequest,
     WorkflowTriggerRecord,
+    WorkflowTriggerRunRequest,
+    WorkflowTriggerRunsResponse,
     WorkflowTriggersResponse,
     WorkflowTriggerUpdateRequest,
     WorkflowWebhookIngestResponse,
@@ -243,7 +245,9 @@ from app.workflow_agents import (
     list_tool_capabilities as list_workflow_tool_capabilities,
     list_triggers as list_workflow_triggers,
     run_agent as run_workflow_agent,
+    run_matching_triggers as run_matching_workflow_triggers,
     run_webhook_trigger,
+    tick_due_schedule_triggers as tick_due_workflow_schedule_triggers,
     update_agent as update_workflow_agent,
     update_trigger as update_workflow_trigger,
 )
@@ -990,6 +994,43 @@ async def run_workflow_agent_route(
     user = require_user(request)
     workspace, profile, _runtime_instance = get_context_for_user(user)
     return await run_workflow_agent(workspace, profile, agent_id, payload)
+
+
+@app.post("/api/workflow-agents/triggers/api", response_model=WorkflowTriggerRunsResponse)
+async def run_workflow_api_triggers_route(
+    payload: WorkflowTriggerRunRequest,
+    request: Request,
+) -> WorkflowTriggerRunsResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return await run_matching_workflow_triggers(workspace, profile, "api", payload.event_name, payload.input)
+
+
+@app.post("/api/workflow-agents/triggers/chat", response_model=WorkflowTriggerRunsResponse)
+async def run_workflow_chat_triggers_route(
+    payload: WorkflowTriggerRunRequest,
+    request: Request,
+) -> WorkflowTriggerRunsResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return await run_matching_workflow_triggers(workspace, profile, "chat", payload.event_name, payload.input)
+
+
+@app.post("/api/workflow-agents/triggers/app-events", response_model=WorkflowTriggerRunsResponse)
+async def run_workflow_app_event_triggers_route(
+    payload: WorkflowTriggerRunRequest,
+    request: Request,
+) -> WorkflowTriggerRunsResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return await run_matching_workflow_triggers(workspace, profile, "app_event", payload.event_name, payload.input)
+
+
+@app.post("/api/workflow-agents/triggers/schedules/tick", response_model=WorkflowTriggerRunsResponse)
+async def tick_workflow_schedule_triggers_route(request: Request) -> WorkflowTriggerRunsResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return await tick_due_workflow_schedule_triggers(workspace, profile)
 
 
 @app.post("/api/workflow-webhooks/{trigger_id}", response_model=WorkflowWebhookIngestResponse)

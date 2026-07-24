@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import secrets
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException, Request
@@ -22,6 +23,7 @@ from app.models import (
     WorkflowRunEventsResponse,
     WorkflowRunRecord,
     WorkflowRunsResponse,
+    WorkflowTriggerRunsResponse,
     WorkflowSkillCapabilitiesResponse,
     WorkflowSkillCapability,
     WorkflowToolCapabilitiesResponse,
@@ -54,6 +56,15 @@ def _json_loads(value: str | None, fallback: Any) -> Any:
 
 def _json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _parse_iso(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def _string_list(value: list[str] | None) -> list[str]:
@@ -109,8 +120,13 @@ def _validate_trigger_payload(trigger_type: str, event_name: str, config: dict[s
         raise HTTPException(status_code=422, detail="Webhook triggers require an event name.")
     if trigger_type == "schedule":
         schedule = str(config.get("schedule") or config.get("cron") or "").strip()
-        if not schedule:
-            raise HTTPException(status_code=422, detail="Schedule triggers require config.schedule or config.cron.")
+        interval = int(config.get("intervalSeconds") or config.get("interval_seconds") or 0)
+        minutes = int(config.get("everyMinutes") or config.get("every_minutes") or 0)
+        if not schedule and interval <= 0 and minutes <= 0:
+            raise HTTPException(
+                status_code=422,
+                detail="Schedule triggers require config.schedule, config.cron, config.everyMinutes, or config.intervalSeconds.",
+            )
     if trigger_type == "app_event":
         app_slug = str(config.get("appSlug") or config.get("app_slug") or "").strip()
         event = str(config.get("event") or event_name or "").strip()
@@ -684,3 +700,106 @@ async def run_webhook_trigger(trigger_id: str, secret: str, payload: dict[str, A
         trigger_id=trigger_id,
         trigger_type="webhook",
     )
+
+
+async def run_trigger(
+    workspace: Workspace,
+    profile: AgentProfile,
+    agent_id: str,
+    trigger_id: str,
+    payload: dict[str, Any],
+) -> WorkflowRunRecord:
+    trigger = get_trigger(workspace, profile, agent_id, trigger_id)
+    if not trigger.enabled:
+        raise HTTPException(status_code=409, detail="Workflow trigger is disabled.")
+    return await run_agent(
+        workspace,
+        profile,
+        agent_id,
+        WorkflowRunCreateRequest(input={"event": trigger.event_name, "payload": payload}),
+        trigger_id=trigger.id,
+        trigger_type=trigger.trigger_type,
+    )
+
+
+async def run_matching_triggers(
+    workspace: Workspace,
+    profile: AgentProfile,
+    trigger_type: str,
+    event_name: str,
+    payload: dict[str, Any],
+) -> WorkflowTriggerRunsResponse:
+    rows = db.fetch_all(
+        """
+        SELECT t.*
+        FROM workflow_triggers t
+        JOIN workflow_agents a ON a.id = t.workflow_agent_id
+        WHERE t.workspace_id = ?
+            AND a.runtime_agent_id = ?
+            AND t.trigger_type = ?
+            AND t.enabled = 1
+            AND (? = '' OR t.event_name = ?)
+        ORDER BY t.updated_at ASC
+        """,
+        (workspace.id, profile.id, trigger_type, event_name.strip(), event_name.strip()),
+    )
+    runs: list[WorkflowRunRecord] = []
+    for row in rows:
+        runs.append(
+            await run_agent(
+                workspace,
+                profile,
+                str(row["workflow_agent_id"]),
+                WorkflowRunCreateRequest(input={"event": row["event_name"], "payload": payload}),
+                trigger_id=str(row["id"]),
+                trigger_type=trigger_type,
+            )
+        )
+    return WorkflowTriggerRunsResponse(runs=runs)
+
+
+async def tick_due_schedule_triggers(workspace: Workspace, profile: AgentProfile) -> WorkflowTriggerRunsResponse:
+    now = datetime.now(timezone.utc)
+    rows = db.fetch_all(
+        """
+        SELECT t.*
+        FROM workflow_triggers t
+        JOIN workflow_agents a ON a.id = t.workflow_agent_id
+        WHERE t.workspace_id = ?
+            AND a.runtime_agent_id = ?
+            AND t.trigger_type = 'schedule'
+            AND t.enabled = 1
+        ORDER BY t.updated_at ASC
+        """,
+        (workspace.id, profile.id),
+    )
+    runs: list[WorkflowRunRecord] = []
+    for row in rows:
+        config = _json_loads(row.get("config_json"), {})
+        interval_seconds = int(config.get("intervalSeconds") or config.get("interval_seconds") or 0)
+        if interval_seconds <= 0:
+            minutes = int(config.get("everyMinutes") or config.get("every_minutes") or 0)
+            interval_seconds = minutes * 60
+        if interval_seconds <= 0:
+            continue
+        last_run = _parse_iso(str(config.get("lastRunAt") or ""))
+        if last_run and (now - last_run).total_seconds() < interval_seconds:
+            continue
+        config["lastRunAt"] = now_iso()
+        db.execute("UPDATE workflow_triggers SET config_json = ?, updated_at = ? WHERE id = ?", (_json_dumps(config), now_iso(), row["id"]))
+        runs.append(
+            await run_agent(
+                workspace,
+                profile,
+                str(row["workflow_agent_id"]),
+                WorkflowRunCreateRequest(
+                    input={
+                        "event": row["event_name"],
+                        "payload": {"scheduledAt": config["lastRunAt"], "config": config},
+                    }
+                ),
+                trigger_id=str(row["id"]),
+                trigger_type="schedule",
+            )
+        )
+    return WorkflowTriggerRunsResponse(runs=runs)

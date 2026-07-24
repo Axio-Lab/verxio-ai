@@ -953,7 +953,16 @@ class WorkflowRunCreateRequest(BaseModel):
     input: dict[str, Any] = Field(default_factory=dict)
 
 
+class WorkflowTriggerRunRequest(BaseModel):
+    event_name: str = Field(default="", max_length=180)
+    input: dict[str, Any] = Field(default_factory=dict)
+
+
 class WorkflowRunsResponse(BaseModel):
+    runs: list[WorkflowRunRecord]
+
+
+class WorkflowTriggerRunsResponse(BaseModel):
     runs: list[WorkflowRunRecord]
 
 

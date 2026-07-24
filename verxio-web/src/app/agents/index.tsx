@@ -1152,18 +1152,35 @@ function TriggersPanel({
 }) {
   const [type, setType] = useState<WorkflowTriggerType>('webhook')
   const [eventName, setEventName] = useState('payment.succeeded')
+  const [configText, setConfigText] = useState('{}')
   const [name, setName] = useState('')
+
+  const setTriggerType = (value: WorkflowTriggerType) => {
+    setType(value)
+
+    if (value === 'schedule') {
+      setEventName('daily.digest')
+      setConfigText('{"everyMinutes":60}')
+    } else if (value === 'app_event') {
+      setEventName('new_record')
+      setConfigText('{"appSlug":"airtable"}')
+    } else {
+      setConfigText('{}')
+    }
+  }
 
   const addTrigger = async () => {
     onBusy(true)
     onError(null)
 
     try {
-      await createWorkflowTrigger(agent.id, { event_name: eventName, name, trigger_type: type })
+      const config = JSON.parse(configText || '{}') as Record<string, unknown>
+
+      await createWorkflowTrigger(agent.id, { config, event_name: eventName, name, trigger_type: type })
       setName('')
       await onRefresh()
     } catch (err) {
-      onError(err instanceof Error ? err.message : 'Could not create trigger.')
+      onError(err instanceof Error ? err.message : 'Could not create trigger. Check the trigger config JSON.')
     } finally {
       onBusy(false)
     }
@@ -1202,7 +1219,7 @@ function TriggersPanel({
       <div className="grid gap-3 rounded-md border border-(--stroke-nous) p-4">
         <h3 className="text-xs font-semibold">Add trigger</h3>
         <div className="grid gap-3 md:grid-cols-[12rem_minmax(0,1fr)_minmax(0,1fr)_auto]">
-          <Select onValueChange={value => setType(value as WorkflowTriggerType)} value={type}>
+          <Select onValueChange={value => setTriggerType(value as WorkflowTriggerType)} value={type}>
             <SelectTrigger size="sm">
               <SelectValue />
             </SelectTrigger>
@@ -1235,6 +1252,13 @@ function TriggersPanel({
             Add
           </Button>
         </div>
+        <Textarea
+          className="min-h-20 font-mono text-[0.72rem]"
+          disabled={busy}
+          onChange={event => setConfigText(event.target.value)}
+          placeholder='{"appSlug":"airtable"} or {"everyMinutes":60}'
+          value={configText}
+        />
       </div>
 
       <div className="grid gap-2">
@@ -1265,6 +1289,11 @@ function TriggersPanel({
                 <span className="wrap-anywhere">URL: {trigger.webhook_url}</span>
                 <span className="wrap-anywhere">Secret header: X-Verxio-Webhook-Secret: {trigger.secret}</span>
               </div>
+            ) : null}
+            {Object.keys(trigger.config || {}).length > 0 ? (
+              <pre className="overflow-x-auto rounded-md bg-muted/35 p-2 text-[0.68rem] text-muted-foreground">
+                {JSON.stringify(trigger.config, null, 2)}
+              </pre>
             ) : null}
           </div>
         ))}

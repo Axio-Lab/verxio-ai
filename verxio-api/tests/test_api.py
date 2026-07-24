@@ -332,6 +332,64 @@ def test_workflow_trigger_validation(client):
     assert app_event.status_code == 200
 
 
+def test_workflow_api_chat_app_and_schedule_triggers_run(client, monkeypatch):
+    _payload, token = signup(client, "workflow-trigger-runner@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    async def fake_oneshot(workspace, profile, user_input, *, instructions=None):
+        assert workspace.id
+        assert profile.id
+        return f"handled {user_input}"
+
+    monkeypatch.setattr(workflow_agents, "run_agent_via_dashboard", fake_oneshot)
+    agent = client.post("/api/workflow-agents", headers=headers, json={"name": "Trigger Agent"}).json()
+
+    for trigger_type, event_name, config in [
+        ("api", "lead.created", {}),
+        ("chat", "lead.question", {}),
+        ("app_event", "new_record", {"appSlug": "airtable"}),
+        ("schedule", "daily.digest", {"everyMinutes": 1}),
+    ]:
+        response = client.post(
+            f"/api/workflow-agents/{agent['id']}/triggers",
+            headers=headers,
+            json={"trigger_type": trigger_type, "event_name": event_name, "config": config},
+        )
+        assert response.status_code == 200
+
+    api_run = client.post(
+        "/api/workflow-agents/triggers/api",
+        headers=headers,
+        json={"event_name": "lead.created", "input": {"lead": "Ada"}},
+    )
+    assert api_run.status_code == 200
+    assert api_run.json()["runs"][0]["trigger_type"] == "api"
+
+    chat_run = client.post(
+        "/api/workflow-agents/triggers/chat",
+        headers=headers,
+        json={"event_name": "lead.question", "input": {"message": "Can you qualify this lead?"}},
+    )
+    assert chat_run.status_code == 200
+    assert chat_run.json()["runs"][0]["trigger_type"] == "chat"
+
+    app_run = client.post(
+        "/api/workflow-agents/triggers/app-events",
+        headers=headers,
+        json={"event_name": "new_record", "input": {"appSlug": "airtable", "recordId": "rec_1"}},
+    )
+    assert app_run.status_code == 200
+    assert app_run.json()["runs"][0]["trigger_type"] == "app_event"
+
+    schedule_run = client.post("/api/workflow-agents/triggers/schedules/tick", headers=headers)
+    assert schedule_run.status_code == 200
+    assert schedule_run.json()["runs"][0]["trigger_type"] == "schedule"
+
+    schedule_again = client.post("/api/workflow-agents/triggers/schedules/tick", headers=headers)
+    assert schedule_again.status_code == 200
+    assert schedule_again.json()["runs"] == []
+
+
 def test_workflow_skill_capabilities_use_runtime_metadata(client, monkeypatch):
     _payload, token = signup(client, "workflow-skills@example.com")
 
