@@ -75,6 +75,7 @@ export type CommandDispatchResponse =
   | PrefillCommandDispatchResponse
 
 export type SidebarNavId =
+  | 'agents'
   | 'artifacts'
   | 'command-center'
   | 'messaging'
