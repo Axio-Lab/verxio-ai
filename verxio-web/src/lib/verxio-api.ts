@@ -158,6 +158,74 @@ export interface WorkflowAgentInput {
   tools?: string[]
 }
 
+export type WorkflowSetupActor = 'gateway' | 'session' | 'web'
+export type WorkflowSetupApprovalRisk =
+  | 'broad_messaging_trigger'
+  | 'destructive_change'
+  | 'external_delivery'
+  | 'paid_or_key_backed_tool'
+  | 'public_link'
+  | 'webhook_callback'
+
+export interface WorkflowSetupTriggerDraft {
+  config: Record<string, unknown>
+  enabled: boolean
+  event_name: string
+  name: string
+  trigger_type: WorkflowTriggerType
+}
+
+export interface WorkflowSetupDeliveryDraft {
+  channel: string
+  config: Record<string, unknown>
+  delivery_type: string
+  destination: string
+  enabled: boolean
+  name: string
+  require_approval: boolean
+  template: string
+}
+
+export interface WorkflowAgentSetupDraftData {
+  agent: WorkflowAgentInput & { name: string }
+  deliveries: WorkflowSetupDeliveryDraft[]
+  missing_setup: string[]
+  notes: string[]
+  triggers: WorkflowSetupTriggerDraft[]
+}
+
+export interface WorkflowAgentSetupApproval {
+  id: string
+  tenant_id: string
+  workspace_id: string
+  workflow_agent_id: string | null
+  setup_draft_id: string
+  risk: WorkflowSetupApprovalRisk
+  action_label: string
+  status: 'approved' | 'pending' | 'rejected'
+  approved_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowAgentSetupDraft {
+  id: string
+  tenant_id: string
+  workspace_id: string
+  workflow_agent_id: string | null
+  source: WorkflowSetupActor
+  source_ref: string
+  prompt: string
+  draft: WorkflowAgentSetupDraftData
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowAgentSetupDraftResponse {
+  approvals: WorkflowAgentSetupApproval[]
+  draft: WorkflowAgentSetupDraft
+}
+
 export interface WorkflowSkillCapability {
   category: string
   description: string
@@ -950,6 +1018,34 @@ export function createWorkflowAgent(input: WorkflowAgentInput & { name: string }
     body: JSON.stringify(input),
     method: 'POST'
   })
+}
+
+export function draftWorkflowAgentSetup(input: {
+  prompt: string
+  source?: WorkflowSetupActor
+  source_ref?: string
+}): Promise<WorkflowAgentSetupDraftResponse> {
+  return verxioFetch<WorkflowAgentSetupDraftResponse>('/api/workflow-agents/draft', {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
+}
+
+export function draftWorkflowAgentSetupUpdate(
+  agentId: string,
+  input: {
+    prompt: string
+    source?: WorkflowSetupActor
+    source_ref?: string
+  }
+): Promise<WorkflowAgentSetupDraftResponse> {
+  return verxioFetch<WorkflowAgentSetupDraftResponse>(
+    `/api/workflow-agents/${encodeURIComponent(agentId)}/draft-update`,
+    {
+      body: JSON.stringify(input),
+      method: 'POST'
+    }
+  )
 }
 
 export function updateWorkflowAgent(agentId: string, input: WorkflowAgentInput): Promise<WorkflowAgent> {

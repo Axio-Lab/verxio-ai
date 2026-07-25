@@ -17,6 +17,8 @@ import {
   deleteKnowledgeBase,
   deleteWorkflowAgent,
   deleteWorkflowTrigger,
+  draftWorkflowAgentSetup,
+  draftWorkflowAgentSetupUpdate,
   type KnowledgeBase,
   listKnowledgeBases,
   listWorkflowAgents,
@@ -29,6 +31,7 @@ import {
   updateWorkflowAgent,
   updateWorkflowTrigger,
   type WorkflowAgent,
+  type WorkflowAgentSetupDraftResponse,
   type WorkflowIntegrationCapability,
   type WorkflowRun,
   type WorkflowRunEvent,
@@ -132,6 +135,9 @@ export function AgentsView({ onClose }: AgentsViewProps) {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [setupDraftResponse, setSetupDraftResponse] = useState<WorkflowAgentSetupDraftResponse | null>(null)
+  const [setupPrompt, setSetupPrompt] = useState('')
+  const [setupBusy, setSetupBusy] = useState(false)
 
   const selected = useMemo(() => agents.find(agent => agent.id === selectedId) ?? null, [agents, selectedId])
 
@@ -316,9 +322,58 @@ export function AgentsView({ onClose }: AgentsViewProps) {
   const createNew = () => {
     setSelectedId(null)
     setDraft({ ...draftFromAgent(), model_id: defaultModelId })
+    setSetupDraftResponse(null)
+    setSetupPrompt('')
     setTriggers([])
     setRuns([])
     setTab('instructions')
+  }
+
+  const generateSetupDraft = async () => {
+    if (!setupPrompt.trim()) {
+      setError('Describe the agent you want to create or update.')
+
+      return
+    }
+
+    setSetupBusy(true)
+    setError(null)
+
+    try {
+      const response = selected
+        ? await draftWorkflowAgentSetupUpdate(selected.id, {
+            prompt: setupPrompt,
+            source: 'web',
+            source_ref: 'agents'
+          })
+        : await draftWorkflowAgentSetup({
+            prompt: setupPrompt,
+            source: 'web',
+            source_ref: 'agents'
+          })
+
+      const agentDraft = response.draft.draft.agent
+
+      setSetupDraftResponse(response)
+      setDraft(current => ({
+        ...current,
+        approval_policy: agentDraft.approval_policy ?? current.approval_policy,
+        description: agentDraft.description ?? current.description,
+        enabled: agentDraft.enabled ?? current.enabled,
+        instructions: agentDraft.instructions ?? current.instructions,
+        integrationsText: (agentDraft.integrations ?? []).join('\n'),
+        knowledgeText: (agentDraft.knowledge ?? []).join('\n'),
+        model_id: agentDraft.model_id || current.model_id || defaultModelId,
+        name: agentDraft.name || current.name,
+        role: agentDraft.role ?? current.role,
+        skillsText: (agentDraft.skills ?? []).join('\n')
+      }))
+      setTab('instructions')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not generate agent setup.')
+    } finally {
+      setSetupBusy(false)
+    }
   }
 
   return (
@@ -373,11 +428,16 @@ export function AgentsView({ onClose }: AgentsViewProps) {
               modelOptions={modelOptions}
               onChange={setDraft}
               onDelete={selected ? removeAgent : undefined}
+              onGenerateSetupDraft={generateSetupDraft}
               onKnowledgeBasesChange={setKnowledgeBases}
               onSave={saveAgent}
               onSkillsRefresh={refreshSkills}
               selected={selected}
+              setSetupPrompt={setSetupPrompt}
               setTab={setTab}
+              setupBusy={setupBusy}
+              setupDraftResponse={setupDraftResponse}
+              setupPrompt={setupPrompt}
               skillCapabilities={skillCapabilities}
               skillCapabilityErrors={skillCapabilityErrors}
               tab={tab}
@@ -499,11 +559,16 @@ function AgentEditor({
   modelOptions,
   onChange,
   onDelete,
+  onGenerateSetupDraft,
   onKnowledgeBasesChange,
   onSave,
   onSkillsRefresh,
   selected,
   setTab,
+  setupBusy,
+  setupDraftResponse,
+  setupPrompt,
+  setSetupPrompt,
   skillCapabilities,
   skillCapabilityErrors,
   tab
@@ -518,11 +583,16 @@ function AgentEditor({
   modelOptions: AgentModelOption[]
   onChange: (draft: DraftState) => void
   onDelete?: () => void
+  onGenerateSetupDraft: () => Promise<void>
   onKnowledgeBasesChange: (knowledgeBases: KnowledgeBase[]) => void
   onSave: () => void
   onSkillsRefresh: () => Promise<void>
   selected: WorkflowAgent | null
   setTab: (tab: AgentTab) => void
+  setupBusy: boolean
+  setupDraftResponse: WorkflowAgentSetupDraftResponse | null
+  setupPrompt: string
+  setSetupPrompt: (value: string) => void
   skillCapabilities: WorkflowSkillCapability[]
   skillCapabilityErrors: string[]
   tab: AgentTab
@@ -532,6 +602,55 @@ function AgentEditor({
 
   return (
     <section className="grid gap-4">
+      <div className="grid gap-3 rounded-md border border-(--stroke-nous) p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-xs font-semibold text-foreground">Setup assistant</h3>
+            <p className="text-[0.7rem] leading-relaxed text-muted-foreground">
+              Describe the workflow, then review and edit the generated setup below.
+            </p>
+          </div>
+          {setupDraftResponse ? (
+            <span className="rounded-full border border-primary/25 bg-primary/8 px-2 py-1 text-[0.65rem] font-medium text-primary">
+              Draft applied
+            </span>
+          ) : null}
+        </div>
+        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
+          <Textarea
+            className="min-h-24"
+            disabled={busy || setupBusy}
+            onChange={event => setSetupPrompt(event.target.value)}
+            placeholder="Create a payment delivery agent. Trigger it when Paystack payment succeeds. Send WhatsApp to the customer, notify Slack ops, use our delivery policy KB, and ask for approval if confidence is low."
+            value={setupPrompt}
+          />
+          <Button
+            className="md:self-start"
+            disabled={busy || setupBusy || !setupPrompt.trim()}
+            onClick={() => void onGenerateSetupDraft()}
+            size="sm"
+          >
+            {setupBusy ? (
+              <Loader className="size-4 text-primary" label="Generating setup" strokeScale={0.7} type="rose-two" />
+            ) : (
+              <Sparkles className="size-4" />
+            )}
+            Generate setup
+          </Button>
+        </div>
+        {setupBusy ? (
+          <div className="grid min-h-24 place-items-center rounded-md border border-dashed border-(--stroke-nous)">
+            <Loader
+              className="size-8 text-primary"
+              label="Generating agent setup"
+              strokeScale={0.72}
+              type="rose-curve"
+            />
+          </div>
+        ) : null}
+        {setupDraftResponse ? <SetupDraftReview response={setupDraftResponse} /> : null}
+      </div>
+
       <div className="grid gap-3 rounded-md border border-(--stroke-nous) p-4">
         <div className="grid gap-3 md:grid-cols-2">
           <label className="grid gap-1.5 text-xs font-medium">
@@ -603,7 +722,7 @@ function AgentEditor({
             ) : null}
             <Button disabled={busy} onClick={onSave} size="sm">
               {busy ? (
-                <Loader className="size-4" label="Saving agent" strokeScale={0.7} type="rose-two" />
+                <Loader className="size-4 text-primary" label="Saving agent" strokeScale={0.7} type="rose-two" />
               ) : (
                 <Save className="size-4" />
               )}
@@ -683,6 +802,95 @@ function AgentEditor({
         />
       ) : null}
     </section>
+  )
+}
+
+function SetupDraftReview({ response }: { response: WorkflowAgentSetupDraftResponse }) {
+  const { draft } = response.draft
+  const pendingApprovals = response.approvals.filter(approval => approval.status === 'pending')
+
+  return (
+    <div className="grid gap-3 rounded-md border border-(--stroke-nous) bg-muted/20 p-3">
+      <div className="grid gap-2 md:grid-cols-3">
+        <SetupDraftMetric label="Triggers" value={draft.triggers.length} />
+        <SetupDraftMetric label="Delivery" value={draft.deliveries.length} />
+        <SetupDraftMetric label="Approvals" value={pendingApprovals.length} />
+      </div>
+
+      {draft.notes.length > 0 ? (
+        <div className="grid gap-1">
+          <p className="text-[0.7rem] font-medium text-foreground">Setup notes</p>
+          <div className="grid gap-1">
+            {draft.notes.map(note => (
+              <p className="text-[0.7rem] leading-relaxed text-muted-foreground" key={note}>
+                {note}
+              </p>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {draft.missing_setup.length > 0 ? (
+        <div className="grid gap-1 rounded-md border border-amber-500/25 bg-amber-500/8 p-2">
+          <p className="text-[0.7rem] font-medium text-foreground">Needs setup before activation</p>
+          <p className="text-[0.7rem] leading-relaxed text-muted-foreground">{draft.missing_setup.join(', ')}</p>
+        </div>
+      ) : null}
+
+      <div className="grid gap-2 md:grid-cols-2">
+        <SetupDraftList
+          empty="No trigger draft generated."
+          items={draft.triggers.map(
+            trigger => `${trigger.name} · ${trigger.trigger_type} · ${trigger.enabled ? 'enabled' : 'disabled'}`
+          )}
+          title="Generated triggers"
+        />
+        <SetupDraftList
+          empty="No delivery draft generated."
+          items={draft.deliveries.map(
+            delivery =>
+              `${delivery.name} · ${delivery.delivery_type}${delivery.channel ? ` · ${delivery.channel}` : ''} · ${
+                delivery.enabled ? 'enabled' : 'disabled'
+              }`
+          )}
+          title="Generated delivery"
+        />
+      </div>
+
+      {pendingApprovals.length > 0 ? (
+        <SetupDraftList
+          empty="No approvals needed."
+          items={pendingApprovals.map(approval => `${approval.action_label} · ${approval.risk.replace(/_/g, ' ')}`)}
+          title="Approval required"
+        />
+      ) : null}
+    </div>
+  )
+}
+
+function SetupDraftMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-md border border-(--stroke-nous) bg-background/60 px-3 py-2">
+      <p className="text-[0.65rem] text-muted-foreground">{label}</p>
+      <p className="text-sm font-semibold text-foreground">{value}</p>
+    </div>
+  )
+}
+
+function SetupDraftList({ empty, items, title }: { empty: string; items: string[]; title: string }) {
+  return (
+    <div className="grid content-start gap-1 rounded-md border border-(--stroke-nous) bg-background/60 p-2">
+      <p className="text-[0.7rem] font-medium text-foreground">{title}</p>
+      {items.length === 0 ? (
+        <p className="text-[0.7rem] leading-relaxed text-muted-foreground">{empty}</p>
+      ) : (
+        items.map(item => (
+          <p className="text-[0.7rem] leading-relaxed text-muted-foreground" key={item}>
+            {item}
+          </p>
+        ))
+      )}
+    </div>
   )
 }
 
@@ -943,7 +1151,12 @@ function KnowledgeSelector({
           />
           <Button disabled={disabled || localBusy} onClick={addKnowledgeBase} size="sm">
             {localBusy ? (
-              <Loader className="size-4" label="Creating knowledge base" strokeScale={0.7} type="rose-two" />
+              <Loader
+                className="size-4 text-primary"
+                label="Creating knowledge base"
+                strokeScale={0.7}
+                type="rose-two"
+              />
             ) : (
               <Plus className="size-4" />
             )}
@@ -979,7 +1192,7 @@ function KnowledgeSelector({
           />
           <Button disabled={disabled || localBusy} onClick={addDocument} size="sm">
             {localBusy ? (
-              <Loader className="size-4" label="Adding document" strokeScale={0.7} type="rose-two" />
+              <Loader className="size-4 text-primary" label="Adding document" strokeScale={0.7} type="rose-two" />
             ) : (
               <Plus className="size-4" />
             )}
@@ -1342,7 +1555,7 @@ function TriggersPanel({
           />
           <Button disabled={busy} onClick={addTrigger} size="sm">
             {busy ? (
-              <Loader className="size-4" label="Creating trigger" strokeScale={0.7} type="rose-two" />
+              <Loader className="size-4 text-primary" label="Creating trigger" strokeScale={0.7} type="rose-two" />
             ) : (
               <Plus className="size-4" />
             )}
@@ -1492,7 +1705,7 @@ function RunsPanel({
         />
         <Button className="w-fit" disabled={busy} onClick={run} size="sm">
           {busy ? (
-            <Loader className="size-4" label="Running agent" strokeScale={0.7} type="rose-two" />
+            <Loader className="size-4 text-primary" label="Running agent" strokeScale={0.7} type="rose-two" />
           ) : (
             <Send className="size-4" />
           )}
@@ -1535,7 +1748,12 @@ function RunsPanel({
               <summary className="cursor-pointer">Events</summary>
               <div className="mt-2 grid gap-2 rounded-md bg-muted/35 p-2">
                 {loadingEventsRunId === run.id ? (
-                  <Loader className="size-4" label="Loading run events" strokeScale={0.7} type="rose-two" />
+                  <Loader
+                    className="size-4 text-primary"
+                    label="Loading run events"
+                    strokeScale={0.7}
+                    type="rose-two"
+                  />
                 ) : null}
                 {(eventsByRunId[run.id] || []).map(event => (
                   <div className="grid gap-1 border-l-2 border-primary/45 pl-2" key={event.id}>
