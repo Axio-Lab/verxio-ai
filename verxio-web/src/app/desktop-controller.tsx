@@ -123,6 +123,7 @@ import { useGroupRegistry } from './shell/use-group-registry'
 import { UpdatesOverlay } from './updates-overlay'
 
 const AgentsView = lazy(async () => ({ default: (await import('./agents')).AgentsView }))
+const ActivityView = lazy(async () => ({ default: (await import('./activity')).ActivityView }))
 const ArtifactsView = lazy(async () => ({ default: (await import('./artifacts')).ArtifactsView }))
 const CommandCenterView = lazy(async () => ({ default: (await import('./command-center')).CommandCenterView }))
 const CronView = lazy(async () => ({ default: (await import('./cron')).CronView }))
@@ -219,6 +220,7 @@ export function DesktopController() {
   const getRouteToken = useCallback(() => routeTokenRef.current, [])
 
   const {
+    activityOpen,
     agentsOpen,
     chatOpen,
     closeOverlayToPreviousRoute,
@@ -226,6 +228,7 @@ export function DesktopController() {
     commandCenterOpen,
     cronOpen,
     currentView,
+    openActivity,
     profilesOpen,
     settingsOpen,
     toggleCommandCenter
@@ -807,10 +810,12 @@ export function DesktopController() {
   })
 
   const { leftStatusbarItems, statusbarItems } = useStatusbarItems({
+    activityOpen,
     commandCenterOpen,
     extraLeftItems: statusbarItemGroups.flat.left,
     extraRightItems: statusbarItemGroups.flat.right,
     modelMenuContent,
+    openActivity,
     toggleCommandCenter
   })
 
@@ -896,6 +901,12 @@ export function DesktopController() {
       {agentsOpen && (
         <Suspense fallback={null}>
           <AgentsView onClose={closeOverlayToPreviousRoute} />
+        </Suspense>
+      )}
+
+      {activityOpen && (
+        <Suspense fallback={null}>
+          <ActivityView onClose={closeOverlayToPreviousRoute} />
         </Suspense>
       )}
 

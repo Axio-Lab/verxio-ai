@@ -30,18 +30,22 @@ import { CRON_ROUTE } from '../../routes'
 import type { StatusbarItem } from '../statusbar-controls'
 
 interface StatusbarItemsOptions {
+  activityOpen: boolean
   commandCenterOpen: boolean
   extraLeftItems: readonly StatusbarItem[]
   extraRightItems: readonly StatusbarItem[]
   modelMenuContent?: ReactNode
+  openActivity: () => void
   toggleCommandCenter: () => void
 }
 
 export function useStatusbarItems({
+  activityOpen,
   commandCenterOpen,
   extraLeftItems,
   extraRightItems,
   modelMenuContent,
+  openActivity,
   toggleCommandCenter
 }: StatusbarItemsOptions) {
   const { t } = useI18n()
@@ -122,7 +126,10 @@ export function useStatusbarItems({
         variant: 'text'
       },
       {
-        className: cn(bgFailed > 0 && 'text-destructive hover:text-destructive'),
+        className: cn(
+          activityOpen && 'bg-accent/55 text-foreground',
+          bgFailed > 0 && 'text-destructive hover:text-destructive'
+        ),
         detail:
           subagentsRunning > 0
             ? copy.subagents(subagentsRunning)
@@ -141,8 +148,9 @@ export function useStatusbarItems({
           ),
         id: 'activity',
         label: copy.agents,
+        onSelect: openActivity,
         title: copy.openAgents,
-        variant: 'text'
+        variant: 'action'
       },
       {
         icon: <Clock className="size-3" />,
@@ -154,11 +162,13 @@ export function useStatusbarItems({
       }
     ],
     [
+      activityOpen,
       bgFailed,
       bgRunning,
       commandCenterOpen,
       copy,
       gatewayRestarting,
+      openActivity,
       serverConnected,
       serverConnecting,
       subagentsRunning,

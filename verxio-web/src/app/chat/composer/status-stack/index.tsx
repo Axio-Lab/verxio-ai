@@ -3,7 +3,7 @@ import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef } from 'rea
 import { useNavigate } from 'react-router-dom'
 
 import { blurComposerInput } from '@/app/chat/composer/focus'
-import { AGENTS_ROUTE, sessionRoute } from '@/app/routes'
+import { ACTIVITY_ROUTE, sessionRoute } from '@/app/routes'
 import { composerDockCard } from '@/components/chat/composer-dock'
 import { StatusSection } from '@/components/chat/status-section'
 import { Button } from '@/components/ui/button'
@@ -83,10 +83,10 @@ export function ComposerStatusStack({ queue, sessionId }: ComposerStatusStackPro
     return () => clearInterval(timer)
   }, [hasRunningBackground, sessionId])
 
-  const openAgents = () => navigate(AGENTS_ROUTE)
+  const openActivity = () => navigate(ACTIVITY_ROUTE)
 
   const openSubagent = (item: ComposerStatusItem) =>
-    item.sessionId ? navigate(sessionRoute(item.sessionId)) : openAgents()
+    item.sessionId ? navigate(sessionRoute(item.sessionId)) : openActivity()
 
   const sections: { key: string; node: ReactNode }[] = groups.map(group => ({
     key: group.type,
@@ -96,7 +96,7 @@ export function ComposerStatusStack({ queue, sessionId }: ComposerStatusStackPro
           group.type === 'subagent' ? (
             <Button
               className="text-muted-foreground/75 hover:text-foreground/90"
-              onClick={openAgents}
+              onClick={openActivity}
               size="micro"
               type="button"
               variant="text"

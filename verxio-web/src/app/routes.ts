@@ -15,9 +15,11 @@ export const NOTEPAD_ROUTE = '/notepad'
 export const CRON_ROUTE = '/cron'
 export const PROFILES_ROUTE = '/profiles'
 export const AGENTS_ROUTE = '/agents'
+export const ACTIVITY_ROUTE = '/activity'
 export const NOT_FOUND_ROUTE = '/404'
 
 export type AppView =
+  | 'activity'
   | 'agents'
   | 'artifacts'
   | 'chat'
@@ -31,6 +33,7 @@ export type AppView =
   | 'skills'
 
 export type AppRouteId =
+  | 'activity'
   | 'agents'
   | 'artifacts'
   | 'command-center'
@@ -60,6 +63,7 @@ export const APP_ROUTES = [
   { id: 'notepad', path: NOTEPAD_ROUTE, view: 'notepad' },
   { id: 'cron', path: CRON_ROUTE, view: 'cron' },
   { id: 'profiles', path: PROFILES_ROUTE, view: 'profiles' },
+  { id: 'activity', path: ACTIVITY_ROUTE, view: 'activity' },
   { id: 'agents', path: AGENTS_ROUTE, view: 'agents' }
 ] as const satisfies readonly AppRoute[]
 
@@ -78,7 +82,14 @@ const RESERVED_PATHS: ReadonlySet<string> = new Set([
 // Views that render as a full-screen modal card (OverlayView) over the shell.
 // While one is open the app's titlebar control clusters must hide so they don't
 // bleed over the overlay (they sit at a higher z-index than the overlay card).
-export const OVERLAY_VIEWS: ReadonlySet<AppView> = new Set(['agents', 'command-center', 'cron', 'profiles', 'settings'])
+export const OVERLAY_VIEWS: ReadonlySet<AppView> = new Set([
+  'activity',
+  'agents',
+  'command-center',
+  'cron',
+  'profiles',
+  'settings'
+])
 
 export function isOverlayView(view: AppView): boolean {
   return OVERLAY_VIEWS.has(view)
