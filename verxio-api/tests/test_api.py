@@ -262,10 +262,21 @@ def test_workflow_delivery_crud_and_run_events(client, monkeypatch):
     )
     assert whatsapp.status_code == 200
     assert whatsapp.json()["require_approval"] is True
+    composio_delivery = client.post(
+        f"/api/workflow-agents/{agent['id']}/deliveries",
+        headers=headers,
+        json={
+            "delivery_type": "composio_action",
+            "name": "Slack ops action",
+            "channel": "slack",
+            "config": {"action": "SLACK_SENDS_A_MESSAGE_TO_A_SLACK_CHANNEL", "appSlug": "slack"},
+        },
+    )
+    assert composio_delivery.status_code == 200
 
     listed = client.get(f"/api/workflow-agents/{agent['id']}/deliveries", headers=headers)
     assert listed.status_code == 200
-    assert len(listed.json()["deliveries"]) == 2
+    assert len(listed.json()["deliveries"]) == 3
 
     updated = client.put(
         f"/api/workflow-agents/{agent['id']}/deliveries/{whatsapp.json()['id']}",
@@ -286,7 +297,10 @@ def test_workflow_delivery_crud_and_run_events(client, monkeypatch):
     assert events.status_code == 200
     event_types = [event["event_type"] for event in events.json()["events"]]
     assert event_types.count("delivery_saved") == 1
-    assert event_types.count("delivery_queued") == 1
+    assert event_types.count("delivery_queued") == 2
+    composio_event = next(event for event in events.json()["events"] if event["metadata"].get("delivery_id") == composio_delivery.json()["id"])
+    assert composio_event["metadata"]["appSlug"] == "slack"
+    assert composio_event["metadata"]["action"] == "SLACK_SENDS_A_MESSAGE_TO_A_SLACK_CHANNEL"
 
     _other_payload, other_token = signup(client, "workflow-delivery-other@example.com")
     blocked = client.get(
@@ -488,6 +502,7 @@ def test_workflow_api_chat_app_and_schedule_triggers_run(client, monkeypatch):
         ("api", "lead.created", {}),
         ("chat", "lead.question", {}),
         ("app_event", "new_record", {"appSlug": "airtable"}),
+        ("app_event", "new_record", {"appSlug": "slack"}),
         ("schedule", "daily.digest", {"everyMinutes": 1}),
     ]:
         response = client.post(
@@ -519,6 +534,7 @@ def test_workflow_api_chat_app_and_schedule_triggers_run(client, monkeypatch):
         json={"event_name": "new_record", "input": {"appSlug": "airtable", "recordId": "rec_1"}},
     )
     assert app_run.status_code == 200
+    assert len(app_run.json()["runs"]) == 1
     assert app_run.json()["runs"][0]["trigger_type"] == "app_event"
 
     schedule_run = client.post("/api/workflow-agents/triggers/schedules/tick", headers=headers)

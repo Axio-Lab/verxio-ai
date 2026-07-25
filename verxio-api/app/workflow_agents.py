@@ -1445,6 +1445,10 @@ def _record_delivery_events(run: WorkflowRunRecord, output: str) -> None:
             "name": delivery.name,
             "outputPreview": output[:500],
         }
+        if delivery.delivery_type == "composio_action":
+            metadata["action"] = delivery.config.get("action")
+            metadata["appSlug"] = delivery.config.get("appSlug") or delivery.config.get("app_slug") or delivery.channel
+            metadata["payloadTemplate"] = delivery.config.get("payloadTemplate") or delivery.config.get("payload_template")
         if delivery.require_approval or delivery.delivery_type == "approval_first":
             _record_run_event(
                 run,
@@ -1638,6 +1642,14 @@ async def run_matching_triggers(
     )
     runs: list[WorkflowRunRecord] = []
     for row in rows:
+        config = _json_loads(row.get("config_json"), {})
+        if trigger_type == "app_event":
+            expected_app = str(config.get("appSlug") or config.get("app_slug") or "").strip().lower()
+            actual_app = str(payload.get("appSlug") or payload.get("app_slug") or payload.get("app") or "").strip().lower()
+            if expected_app and actual_app and expected_app != actual_app:
+                continue
+            if expected_app and not actual_app:
+                continue
         runs.append(
             await run_agent(
                 workspace,
