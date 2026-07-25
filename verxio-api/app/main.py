@@ -163,6 +163,12 @@ from app.models import (
     WorkflowAgentSetupDraftUpdateRequest,
     WorkflowAgentsResponse,
     WorkflowAgentUpdateRequest,
+    WorkflowAgentEmbedAssetRequest,
+    WorkflowAgentEmbedConfigRecord,
+    WorkflowAgentEmbedConfigUpdateRequest,
+    WorkflowAgentPublicInfo,
+    WorkflowAgentPublicRunRequest,
+    WorkflowAgentPublicRunResponse,
     WorkflowDeliveriesResponse,
     WorkflowDeliveryCreateRequest,
     WorkflowDeliveryRecord,
@@ -251,6 +257,8 @@ from app.workflow_agents import (
     delete_delivery as delete_workflow_delivery,
     delete_trigger as delete_workflow_trigger,
     get_agent as get_workflow_agent,
+    get_embed_config as get_workflow_embed_config,
+    get_public_embed_info as get_workflow_public_embed_info,
     list_agents as list_workflow_agents,
     list_integration_capabilities as list_workflow_integration_capabilities,
     list_deliveries as list_workflow_deliveries,
@@ -262,12 +270,15 @@ from app.workflow_agents import (
     run_agent as run_workflow_agent,
     run_matching_triggers as run_matching_workflow_triggers,
     run_messaging_gateway_triggers as run_workflow_messaging_gateway_triggers,
+    run_public_embed_agent as run_workflow_public_embed_agent,
     run_webhook_trigger,
     tick_due_schedule_triggers as tick_due_workflow_schedule_triggers,
     update_agent as update_workflow_agent,
     update_delivery as update_workflow_delivery,
+    update_embed_config as update_workflow_embed_config,
     update_setup_approvals as update_workflow_setup_approvals,
     update_trigger as update_workflow_trigger,
+    upload_embed_asset as upload_workflow_embed_asset,
 )
 
 
@@ -1057,6 +1068,35 @@ async def delete_workflow_delivery_route(agent_id: str, delivery_id: str, reques
     return delete_workflow_delivery(workspace, profile, agent_id, delivery_id)
 
 
+@app.get("/api/workflow-agents/{agent_id}/embed", response_model=WorkflowAgentEmbedConfigRecord)
+async def get_workflow_embed_config_route(agent_id: str, request: Request) -> WorkflowAgentEmbedConfigRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return get_workflow_embed_config(workspace, profile, agent_id, request)
+
+
+@app.put("/api/workflow-agents/{agent_id}/embed", response_model=WorkflowAgentEmbedConfigRecord)
+async def update_workflow_embed_config_route(
+    agent_id: str,
+    payload: WorkflowAgentEmbedConfigUpdateRequest,
+    request: Request,
+) -> WorkflowAgentEmbedConfigRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return update_workflow_embed_config(workspace, profile, agent_id, payload, request)
+
+
+@app.post("/api/workflow-agents/{agent_id}/embed/asset", response_model=WorkflowAgentEmbedConfigRecord)
+async def upload_workflow_embed_asset_route(
+    agent_id: str,
+    payload: WorkflowAgentEmbedAssetRequest,
+    request: Request,
+) -> WorkflowAgentEmbedConfigRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return upload_workflow_embed_asset(workspace, profile, agent_id, payload, request)
+
+
 @app.get("/api/workflow-agents/{agent_id}/runs", response_model=WorkflowRunsResponse)
 async def list_workflow_runs_route(agent_id: str, request: Request, limit: int = 50) -> WorkflowRunsResponse:
     user = require_user(request)
@@ -1140,6 +1180,60 @@ async def ingest_workflow_webhook_route(trigger_id: str, request: Request) -> Wo
         raise HTTPException(status_code=400, detail="Workflow webhook payload must be an object.")
     run = await run_webhook_trigger(trigger_id, secret, payload)
     return WorkflowWebhookIngestResponse(run=run)
+
+
+@app.get("/api/public/workflow-agents/{public_token}", response_model=WorkflowAgentPublicInfo)
+async def get_public_workflow_agent_route(public_token: str) -> WorkflowAgentPublicInfo:
+    return get_workflow_public_embed_info(public_token)
+
+
+@app.post("/api/public/workflow-agents/{public_token}/runs", response_model=WorkflowAgentPublicRunResponse)
+async def run_public_workflow_agent_route(
+    public_token: str,
+    payload: WorkflowAgentPublicRunRequest,
+    request: Request,
+) -> WorkflowAgentPublicRunResponse:
+    return await run_workflow_public_embed_agent(public_token, payload, request)
+
+
+@app.get("/api/public/workflow-agent-embed.js", include_in_schema=False)
+async def workflow_agent_embed_script_route() -> Response:
+    script = """
+(() => {
+  const current = document.currentScript;
+  const token = current?.dataset?.agentToken;
+  if (!token || document.querySelector(`[data-verxio-agent-root="${token}"]`)) return;
+  const root = document.createElement('div');
+  root.dataset.verxioAgentRoot = token;
+  root.style.cssText = 'position:fixed;right:20px;bottom:20px;z-index:2147483000;font-family:Inter,system-ui,sans-serif';
+  root.innerHTML = '<button type="button" data-open style="border:0;border-radius:999px;padding:12px 14px;background:#0ea5e9;color:white;box-shadow:0 10px 30px rgba(15,23,42,.18);cursor:pointer">Chat</button><form data-panel hidden style="width:320px;max-width:calc(100vw - 32px);background:white;border:1px solid #dbe3ea;border-radius:8px;box-shadow:0 18px 60px rgba(15,23,42,.22);overflow:hidden"><div data-title style="padding:12px 14px;font-weight:600;background:#f8fafc">Verxio Agent</div><textarea name="message" rows="4" placeholder="Ask anything" style="width:100%;box-sizing:border-box;border:0;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;padding:12px;resize:vertical"></textarea><div data-output style="min-height:36px;padding:10px 12px;color:#475569;font-size:13px"></div><div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px"><span style="font-size:11px;color:#94a3b8">Powered by Verxio</span><button type="submit" style="border:0;border-radius:6px;padding:8px 12px;background:#0ea5e9;color:white;cursor:pointer">Send</button></div></form>';
+  document.body.appendChild(root);
+  const panel = root.querySelector('[data-panel]');
+  const output = root.querySelector('[data-output]');
+  const button = root.querySelector('[data-open]');
+  fetch(`/api/public/workflow-agents/${encodeURIComponent(token)}`).then(r => r.ok ? r.json() : null).then(info => {
+    if (!info) return;
+    root.querySelector('[data-title]').textContent = info.display_name || info.name || 'Verxio Agent';
+    button.style.background = info.primary_color || '#0ea5e9';
+    panel.querySelector('button[type="submit"]').style.background = info.primary_color || '#0ea5e9';
+  }).catch(() => {});
+  button.addEventListener('click', () => { panel.hidden = !panel.hidden; });
+  panel.addEventListener('submit', async event => {
+    event.preventDefault();
+    const message = new FormData(panel).get('message')?.toString().trim();
+    if (!message) return;
+    output.textContent = 'Sending...';
+    const response = await fetch(`/api/public/workflow-agents/${encodeURIComponent(token)}/runs`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message, page_url: location.href })
+    });
+    const body = await response.json().catch(() => ({}));
+    output.textContent = body.run?.output_text || body.detail || 'Agent run queued.';
+  });
+})();
+"""
+    return Response(content=script.strip(), media_type="application/javascript")
 
 
 @app.get("/api/pulse/channels", response_model=PulseChannelsResponse)

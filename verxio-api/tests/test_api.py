@@ -584,6 +584,78 @@ def test_workflow_messaging_gateway_triggers_match_channel_and_reply_context(cli
     assert '"reply_to_source":{"channel":"whatsapp","conversation_id":"conv_1","sender_id":"wa_123","thread_id":"thread_1"}' in seen[0]["input"]
 
 
+def test_workflow_agent_embed_config_asset_and_public_run(client, monkeypatch):
+    _payload, token = signup(client, "workflow-embed@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    async def fake_oneshot(workspace, profile, user_input, *, instructions=None):
+        assert workspace.id
+        assert profile.id
+        return f"embed handled {user_input}"
+
+    monkeypatch.setattr(workflow_agents, "run_agent_via_dashboard", fake_oneshot)
+    agent = client.post(
+        "/api/workflow-agents",
+        headers=headers,
+        json={"name": "Website Consultant", "description": "Answers visitor questions."},
+    ).json()
+
+    config = client.get(f"/api/workflow-agents/{agent['id']}/embed", headers=headers)
+    assert config.status_code == 200
+    assert config.json()["enabled"] is False
+    assert "/agent/" in config.json()["share_url"]
+    assert "data-agent-token" in config.json()["embed_script"]
+
+    updated = client.put(
+        f"/api/workflow-agents/{agent['id']}/embed",
+        headers=headers,
+        json={
+            "enabled": True,
+            "display_name": "Cosmetic Consultant",
+            "primary_color": "#12a0ff",
+            "allowed_origins": ["http://example.com"],
+        },
+    )
+    assert updated.status_code == 200
+    public_token = updated.json()["public_token"]
+
+    uploaded = client.post(
+        f"/api/workflow-agents/{agent['id']}/embed/asset",
+        headers=headers,
+        json={
+            "file_name": "logo.png",
+            "data_url": "data:image/png;base64,iVBORw0KGgo=",
+        },
+    )
+    assert uploaded.status_code == 200
+    assert "/static/agent-assets/" in uploaded.json()["asset_url"]
+
+    info = client.get(f"/api/public/workflow-agents/{public_token}")
+    assert info.status_code == 200
+    assert info.json()["display_name"] == "Cosmetic Consultant"
+    assert info.json()["powered_by"] == "Verxio"
+
+    blocked = client.post(
+        f"/api/public/workflow-agents/{public_token}/runs",
+        headers={"Origin": "http://blocked.example"},
+        json={"message": "What shade should I use?"},
+    )
+    assert blocked.status_code == 403
+
+    run = client.post(
+        f"/api/public/workflow-agents/{public_token}/runs",
+        headers={"Origin": "http://example.com"},
+        json={"message": "What shade should I use?", "visitor_id": "visitor_1", "page_url": "http://example.com/shop"},
+    )
+    assert run.status_code == 200
+    assert run.json()["run"]["trigger_type"] == "api"
+    assert "embed handled" in run.json()["run"]["output_text"]
+
+    script = client.get("/api/public/workflow-agent-embed.js")
+    assert script.status_code == 200
+    assert "Powered by Verxio" in script.text
+
+
 def test_workflow_skill_capabilities_use_runtime_metadata(client, monkeypatch):
     _payload, token = signup(client, "workflow-skills@example.com")
 

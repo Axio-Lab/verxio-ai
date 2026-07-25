@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS workflow_agent_embed_configs (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    workspace_id TEXT NOT NULL,
+    runtime_agent_id TEXT NOT NULL,
+    workflow_agent_id TEXT NOT NULL UNIQUE,
+    public_token TEXT NOT NULL UNIQUE,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    display_name TEXT NOT NULL DEFAULT '',
+    welcome_message TEXT NOT NULL DEFAULT '',
+    primary_color TEXT NOT NULL DEFAULT '#0ea5e9',
+    logo_url TEXT NOT NULL DEFAULT '',
+    asset_url TEXT NOT NULL DEFAULT '',
+    allowed_origins_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+    FOREIGN KEY (runtime_agent_id) REFERENCES agents(id) ON DELETE CASCADE,
+    FOREIGN KEY (workflow_agent_id) REFERENCES workflow_agents(id) ON DELETE CASCADE
+);

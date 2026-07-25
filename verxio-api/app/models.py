@@ -1065,6 +1065,64 @@ class WorkflowDeliveriesResponse(BaseModel):
     deliveries: list[WorkflowDeliveryRecord]
 
 
+class WorkflowAgentEmbedConfigRecord(BaseModel):
+    id: str
+    tenant_id: str
+    workspace_id: str
+    runtime_agent_id: str
+    workflow_agent_id: str
+    public_token: str
+    enabled: bool = False
+    display_name: str = ""
+    welcome_message: str = ""
+    primary_color: str = "#0ea5e9"
+    logo_url: str = ""
+    asset_url: str = ""
+    allowed_origins: list[str] = Field(default_factory=list)
+    share_url: str = ""
+    embed_script: str = ""
+    created_at: str
+    updated_at: str
+
+
+class WorkflowAgentEmbedConfigUpdateRequest(BaseModel):
+    enabled: bool | None = None
+    display_name: str | None = Field(default=None, max_length=180)
+    welcome_message: str | None = Field(default=None, max_length=1000)
+    primary_color: str | None = Field(default=None, max_length=32)
+    logo_url: str | None = Field(default=None, max_length=1000)
+    asset_url: str | None = Field(default=None, max_length=1000)
+    allowed_origins: list[str] | None = None
+
+
+class WorkflowAgentEmbedAssetRequest(BaseModel):
+    file_name: str = Field(min_length=1, max_length=220)
+    data_url: str = Field(min_length=1, max_length=4000000)
+
+
+class WorkflowAgentPublicInfo(BaseModel):
+    public_token: str
+    name: str
+    description: str = ""
+    display_name: str = ""
+    welcome_message: str = ""
+    primary_color: str = "#0ea5e9"
+    logo_url: str = ""
+    asset_url: str = ""
+    powered_by: str = "Verxio"
+
+
+class WorkflowAgentPublicRunRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=50000)
+    input: dict[str, Any] = Field(default_factory=dict)
+    visitor_id: str = Field(default="", max_length=320)
+    page_url: str = Field(default="", max_length=1000)
+
+
+class WorkflowAgentPublicRunResponse(BaseModel):
+    run: WorkflowRunRecord
+
+
 class WorkflowRunRecord(BaseModel):
     id: str
     tenant_id: str

@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import json
+import re
 import secrets
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException, Request
@@ -24,6 +28,12 @@ from app.models import (
     WorkflowAgentSetupDraftUpdateRequest,
     WorkflowAgentsResponse,
     WorkflowAgentUpdateRequest,
+    WorkflowAgentEmbedAssetRequest,
+    WorkflowAgentEmbedConfigRecord,
+    WorkflowAgentEmbedConfigUpdateRequest,
+    WorkflowAgentPublicInfo,
+    WorkflowAgentPublicRunRequest,
+    WorkflowAgentPublicRunResponse,
     WorkflowSetupApprovalRisk,
     WorkflowDeliveriesResponse,
     WorkflowDeliveryCreateRequest,
@@ -57,6 +67,8 @@ from app.composio_catalog import (
 )
 from app.runtime import HermesRuntimeAdapter
 from app.runtime_dashboard import run_agent_via_dashboard
+
+STATIC_AGENT_ASSETS_ROOT = Path(__file__).resolve().parent.parent / "static" / "agent-assets"
 
 
 def _json_loads(value: str | None, fallback: Any) -> Any:
@@ -94,6 +106,16 @@ def _string_list(value: list[str] | None) -> list[str]:
 
 def _secret() -> str:
     return secrets.token_urlsafe(24)
+
+
+def _public_token() -> str:
+    return secrets.token_urlsafe(18)
+
+
+def _base_url(request: Request | None) -> str:
+    if request is None:
+        return ""
+    return str(request.base_url).rstrip("/")
 
 
 def _contains_any(text: str, words: list[str]) -> bool:
@@ -143,6 +165,21 @@ def _delivery_from_row(row: dict[str, Any]) -> WorkflowDeliveryRecord:
     payload["require_approval"] = bool(payload.get("require_approval"))
     payload["config"] = _json_loads(payload.pop("config_json", "{}"), {})
     return WorkflowDeliveryRecord(**payload)
+
+
+def _embed_config_from_row(row: dict[str, Any], request: Request | None = None) -> WorkflowAgentEmbedConfigRecord:
+    payload = dict(row)
+    payload["enabled"] = bool(payload.get("enabled"))
+    payload["allowed_origins"] = _json_loads(payload.pop("allowed_origins_json", "[]"), [])
+    base = _base_url(request)
+    token = str(payload.get("public_token") or "")
+    payload["share_url"] = f"{base}/agent/{token}" if base and token else ""
+    payload["embed_script"] = (
+        f'<script src="{base}/api/public/workflow-agent-embed.js" data-agent-token="{token}" async></script>'
+        if base and token
+        else ""
+    )
+    return WorkflowAgentEmbedConfigRecord(**payload)
 
 
 def _setup_draft_from_row(row: dict[str, Any]) -> WorkflowAgentSetupDraftRecord:
@@ -1055,6 +1092,229 @@ def delete_delivery(workspace: Workspace, profile: AgentProfile, agent_id: str, 
         (delivery_id, workspace.id, agent_id),
     )
     return {"ok": True}
+
+
+def _normalize_hex_color(value: str) -> str:
+    text = value.strip()
+    if re.fullmatch(r"#[0-9a-fA-F]{6}", text):
+        return text.lower()
+    raise HTTPException(status_code=400, detail="Primary color must be a 6-digit hex color.")
+
+
+def _allowed_origins(value: list[str] | None) -> list[str]:
+    origins: list[str] = []
+    for item in value or []:
+        text = str(item).strip()
+        if not text:
+            continue
+        if text == "*" or text.startswith(("http://", "https://")):
+            origins.append(text)
+            continue
+        raise HTTPException(status_code=400, detail="Allowed origins must be http(s) URLs or '*'.")
+    return origins[:25]
+
+
+def _ensure_embed_config(
+    workspace: Workspace,
+    profile: AgentProfile,
+    agent_id: str,
+    request: Request | None = None,
+) -> WorkflowAgentEmbedConfigRecord:
+    agent = get_agent(workspace, profile, agent_id)
+    row = db.fetch_one("SELECT * FROM workflow_agent_embed_configs WHERE workflow_agent_id = ?", (agent_id,))
+    if not row:
+        created_at = now_iso()
+        db.execute(
+            """
+            INSERT INTO workflow_agent_embed_configs (
+                id, tenant_id, workspace_id, runtime_agent_id, workflow_agent_id, public_token,
+                enabled, display_name, welcome_message, primary_color, logo_url, asset_url,
+                allowed_origins_json, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, '#0ea5e9', '', '', '[]', ?, ?)
+            """,
+            (
+                new_id("workflow_agent_embed"),
+                workspace.tenant_id,
+                workspace.id,
+                profile.id,
+                agent_id,
+                _public_token(),
+                agent.name,
+                "How can I help?",
+                created_at,
+                created_at,
+            ),
+        )
+        row = db.fetch_one("SELECT * FROM workflow_agent_embed_configs WHERE workflow_agent_id = ?", (agent_id,))
+    return _embed_config_from_row(row or {}, request)
+
+
+def get_embed_config(
+    workspace: Workspace,
+    profile: AgentProfile,
+    agent_id: str,
+    request: Request | None = None,
+) -> WorkflowAgentEmbedConfigRecord:
+    return _ensure_embed_config(workspace, profile, agent_id, request)
+
+
+def update_embed_config(
+    workspace: Workspace,
+    profile: AgentProfile,
+    agent_id: str,
+    payload: WorkflowAgentEmbedConfigUpdateRequest,
+    request: Request | None = None,
+) -> WorkflowAgentEmbedConfigRecord:
+    current = _ensure_embed_config(workspace, profile, agent_id, request)
+    data = current.model_dump()
+    updates = payload.model_dump(exclude_unset=True)
+    data.update({key: value for key, value in updates.items() if value is not None})
+    allowed_origins = _allowed_origins(data.get("allowed_origins") if isinstance(data.get("allowed_origins"), list) else [])
+    primary_color = _normalize_hex_color(str(data.get("primary_color") or "#0ea5e9"))
+    db.execute(
+        """
+        UPDATE workflow_agent_embed_configs
+        SET enabled = ?, display_name = ?, welcome_message = ?, primary_color = ?,
+            logo_url = ?, asset_url = ?, allowed_origins_json = ?, updated_at = ?
+        WHERE workflow_agent_id = ? AND workspace_id = ? AND runtime_agent_id = ?
+        """,
+        (
+            1 if data.get("enabled") else 0,
+            str(data.get("display_name") or "").strip(),
+            str(data.get("welcome_message") or "").strip(),
+            primary_color,
+            str(data.get("logo_url") or "").strip(),
+            str(data.get("asset_url") or "").strip(),
+            _json_dumps(allowed_origins),
+            now_iso(),
+            agent_id,
+            workspace.id,
+            profile.id,
+        ),
+    )
+    return _ensure_embed_config(workspace, profile, agent_id, request)
+
+
+def upload_embed_asset(
+    workspace: Workspace,
+    profile: AgentProfile,
+    agent_id: str,
+    payload: WorkflowAgentEmbedAssetRequest,
+    request: Request | None = None,
+) -> WorkflowAgentEmbedConfigRecord:
+    _ensure_embed_config(workspace, profile, agent_id, request)
+    data_url = payload.data_url.strip()
+    if not data_url.startswith("data:") or "," not in data_url:
+        raise HTTPException(status_code=400, detail="Asset must be a data URL.")
+    header, encoded = data_url.split(",", 1)
+    if ";base64" not in header:
+        raise HTTPException(status_code=400, detail="Asset payload must be base64 encoded.")
+    mime = header[5:].split(";", 1)[0].strip().lower()
+    allowed = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/svg+xml": ".svg"}
+    if mime not in allowed:
+        raise HTTPException(status_code=400, detail="Asset must be a PNG, JPG, WebP, or SVG image.")
+    try:
+        content = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Asset payload is not valid base64.") from exc
+    if len(content) > 2_000_000:
+        raise HTTPException(status_code=413, detail="Asset must be 2MB or smaller.")
+    STATIC_AGENT_ASSETS_ROOT.mkdir(parents=True, exist_ok=True)
+    asset_name = f"{agent_id}-{secrets.token_hex(8)}{allowed[mime]}"
+    (STATIC_AGENT_ASSETS_ROOT / asset_name).write_bytes(content)
+    asset_url = f"{_base_url(request)}/static/agent-assets/{asset_name}" if request else f"/static/agent-assets/{asset_name}"
+    return update_embed_config(workspace, profile, agent_id, WorkflowAgentEmbedConfigUpdateRequest(asset_url=asset_url), request)
+
+
+def _public_embed_row(public_token: str) -> dict[str, Any]:
+    row = db.fetch_one(
+        """
+        SELECT c.*, a.name AS agent_name, a.description AS agent_description, a.enabled AS agent_enabled
+        FROM workflow_agent_embed_configs c
+        JOIN workflow_agents a ON a.id = c.workflow_agent_id
+        WHERE c.public_token = ?
+        """,
+        (public_token,),
+    )
+    if not row or not row.get("enabled") or not row.get("agent_enabled"):
+        raise HTTPException(status_code=404, detail="Public workflow agent is not available.")
+    return row
+
+
+def get_public_embed_info(public_token: str) -> WorkflowAgentPublicInfo:
+    row = _public_embed_row(public_token)
+    return WorkflowAgentPublicInfo(
+        public_token=str(row["public_token"]),
+        name=str(row["agent_name"]),
+        description=str(row["agent_description"] or ""),
+        display_name=str(row["display_name"] or row["agent_name"]),
+        welcome_message=str(row["welcome_message"] or "How can I help?"),
+        primary_color=str(row["primary_color"] or "#0ea5e9"),
+        logo_url=str(row["logo_url"] or ""),
+        asset_url=str(row["asset_url"] or ""),
+    )
+
+
+def _assert_public_origin_allowed(row: dict[str, Any], request: Request) -> None:
+    allowed = _json_loads(row.get("allowed_origins_json"), [])
+    if not allowed or "*" in allowed:
+        return
+    origin = request.headers.get("origin") or ""
+    if origin not in allowed:
+        raise HTTPException(status_code=403, detail="This origin is not allowed to run the agent.")
+
+
+async def run_public_embed_agent(
+    public_token: str,
+    payload: WorkflowAgentPublicRunRequest,
+    request: Request,
+) -> WorkflowAgentPublicRunResponse:
+    row = _public_embed_row(public_token)
+    _assert_public_origin_allowed(row, request)
+    workspace_row = db.fetch_one("SELECT * FROM workspaces WHERE id = ?", (row["workspace_id"],))
+    runtime_agent_row = db.fetch_one("SELECT * FROM agents WHERE id = ?", (row["runtime_agent_id"],))
+    if not workspace_row or not runtime_agent_row:
+        raise HTTPException(status_code=404, detail="Public workflow agent owner not found.")
+    workspace = Workspace(
+        id=str(workspace_row["id"]),
+        tenant_id=str(workspace_row["tenant_id"]),
+        name=str(workspace_row["name"]),
+        slug=str(workspace_row["slug"]),
+        kind=str(workspace_row["kind"]),
+        plan="local",
+        region="local",
+    )
+    profile = AgentProfile(
+        id=str(runtime_agent_row["id"]),
+        tenant_id=str(runtime_agent_row["tenant_id"]),
+        workspace_id=str(runtime_agent_row["workspace_id"]),
+        name=str(runtime_agent_row["name"]),
+        role=str(runtime_agent_row["role"]),
+        status=str(runtime_agent_row["status"]),
+        description=str(runtime_agent_row["description"]),
+        capabilities=[],
+        starters=[],
+    )
+    run = await run_agent(
+        workspace,
+        profile,
+        str(row["workflow_agent_id"]),
+        WorkflowRunCreateRequest(
+            input={
+                "event": "embed.submitted",
+                "payload": {
+                    **payload.input,
+                    "message": payload.message,
+                    "page_url": payload.page_url,
+                    "public_token": public_token,
+                    "visitor_id": payload.visitor_id,
+                },
+            }
+        ),
+        trigger_type="api",
+    )
+    return WorkflowAgentPublicRunResponse(run=run)
 
 
 def list_runs(workspace: Workspace, profile: AgentProfile, agent_id: str, limit: int = 50) -> WorkflowRunsResponse:
