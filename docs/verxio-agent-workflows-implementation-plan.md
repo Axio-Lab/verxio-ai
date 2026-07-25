@@ -14,6 +14,7 @@ Agents are reusable workers that run on the existing Hermes runtime profile mode
 
 The Agents route should own all of this:
 
+- Setup Assistant
 - Instructions
 - Skills
 - Knowledge
@@ -23,6 +24,72 @@ The Agents route should own all of this:
 - Delivery
 - Embed
 - Runs
+
+## Setup Assistant
+
+Agents should support both AI-assisted setup and manual setup.
+
+Inside `/agents`, add a prompt field above or beside the manual form where the user can describe what they want:
+
+> Create a payment delivery agent. Trigger it when Paystack payment succeeds. Send a WhatsApp message to the customer, notify Slack ops, use our delivery policy KB, and ask for approval if confidence is low.
+
+The setup assistant should generate a draft configuration and populate the same editable fields used by manual setup:
+
+- Name
+- Role
+- Description
+- Brain model
+- Instructions
+- Skills
+- Knowledge bases
+- Integrations
+- Tools
+- Triggers
+- Delivery rules
+- Embed/share settings when requested
+
+The user can then switch to manual setup, edit the generated fields, and save. Generated setup should never silently enable risky external actions. Anything that sends messages, creates public links, uses paid tools, or exposes webhook callbacks should be created disabled or marked as requiring approval until the user confirms.
+
+The setup assistant should also work from a normal Verxio session and, later, from approved messaging gateways such as WhatsApp, Telegram, Slack, and Discord.
+
+Conversational setup flow:
+
+- User describes the agent they want.
+- Verxio drafts an agent configuration.
+- Verxio asks follow-up questions only for missing critical details.
+- Verxio creates or updates the agent after user approval.
+- Verxio summarizes what was created, what is still disabled, and which settings need connection or approval.
+
+Allowed conversational setup actions:
+
+- Create agent
+- Update agent
+- Set instructions
+- Select model
+- Attach skills
+- Create and attach knowledge bases
+- Add knowledge documents from user-provided text/files
+- Attach integrations
+- Attach tools
+- Create triggers
+- Create delivery rules
+- Configure embed/share links
+- Enable or disable an agent
+- Run a test
+- Show run history and setup status
+
+Actions that require explicit approval:
+
+- Enabling external delivery
+- Creating public embed/share links
+- Sending messages externally
+- Adding webhook callbacks
+- Using paid or API-key-backed tools
+- Changing secrets or API-key-backed tool bindings
+- Deleting agents, triggers, deliveries, assets, or knowledge bases
+- Enabling broad inbound triggers such as “reply to every WhatsApp message”
+
+Gateway-based setup should be stricter than in-app setup. For example, a WhatsApp request can draft or update safe fields, but broad triggers, public links, destructive actions, and external delivery should require in-app/session approval before activation.
 
 ## Trigger Sources
 
@@ -164,6 +231,8 @@ This bridge must stay outside Pulse. Pulse remains a separate product area.
 
 Add or extend API surfaces:
 
+- `POST /api/workflow-agents/draft`
+- `POST /api/workflow-agents/{agent_id}/draft-update`
 - `GET /api/workflow-agents/{agent_id}/tools`
 - `PUT /api/workflow-agents/{agent_id}/tools`
 - `GET /api/workflow-agents/{agent_id}/deliveries`
@@ -177,6 +246,7 @@ Add or extend API surfaces:
 - `POST /api/workflow-agents/public/{public_token}/runs`
 - `POST /api/workflow-agents/triggers/messaging`
 - `POST /api/workflow-agents/triggers/embed`
+- `POST /api/workflow-agents/setup-actions/approve`
 
 Keep Pydantic models explicit and workspace/agent scoping strict.
 
@@ -188,6 +258,8 @@ Add explicit tables instead of hiding durable setup inside JSON-only agent state
 - `workflow_embed_configs`
 - `workflow_agent_assets`
 - `workflow_public_links`
+- `workflow_agent_setup_drafts`
+- `workflow_agent_setup_approvals`
 
 Extend trigger support with stable config version fields where needed.
 
@@ -200,7 +272,26 @@ Extend trigger support with stable config version fields where needed.
 - Run Prettier and workflow CI check.
 - Commit plan.
 
-### Phase 2: Backend Delivery And Run Events
+### Phase 2: Backend Setup Drafts And Approvals
+
+- Add setup draft and approval models, migration, and CRUD helpers.
+- Add draft endpoints that accept a user prompt and return structured agent setup fields without saving risky actions silently.
+- Add approval records for external delivery, public links, destructive changes, broad messaging triggers, and paid/API-key-backed tools.
+- Add API tests for draft persistence, approval scoping, and guarded actions.
+- Run `npm run fmt`, `npm run format:check`, `npm run ci:api`, and `npm run ci:web` if generated API types/web clients change.
+- Commit phase.
+
+### Phase 3: Agents UI Setup Assistant
+
+- Add prompt field to `/agents` for describing the agent the user wants.
+- Generate a draft and populate the manual setup fields.
+- Add a clear switch between generated draft review and manual setup.
+- Show missing setup states for integrations, tools, gateways, KB, and model.
+- Use existing UI primitives, centered primary loaders, and modal dialogs without duplicate X/Cancel controls.
+- Run `npm run fmt`, `npm run format:check`, `npm run ci:web`.
+- Commit phase.
+
+### Phase 4: Backend Delivery And Run Events
 
 - Add delivery models, migration, CRUD, and run delivery event recording.
 - Implement save-only, webhook callback placeholder, and reply-to-source data structures.
@@ -208,7 +299,7 @@ Extend trigger support with stable config version fields where needed.
 - Run `npm run fmt`, `npm run format:check`, `npm run ci:api`, and `npm run ci:web` if generated API types/web clients change.
 - Commit phase.
 
-### Phase 3: Agents UI Delivery Tab
+### Phase 5: Agents UI Delivery Tab
 
 - Add Delivery tab inside `/agents`.
 - Use existing UI primitives and primary centered loaders.
@@ -217,7 +308,7 @@ Extend trigger support with stable config version fields where needed.
 - Run `npm run fmt`, `npm run format:check`, `npm run ci:web`.
 - Commit phase.
 
-### Phase 4: Tools Tab
+### Phase 6: Tools Tab
 
 - Bring back Tools tab inside `/agents`.
 - Show Hermes/runtime tool capabilities and custom/API-key-backed tools.
@@ -226,7 +317,7 @@ Extend trigger support with stable config version fields where needed.
 - Run `npm run fmt`, `npm run format:check`, `npm run ci:web`, and backend CI if API changes.
 - Commit phase.
 
-### Phase 5: Trigger UX Upgrade
+### Phase 7: Trigger UX Upgrade
 
 - Replace blank trigger state with guided source cards.
 - Add source-specific trigger forms for webhook/API, schedule, app event, messaging gateway, embed/share, and manual.
@@ -234,7 +325,7 @@ Extend trigger support with stable config version fields where needed.
 - Run `npm run fmt`, `npm run format:check`, `npm run ci:web`, and backend CI if API validation changes.
 - Commit phase.
 
-### Phase 6: Messaging Gateway Trigger Bridge
+### Phase 8: Messaging Gateway Trigger Bridge
 
 - Add normalized workflow messaging event handler.
 - Wire WhatsApp, Telegram, Slack, Discord, and email gateway events into workflow triggers where available.
@@ -243,7 +334,7 @@ Extend trigger support with stable config version fields where needed.
 - Run `npm run fmt`, `npm run format:check`, `npm run ci:api`, `npm run ci:web`.
 - Commit phase.
 
-### Phase 7: Embed, Share URL, Branding, And Assets
+### Phase 9: Embed, Share URL, Branding, And Assets
 
 - Add embed/share models, migrations, CRUD, public run endpoint, and asset upload/delete.
 - Add Embed tab with script snippet, iframe snippet, share URL, branding controls, domain allowlist, and upload controls.
@@ -252,7 +343,7 @@ Extend trigger support with stable config version fields where needed.
 - Run `npm run fmt`, `npm run format:check`, `npm run ci:api`, `npm run ci:web`.
 - Commit phase.
 
-### Phase 8: Composio App Event And Delivery Actions
+### Phase 10: Composio App Event And Delivery Actions
 
 - Wire connected Composio apps into app-event trigger source options.
 - Add delivery actions for email, CRM update, ticket creation, spreadsheet append, and Slack post where connected.
@@ -260,12 +351,25 @@ Extend trigger support with stable config version fields where needed.
 - Run `npm run fmt`, `npm run format:check`, `npm run ci:api`, `npm run ci:web`.
 - Commit phase.
 
-### Phase 9: End-To-End Verification
+### Phase 11: Conversational And Gateway Setup Tools
+
+- Expose safe agent-management tools to normal Verxio sessions.
+- Allow session-based creation/update of agents, triggers, deliveries, tools, KB, embed/share config, and test runs.
+- Add stricter gateway setup path for WhatsApp, Telegram, Slack, and Discord requests.
+- Require approval for broad triggers, public links, destructive changes, external delivery, and paid/API-key-backed tools.
+- Record setup actions in run/activity events where applicable.
+- Run `npm run fmt`, `npm run format:check`, `npm run ci:api`, `npm run ci:web`.
+- Commit phase.
+
+### Phase 12: End-To-End Verification
 
 - Test payment webhook to WhatsApp delivery.
 - Test website embed input to agent run.
 - Test share URL run.
 - Test Slack/Telegram inbound message trigger where configured.
+- Test prompt-generated setup in `/agents`.
+- Test session-created agent setup.
+- Test gateway-drafted agent setup with in-app approval.
 - Test custom API tool agent flow, such as YouCam cosmetic consultant.
 - Rebuild Docker and restart Verxio API/web/runtime containers.
 - Run full `npm run ci`.
