@@ -931,6 +931,7 @@ class WorkflowSkillCapabilitiesResponse(BaseModel):
 
 class WorkflowToolCapability(BaseModel):
     name: str
+    display_name: str = ""
     description: str = ""
     category: str = ""
     source: str = "hermes"

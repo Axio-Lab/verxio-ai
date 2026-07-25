@@ -813,6 +813,7 @@ def test_workflow_tool_capabilities_include_custom_tools(client, monkeypatch):
         {
             "id": created["id"],
             "name": f"custom:{created['id']}",
+            "display_name": "YouCam Skin Analysis",
             "description": "",
             "category": "custom api",
             "source": "custom",

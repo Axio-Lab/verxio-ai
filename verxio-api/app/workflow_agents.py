@@ -599,6 +599,7 @@ async def list_tool_capabilities(workspace: Workspace) -> WorkflowToolCapabiliti
             WorkflowToolCapability(
                 id=custom_tool.id,
                 name=name,
+                display_name=custom_tool.name,
                 description=custom_tool.description,
                 category="custom api",
                 source="custom",

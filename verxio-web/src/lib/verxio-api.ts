@@ -246,11 +246,18 @@ export interface WorkflowSkillCapabilitiesResponse {
 }
 
 export interface WorkflowToolCapability {
+  api_key_env: string
+  auth_type: string
   category: string
+  configured: boolean
   description: string
+  display_name: string
   enabled: boolean
+  id: string | null
+  method: string
   name: string
   source: string
+  url: string
 }
 
 export interface WorkflowToolCapabilitiesResponse {
@@ -271,6 +278,37 @@ export interface WorkflowIntegrationCapabilitiesResponse {
   configured: boolean
   errors: string[]
   integrations: WorkflowIntegrationCapability[]
+}
+
+export interface WorkflowCustomTool {
+  api_key_env: string
+  auth_type: string
+  created_at: string
+  description: string
+  enabled: boolean
+  headers: Record<string, string>
+  id: string
+  method: string
+  name: string
+  request_schema: Record<string, unknown>
+  response_hint: string
+  tenant_id: string
+  updated_at: string
+  url: string
+  workspace_id: string
+}
+
+export interface WorkflowCustomToolInput {
+  api_key_env?: string
+  auth_type?: string
+  description?: string
+  enabled?: boolean
+  headers?: Record<string, string>
+  method?: string
+  name: string
+  request_schema?: Record<string, unknown>
+  response_hint?: string
+  url: string
 }
 
 export interface KnowledgeBase {
@@ -1044,6 +1082,13 @@ export function listWorkflowSkillCapabilities(): Promise<WorkflowSkillCapabiliti
 
 export function listWorkflowToolCapabilities(): Promise<WorkflowToolCapabilitiesResponse> {
   return verxioFetch<WorkflowToolCapabilitiesResponse>('/api/workflow-agents/capabilities/tools')
+}
+
+export function createWorkflowCustomTool(input: WorkflowCustomToolInput): Promise<WorkflowCustomTool> {
+  return verxioFetch<WorkflowCustomTool>('/api/workflow-agents/custom-tools', {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
 }
 
 export function listWorkflowIntegrationCapabilities(): Promise<WorkflowIntegrationCapabilitiesResponse> {

@@ -22,6 +22,7 @@ import {
   createKnowledgeBase,
   createKnowledgeDocument,
   createWorkflowAgent,
+  createWorkflowCustomTool,
   createWorkflowDelivery,
   createWorkflowTrigger,
   deleteKnowledgeBase,
@@ -61,6 +62,7 @@ import {
   type WorkflowTriggerType
 } from '@/lib/verxio-api'
 import { getScopedModelOptions } from '@/lib/verxio-model-options'
+import { notify, notifyError } from '@/store/notifications'
 
 import { SKILLS_ROUTE } from '../routes'
 
@@ -203,6 +205,30 @@ interface AgentModelOption {
   label: string
   provider: string
 }
+
+type ToolCatalogMode = 'default' | 'custom' | 'add'
+
+interface CustomToolDraft {
+  api_key_env: string
+  auth_type: 'api_key' | 'bearer' | 'none'
+  description: string
+  method: string
+  name: string
+  request_schema: string
+  response_hint: string
+  url: string
+}
+
+const emptyCustomToolDraft = (): CustomToolDraft => ({
+  api_key_env: '',
+  auth_type: 'api_key',
+  description: '',
+  method: 'POST',
+  name: '',
+  request_schema: '{\n  "type": "object",\n  "properties": {}\n}',
+  response_hint: '',
+  url: ''
+})
 
 function lines(value: string): string[] {
   return Array.from(
@@ -373,6 +399,17 @@ export function AgentsView() {
     } catch (err) {
       setSkillCapabilities([])
       setSkillCapabilityErrors([err instanceof Error ? err.message : 'Could not load skills.'])
+    }
+  }, [])
+
+  const refreshTools = useCallback(async () => {
+    try {
+      const result = await listWorkflowToolCapabilities()
+      setToolCapabilities(result.tools)
+      setToolCapabilityErrors(result.errors)
+    } catch (err) {
+      setToolCapabilities([])
+      setToolCapabilityErrors([err instanceof Error ? err.message : 'Could not load tools.'])
     }
   }, [])
 
@@ -595,6 +632,7 @@ export function AgentsView() {
                 onKnowledgeBasesChange={setKnowledgeBases}
                 onSave={saveAgent}
                 onSkillsRefresh={refreshSkills}
+                onToolsRefresh={refreshTools}
                 selected={selected}
                 setSetupPrompt={setSetupPrompt}
                 setTab={setTab}
@@ -754,6 +792,7 @@ function AgentEditor({
   onKnowledgeBasesChange,
   onSave,
   onSkillsRefresh,
+  onToolsRefresh,
   selected,
   setTab,
   setupBusy,
@@ -782,6 +821,7 @@ function AgentEditor({
   onKnowledgeBasesChange: (knowledgeBases: KnowledgeBase[]) => void
   onSave: () => void
   onSkillsRefresh: () => Promise<void>
+  onToolsRefresh: () => Promise<void>
   selected: WorkflowAgent | null
   setTab: (tab: AgentTab) => void
   setupBusy: boolean
@@ -1011,6 +1051,7 @@ function AgentEditor({
           errors={toolCapabilityErrors}
           onChange={items => patch({ toolsText: items.join('\n') })}
           onConfigureTools={onConfigureTools}
+          onRefresh={onToolsRefresh}
           selected={lines(draft.toolsText)}
           tools={toolCapabilities}
         />
@@ -1153,6 +1194,7 @@ function ToolSelector({
   errors,
   onConfigureTools,
   onChange,
+  onRefresh,
   selected,
   tools
 }: {
@@ -1160,24 +1202,35 @@ function ToolSelector({
   errors: string[]
   onConfigureTools: () => void
   onChange: (items: string[]) => void
+  onRefresh: () => Promise<void>
   selected: string[]
   tools: WorkflowToolCapability[]
 }) {
   const selectedSet = useMemo(() => new Set(selected), [selected])
   const missingSelected = selected.filter(name => !tools.some(tool => tool.name === name))
   const [page, setPage] = useState(1)
-  const visibleTools = tools.slice((page - 1) * PANEL_PAGE_SIZE, page * PANEL_PAGE_SIZE)
+  const [mode, setMode] = useState<ToolCatalogMode>('default')
+  const [draft, setDraft] = useState<CustomToolDraft>(() => emptyCustomToolDraft())
+  const [saving, setSaving] = useState(false)
+  const defaultTools = useMemo(() => tools.filter(tool => tool.source !== 'custom'), [tools])
+  const customTools = useMemo(() => tools.filter(tool => tool.source === 'custom'), [tools])
+  const activeTools = mode === 'custom' ? customTools : defaultTools
+  const visibleTools = activeTools.slice((page - 1) * PANEL_PAGE_SIZE, page * PANEL_PAGE_SIZE)
 
   useEffect(() => {
-    const pageCount = Math.max(1, Math.ceil(tools.length / PANEL_PAGE_SIZE))
+    const pageCount = Math.max(1, Math.ceil(activeTools.length / PANEL_PAGE_SIZE))
 
     if (page > pageCount) {
       setPage(pageCount)
     }
-  }, [page, tools.length])
+  }, [activeTools.length, page])
+
+  useEffect(() => {
+    setPage(1)
+  }, [mode])
 
   const toggle = (name: string) => {
-    if (disabled) {
+    if (disabled || mode === 'add') {
       return
     }
 
@@ -1192,6 +1245,40 @@ function ToolSelector({
     onChange(Array.from(next).sort((a, b) => a.localeCompare(b)))
   }
 
+  const saveCustomTool = async () => {
+    if (disabled || saving) {
+      return
+    }
+
+    setSaving(true)
+
+    try {
+      const schema = draft.request_schema.trim() ? JSON.parse(draft.request_schema) : {}
+
+      const created = await createWorkflowCustomTool({
+        api_key_env: draft.api_key_env,
+        auth_type: draft.auth_type,
+        description: draft.description,
+        method: draft.method,
+        name: draft.name,
+        request_schema: schema,
+        response_hint: draft.response_hint,
+        url: draft.url
+      })
+
+      notify({ kind: 'success', title: 'Custom tool added', message: `${created.name} is ready to select.` })
+      setDraft(emptyCustomToolDraft())
+      setMode('custom')
+      await onRefresh()
+    } catch (err) {
+      notifyError(err, 'Could not add custom tool')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const selectedModeCount = mode === 'custom' ? customTools.length : defaultTools.length
+
   return (
     <div className="grid gap-3">
       {errors.length > 0 ? (
@@ -1199,33 +1286,187 @@ function ToolSelector({
           {errors.join(' ')}
         </div>
       ) : null}
-      {tools.length === 0 ? (
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-1 rounded-md bg-muted/30 p-1">
+          {[
+            { id: 'default', label: `Default (${defaultTools.length})` },
+            { id: 'custom', label: `Custom (${customTools.length})` },
+            { id: 'add', label: 'Add tool' }
+          ].map(item => (
+            <button
+              className={cn(
+                'rounded px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground',
+                mode === item.id && 'bg-background text-primary shadow-sm'
+              )}
+              key={item.id}
+              onClick={() => setMode(item.id as ToolCatalogMode)}
+              type="button"
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <Button disabled={disabled} onClick={onConfigureTools} size="sm" type="button" variant="outline">
+          API keys
+        </Button>
+      </div>
+
+      {mode === 'add' ? (
+        <div className="grid gap-3 rounded-md border border-(--stroke-nous) p-4">
+          <div className="grid gap-1">
+            <p className="text-xs font-semibold text-foreground">Add custom API tool</p>
+            <p className="text-[0.7rem] leading-relaxed text-muted-foreground">
+              Define the endpoint and the env var that stores its API key. Do not paste the secret here.
+            </p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="grid gap-1.5 text-xs font-medium">
+              Name
+              <Input
+                disabled={disabled || saving}
+                onChange={event => setDraft(current => ({ ...current, name: event.target.value }))}
+                placeholder="YouCam Skin Analysis"
+                value={draft.name}
+              />
+            </label>
+            <label className="grid gap-1.5 text-xs font-medium">
+              Method
+              <Select
+                disabled={disabled || saving}
+                onValueChange={value => setDraft(current => ({ ...current, method: value }))}
+                value={draft.method}
+              >
+                <SelectTrigger size="sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map(method => (
+                    <SelectItem key={method} value={method}>
+                      {method}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </label>
+          </div>
+          <label className="grid gap-1.5 text-xs font-medium">
+            Endpoint URL
+            <Input
+              disabled={disabled || saving}
+              onChange={event => setDraft(current => ({ ...current, url: event.target.value }))}
+              placeholder="https://api.example.com/v1/analyze"
+              value={draft.url}
+            />
+          </label>
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="grid gap-1.5 text-xs font-medium">
+              Auth
+              <Select
+                disabled={disabled || saving}
+                onValueChange={value =>
+                  setDraft(current => ({ ...current, auth_type: value as CustomToolDraft['auth_type'] }))
+                }
+                value={draft.auth_type}
+              >
+                <SelectTrigger size="sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="api_key">API key</SelectItem>
+                  <SelectItem value="bearer">Bearer token</SelectItem>
+                  <SelectItem value="none">No auth</SelectItem>
+                </SelectContent>
+              </Select>
+            </label>
+            <label className="grid gap-1.5 text-xs font-medium">
+              API key env var
+              <Input
+                disabled={disabled || saving || draft.auth_type === 'none'}
+                onChange={event => setDraft(current => ({ ...current, api_key_env: event.target.value.toUpperCase() }))}
+                placeholder="YOUCAM_API_KEY"
+                value={draft.api_key_env}
+              />
+            </label>
+          </div>
+          <label className="grid gap-1.5 text-xs font-medium">
+            Description
+            <Textarea
+              className="min-h-20"
+              disabled={disabled || saving}
+              onChange={event => setDraft(current => ({ ...current, description: event.target.value }))}
+              placeholder="What the agent should use this API for."
+              value={draft.description}
+            />
+          </label>
+          <label className="grid gap-1.5 text-xs font-medium">
+            Request schema
+            <Textarea
+              className="min-h-28 font-mono text-[0.72rem]"
+              disabled={disabled || saving}
+              onChange={event => setDraft(current => ({ ...current, request_schema: event.target.value }))}
+              value={draft.request_schema}
+            />
+          </label>
+          <label className="grid gap-1.5 text-xs font-medium">
+            Response hint
+            <Textarea
+              className="min-h-20"
+              disabled={disabled || saving}
+              onChange={event => setDraft(current => ({ ...current, response_hint: event.target.value }))}
+              placeholder="Tell the agent which fields matter in the response."
+              value={draft.response_hint}
+            />
+          </label>
+          <div className="flex justify-end">
+            <Button
+              disabled={disabled || saving || !draft.name.trim() || !draft.url.trim()}
+              onClick={() => void saveCustomTool()}
+              size="sm"
+              type="button"
+            >
+              {saving ? (
+                <Loader className="size-4 text-primary" label="Adding custom tool" strokeScale={0.7} type="rose-two" />
+              ) : (
+                <Plus className="size-4" />
+              )}
+              Add tool
+            </Button>
+          </div>
+        </div>
+      ) : activeTools.length === 0 ? (
         <div className="grid gap-3 rounded-md border border-dashed border-(--stroke-nous) p-4 text-xs text-muted-foreground">
           <div className="grid gap-1">
-            <p className="font-medium text-foreground">No tools are available for this runtime yet</p>
+            <p className="font-medium text-foreground">
+              {mode === 'custom' ? 'No custom tools yet' : 'No default tools are available for this runtime yet'}
+            </p>
             <p className="leading-relaxed">
-              Agent tools are selected from the shared Hermes toolsets. Add API keys or enable toolsets in Skills &
-              Tools, then return here to choose what this agent can use.
+              {mode === 'custom'
+                ? 'Add a custom API tool for APIs like YouCam, courier services, internal systems, or pricing engines.'
+                : 'Default tools come from shared Hermes toolsets. Add API keys or enable toolsets in Skills & Tools, then return here to choose what this agent can use.'}
             </p>
           </div>
           <div>
-            <Button disabled={disabled} onClick={onConfigureTools} size="sm" type="button" variant="outline">
-              Configure tools and keys
+            <Button
+              disabled={disabled}
+              onClick={mode === 'custom' ? () => setMode('add') : onConfigureTools}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {mode === 'custom' ? 'Add custom tool' : 'Configure default tools'}
             </Button>
           </div>
         </div>
       ) : (
         <div className="grid gap-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-muted-foreground">
-              Pick the runtime tools this agent can use. API keys stay in the shared toolset setup.
-            </p>
-            <Button disabled={disabled} onClick={onConfigureTools} size="sm" type="button" variant="outline">
-              Configure keys
-            </Button>
-          </div>
+          <p className="text-xs text-muted-foreground">
+            {mode === 'custom'
+              ? 'Pick custom API tools this agent can use. The API key value stays in shared credentials.'
+              : 'Pick default runtime tools this agent can use.'}
+          </p>
           {visibleTools.map(tool => {
             const checked = selectedSet.has(tool.name)
+            const label = tool.display_name || tool.name
 
             return (
               <button
@@ -1247,7 +1488,7 @@ function ToolSelector({
                   >
                     {checked ? <CheckCircle2 className="size-2.5 text-primary-foreground" /> : null}
                   </span>
-                  {tool.name}
+                  {label}
                   <span className="text-[0.65rem] font-normal text-muted-foreground">{tool.source}</span>
                   {!tool.enabled ? (
                     <span className="text-[0.65rem] font-normal text-muted-foreground">setup required</span>
@@ -1256,7 +1497,9 @@ function ToolSelector({
                 {tool.description ? (
                   <span className="text-[0.7rem] leading-relaxed text-muted-foreground">{tool.description}</span>
                 ) : null}
-                <span className="text-[0.65rem] leading-relaxed text-muted-foreground">{tool.category}</span>
+                <span className="text-[0.65rem] leading-relaxed text-muted-foreground">
+                  {[tool.method, tool.url, tool.api_key_env || tool.category].filter(Boolean).join(' · ')}
+                </span>
               </button>
             )
           })}
@@ -1265,7 +1508,7 @@ function ToolSelector({
             onPageChange={setPage}
             page={page}
             pageSize={PANEL_PAGE_SIZE}
-            total={tools.length}
+            total={selectedModeCount}
           />
         </div>
       )}
