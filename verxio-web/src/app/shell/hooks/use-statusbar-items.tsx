@@ -30,22 +30,18 @@ import { CRON_ROUTE } from '../../routes'
 import type { StatusbarItem } from '../statusbar-controls'
 
 interface StatusbarItemsOptions {
-  agentsOpen: boolean
   commandCenterOpen: boolean
   extraLeftItems: readonly StatusbarItem[]
   extraRightItems: readonly StatusbarItem[]
   modelMenuContent?: ReactNode
-  openAgents: () => void
   toggleCommandCenter: () => void
 }
 
 export function useStatusbarItems({
-  agentsOpen,
   commandCenterOpen,
   extraLeftItems,
   extraRightItems,
   modelMenuContent,
-  openAgents,
   toggleCommandCenter
 }: StatusbarItemsOptions) {
   const { t } = useI18n()
@@ -126,10 +122,7 @@ export function useStatusbarItems({
         variant: 'text'
       },
       {
-        className: cn(
-          agentsOpen && 'bg-accent/55 text-foreground',
-          bgFailed > 0 && 'text-destructive hover:text-destructive'
-        ),
+        className: cn(bgFailed > 0 && 'text-destructive hover:text-destructive'),
         detail:
           subagentsRunning > 0
             ? copy.subagents(subagentsRunning)
@@ -146,11 +139,10 @@ export function useStatusbarItems({
           ) : (
             <Sparkles className="size-3" />
           ),
-        id: 'agents',
+        id: 'activity',
         label: copy.agents,
-        onSelect: openAgents,
-        title: agentsOpen ? copy.closeAgents : copy.openAgents,
-        variant: 'action'
+        title: copy.openAgents,
+        variant: 'text'
       },
       {
         icon: <Clock className="size-3" />,
@@ -162,13 +154,11 @@ export function useStatusbarItems({
       }
     ],
     [
-      agentsOpen,
       bgFailed,
       bgRunning,
       commandCenterOpen,
       copy,
       gatewayRestarting,
-      openAgents,
       serverConnected,
       serverConnecting,
       subagentsRunning,

@@ -226,7 +226,6 @@ export function DesktopController() {
     commandCenterOpen,
     cronOpen,
     currentView,
-    openAgents,
     profilesOpen,
     settingsOpen,
     toggleCommandCenter
@@ -808,12 +807,10 @@ export function DesktopController() {
   })
 
   const { leftStatusbarItems, statusbarItems } = useStatusbarItems({
-    agentsOpen,
     commandCenterOpen,
     extraLeftItems: statusbarItemGroups.flat.left,
     extraRightItems: statusbarItemGroups.flat.right,
     modelMenuContent,
-    openAgents,
     toggleCommandCenter
   })
 
