@@ -221,7 +221,6 @@ export function DesktopController() {
 
   const {
     activityOpen,
-    agentsOpen,
     chatOpen,
     closeOverlayToPreviousRoute,
     commandCenterInitialSection,
@@ -898,12 +897,6 @@ export function DesktopController() {
         </Suspense>
       )}
 
-      {agentsOpen && (
-        <Suspense fallback={null}>
-          <AgentsView onClose={closeOverlayToPreviousRoute} />
-        </Suspense>
-      )}
-
       {activityOpen && (
         <Suspense fallback={null}>
           <ActivityView onClose={closeOverlayToPreviousRoute} />
@@ -1062,6 +1055,14 @@ export function DesktopController() {
           <Route
             element={
               <Suspense fallback={null}>
+                <AgentsView />
+              </Suspense>
+            }
+            path="agents"
+          />
+          <Route
+            element={
+              <Suspense fallback={null}>
                 <NotepadView setStatusbarItemGroup={setStatusbarItemGroup} />
               </Suspense>
             }
@@ -1071,7 +1072,7 @@ export function DesktopController() {
           <Route element={null} path="profiles" />
           <Route element={null} path="settings" />
           <Route element={null} path="command-center" />
-          <Route element={null} path="agents" />
+          <Route element={null} path="activity" />
           <Route element={<Navigate replace to={`${SKILLS_ROUTE}?tab=toolsets`} />} path="toolset" />
           <Route element={<Navigate replace to={`${SKILLS_ROUTE}?tab=toolsets`} />} path="toolsets" />
           <Route element={<Navigate replace to={NEW_CHAT_ROUTE} />} path="login" />

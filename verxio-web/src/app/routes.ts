@@ -84,7 +84,6 @@ const RESERVED_PATHS: ReadonlySet<string> = new Set([
 // bleed over the overlay (they sit at a higher z-index than the overlay card).
 export const OVERLAY_VIEWS: ReadonlySet<AppView> = new Set([
   'activity',
-  'agents',
   'command-center',
   'cron',
   'profiles',

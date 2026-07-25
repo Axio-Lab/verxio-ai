@@ -61,8 +61,6 @@ import {
 } from '@/lib/verxio-api'
 import { getScopedModelOptions } from '@/lib/verxio-model-options'
 
-import { OverlayView } from '../overlays/overlay-view'
-
 type AgentTab =
   | 'instructions'
   | 'skills'
@@ -167,10 +165,6 @@ const DELIVERY_TYPES: WorkflowDeliveryType[] = [
 const AGENT_PAGE_SIZE = 8
 const PANEL_PAGE_SIZE = 6
 
-interface AgentsViewProps {
-  onClose: () => void
-}
-
 interface DraftState {
   approval_policy: string
   description: string
@@ -228,7 +222,7 @@ function formatDate(value: string | null | undefined): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
 }
 
-export function AgentsView({ onClose }: AgentsViewProps) {
+export function AgentsView() {
   const [agents, setAgents] = useState<WorkflowAgent[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft] = useState<DraftState>(() => draftFromAgent())
@@ -518,13 +512,8 @@ export function AgentsView({ onClose }: AgentsViewProps) {
   }
 
   return (
-    <OverlayView
-      closeLabel="Close agents"
-      contentClassName="px-5 pt-[calc(var(--titlebar-height)+1rem)] pb-4 sm:px-6"
-      onClose={onClose}
-      rootClassName="mx-auto max-w-6xl"
-    >
-      <header className="mb-4 flex shrink-0 flex-wrap items-start justify-between gap-3 pr-11">
+    <section className="flex h-full min-w-0 flex-col overflow-hidden bg-(--ui-chat-surface-background) px-5 pb-4 pt-[calc(var(--titlebar-height)+1rem)] sm:px-6">
+      <header className="mb-4 flex shrink-0 flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold text-foreground">Agents</h2>
           <p className="text-xs text-muted-foreground/80">
@@ -633,7 +622,7 @@ export function AgentsView({ onClose }: AgentsViewProps) {
           </main>
         </div>
       )}
-    </OverlayView>
+    </section>
   )
 }
 

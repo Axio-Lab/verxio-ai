@@ -88,12 +88,7 @@ export function ActivityView({ onClose }: ActivityViewProps) {
   const tree = useMemo(() => buildSubagentTree(activeSubagents), [activeSubagents])
 
   return (
-    <OverlayView
-      closeLabel={t.agents.close}
-      contentClassName="px-5 pt-5 pb-4 sm:px-6"
-      onClose={onClose}
-      rootClassName="mx-auto max-w-3xl"
-    >
+    <OverlayView closeLabel={t.agents.close} contentClassName="px-5 pt-5 pb-4 sm:px-6" onClose={onClose}>
       <header className="mb-3 shrink-0">
         <h2 className="text-sm font-semibold text-foreground">{t.agents.title}</h2>
         <p className="text-xs text-muted-foreground/80">{t.agents.subtitle}</p>
