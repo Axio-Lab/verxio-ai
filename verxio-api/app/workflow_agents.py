@@ -692,6 +692,7 @@ def _tool_from_payload(item: Any, category: str = "") -> WorkflowToolCapability 
         description=str(item.get("description") or item.get("summary") or ""),
         category=str(item.get("category") or item.get("toolset") or category or item.get("source") or ""),
         source=str(item.get("source") or "hermes"),
+        tools=_string_list(item.get("tools")),
         enabled=bool(item.get("enabled", True)),
     )
 
@@ -709,21 +710,35 @@ async def list_tool_capabilities(workspace: Workspace) -> WorkflowToolCapabiliti
     tools: list[WorkflowToolCapability] = []
     for item in metadata.toolsets:
         if isinstance(item, dict) and isinstance(item.get("tools"), list):
-            category = str(item.get("name") or item.get("id") or item.get("slug") or "")
+            name = str(item.get("name") or item.get("id") or item.get("slug") or "").strip()
+            if not name or name in seen:
+                continue
             toolset_enabled = bool(item.get("enabled", True))
             toolset_configured = bool(item.get("configured", True))
-            candidates = item["tools"]
-        else:
-            category = ""
-            toolset_enabled = True
-            toolset_configured = True
-            candidates = [item]
-        for candidate in candidates:
-            tool = _tool_from_payload(candidate, category)
-            if tool and tool.name not in seen:
-                tool.enabled = bool(tool.enabled and toolset_enabled and toolset_configured)
-                seen.add(tool.name)
-                tools.append(tool)
+            child_tools: list[str] = []
+            for candidate in item["tools"]:
+                child = _tool_from_payload(candidate, name)
+                if child:
+                    child_tools.append(child.name)
+            tools.append(
+                WorkflowToolCapability(
+                    name=name,
+                    display_name=str(item.get("label") or item.get("display_name") or name),
+                    description=str(item.get("description") or item.get("summary") or ""),
+                    category=str(item.get("category") or "toolset"),
+                    source="hermes_toolset",
+                    tools=child_tools,
+                    enabled=bool(toolset_enabled and toolset_configured),
+                    configured=toolset_configured,
+                )
+            )
+            seen.add(name)
+            continue
+
+        tool = _tool_from_payload(item)
+        if tool and tool.name not in seen:
+            seen.add(tool.name)
+            tools.append(tool)
     for custom_tool in list_custom_tools(workspace).tools:
         name = f"custom:{custom_tool.id}"
         tools.append(

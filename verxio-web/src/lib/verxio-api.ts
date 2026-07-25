@@ -257,6 +257,7 @@ export interface WorkflowToolCapability {
   method: string
   name: string
   source: string
+  tools: string[]
   url: string
 }
 

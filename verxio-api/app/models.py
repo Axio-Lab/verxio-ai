@@ -935,6 +935,7 @@ class WorkflowToolCapability(BaseModel):
     description: str = ""
     category: str = ""
     source: str = "hermes"
+    tools: list[str] = Field(default_factory=list)
     enabled: bool = True
     id: str | None = None
     auth_type: str = ""

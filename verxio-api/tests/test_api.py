@@ -867,8 +867,23 @@ def test_workflow_tool_capabilities_use_runtime_metadata(client, monkeypatch):
 
     assert response.status_code == 200
     body = response.json()
-    assert [tool["name"] for tool in body["tools"]] == ["send_email", "send_whatsapp"]
-    assert body["tools"][0]["category"] == "messaging"
+    assert body["tools"] == [
+        {
+            "name": "messaging",
+            "display_name": "messaging",
+            "description": "",
+            "category": "toolset",
+            "source": "hermes_toolset",
+            "tools": ["send_whatsapp", "send_email"],
+            "enabled": True,
+            "id": None,
+            "auth_type": "",
+            "api_key_env": "",
+            "configured": True,
+            "method": "",
+            "url": "",
+        }
+    ]
 
 
 def test_workflow_tool_capabilities_include_custom_tools(client, monkeypatch):
@@ -908,6 +923,7 @@ def test_workflow_tool_capabilities_include_custom_tools(client, monkeypatch):
             "description": "",
             "category": "custom api",
             "source": "custom",
+            "tools": [],
             "enabled": True,
             "auth_type": "api_key",
             "api_key_env": "YOUCAM_API_KEY",

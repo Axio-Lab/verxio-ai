@@ -1472,6 +1472,12 @@ function ToolSelector({
             const checked = selectedSet.has(tool.name)
             const label = tool.display_name || tool.name
 
+            const toolDetail =
+              tool.tools.length > 0
+                ? tool.tools.slice(0, 8).join(' · ') +
+                  (tool.tools.length > 8 ? ` · +${tool.tools.length - 8} more` : '')
+                : [tool.method, tool.url, tool.api_key_env || tool.category].filter(Boolean).join(' · ')
+
             return (
               <button
                 className={cn(
@@ -1493,7 +1499,9 @@ function ToolSelector({
                     {checked ? <CheckCircle2 className="size-2.5 text-primary-foreground" /> : null}
                   </span>
                   {label}
-                  <span className="text-[0.65rem] font-normal text-muted-foreground">{tool.source}</span>
+                  <span className="text-[0.65rem] font-normal text-muted-foreground">
+                    {tool.source === 'hermes_toolset' ? 'default' : tool.source}
+                  </span>
                   {!tool.enabled ? (
                     <span className="text-[0.65rem] font-normal text-muted-foreground">setup required</span>
                   ) : null}
@@ -1501,9 +1509,9 @@ function ToolSelector({
                 {tool.description ? (
                   <span className="text-[0.7rem] leading-relaxed text-muted-foreground">{tool.description}</span>
                 ) : null}
-                <span className="text-[0.65rem] leading-relaxed text-muted-foreground">
-                  {[tool.method, tool.url, tool.api_key_env || tool.category].filter(Boolean).join(' · ')}
-                </span>
+                {toolDetail ? (
+                  <span className="text-[0.65rem] leading-relaxed text-muted-foreground">{toolDetail}</span>
+                ) : null}
               </button>
             )
           })}
