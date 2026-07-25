@@ -750,6 +750,14 @@ class RunRecord(BaseModel):
 
 WorkflowTriggerType = Literal["manual", "webhook", "schedule", "api", "app_event", "chat"]
 WorkflowRunStatus = Literal["queued", "running", "completed", "failed"]
+WorkflowDeliveryType = Literal[
+    "approval_first",
+    "composio_action",
+    "reply_to_source",
+    "save_only",
+    "send_message",
+    "webhook_callback",
+]
 
 
 class WorkflowAgentRecord(BaseModel):
@@ -1013,6 +1021,48 @@ class WorkflowTriggerUpdateRequest(BaseModel):
 
 class WorkflowTriggersResponse(BaseModel):
     triggers: list[WorkflowTriggerRecord]
+
+
+class WorkflowDeliveryRecord(BaseModel):
+    id: str
+    tenant_id: str
+    workspace_id: str
+    workflow_agent_id: str
+    delivery_type: WorkflowDeliveryType
+    name: str = ""
+    channel: str = ""
+    destination: str = ""
+    template: str = ""
+    enabled: bool = True
+    require_approval: bool = False
+    config: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+    updated_at: str
+
+
+class WorkflowDeliveryCreateRequest(BaseModel):
+    delivery_type: WorkflowDeliveryType
+    name: str = Field(default="", max_length=180)
+    channel: str = Field(default="", max_length=120)
+    destination: str = Field(default="", max_length=320)
+    template: str = Field(default="", max_length=4000)
+    enabled: bool = True
+    require_approval: bool = False
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowDeliveryUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=180)
+    channel: str | None = Field(default=None, max_length=120)
+    destination: str | None = Field(default=None, max_length=320)
+    template: str | None = Field(default=None, max_length=4000)
+    enabled: bool | None = None
+    require_approval: bool | None = None
+    config: dict[str, Any] | None = None
+
+
+class WorkflowDeliveriesResponse(BaseModel):
+    deliveries: list[WorkflowDeliveryRecord]
 
 
 class WorkflowRunRecord(BaseModel):

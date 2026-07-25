@@ -25,6 +25,10 @@ from app.models import (
     WorkflowAgentsResponse,
     WorkflowAgentUpdateRequest,
     WorkflowSetupApprovalRisk,
+    WorkflowDeliveriesResponse,
+    WorkflowDeliveryCreateRequest,
+    WorkflowDeliveryRecord,
+    WorkflowDeliveryUpdateRequest,
     WorkflowIntegrationCapabilitiesResponse,
     WorkflowIntegrationCapability,
     WorkflowRunCreateRequest,
@@ -132,6 +136,14 @@ def _trigger_from_row(row: dict[str, Any], request: Request | None = None) -> Wo
     return WorkflowTriggerRecord(**payload)
 
 
+def _delivery_from_row(row: dict[str, Any]) -> WorkflowDeliveryRecord:
+    payload = dict(row)
+    payload["enabled"] = bool(payload.get("enabled"))
+    payload["require_approval"] = bool(payload.get("require_approval"))
+    payload["config"] = _json_loads(payload.pop("config_json", "{}"), {})
+    return WorkflowDeliveryRecord(**payload)
+
+
 def _setup_draft_from_row(row: dict[str, Any]) -> WorkflowAgentSetupDraftRecord:
     payload = dict(row)
     payload["draft"] = _json_loads(payload.pop("draft_json", "{}"), {})
@@ -174,6 +186,29 @@ def _validate_trigger_payload(trigger_type: str, event_name: str, config: dict[s
         event = str(config.get("event") or event_name or "").strip()
         if not app_slug or not event:
             raise HTTPException(status_code=422, detail="App event triggers require config.appSlug and an event name.")
+
+
+def _validate_delivery_payload(
+    delivery_type: str,
+    *,
+    channel: str = "",
+    destination: str = "",
+    config: dict[str, Any] | None = None,
+) -> None:
+    config = config or {}
+    if delivery_type == "send_message" and not (channel.strip() and destination.strip()):
+        raise HTTPException(status_code=422, detail="Send-message deliveries require channel and destination.")
+    if delivery_type == "reply_to_source" and not channel.strip():
+        raise HTTPException(status_code=422, detail="Reply-to-source deliveries require a channel.")
+    if delivery_type == "webhook_callback":
+        url = str(config.get("url") or destination or "").strip()
+        if not (url.startswith("https://") or url.startswith("http://")):
+            raise HTTPException(status_code=422, detail="Webhook callback deliveries require an http(s) URL.")
+    if delivery_type == "composio_action":
+        action = str(config.get("action") or "").strip()
+        app_slug = str(config.get("appSlug") or config.get("app_slug") or channel or "").strip()
+        if not app_slug or not action:
+            raise HTTPException(status_code=422, detail="Composio action deliveries require appSlug and action.")
 
 
 def _setup_approval_risks(draft: WorkflowAgentSetupDraftData) -> list[WorkflowSetupApprovalRisk]:
@@ -894,6 +929,133 @@ def delete_trigger(workspace: Workspace, profile: AgentProfile, agent_id: str, t
     return {"ok": True}
 
 
+def list_deliveries(workspace: Workspace, profile: AgentProfile, agent_id: str) -> WorkflowDeliveriesResponse:
+    get_agent(workspace, profile, agent_id)
+    rows = db.fetch_all(
+        """
+        SELECT * FROM workflow_deliveries
+        WHERE workspace_id = ? AND workflow_agent_id = ?
+        ORDER BY created_at DESC
+        """,
+        (workspace.id, agent_id),
+    )
+    return WorkflowDeliveriesResponse(deliveries=[_delivery_from_row(row) for row in rows])
+
+
+def create_delivery(
+    workspace: Workspace,
+    profile: AgentProfile,
+    agent_id: str,
+    payload: WorkflowDeliveryCreateRequest,
+) -> WorkflowDeliveryRecord:
+    get_agent(workspace, profile, agent_id)
+    config = payload.config if isinstance(payload.config, dict) else {}
+    _validate_delivery_payload(
+        payload.delivery_type,
+        channel=payload.channel,
+        destination=payload.destination,
+        config=config,
+    )
+    created_at = now_iso()
+    delivery_id = new_id("workflow_delivery")
+    db.execute(
+        """
+        INSERT INTO workflow_deliveries (
+            id, tenant_id, workspace_id, workflow_agent_id, delivery_type, name, channel,
+            destination, template, enabled, require_approval, config_json, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            delivery_id,
+            workspace.tenant_id,
+            workspace.id,
+            agent_id,
+            payload.delivery_type,
+            payload.name.strip(),
+            payload.channel.strip(),
+            payload.destination.strip(),
+            payload.template,
+            1 if payload.enabled else 0,
+            1 if payload.require_approval else 0,
+            _json_dumps(config),
+            created_at,
+            created_at,
+        ),
+    )
+    return get_delivery(workspace, profile, agent_id, delivery_id)
+
+
+def get_delivery(
+    workspace: Workspace,
+    profile: AgentProfile,
+    agent_id: str,
+    delivery_id: str,
+) -> WorkflowDeliveryRecord:
+    get_agent(workspace, profile, agent_id)
+    row = db.fetch_one(
+        """
+        SELECT * FROM workflow_deliveries
+        WHERE id = ? AND workspace_id = ? AND workflow_agent_id = ?
+        """,
+        (delivery_id, workspace.id, agent_id),
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Workflow delivery not found.")
+    return _delivery_from_row(row)
+
+
+def update_delivery(
+    workspace: Workspace,
+    profile: AgentProfile,
+    agent_id: str,
+    delivery_id: str,
+    payload: WorkflowDeliveryUpdateRequest,
+) -> WorkflowDeliveryRecord:
+    current = get_delivery(workspace, profile, agent_id, delivery_id)
+    data = current.model_dump()
+    updates = payload.model_dump(exclude_unset=True)
+    data.update({key: value for key, value in updates.items() if value is not None})
+    config = data.get("config") if isinstance(data.get("config"), dict) else {}
+    _validate_delivery_payload(
+        current.delivery_type,
+        channel=str(data.get("channel") or ""),
+        destination=str(data.get("destination") or ""),
+        config=config,
+    )
+    db.execute(
+        """
+        UPDATE workflow_deliveries
+        SET name = ?, channel = ?, destination = ?, template = ?, enabled = ?,
+            require_approval = ?, config_json = ?, updated_at = ?
+        WHERE id = ? AND workspace_id = ? AND workflow_agent_id = ?
+        """,
+        (
+            str(data.get("name") or "").strip(),
+            str(data.get("channel") or "").strip(),
+            str(data.get("destination") or "").strip(),
+            str(data.get("template") or ""),
+            1 if data.get("enabled") else 0,
+            1 if data.get("require_approval") else 0,
+            _json_dumps(config),
+            now_iso(),
+            delivery_id,
+            workspace.id,
+            agent_id,
+        ),
+    )
+    return get_delivery(workspace, profile, agent_id, delivery_id)
+
+
+def delete_delivery(workspace: Workspace, profile: AgentProfile, agent_id: str, delivery_id: str) -> dict[str, bool]:
+    get_delivery(workspace, profile, agent_id, delivery_id)
+    db.execute(
+        "DELETE FROM workflow_deliveries WHERE id = ? AND workspace_id = ? AND workflow_agent_id = ?",
+        (delivery_id, workspace.id, agent_id),
+    )
+    return {"ok": True}
+
+
 def list_runs(workspace: Workspace, profile: AgentProfile, agent_id: str, limit: int = 50) -> WorkflowRunsResponse:
     get_agent(workspace, profile, agent_id)
     rows = db.fetch_all(
@@ -994,6 +1156,53 @@ def _set_run_status(run_id: str, status: str, *, output: str = "", error: str | 
         _record_run_event(_run_from_row(row), status, message, metadata)
 
 
+def _record_delivery_events(run: WorkflowRunRecord, output: str) -> None:
+    rows = db.fetch_all(
+        """
+        SELECT * FROM workflow_deliveries
+        WHERE workspace_id = ? AND workflow_agent_id = ? AND enabled = 1
+        ORDER BY created_at ASC
+        """,
+        (run.workspace_id, run.workflow_agent_id),
+    )
+    deliveries = [_delivery_from_row(row) for row in rows]
+    if not deliveries:
+        _record_run_event(
+            run,
+            "delivery_saved",
+            "Workflow output was saved to the run.",
+            {"delivery_type": "save_only", "outputPreview": output[:500]},
+        )
+        return
+
+    for delivery in deliveries:
+        metadata = {
+            "channel": delivery.channel,
+            "delivery_id": delivery.id,
+            "delivery_type": delivery.delivery_type,
+            "destination": delivery.destination,
+            "name": delivery.name,
+            "outputPreview": output[:500],
+        }
+        if delivery.require_approval or delivery.delivery_type == "approval_first":
+            _record_run_event(
+                run,
+                "delivery_waiting_for_approval",
+                "Workflow delivery is waiting for approval.",
+                metadata,
+            )
+            continue
+        if delivery.delivery_type == "save_only":
+            _record_run_event(run, "delivery_saved", "Workflow output was saved to the run.", metadata)
+            continue
+        _record_run_event(
+            run,
+            "delivery_queued",
+            "Workflow delivery was queued for the configured destination.",
+            metadata,
+        )
+
+
 def _build_instructions(agent: WorkflowAgentRecord, knowledge_context: list[dict[str, Any]] | None = None) -> str:
     skill_lines = [f"- {name}" for name in agent.skills]
     context_lines = [
@@ -1069,6 +1278,8 @@ async def run_agent(
         _set_run_status(run.id, "failed", error=str(exc), completed=True)
         return _run_from_row(db.fetch_one("SELECT * FROM workflow_runs WHERE id = ?", (run.id,)) or {})
     _set_run_status(run.id, "completed", output=output, completed=True)
+    completed_run = _run_from_row(db.fetch_one("SELECT * FROM workflow_runs WHERE id = ?", (run.id,)) or {})
+    _record_delivery_events(completed_run, output)
     return _run_from_row(db.fetch_one("SELECT * FROM workflow_runs WHERE id = ?", (run.id,)) or {})
 
 

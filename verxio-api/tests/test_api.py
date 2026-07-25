@@ -232,6 +232,74 @@ def test_workflow_agent_setup_update_draft_is_workspace_scoped(client):
     assert blocked.status_code == 404
 
 
+def test_workflow_delivery_crud_and_run_events(client, monkeypatch):
+    _payload, token = signup(client, "workflow-delivery@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    async def fake_oneshot(workspace, profile, user_input, *, instructions=None):
+        return "Delivery output ready."
+
+    monkeypatch.setattr(workflow_agents, "run_agent_via_dashboard", fake_oneshot)
+
+    agent = client.post("/api/workflow-agents", headers=headers, json={"name": "Delivery Agent"}).json()
+    save_only = client.post(
+        f"/api/workflow-agents/{agent['id']}/deliveries",
+        headers=headers,
+        json={"delivery_type": "save_only", "name": "Store output"},
+    )
+    assert save_only.status_code == 200
+
+    whatsapp = client.post(
+        f"/api/workflow-agents/{agent['id']}/deliveries",
+        headers=headers,
+        json={
+            "delivery_type": "send_message",
+            "name": "WhatsApp customer",
+            "channel": "whatsapp",
+            "destination": "+15551234567",
+            "require_approval": True,
+        },
+    )
+    assert whatsapp.status_code == 200
+    assert whatsapp.json()["require_approval"] is True
+
+    listed = client.get(f"/api/workflow-agents/{agent['id']}/deliveries", headers=headers)
+    assert listed.status_code == 200
+    assert len(listed.json()["deliveries"]) == 2
+
+    updated = client.put(
+        f"/api/workflow-agents/{agent['id']}/deliveries/{whatsapp.json()['id']}",
+        headers=headers,
+        json={"destination": "+15557654321", "require_approval": False},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["destination"] == "+15557654321"
+    assert updated.json()["require_approval"] is False
+
+    run = client.post(
+        f"/api/workflow-agents/{agent['id']}/runs",
+        headers=headers,
+        json={"input": {"customer": "Ada"}},
+    )
+    assert run.status_code == 200
+    events = client.get(f"/api/workflow-agents/{agent['id']}/runs/{run.json()['id']}/events", headers=headers)
+    assert events.status_code == 200
+    event_types = [event["event_type"] for event in events.json()["events"]]
+    assert event_types.count("delivery_saved") == 1
+    assert event_types.count("delivery_queued") == 1
+
+    _other_payload, other_token = signup(client, "workflow-delivery-other@example.com")
+    blocked = client.get(
+        f"/api/workflow-agents/{agent['id']}/deliveries",
+        headers={"Cookie": f"{SESSION_COOKIE}={other_token}"},
+    )
+    assert blocked.status_code == 404
+
+    deleted = client.delete(f"/api/workflow-agents/{agent['id']}/deliveries/{save_only.json()['id']}", headers=headers)
+    assert deleted.status_code == 200
+    assert deleted.json()["ok"] is True
+
+
 def test_workflow_agent_manual_and_webhook_runs(client, monkeypatch):
     _payload, token = signup(client, "workflow-run@example.com")
 
@@ -272,7 +340,12 @@ def test_workflow_agent_manual_and_webhook_runs(client, monkeypatch):
         headers={"Cookie": f"{SESSION_COOKIE}={token}"},
     )
     assert events.status_code == 200
-    assert [event["event_type"] for event in events.json()["events"]] == ["queued", "running", "completed"]
+    assert [event["event_type"] for event in events.json()["events"]] == [
+        "queued",
+        "running",
+        "completed",
+        "delivery_saved",
+    ]
 
     trigger = client.post(
         f"/api/workflow-agents/{agent['id']}/triggers",
@@ -364,7 +437,7 @@ def test_workflow_agent_uses_attached_knowledge_context(client, monkeypatch):
     )
     assert events.status_code == 200
     event_types = [event["event_type"] for event in events.json()["events"]]
-    assert event_types == ["queued", "running", "knowledge_retrieved", "completed"]
+    assert event_types == ["queued", "running", "knowledge_retrieved", "completed", "delivery_saved"]
 
 
 def test_workflow_trigger_validation(client):

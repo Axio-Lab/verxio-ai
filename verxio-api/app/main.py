@@ -163,6 +163,10 @@ from app.models import (
     WorkflowAgentSetupDraftUpdateRequest,
     WorkflowAgentsResponse,
     WorkflowAgentUpdateRequest,
+    WorkflowDeliveriesResponse,
+    WorkflowDeliveryCreateRequest,
+    WorkflowDeliveryRecord,
+    WorkflowDeliveryUpdateRequest,
     WorkflowIntegrationCapabilitiesResponse,
     WorkflowRunCreateRequest,
     WorkflowRunEventsResponse,
@@ -240,12 +244,15 @@ from app.workflow_agents import (
     create_agent as create_workflow_agent,
     create_setup_draft as create_workflow_setup_draft,
     create_setup_update_draft as create_workflow_setup_update_draft,
+    create_delivery as create_workflow_delivery,
     create_trigger as create_workflow_trigger,
     delete_agent as delete_workflow_agent,
+    delete_delivery as delete_workflow_delivery,
     delete_trigger as delete_workflow_trigger,
     get_agent as get_workflow_agent,
     list_agents as list_workflow_agents,
     list_integration_capabilities as list_workflow_integration_capabilities,
+    list_deliveries as list_workflow_deliveries,
     list_run_events as list_workflow_run_events,
     list_runs as list_workflow_runs,
     list_skill_capabilities as list_workflow_skill_capabilities,
@@ -256,6 +263,7 @@ from app.workflow_agents import (
     run_webhook_trigger,
     tick_due_schedule_triggers as tick_due_workflow_schedule_triggers,
     update_agent as update_workflow_agent,
+    update_delivery as update_workflow_delivery,
     update_setup_approvals as update_workflow_setup_approvals,
     update_trigger as update_workflow_trigger,
 )
@@ -1008,6 +1016,43 @@ async def delete_workflow_trigger_route(agent_id: str, trigger_id: str, request:
     user = require_user(request)
     workspace, profile, _runtime_instance = get_context_for_user(user)
     return delete_workflow_trigger(workspace, profile, agent_id, trigger_id)
+
+
+@app.get("/api/workflow-agents/{agent_id}/deliveries", response_model=WorkflowDeliveriesResponse)
+async def list_workflow_deliveries_route(agent_id: str, request: Request) -> WorkflowDeliveriesResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return list_workflow_deliveries(workspace, profile, agent_id)
+
+
+@app.post("/api/workflow-agents/{agent_id}/deliveries", response_model=WorkflowDeliveryRecord)
+async def create_workflow_delivery_route(
+    agent_id: str,
+    payload: WorkflowDeliveryCreateRequest,
+    request: Request,
+) -> WorkflowDeliveryRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return create_workflow_delivery(workspace, profile, agent_id, payload)
+
+
+@app.put("/api/workflow-agents/{agent_id}/deliveries/{delivery_id}", response_model=WorkflowDeliveryRecord)
+async def update_workflow_delivery_route(
+    agent_id: str,
+    delivery_id: str,
+    payload: WorkflowDeliveryUpdateRequest,
+    request: Request,
+) -> WorkflowDeliveryRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return update_workflow_delivery(workspace, profile, agent_id, delivery_id, payload)
+
+
+@app.delete("/api/workflow-agents/{agent_id}/deliveries/{delivery_id}")
+async def delete_workflow_delivery_route(agent_id: str, delivery_id: str, request: Request) -> dict[str, bool]:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return delete_workflow_delivery(workspace, profile, agent_id, delivery_id)
 
 
 @app.get("/api/workflow-agents/{agent_id}/runs", response_model=WorkflowRunsResponse)
