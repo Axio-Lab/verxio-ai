@@ -349,6 +349,41 @@ export interface WorkflowDeliveryInput {
   template?: string
 }
 
+export interface WorkflowAgentEmbedConfig {
+  id: string
+  tenant_id: string
+  workspace_id: string
+  runtime_agent_id: string
+  workflow_agent_id: string
+  public_token: string
+  enabled: boolean
+  display_name: string
+  welcome_message: string
+  primary_color: string
+  logo_url: string
+  asset_url: string
+  allowed_origins: string[]
+  share_url: string
+  embed_script: string
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowAgentEmbedConfigInput {
+  allowed_origins?: string[]
+  asset_url?: string
+  display_name?: string
+  enabled?: boolean
+  logo_url?: string
+  primary_color?: string
+  welcome_message?: string
+}
+
+export interface WorkflowAgentEmbedAssetInput {
+  data_url: string
+  file_name: string
+}
+
 export interface WorkflowRun {
   id: string
   tenant_id: string
@@ -1170,6 +1205,30 @@ export function deleteWorkflowDelivery(agentId: string, deliveryId: string): Pro
       method: 'DELETE'
     }
   )
+}
+
+export function getWorkflowAgentEmbedConfig(agentId: string): Promise<WorkflowAgentEmbedConfig> {
+  return verxioFetch<WorkflowAgentEmbedConfig>(`/api/workflow-agents/${encodeURIComponent(agentId)}/embed`)
+}
+
+export function updateWorkflowAgentEmbedConfig(
+  agentId: string,
+  input: WorkflowAgentEmbedConfigInput
+): Promise<WorkflowAgentEmbedConfig> {
+  return verxioFetch<WorkflowAgentEmbedConfig>(`/api/workflow-agents/${encodeURIComponent(agentId)}/embed`, {
+    body: JSON.stringify(input),
+    method: 'PUT'
+  })
+}
+
+export function uploadWorkflowAgentEmbedAsset(
+  agentId: string,
+  input: WorkflowAgentEmbedAssetInput
+): Promise<WorkflowAgentEmbedConfig> {
+  return verxioFetch<WorkflowAgentEmbedConfig>(`/api/workflow-agents/${encodeURIComponent(agentId)}/embed/asset`, {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
 }
 
 export function listWorkflowRuns(agentId: string): Promise<{ runs: WorkflowRun[] }> {

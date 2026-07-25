@@ -29,6 +29,7 @@ import {
   deleteWorkflowTrigger,
   draftWorkflowAgentSetup,
   draftWorkflowAgentSetupUpdate,
+  getWorkflowAgentEmbedConfig,
   type KnowledgeBase,
   listKnowledgeBases,
   listWorkflowAgents,
@@ -41,9 +42,12 @@ import {
   listWorkflowTriggers,
   runWorkflowAgent,
   updateWorkflowAgent,
+  updateWorkflowAgentEmbedConfig,
   updateWorkflowDelivery,
   updateWorkflowTrigger,
+  uploadWorkflowAgentEmbedAsset,
   type WorkflowAgent,
+  type WorkflowAgentEmbedConfig,
   type WorkflowAgentSetupDraftResponse,
   type WorkflowDelivery,
   type WorkflowDeliveryType,
@@ -59,7 +63,16 @@ import { getScopedModelOptions } from '@/lib/verxio-model-options'
 
 import { OverlayView } from '../overlays/overlay-view'
 
-type AgentTab = 'instructions' | 'skills' | 'knowledge' | 'integrations' | 'tools' | 'delivery' | 'triggers' | 'runs'
+type AgentTab =
+  | 'instructions'
+  | 'skills'
+  | 'knowledge'
+  | 'integrations'
+  | 'tools'
+  | 'delivery'
+  | 'triggers'
+  | 'embed'
+  | 'runs'
 
 const AGENT_TABS: Array<{ id: AgentTab; label: string }> = [
   { id: 'instructions', label: 'Instructions' },
@@ -69,6 +82,7 @@ const AGENT_TABS: Array<{ id: AgentTab; label: string }> = [
   { id: 'tools', label: 'Tools' },
   { id: 'delivery', label: 'Delivery' },
   { id: 'triggers', label: 'Triggers' },
+  { id: 'embed', label: 'Embed' },
   { id: 'runs', label: 'Runs' }
 ]
 
@@ -221,6 +235,7 @@ export function AgentsView({ onClose }: AgentsViewProps) {
   const [deliveries, setDeliveries] = useState<WorkflowDelivery[]>([])
   const [triggers, setTriggers] = useState<WorkflowTrigger[]>([])
   const [runs, setRuns] = useState<WorkflowRun[]>([])
+  const [embedConfig, setEmbedConfig] = useState<WorkflowAgentEmbedConfig | null>(null)
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([])
   const [integrationCapabilities, setIntegrationCapabilities] = useState<WorkflowIntegrationCapability[]>([])
   const [integrationCapabilityErrors, setIntegrationCapabilityErrors] = useState<string[]>([])
@@ -335,15 +350,17 @@ export function AgentsView({ onClose }: AgentsViewProps) {
 
   const refreshDetails = useCallback(async (agentId: string) => {
     try {
-      const [deliveryResult, triggerResult, runResult] = await Promise.all([
+      const [deliveryResult, triggerResult, runResult, embedResult] = await Promise.all([
         listWorkflowDeliveries(agentId),
         listWorkflowTriggers(agentId),
-        listWorkflowRuns(agentId)
+        listWorkflowRuns(agentId),
+        getWorkflowAgentEmbedConfig(agentId)
       ])
 
       setDeliveries(deliveryResult.deliveries)
       setTriggers(triggerResult.triggers)
       setRuns(runResult.runs)
+      setEmbedConfig(embedResult)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load agent details.')
     }
@@ -377,6 +394,7 @@ export function AgentsView({ onClose }: AgentsViewProps) {
       setDeliveries([])
       setTriggers([])
       setRuns([])
+      setEmbedConfig(null)
     }
   }, [defaultModelId, refreshDetails, selected])
 
@@ -447,6 +465,7 @@ export function AgentsView({ onClose }: AgentsViewProps) {
     setDeliveries([])
     setTriggers([])
     setRuns([])
+    setEmbedConfig(null)
     setTab('instructions')
   }
 
@@ -596,6 +615,17 @@ export function AgentsView({ onClose }: AgentsViewProps) {
                     onError={setError}
                     onRefresh={() => refreshDetails(selected.id)}
                     runs={runs}
+                  />
+                ) : null}
+                {tab === 'embed' ? (
+                  <EmbedPanel
+                    agent={selected}
+                    busy={busy}
+                    config={embedConfig}
+                    onBusy={setBusy}
+                    onConfigChange={setEmbedConfig}
+                    onError={setError}
+                    onRefresh={() => refreshDetails(selected.id)}
                   />
                 ) : null}
               </>
@@ -1714,6 +1744,233 @@ function deliveryFormFromRecord(delivery?: WorkflowDelivery | null): DeliveryFor
     require_approval: delivery?.require_approval ?? false,
     template: delivery?.template ?? ''
   }
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('Could not read asset.'))
+    reader.onload = () => resolve(String(reader.result || ''))
+    reader.readAsDataURL(file)
+  })
+}
+
+function EmbedPanel({
+  agent,
+  busy,
+  config,
+  onBusy,
+  onConfigChange,
+  onError,
+  onRefresh
+}: {
+  agent: WorkflowAgent
+  busy: boolean
+  config: WorkflowAgentEmbedConfig | null
+  onBusy: (busy: boolean) => void
+  onConfigChange: (config: WorkflowAgentEmbedConfig) => void
+  onError: (error: string | null) => void
+  onRefresh: () => Promise<void>
+}) {
+  const [copied, setCopied] = useState<'script' | 'url' | null>(null)
+  const [uploading, setUploading] = useState(false)
+
+  const save = async (updates: Partial<WorkflowAgentEmbedConfig>) => {
+    if (!config) {
+      return
+    }
+
+    onBusy(true)
+    onError(null)
+
+    try {
+      const next = await updateWorkflowAgentEmbedConfig(agent.id, {
+        allowed_origins: updates.allowed_origins ?? config.allowed_origins,
+        asset_url: updates.asset_url ?? config.asset_url,
+        display_name: updates.display_name ?? config.display_name,
+        enabled: updates.enabled ?? config.enabled,
+        logo_url: updates.logo_url ?? config.logo_url,
+        primary_color: updates.primary_color ?? config.primary_color,
+        welcome_message: updates.welcome_message ?? config.welcome_message
+      })
+
+      onConfigChange(next)
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Could not save embed settings.')
+    } finally {
+      onBusy(false)
+    }
+  }
+
+  const copy = async (kind: 'script' | 'url', value: string) => {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(kind)
+      window.setTimeout(() => setCopied(null), 1600)
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Could not copy to clipboard.')
+    }
+  }
+
+  const upload = async (file: File | undefined) => {
+    if (!file || !config) {
+      return
+    }
+
+    setUploading(true)
+    onError(null)
+
+    try {
+      const dataUrl = await readFileAsDataUrl(file)
+      const next = await uploadWorkflowAgentEmbedAsset(agent.id, { data_url: dataUrl, file_name: file.name })
+      onConfigChange(next)
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Could not upload asset.')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  if (!config) {
+    return (
+      <section className="mt-4 grid min-h-52 place-items-center rounded-md border border-(--stroke-nous)">
+        <Loader className="size-8 text-primary" label="Loading embed settings" strokeScale={0.72} type="rose-curve" />
+      </section>
+    )
+  }
+
+  return (
+    <section className="mt-4 grid gap-3 rounded-md border border-(--stroke-nous) p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-xs font-semibold">Embed and share</h3>
+          <p className="text-[0.7rem] leading-relaxed text-muted-foreground">
+            Publish this agent as a shareable URL or branded widget for a website.
+          </p>
+        </div>
+        <Button
+          disabled={busy || uploading}
+          onClick={() => save({ enabled: !config.enabled })}
+          size="sm"
+          variant="outline"
+        >
+          <span className={cn('size-1.5 rounded-full', config.enabled ? 'bg-primary' : 'bg-muted-foreground/50')} />
+          {config.enabled ? 'Enabled' : 'Disabled'}
+        </Button>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="grid gap-1.5 text-xs">
+          <span>Display name</span>
+          <Input
+            disabled={busy}
+            onBlur={event => save({ display_name: event.currentTarget.value })}
+            onChange={event => onConfigChange({ ...config, display_name: event.currentTarget.value })}
+            value={config.display_name}
+          />
+        </label>
+        <label className="grid gap-1.5 text-xs">
+          <span>Primary color</span>
+          <div className="grid grid-cols-[2.75rem_minmax(0,1fr)] gap-2">
+            <Input
+              aria-label="Primary color swatch"
+              className="p-1"
+              disabled={busy}
+              onBlur={event => save({ primary_color: event.currentTarget.value })}
+              onChange={event => onConfigChange({ ...config, primary_color: event.currentTarget.value })}
+              type="color"
+              value={config.primary_color}
+            />
+            <Input
+              disabled={busy}
+              onBlur={event => save({ primary_color: event.currentTarget.value })}
+              onChange={event => onConfigChange({ ...config, primary_color: event.currentTarget.value })}
+              value={config.primary_color}
+            />
+          </div>
+        </label>
+      </div>
+
+      <label className="grid gap-1.5 text-xs">
+        <span>Welcome message</span>
+        <Textarea
+          disabled={busy}
+          onBlur={event => save({ welcome_message: event.currentTarget.value })}
+          onChange={event => onConfigChange({ ...config, welcome_message: event.currentTarget.value })}
+          value={config.welcome_message}
+        />
+      </label>
+
+      <label className="grid gap-1.5 text-xs">
+        <span>Allowed origins</span>
+        <Textarea
+          className="min-h-20 font-mono text-[0.72rem]"
+          disabled={busy}
+          onBlur={event => save({ allowed_origins: lines(event.currentTarget.value) })}
+          onChange={event => onConfigChange({ ...config, allowed_origins: lines(event.currentTarget.value) })}
+          placeholder="https://example.com"
+          value={config.allowed_origins.join('\n')}
+        />
+      </label>
+
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+        <label className="grid gap-1.5 text-xs">
+          <span>Logo or brand asset</span>
+          <Input
+            accept="image/png,image/jpeg,image/webp,image/svg+xml"
+            disabled={busy || uploading}
+            onChange={event => void upload(event.currentTarget.files?.[0])}
+            type="file"
+          />
+        </label>
+        <div className="flex items-end">
+          {uploading ? (
+            <Loader className="size-8 text-primary" label="Uploading asset" strokeScale={0.72} type="rose-curve" />
+          ) : config.asset_url ? (
+            <img
+              alt=""
+              className="h-10 w-10 rounded-md border border-(--stroke-nous) object-cover"
+              src={config.asset_url}
+            />
+          ) : null}
+        </div>
+      </div>
+
+      <div className="grid gap-2 rounded-md border border-(--stroke-nous) p-3">
+        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
+          <Input readOnly value={config.share_url} />
+          <Button
+            disabled={!config.share_url}
+            onClick={() => copy('url', config.share_url)}
+            size="sm"
+            variant="outline"
+          >
+            {copied === 'url' ? <CheckCircle2 className="size-4" /> : <Save className="size-4" />}
+            {copied === 'url' ? 'Copied' : 'Copy URL'}
+          </Button>
+        </div>
+        <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
+          <Textarea className="min-h-20 font-mono text-[0.72rem]" readOnly value={config.embed_script} />
+          <Button
+            disabled={!config.embed_script}
+            onClick={() => copy('script', config.embed_script)}
+            size="sm"
+            variant="outline"
+          >
+            {copied === 'script' ? <CheckCircle2 className="size-4" /> : <Save className="size-4" />}
+            {copied === 'script' ? 'Copied' : 'Copy script'}
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex justify-end">
+        <Button disabled={busy || uploading} onClick={() => void onRefresh()} size="sm" variant="ghost">
+          <RefreshCw className="size-4" />
+          Refresh
+        </Button>
+      </div>
+    </section>
+  )
 }
 
 function DeliveryPanel({
