@@ -1,5 +1,5 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 
 import { PageLoader } from '@/components/page-loader'
 import { SkillEditorDialog } from '@/components/skill-editor-dialog'
@@ -70,7 +70,7 @@ import {
 import { getScopedModelOptions } from '@/lib/verxio-model-options'
 import { notify, notifyError } from '@/store/notifications'
 
-import { SETTINGS_ROUTE } from '../routes'
+import { AGENTS_ROUTE, SETTINGS_ROUTE } from '../routes'
 
 type AgentTab =
   | 'instructions'
@@ -175,6 +175,7 @@ const DELIVERY_TYPES: WorkflowDeliveryType[] = [
 
 const AGENT_PAGE_SIZE = 8
 const PANEL_PAGE_SIZE = 6
+const AGENT_DRAFT_ROUTE_SEGMENT = 'drafts'
 
 interface DraftState {
   approval_policy: string
@@ -238,6 +239,12 @@ interface AgentModelOption {
   provider: string
 }
 
+type AgentRouteSelection =
+  | { id: string; kind: 'agent' }
+  | { id: string; kind: 'draft' }
+  | { kind: 'list' }
+  | { kind: 'new' }
+
 type ToolCatalogMode = 'default' | 'custom' | 'add'
 
 interface CustomToolDraft {
@@ -262,6 +269,62 @@ const emptyCustomToolDraft = (): CustomToolDraft => ({
   url: ''
 })
 
+function agentDetailRoute(agentId: string): string {
+  return `${AGENTS_ROUTE}/${encodeURIComponent(agentId)}`
+}
+
+function agentDraftRoute(setupDraftId: string): string {
+  return `${AGENTS_ROUTE}/${AGENT_DRAFT_ROUTE_SEGMENT}/${encodeURIComponent(setupDraftId)}`
+}
+
+function parseAgentRoute(pathname: string): AgentRouteSelection {
+  const parts = pathname.split('/').filter(Boolean)
+
+  if (parts[0] !== 'agents') {
+    return { kind: 'list' }
+  }
+
+  if (parts.length === 1) {
+    return { kind: 'list' }
+  }
+
+  if (parts[1] === 'new') {
+    return { kind: 'new' }
+  }
+
+  if (parts[1] === AGENT_DRAFT_ROUTE_SEGMENT && parts[2]) {
+    return { id: decodeURIComponent(parts[2]), kind: 'draft' }
+  }
+
+  return { id: decodeURIComponent(parts[1]), kind: 'agent' }
+}
+
+async function writeClipboardText(value: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value)
+
+    return
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = value
+  textarea.setAttribute('readonly', '')
+  textarea.style.left = '-9999px'
+  textarea.style.position = 'fixed'
+  textarea.style.top = '0'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+
+  try {
+    if (!document.execCommand('copy')) {
+      throw new Error('Browser clipboard copy failed.')
+    }
+  } finally {
+    document.body.removeChild(textarea)
+  }
+}
+
 function lines(value: string): string[] {
   return Array.from(
     new Set(
@@ -284,6 +347,7 @@ function formatDate(value: string | null | undefined): string {
 }
 
 export function AgentsView() {
+  const location = useLocation()
   const navigate = useNavigate()
   const [agents, setAgents] = useState<WorkflowAgent[]>([])
   const [setupDrafts, setSetupDrafts] = useState<WorkflowAgentSetupDraft[]>([])
@@ -312,6 +376,7 @@ export function AgentsView() {
   const [setupDraftResponse, setSetupDraftResponse] = useState<WorkflowAgentSetupDraftResponse | null>(null)
   const [setupPrompt, setSetupPrompt] = useState('')
   const [setupBusy, setSetupBusy] = useState(false)
+  const routeSelection = useMemo(() => parseAgentRoute(location.pathname), [location.pathname])
 
   const selected = useMemo(() => agents.find(agent => agent.id === selectedId) ?? null, [agents, selectedId])
 
@@ -487,6 +552,72 @@ export function AgentsView() {
   }, [refreshAgents])
 
   useEffect(() => {
+    if (loading) {
+      return
+    }
+
+    if (routeSelection.kind === 'list') {
+      setSelectedId(null)
+      setSelectedDraftId(null)
+      setCreating(false)
+      setSetupDraftResponse(null)
+      setSetupPrompt('')
+      setTab('instructions')
+
+      return
+    }
+
+    if (routeSelection.kind === 'new') {
+      setSelectedId(null)
+      setSelectedDraftId(null)
+      setCreating(true)
+      setSetupDraftResponse(null)
+      setSetupPrompt('')
+      setTab('instructions')
+
+      return
+    }
+
+    if (routeSelection.kind === 'draft') {
+      const setupDraft = setupDrafts.find(item => item.id === routeSelection.id)
+
+      if (!setupDraft) {
+        setError('Agent setup draft was not found.')
+        setSelectedId(null)
+        setSelectedDraftId(null)
+        setCreating(false)
+
+        return
+      }
+
+      setCreating(true)
+      setSelectedId(null)
+      setSelectedDraftId(setupDraft.id)
+      setSetupPrompt(setupDraft.prompt)
+      setSetupDraftResponse({ approvals: [], draft: setupDraft })
+      setTab('instructions')
+
+      return
+    }
+
+    const agent = agents.find(item => item.id === routeSelection.id)
+
+    if (!agent) {
+      setError('Agent was not found.')
+      setSelectedId(null)
+      setSelectedDraftId(null)
+      setCreating(false)
+
+      return
+    }
+
+    setCreating(false)
+    setSelectedDraftId(null)
+    setSelectedId(agent.id)
+    setTab('instructions')
+  }, [agents, loading, routeSelection, setupDrafts])
+
+  useEffect(() => {
     setDraft(() => {
       if (selectedSetupDraft) {
         return draftFromSetupDraft(selectedSetupDraft, defaultModelId)
@@ -548,6 +679,7 @@ export function AgentsView() {
       setSelectedDraftId(null)
       setSetupDrafts(current => current.filter(setupDraft => setupDraft.id !== draftId))
       setCreating(false)
+      navigate(agentDetailRoute(saved.id))
       notify({
         kind: 'success',
         message: saved.name,
@@ -578,6 +710,7 @@ export function AgentsView() {
       setAgents(current => current.filter(agent => agent.id !== selected.id))
       setSelectedId(null)
       setDraft(draftFromAgent())
+      navigate(AGENTS_ROUTE)
       notify({ kind: 'success', message: name, title: 'Agent deleted' })
     } catch (err) {
       const message = 'Could not delete agent'
@@ -590,54 +723,19 @@ export function AgentsView() {
   }
 
   const createNew = () => {
-    setSelectedId(null)
-    setSelectedDraftId(null)
-    setCreating(true)
-    setDraft({ ...draftFromAgent(), model_id: defaultModelId })
-    setSetupDraftResponse(null)
-    setSetupPrompt('')
-    setDeliveries([])
-    setTriggers([])
-    setRuns([])
-    setEmbedConfig(null)
-    setTab('instructions')
+    navigate(`${AGENTS_ROUTE}/new`)
   }
 
   const closeEditor = () => {
-    setSelectedId(null)
-    setSelectedDraftId(null)
-    setCreating(false)
-    setDraft({ ...draftFromAgent(), model_id: defaultModelId })
-    setSetupDraftResponse(null)
-    setSetupPrompt('')
-    setDeliveries([])
-    setTriggers([])
-    setRuns([])
-    setEmbedConfig(null)
-    setTab('instructions')
+    navigate(AGENTS_ROUTE)
   }
 
   const selectAgent = (agentId: string) => {
-    setCreating(false)
-    setSelectedDraftId(null)
-    setSelectedId(agentId)
-    setTab('instructions')
+    navigate(agentDetailRoute(agentId))
   }
 
   const selectSetupDraft = (setupDraftId: string) => {
-    const setupDraft = setupDrafts.find(item => item.id === setupDraftId)
-
-    if (!setupDraft) {
-      return
-    }
-
-    setCreating(true)
-    setSelectedId(null)
-    setSelectedDraftId(setupDraft.id)
-    setSetupPrompt(setupDraft.prompt)
-    setSetupDraftResponse({ approvals: [], draft: setupDraft })
-    setDraft(draftFromSetupDraft(setupDraft, defaultModelId))
-    setTab('instructions')
+    navigate(agentDraftRoute(setupDraftId))
   }
 
   const editorOpen = creating || selected !== null || selectedSetupDraft !== null
@@ -2552,11 +2650,19 @@ function EmbedPanel({
 
   const copy = async (kind: 'script' | 'url', value: string) => {
     try {
-      await navigator.clipboard.writeText(value)
+      await writeClipboardText(value)
       setCopied(kind)
       window.setTimeout(() => setCopied(null), 1600)
+      notify({
+        kind: 'success',
+        message: kind === 'url' ? 'Agent URL copied to clipboard.' : 'Agent embed script copied to clipboard.',
+        title: 'Copied'
+      })
     } catch (err) {
-      onError(err instanceof Error ? err.message : 'Could not copy to clipboard.')
+      const message = err instanceof Error ? err.message : 'Could not copy to clipboard.'
+
+      onError(message)
+      notifyError(err, 'Could not copy to clipboard')
     }
   }
 

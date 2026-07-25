@@ -117,5 +117,9 @@ export function appViewForPath(pathname: string): AppView {
     return 'chat'
   }
 
+  if (pathname.startsWith(`${AGENTS_ROUTE}/`)) {
+    return 'agents'
+  }
+
   return APP_VIEW_BY_PATH.get(pathname) ?? 'chat'
 }
