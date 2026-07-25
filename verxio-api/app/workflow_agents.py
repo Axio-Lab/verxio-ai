@@ -14,8 +14,17 @@ from app.models import (
     AgentProfile,
     WorkflowAgentCreateRequest,
     WorkflowAgentRecord,
+    WorkflowAgentSetupApprovalRecord,
+    WorkflowAgentSetupApprovalRequest,
+    WorkflowAgentSetupApprovalResponse,
+    WorkflowAgentSetupDraftData,
+    WorkflowAgentSetupDraftRecord,
+    WorkflowAgentSetupDraftRequest,
+    WorkflowAgentSetupDraftResponse,
+    WorkflowAgentSetupDraftUpdateRequest,
     WorkflowAgentsResponse,
     WorkflowAgentUpdateRequest,
+    WorkflowSetupApprovalRisk,
     WorkflowIntegrationCapabilitiesResponse,
     WorkflowIntegrationCapability,
     WorkflowRunCreateRequest,
@@ -82,6 +91,26 @@ def _secret() -> str:
     return secrets.token_urlsafe(24)
 
 
+def _contains_any(text: str, words: list[str]) -> bool:
+    return any(word in text for word in words)
+
+
+def _title_from_prompt(prompt: str) -> str:
+    prompt = " ".join(prompt.split())
+    lower = prompt.lower()
+    if "payment" in lower:
+        return "Payment Delivery Agent"
+    if "lead" in lower:
+        return "Lead Research Agent"
+    if "support" in lower or "customer" in lower:
+        return "Customer Support Agent"
+    if "cosmetic" in lower or "makeup" in lower or "beauty" in lower:
+        return "AI Cosmetic Consultant"
+    words = [word.strip(".,:;!?()[]{}") for word in prompt.split() if word.strip(".,:;!?()[]{}")]
+    title = " ".join(word.capitalize() for word in (words[:4] or ["Workflow"]))
+    return title[:180] if "agent" in title.lower() else f"{title} Agent"[:180]
+
+
 def _agent_from_row(row: dict[str, Any]) -> WorkflowAgentRecord:
     payload = dict(row)
     payload["enabled"] = bool(payload.get("enabled"))
@@ -101,6 +130,19 @@ def _trigger_from_row(row: dict[str, Any], request: Request | None = None) -> Wo
         webhook_url = str(request.url_for("ingest_workflow_webhook_route", trigger_id=payload["id"]))
     payload["webhook_url"] = webhook_url
     return WorkflowTriggerRecord(**payload)
+
+
+def _setup_draft_from_row(row: dict[str, Any]) -> WorkflowAgentSetupDraftRecord:
+    payload = dict(row)
+    payload["draft"] = _json_loads(payload.pop("draft_json", "{}"), {})
+    payload["approvals_required"] = _json_loads(payload.pop("approvals_required_json", "[]"), [])
+    return WorkflowAgentSetupDraftRecord(**payload)
+
+
+def _setup_approval_from_row(row: dict[str, Any]) -> WorkflowAgentSetupApprovalRecord:
+    payload = dict(row)
+    payload["metadata"] = _json_loads(payload.pop("metadata_json", "{}"), {})
+    return WorkflowAgentSetupApprovalRecord(**payload)
 
 
 def _run_from_row(row: dict[str, Any]) -> WorkflowRunRecord:
@@ -132,6 +174,194 @@ def _validate_trigger_payload(trigger_type: str, event_name: str, config: dict[s
         event = str(config.get("event") or event_name or "").strip()
         if not app_slug or not event:
             raise HTTPException(status_code=422, detail="App event triggers require config.appSlug and an event name.")
+
+
+def _setup_approval_risks(draft: WorkflowAgentSetupDraftData) -> list[WorkflowSetupApprovalRisk]:
+    risks: list[WorkflowSetupApprovalRisk] = []
+    for trigger in draft.triggers:
+        text = _json_dumps(trigger.model_dump()).lower()
+        if trigger.trigger_type == "chat" and _contains_any(
+            text,
+            ["all", "any", "every", "whatsapp", "telegram", "slack", "discord"],
+        ):
+            risks.append("broad_messaging_trigger")
+        if trigger.trigger_type == "webhook" and _contains_any(text, ["callback", "public"]):
+            risks.append("webhook_callback")
+    for delivery in draft.deliveries:
+        text = _json_dumps(delivery.model_dump()).lower()
+        if delivery.delivery_type not in {"none", "save_only"} or delivery.channel:
+            risks.append("external_delivery")
+        if _contains_any(text, ["callback", "webhook"]):
+            risks.append("webhook_callback")
+    if _contains_any(" ".join(draft.agent.tools).lower(), ["api", "key", "paid", "youcam"]):
+        risks.append("paid_or_key_backed_tool")
+    return sorted(set(risks))
+
+
+def _draft_from_prompt(prompt: str, *, existing: WorkflowAgentRecord | None = None) -> WorkflowAgentSetupDraftData:
+    text = prompt.lower()
+    integrations = list(existing.integrations if existing else [])
+    knowledge = list(existing.knowledge if existing else [])
+    skills = list(existing.skills if existing else [])
+    tools = list(existing.tools if existing else [])
+    triggers: list[dict[str, Any]] = []
+    deliveries: list[dict[str, Any]] = []
+    missing: list[str] = []
+    notes = ["Generated setup is a draft. Risky external actions stay disabled until approved."]
+
+    for keyword, slug in {
+        "airtable": "airtable",
+        "discord": "discord",
+        "gmail": "gmail",
+        "hubspot": "hubspot",
+        "paystack": "paystack",
+        "slack": "slack",
+        "stripe": "stripe",
+        "telegram": "telegram",
+        "whatsapp": "whatsapp",
+    }.items():
+        if keyword in text:
+            integrations.append(slug)
+
+    for keyword, tool in {
+        "email": "send_email",
+        "gmail": "send_email",
+        "research": "web_research",
+        "search": "web_search",
+        "slack": "send_slack_message",
+        "telegram": "send_telegram_message",
+        "whatsapp": "send_whatsapp",
+        "youcam": "youcam_api",
+    }.items():
+        if keyword in text:
+            tools.append(tool)
+
+    if _contains_any(text, ["lead", "score", "qualify"]):
+        skills.append("lead-scoring")
+    if _contains_any(text, ["support", "customer", "faq", "policy"]):
+        skills.append("support-triage")
+    if _contains_any(text, ["beauty", "cosmetic", "makeup", "skin"]):
+        skills.append("product-consultation")
+    if _contains_any(text, ["faq", "kb", "knowledge", "playbook", "policy"]):
+        knowledge.append("needs-knowledge-base")
+        missing.append("Attach or create the knowledge base this agent should use.")
+
+    if _contains_any(text, ["paystack", "payment", "stripe", "webhook"]):
+        triggers.append(
+            {
+                "trigger_type": "webhook",
+                "event_name": "payment.succeeded" if _contains_any(text, ["paystack", "payment", "stripe"]) else "external.event",
+                "name": "External webhook",
+                "enabled": False,
+                "config": {"version": 1},
+                "requires_approval": True,
+            }
+        )
+    if _contains_any(text, ["daily", "every ", "hourly", "schedule"]):
+        triggers.append(
+            {
+                "trigger_type": "schedule",
+                "event_name": "scheduled.run",
+                "name": "Scheduled run",
+                "enabled": False,
+                "config": {"version": 1, "everyMinutes": 60},
+            }
+        )
+    if _contains_any(text, ["discord", "message", "slack", "telegram", "whatsapp"]):
+        channel = next((item for item in ["whatsapp", "telegram", "slack", "discord"] if item in text), "messaging")
+        triggers.append(
+            {
+                "trigger_type": "chat",
+                "event_name": f"{channel}.message",
+                "name": f"{channel.title()} message",
+                "enabled": False,
+                "config": {"version": 1, "channel": channel, "match": "draft"},
+                "requires_approval": True,
+            }
+        )
+        deliveries.append(
+            {
+                "delivery_type": "reply_to_source",
+                "channel": channel,
+                "destination": "trigger.source",
+                "template": "{{agent.output}}",
+                "enabled": False,
+                "require_approval": True,
+                "config": {"version": 1},
+            }
+        )
+    if _contains_any(text, ["embed", "public url", "share link", "site", "website"]):
+        triggers.append(
+            {
+                "trigger_type": "api",
+                "event_name": "embed.submitted",
+                "name": "Website embed",
+                "enabled": False,
+                "config": {"version": 1, "source": "embed"},
+                "requires_approval": True,
+            }
+        )
+        missing.append("Configure embed branding, allowed domains, and asset uploads before publishing.")
+
+    if _contains_any(text, ["delivery", "email", "notify", "reply", "send"]) and not deliveries:
+        channel = next((item for item in ["whatsapp", "telegram", "slack", "discord", "gmail", "email"] if item in text), "")
+        deliveries.append(
+            {
+                "delivery_type": "send_message" if channel else "save_only",
+                "channel": "gmail" if channel == "email" else channel,
+                "destination": "from_trigger_payload" if channel else "",
+                "template": "{{agent.output}}",
+                "enabled": False,
+                "require_approval": bool(channel),
+                "config": {"version": 1},
+            }
+        )
+
+    if existing and existing.role:
+        role = existing.role
+    elif "payment" in text:
+        role = "Notify customers and teams after successful payment events"
+    elif "lead" in text:
+        role = "Research, qualify, and prepare next actions for leads"
+    elif "support" in text or "customer" in text:
+        role = "Answer customer questions and escalate when needed"
+    elif "cosmetic" in text or "youcam" in text:
+        role = "Recommend cosmetic products with approved tools and knowledge"
+    else:
+        role = "Complete the described workflow with configured capabilities"
+
+    base_instructions = existing.instructions if existing else ""
+    instructions = "\n".join(
+        part
+        for part in [
+            base_instructions,
+            "User goal:",
+            prompt.strip(),
+            "Use only configured skills, tools, integrations, and knowledge sources.",
+            "Ask for approval before external delivery, broad messaging, public links, paid tools, or destructive changes.",
+        ]
+        if part.strip()
+    )
+
+    return WorkflowAgentSetupDraftData(
+        agent=WorkflowAgentCreateRequest(
+            approval_policy="ask_before_external_actions",
+            description=(existing.description if existing else "Generated from setup prompt.")[:1000],
+            enabled=False,
+            instructions=instructions[:12000],
+            integrations=_string_list(integrations),
+            knowledge=_string_list(knowledge),
+            model_id=existing.model_id if existing else "",
+            name=(existing.name if existing else _title_from_prompt(prompt))[:180],
+            role=role[:240],
+            skills=_string_list(skills),
+            tools=_string_list(tools),
+        ),
+        deliveries=deliveries,
+        missing=_string_list(missing),
+        notes=notes,
+        triggers=triggers,
+    )
 
 
 def _record_run_event(
@@ -258,6 +488,191 @@ def list_agents(workspace: Workspace, profile: AgentProfile) -> WorkflowAgentsRe
         (workspace.id, profile.id),
     )
     return WorkflowAgentsResponse(agents=[_agent_from_row(row) for row in rows])
+
+
+def _approval_action_for_risk(risk: WorkflowSetupApprovalRisk) -> str:
+    return {
+        "broad_messaging_trigger": "Enable broad inbound messaging trigger",
+        "destructive_change": "Apply destructive agent setup change",
+        "external_delivery": "Enable external delivery",
+        "paid_or_key_backed_tool": "Allow paid or API-key-backed tool",
+        "public_link": "Create public embed or share link",
+        "webhook_callback": "Enable webhook callback",
+    }[risk]
+
+
+def _approvals_for_draft(draft_id: str) -> list[WorkflowAgentSetupApprovalRecord]:
+    rows = db.fetch_all(
+        """
+        SELECT * FROM workflow_agent_setup_approvals
+        WHERE setup_draft_id = ?
+        ORDER BY created_at ASC
+        """,
+        (draft_id,),
+    )
+    return [_setup_approval_from_row(row) for row in rows]
+
+
+def _insert_setup_approval(
+    workspace: Workspace,
+    profile: AgentProfile,
+    *,
+    draft_id: str,
+    risk: WorkflowSetupApprovalRisk,
+    workflow_agent_id: str | None,
+    metadata: dict[str, Any],
+) -> None:
+    created_at = now_iso()
+    db.execute(
+        """
+        INSERT INTO workflow_agent_setup_approvals (
+            id, tenant_id, workspace_id, runtime_agent_id, workflow_agent_id,
+            setup_draft_id, risk_type, action, status, metadata_json, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+        """,
+        (
+            new_id("workflow_approval"),
+            workspace.tenant_id,
+            workspace.id,
+            profile.id,
+            workflow_agent_id,
+            draft_id,
+            risk,
+            _approval_action_for_risk(risk),
+            _json_dumps(metadata),
+            created_at,
+            created_at,
+        ),
+    )
+
+
+def create_setup_draft(
+    workspace: Workspace,
+    profile: AgentProfile,
+    payload: WorkflowAgentSetupDraftRequest,
+) -> WorkflowAgentSetupDraftResponse:
+    draft = _draft_from_prompt(payload.prompt)
+    risks = _setup_approval_risks(draft)
+    created_at = now_iso()
+    draft_id = new_id("workflow_setup")
+    db.execute(
+        """
+        INSERT INTO workflow_agent_setup_drafts (
+            id, tenant_id, workspace_id, runtime_agent_id, workflow_agent_id,
+            source, prompt, status, draft_json, approvals_required_json, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, NULL, ?, ?, 'draft', ?, ?, ?, ?)
+        """,
+        (
+            draft_id,
+            workspace.tenant_id,
+            workspace.id,
+            profile.id,
+            payload.source,
+            payload.prompt.strip(),
+            _json_dumps(draft.model_dump()),
+            _json_dumps(risks),
+            created_at,
+            created_at,
+        ),
+    )
+    for risk in risks:
+        _insert_setup_approval(
+            workspace,
+            profile,
+            draft_id=draft_id,
+            metadata={"source": payload.source},
+            risk=risk,
+            workflow_agent_id=None,
+        )
+    row = db.fetch_one("SELECT * FROM workflow_agent_setup_drafts WHERE id = ?", (draft_id,))
+    return WorkflowAgentSetupDraftResponse(draft=_setup_draft_from_row(row or {}), approvals=_approvals_for_draft(draft_id))
+
+
+def create_setup_update_draft(
+    workspace: Workspace,
+    profile: AgentProfile,
+    agent_id: str,
+    payload: WorkflowAgentSetupDraftUpdateRequest,
+) -> WorkflowAgentSetupDraftResponse:
+    existing = get_agent(workspace, profile, agent_id)
+    draft = _draft_from_prompt(payload.prompt, existing=existing)
+    risks = _setup_approval_risks(draft)
+    created_at = now_iso()
+    draft_id = new_id("workflow_setup")
+    db.execute(
+        """
+        INSERT INTO workflow_agent_setup_drafts (
+            id, tenant_id, workspace_id, runtime_agent_id, workflow_agent_id,
+            source, prompt, status, draft_json, approvals_required_json, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)
+        """,
+        (
+            draft_id,
+            workspace.tenant_id,
+            workspace.id,
+            profile.id,
+            agent_id,
+            payload.source,
+            payload.prompt.strip(),
+            _json_dumps(draft.model_dump()),
+            _json_dumps(risks),
+            created_at,
+            created_at,
+        ),
+    )
+    for risk in risks:
+        _insert_setup_approval(
+            workspace,
+            profile,
+            draft_id=draft_id,
+            metadata={"source": payload.source},
+            risk=risk,
+            workflow_agent_id=agent_id,
+        )
+    row = db.fetch_one("SELECT * FROM workflow_agent_setup_drafts WHERE id = ?", (draft_id,))
+    return WorkflowAgentSetupDraftResponse(draft=_setup_draft_from_row(row or {}), approvals=_approvals_for_draft(draft_id))
+
+
+def update_setup_approvals(
+    workspace: Workspace,
+    profile: AgentProfile,
+    payload: WorkflowAgentSetupApprovalRequest,
+) -> WorkflowAgentSetupApprovalResponse:
+    if payload.status == "pending":
+        raise HTTPException(status_code=422, detail="Approval status must be approved or rejected.")
+    if not payload.approval_ids:
+        raise HTTPException(status_code=422, detail="Select at least one setup approval.")
+    now = now_iso()
+    placeholders = ",".join("?" for _ in payload.approval_ids)
+    rows = db.fetch_all(
+        f"""
+        SELECT * FROM workflow_agent_setup_approvals
+        WHERE workspace_id = ? AND runtime_agent_id = ? AND id IN ({placeholders})
+        """,
+        (workspace.id, profile.id, *payload.approval_ids),
+    )
+    if len(rows) != len(set(payload.approval_ids)):
+        raise HTTPException(status_code=404, detail="One or more setup approvals were not found.")
+    db.execute(
+        f"""
+        UPDATE workflow_agent_setup_approvals
+        SET status = ?, updated_at = ?
+        WHERE workspace_id = ? AND runtime_agent_id = ? AND id IN ({placeholders})
+        """,
+        (payload.status, now, workspace.id, profile.id, *payload.approval_ids),
+    )
+    updated = db.fetch_all(
+        f"""
+        SELECT * FROM workflow_agent_setup_approvals
+        WHERE workspace_id = ? AND runtime_agent_id = ? AND id IN ({placeholders})
+        ORDER BY created_at ASC
+        """,
+        (workspace.id, profile.id, *payload.approval_ids),
+    )
+    return WorkflowAgentSetupApprovalResponse(approvals=[_setup_approval_from_row(row) for row in updated])
 
 
 def create_agent(workspace: Workspace, profile: AgentProfile, payload: WorkflowAgentCreateRequest) -> WorkflowAgentRecord:

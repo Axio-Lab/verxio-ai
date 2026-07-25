@@ -804,6 +804,99 @@ class WorkflowAgentsResponse(BaseModel):
     agents: list[WorkflowAgentRecord]
 
 
+WorkflowSetupActor = Literal["web", "session", "gateway"]
+WorkflowSetupApprovalStatus = Literal["pending", "approved", "rejected"]
+WorkflowSetupApprovalRisk = Literal[
+    "broad_messaging_trigger",
+    "destructive_change",
+    "external_delivery",
+    "paid_or_key_backed_tool",
+    "public_link",
+    "webhook_callback",
+]
+
+
+class WorkflowSetupTriggerDraft(BaseModel):
+    trigger_type: WorkflowTriggerType
+    event_name: str = ""
+    name: str = ""
+    enabled: bool = False
+    config: dict[str, Any] = Field(default_factory=dict)
+    requires_approval: bool = False
+
+
+class WorkflowSetupDeliveryDraft(BaseModel):
+    delivery_type: str = Field(default="save_only", max_length=80)
+    channel: str = Field(default="", max_length=120)
+    destination: str = Field(default="", max_length=500)
+    template: str = Field(default="", max_length=4000)
+    enabled: bool = False
+    require_approval: bool = True
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkflowAgentSetupDraftData(BaseModel):
+    agent: WorkflowAgentCreateRequest
+    triggers: list[WorkflowSetupTriggerDraft] = Field(default_factory=list)
+    deliveries: list[WorkflowSetupDeliveryDraft] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+    missing: list[str] = Field(default_factory=list)
+
+
+class WorkflowAgentSetupDraftRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=12000)
+    source: WorkflowSetupActor = "web"
+
+
+class WorkflowAgentSetupDraftUpdateRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=12000)
+    source: WorkflowSetupActor = "web"
+
+
+class WorkflowAgentSetupDraftRecord(BaseModel):
+    id: str
+    tenant_id: str
+    workspace_id: str
+    runtime_agent_id: str
+    workflow_agent_id: str | None = None
+    source: WorkflowSetupActor
+    prompt: str
+    status: str = "draft"
+    draft: WorkflowAgentSetupDraftData
+    approvals_required: list[WorkflowSetupApprovalRisk] = Field(default_factory=list)
+    created_at: str
+    updated_at: str
+
+
+class WorkflowAgentSetupApprovalRecord(BaseModel):
+    id: str
+    tenant_id: str
+    workspace_id: str
+    runtime_agent_id: str
+    workflow_agent_id: str | None = None
+    setup_draft_id: str | None = None
+    risk_type: WorkflowSetupApprovalRisk
+    action: str
+    status: WorkflowSetupApprovalStatus = "pending"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+    updated_at: str
+
+
+class WorkflowAgentSetupDraftResponse(BaseModel):
+    draft: WorkflowAgentSetupDraftRecord
+    approvals: list[WorkflowAgentSetupApprovalRecord] = Field(default_factory=list)
+
+
+class WorkflowAgentSetupApprovalRequest(BaseModel):
+    status: WorkflowSetupApprovalStatus
+    approval_ids: list[str] = Field(default_factory=list)
+
+
+class WorkflowAgentSetupApprovalResponse(BaseModel):
+    approvals: list[WorkflowAgentSetupApprovalRecord]
+
+
 class WorkflowSkillCapability(BaseModel):
     name: str
     description: str = ""

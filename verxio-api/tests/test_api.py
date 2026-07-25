@@ -165,6 +165,73 @@ def test_workflow_agent_crud_is_workspace_scoped(client):
     assert blocked.status_code == 404
 
 
+def test_workflow_agent_setup_draft_stages_risky_actions(client):
+    _payload, token = signup(client, "workflow-setup-draft@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    response = client.post(
+        "/api/workflow-agents/draft",
+        headers=headers,
+        json={
+            "prompt": (
+                "Create a payment delivery agent. Trigger it when Paystack payment succeeds, "
+                "send WhatsApp to the customer, notify Slack ops, and use our delivery policy KB."
+            ),
+            "source": "web",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    draft = body["draft"]
+    assert draft["source"] == "web"
+    assert draft["draft"]["agent"]["name"] == "Payment Delivery Agent"
+    assert draft["draft"]["agent"]["enabled"] is False
+    assert "paystack" in draft["draft"]["agent"]["integrations"]
+    assert "whatsapp" in draft["draft"]["agent"]["integrations"]
+    assert "needs-knowledge-base" in draft["draft"]["agent"]["knowledge"]
+    assert any(trigger["trigger_type"] == "webhook" for trigger in draft["draft"]["triggers"])
+    assert any(delivery["delivery_type"] == "reply_to_source" for delivery in draft["draft"]["deliveries"])
+    assert "external_delivery" in draft["approvals_required"]
+    assert "broad_messaging_trigger" in draft["approvals_required"]
+    assert body["approvals"]
+    assert all(approval["status"] == "pending" for approval in body["approvals"])
+
+    approve = client.post(
+        "/api/workflow-agents/setup-actions/approve",
+        headers=headers,
+        json={"approval_ids": [body["approvals"][0]["id"]], "status": "approved"},
+    )
+    assert approve.status_code == 200
+    assert approve.json()["approvals"][0]["status"] == "approved"
+
+
+def test_workflow_agent_setup_update_draft_is_workspace_scoped(client):
+    _payload, token = signup(client, "workflow-setup-update@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+    agent = client.post("/api/workflow-agents", headers=headers, json={"name": "Support Agent"}).json()
+
+    response = client.post(
+        f"/api/workflow-agents/{agent['id']}/draft-update",
+        headers=headers,
+        json={"prompt": "Update this to answer support questions from a policy KB and reply on Telegram.", "source": "session"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["draft"]["workflow_agent_id"] == agent["id"]
+    assert body["draft"]["source"] == "session"
+    assert body["draft"]["draft"]["agent"]["name"] == "Support Agent"
+    assert "telegram" in body["draft"]["draft"]["agent"]["integrations"]
+
+    _other_payload, other_token = signup(client, "workflow-setup-update-other@example.com")
+    blocked = client.post(
+        f"/api/workflow-agents/{agent['id']}/draft-update",
+        headers={"Cookie": f"{SESSION_COOKIE}={other_token}"},
+        json={"prompt": "Try to change another workspace agent.", "source": "session"},
+    )
+    assert blocked.status_code == 404
+
+
 def test_workflow_agent_manual_and_webhook_runs(client, monkeypatch):
     _payload, token = signup(client, "workflow-run@example.com")
 

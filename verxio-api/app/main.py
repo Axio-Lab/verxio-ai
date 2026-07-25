@@ -156,6 +156,11 @@ from app.models import (
     TranscriptionCatalogResponse,
     WorkflowAgentCreateRequest,
     WorkflowAgentRecord,
+    WorkflowAgentSetupApprovalRequest,
+    WorkflowAgentSetupApprovalResponse,
+    WorkflowAgentSetupDraftRequest,
+    WorkflowAgentSetupDraftResponse,
+    WorkflowAgentSetupDraftUpdateRequest,
     WorkflowAgentsResponse,
     WorkflowAgentUpdateRequest,
     WorkflowIntegrationCapabilitiesResponse,
@@ -233,6 +238,8 @@ from app.store import AUDIT_LOG, PROFILE, RUNS, WORKSPACE
 from app.transcription_catalog import list_transcription_catalog
 from app.workflow_agents import (
     create_agent as create_workflow_agent,
+    create_setup_draft as create_workflow_setup_draft,
+    create_setup_update_draft as create_workflow_setup_update_draft,
     create_trigger as create_workflow_trigger,
     delete_agent as delete_workflow_agent,
     delete_trigger as delete_workflow_trigger,
@@ -249,6 +256,7 @@ from app.workflow_agents import (
     run_webhook_trigger,
     tick_due_schedule_triggers as tick_due_workflow_schedule_triggers,
     update_agent as update_workflow_agent,
+    update_setup_approvals as update_workflow_setup_approvals,
     update_trigger as update_workflow_trigger,
 )
 
@@ -855,6 +863,37 @@ async def list_workflow_tool_capabilities_route(request: Request) -> WorkflowToo
 async def list_workflow_integration_capabilities_route(request: Request) -> WorkflowIntegrationCapabilitiesResponse:
     user = require_user(request)
     return list_workflow_integration_capabilities(str(user["id"]))
+
+
+@app.post("/api/workflow-agents/draft", response_model=WorkflowAgentSetupDraftResponse)
+async def create_workflow_agent_setup_draft_route(
+    payload: WorkflowAgentSetupDraftRequest,
+    request: Request,
+) -> WorkflowAgentSetupDraftResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return create_workflow_setup_draft(workspace, profile, payload)
+
+
+@app.post("/api/workflow-agents/{agent_id}/draft-update", response_model=WorkflowAgentSetupDraftResponse)
+async def create_workflow_agent_setup_update_draft_route(
+    agent_id: str,
+    payload: WorkflowAgentSetupDraftUpdateRequest,
+    request: Request,
+) -> WorkflowAgentSetupDraftResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return create_workflow_setup_update_draft(workspace, profile, agent_id, payload)
+
+
+@app.post("/api/workflow-agents/setup-actions/approve", response_model=WorkflowAgentSetupApprovalResponse)
+async def approve_workflow_agent_setup_actions_route(
+    payload: WorkflowAgentSetupApprovalRequest,
+    request: Request,
+) -> WorkflowAgentSetupApprovalResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return update_workflow_setup_approvals(workspace, profile, payload)
 
 
 @app.get("/api/knowledge-bases", response_model=KnowledgeBasesResponse)
