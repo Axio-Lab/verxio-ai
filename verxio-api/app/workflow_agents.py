@@ -3,12 +3,14 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import os
 import re
 import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import httpx
 from fastapi import HTTPException, Request
 
 from app import db
@@ -167,6 +169,135 @@ def _custom_tool_from_row(row: dict[str, Any]) -> WorkflowCustomToolRecord:
         created_at=str(row["created_at"]),
         updated_at=str(row["updated_at"]),
     )
+
+
+def _custom_tool_public_spec(tool: WorkflowCustomToolRecord) -> dict[str, Any]:
+    return {
+        "name": f"custom:{tool.id}",
+        "display_name": tool.name,
+        "description": tool.description,
+        "method": tool.method,
+        "url": tool.url,
+        "auth_type": tool.auth_type,
+        "api_key_env": tool.api_key_env,
+        "request_schema": tool.request_schema,
+        "response_hint": tool.response_hint,
+    }
+
+
+def _selected_custom_tools(workspace: Workspace, agent: WorkflowAgentRecord) -> list[WorkflowCustomToolRecord]:
+    selected_ids = {
+        item.removeprefix("custom:")
+        for item in agent.tools
+        if isinstance(item, str) and item.startswith("custom:") and item.removeprefix("custom:")
+    }
+    if not selected_ids:
+        return []
+    return [tool for tool in list_custom_tools(workspace).tools if tool.id in selected_ids and tool.enabled]
+
+
+def _extract_custom_tool_calls(output: str) -> list[dict[str, Any]]:
+    text = output.strip()
+    if not text:
+        return []
+    candidates = [text]
+    match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL)
+    if match:
+        candidates.insert(0, match.group(1))
+    for candidate in candidates:
+        try:
+            payload = json.loads(candidate)
+        except (TypeError, ValueError):
+            continue
+        calls = payload.get("custom_tool_calls") if isinstance(payload, dict) else None
+        if isinstance(calls, list):
+            return [call for call in calls if isinstance(call, dict)]
+    return []
+
+
+def _safe_response_preview(value: Any, limit: int = 4000) -> str:
+    if isinstance(value, str):
+        text = value
+    else:
+        text = _json_dumps(value)
+    return text[:limit] + ("...[truncated]" if len(text) > limit else "")
+
+
+async def _execute_custom_tool_call(tool: WorkflowCustomToolRecord, arguments: dict[str, Any]) -> dict[str, Any]:
+    headers = dict(tool.headers)
+    if tool.auth_type in {"api_key", "bearer"}:
+        api_key = os.environ.get(tool.api_key_env or "")
+        if not api_key:
+            raise RuntimeError(f"Missing API key env var {tool.api_key_env} for custom tool {tool.name}.")
+        if tool.auth_type == "bearer":
+            headers["Authorization"] = f"Bearer {api_key}"
+        else:
+            headers.setdefault("X-API-Key", api_key)
+
+    timeout = httpx.Timeout(30.0)
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        if tool.method == "GET":
+            response = await client.get(tool.url, params=arguments, headers=headers)
+        else:
+            response = await client.request(tool.method, tool.url, json=arguments, headers=headers)
+        response.raise_for_status()
+        content_type = response.headers.get("content-type", "")
+        if "application/json" in content_type:
+            body: Any = response.json()
+        else:
+            body = response.text
+    return {
+        "tool": f"custom:{tool.id}",
+        "display_name": tool.name,
+        "status_code": response.status_code,
+        "response": body,
+    }
+
+
+async def _execute_requested_custom_tools(
+    workspace: Workspace,
+    run: WorkflowRunRecord,
+    agent: WorkflowAgentRecord,
+    output: str,
+) -> list[dict[str, Any]]:
+    calls = _extract_custom_tool_calls(output)
+    if not calls:
+        return []
+    tools = {f"custom:{tool.id}": tool for tool in _selected_custom_tools(workspace, agent)}
+    results: list[dict[str, Any]] = []
+    for call in calls[:5]:
+        tool_name = str(call.get("tool") or call.get("name") or "").strip()
+        tool = tools.get(tool_name)
+        if not tool:
+            result = {"tool": tool_name, "error": "Custom tool is not selected or is disabled for this agent."}
+            results.append(result)
+            _record_run_event(run, "custom_tool_rejected", "Rejected custom tool call.", result)
+            continue
+        arguments = _json_object(call.get("arguments") or call.get("input") or {})
+        _record_run_event(
+            run,
+            "custom_tool_started",
+            f"Started custom tool {tool.name}.",
+            {"tool": tool_name, "displayName": tool.name, "method": tool.method, "url": tool.url},
+        )
+        try:
+            result = await _execute_custom_tool_call(tool, arguments)
+            _record_run_event(
+                run,
+                "custom_tool_completed",
+                f"Completed custom tool {tool.name}.",
+                {
+                    "tool": tool_name,
+                    "displayName": tool.name,
+                    "statusCode": result.get("status_code"),
+                    "responsePreview": _safe_response_preview(result.get("response"), 1000),
+                },
+            )
+        except Exception as exc:
+            result = {"tool": tool_name, "display_name": tool.name, "error": str(exc)}
+            _record_run_event(run, "custom_tool_failed", f"Custom tool {tool.name} failed.", result)
+        results.append(result)
+    return results
 
 
 def _secret() -> str:
@@ -1749,12 +1880,18 @@ def _record_delivery_events(run: WorkflowRunRecord, output: str) -> None:
         )
 
 
-def _build_instructions(agent: WorkflowAgentRecord, knowledge_context: list[dict[str, Any]] | None = None) -> str:
+def _build_instructions(
+    agent: WorkflowAgentRecord,
+    knowledge_context: list[dict[str, Any]] | None = None,
+    custom_tools: list[WorkflowCustomToolRecord] | None = None,
+) -> str:
     skill_lines = [f"- {name}" for name in agent.skills]
     context_lines = [
         f"- {item['knowledge_base_name']} / {item['document_title']} chunk {item['chunk_index']}: {item['content']}"
         for item in knowledge_context or []
     ]
+    custom_tool_specs = [_custom_tool_public_spec(tool) for tool in custom_tools or []]
+    custom_tool_lines = _json_dumps(custom_tool_specs) if custom_tool_specs else "none"
     parts = [
         f"You are the Verxio workflow agent named {agent.name}.",
         f"Role: {agent.role or 'Complete the assigned workflow run.'}",
@@ -1765,6 +1902,12 @@ def _build_instructions(agent: WorkflowAgentRecord, knowledge_context: list[dict
         f"Knowledge sources enabled: {', '.join(agent.knowledge) or 'none'}",
         "Retrieved knowledge context:\n" + ("\n".join(context_lines) if context_lines else "none"),
         f"Allowed tools: {', '.join(agent.tools) or 'default workspace tools'}",
+        "Selected custom API tools:\n" + custom_tool_lines,
+        (
+            "To use a selected custom API tool, return only JSON in this shape: "
+            '{"custom_tool_calls":[{"tool":"custom:<id>","arguments":{...}}]}. '
+            "Verxio will execute the call without exposing secrets, then send results back for your final answer."
+        ),
         f"Allowed integrations: {', '.join(agent.integrations) or 'none explicitly selected'}",
         f"Approval policy: {agent.approval_policy}",
         "Return a concise final result describing what you did and any follow-up needed.",
@@ -1806,6 +1949,8 @@ async def run_agent(
                 ]
             },
         )
+    custom_tools = _selected_custom_tools(workspace, agent)
+    instructions = _build_instructions(agent, knowledge_context, custom_tools)
     try:
         output = await run_agent_via_dashboard(
             workspace,
@@ -1818,8 +1963,28 @@ async def run_agent(
                     "knowledge_context": knowledge_context,
                 }
             ),
-            instructions=_build_instructions(agent, knowledge_context),
+            instructions=instructions,
         )
+        custom_tool_results = await _execute_requested_custom_tools(workspace, run, agent, output)
+        if custom_tool_results:
+            output = await run_agent_via_dashboard(
+                workspace,
+                profile,
+                _json_dumps(
+                    {
+                        "trigger_type": trigger_type,
+                        "trigger_id": trigger_id,
+                        "input": payload.input,
+                        "knowledge_context": knowledge_context,
+                        "custom_tool_results": custom_tool_results,
+                    }
+                ),
+                instructions=(
+                    instructions
+                    + "\n\nCustom tool results are now available in the input payload. "
+                    "Use them to produce the final answer. Do not request the same custom tool again unless another call is necessary."
+                ),
+            )
     except Exception as exc:
         _set_run_status(run.id, "failed", error=str(exc), completed=True)
         return _run_from_row(db.fetch_one("SELECT * FROM workflow_runs WHERE id = ?", (run.id,)) or {})

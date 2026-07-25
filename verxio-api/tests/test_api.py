@@ -358,6 +358,97 @@ def test_workflow_delivery_crud_and_run_events(client, monkeypatch):
     assert deleted.json()["ok"] is True
 
 
+def test_workflow_agent_executes_selected_custom_tool(client, monkeypatch):
+    _payload, token = signup(client, "workflow-custom-tool-run@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+    monkeypatch.setenv("YOUCAM_API_KEY", "secret-youcam-key")
+
+    calls: list[dict[str, str]] = []
+
+    async def fake_oneshot(workspace, profile, user_input, *, instructions=None):
+        calls.append({"input": user_input, "instructions": instructions or ""})
+        if len(calls) == 1:
+            assert "Selected custom API tools" in (instructions or "")
+            return json.dumps(
+                {
+                    "custom_tool_calls": [
+                        {
+                            "tool": custom_tool_name,
+                            "arguments": {"image_url": "https://example.test/skin.jpg"},
+                        }
+                    ]
+                }
+            )
+        assert "custom_tool_results" in user_input
+        return "Skin analysis completed with hydration score 88."
+
+    class FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"hydration_score": 88}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            return None
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def request(self, method, url, *, json=None, headers=None):
+            assert method == "POST"
+            assert url == "https://api.youcam.example/analyze"
+            assert json == {"image_url": "https://example.test/skin.jpg"}
+            assert headers["Authorization"] == "Bearer secret-youcam-key"
+            return FakeResponse()
+
+    monkeypatch.setattr(workflow_agents, "run_agent_via_dashboard", fake_oneshot)
+    monkeypatch.setattr(workflow_agents.httpx, "AsyncClient", FakeAsyncClient)
+
+    tool = client.post(
+        "/api/workflow-agents/custom-tools",
+        headers=headers,
+        json={
+            "name": "YouCam Skin Analysis",
+            "method": "POST",
+            "url": "https://api.youcam.example/analyze",
+            "auth_type": "bearer",
+            "api_key_env": "YOUCAM_API_KEY",
+            "request_schema": {"image_url": "string"},
+        },
+    )
+    assert tool.status_code == 200
+    custom_tool_name = f"custom:{tool.json()['id']}"
+
+    agent = client.post(
+        "/api/workflow-agents",
+        headers=headers,
+        json={"name": "Cosmetic Consultant", "tools": [custom_tool_name]},
+    )
+    assert agent.status_code == 200
+
+    run = client.post(
+        f"/api/workflow-agents/{agent.json()['id']}/runs",
+        headers=headers,
+        json={"input": {"image_url": "https://example.test/skin.jpg"}},
+    )
+    assert run.status_code == 200
+    assert run.json()["output_text"] == "Skin analysis completed with hydration score 88."
+    assert len(calls) == 2
+
+    events = client.get(f"/api/workflow-agents/{agent.json()['id']}/runs/{run.json()['id']}/events", headers=headers)
+    event_types = [event["event_type"] for event in events.json()["events"]]
+    assert "custom_tool_started" in event_types
+    assert "custom_tool_completed" in event_types
+
+
 def test_workflow_agent_manual_and_webhook_runs(client, monkeypatch):
     _payload, token = signup(client, "workflow-run@example.com")
 

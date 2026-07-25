@@ -67,6 +67,12 @@ Use this guide to keep Verxio consistent across the web app, desktop shell, API 
 - Store feature-level allowlists or bindings when a product area should restrict which tools or integrations it can use.
 - Agent Tools screens are for selecting or allowlisting tools an agent may use. API keys and provider credentials should
   stay in the shared Skills & Tools/Settings setup path so sessions, agents, and messaging gateways use one credential source.
+- Custom API tools are reusable workspace assets. Let users create them from the agent Tools surface for flow, but store
+  them globally so other agents can reuse them.
+- Custom API tool definitions should store endpoint/method/schema/response guidance and an env var reference such as
+  `YOUCAM_API_KEY`; never store the secret value in agent instructions, headers, or tool metadata.
+- Agents may request selected custom API tools during a run. Verxio executes those calls server-side, resolves the env key
+  there, records run events, and sends only tool results back to the agent.
 - Validate that a connected account or provider exists before presenting an action as ready.
 - Show clear setup states for missing credentials, expired connections, and unavailable providers.
 
