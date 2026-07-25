@@ -155,6 +155,10 @@ from app.models import (
     SignupRequest,
     TranscriptionCatalogResponse,
     WorkflowAgentCreateRequest,
+    WorkflowCustomToolCreateRequest,
+    WorkflowCustomToolRecord,
+    WorkflowCustomToolsResponse,
+    WorkflowCustomToolUpdateRequest,
     WorkflowAgentRecord,
     WorkflowAgentSetupApprovalRequest,
     WorkflowAgentSetupApprovalResponse,
@@ -252,17 +256,20 @@ from app.transcription_catalog import list_transcription_catalog
 from app.workflow_agents import (
     apply_setup_draft as apply_workflow_setup_draft,
     create_agent as create_workflow_agent,
+    create_custom_tool as create_workflow_custom_tool,
     create_setup_draft as create_workflow_setup_draft,
     create_setup_update_draft as create_workflow_setup_update_draft,
     create_delivery as create_workflow_delivery,
     create_trigger as create_workflow_trigger,
     delete_agent as delete_workflow_agent,
+    delete_custom_tool as delete_workflow_custom_tool,
     delete_delivery as delete_workflow_delivery,
     delete_trigger as delete_workflow_trigger,
     get_agent as get_workflow_agent,
     get_embed_config as get_workflow_embed_config,
     get_public_embed_info as get_workflow_public_embed_info,
     list_agents as list_workflow_agents,
+    list_custom_tools as list_workflow_custom_tools,
     list_integration_capabilities as list_workflow_integration_capabilities,
     list_deliveries as list_workflow_deliveries,
     list_run_events as list_workflow_run_events,
@@ -277,6 +284,7 @@ from app.workflow_agents import (
     run_webhook_trigger,
     tick_due_schedule_triggers as tick_due_workflow_schedule_triggers,
     update_agent as update_workflow_agent,
+    update_custom_tool as update_workflow_custom_tool,
     update_delivery as update_workflow_delivery,
     update_embed_config as update_workflow_embed_config,
     update_setup_approvals as update_workflow_setup_approvals,
@@ -980,6 +988,41 @@ async def create_workflow_agent_route(
     user = require_user(request)
     workspace, profile, _runtime_instance = get_context_for_user(user)
     return create_workflow_agent(workspace, profile, payload)
+
+
+@app.get("/api/workflow-agents/custom-tools", response_model=WorkflowCustomToolsResponse)
+async def list_workflow_custom_tools_route(request: Request) -> WorkflowCustomToolsResponse:
+    user = require_user(request)
+    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    return list_workflow_custom_tools(workspace)
+
+
+@app.post("/api/workflow-agents/custom-tools", response_model=WorkflowCustomToolRecord)
+async def create_workflow_custom_tool_route(
+    payload: WorkflowCustomToolCreateRequest,
+    request: Request,
+) -> WorkflowCustomToolRecord:
+    user = require_user(request)
+    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    return create_workflow_custom_tool(workspace, payload)
+
+
+@app.put("/api/workflow-agents/custom-tools/{tool_id}", response_model=WorkflowCustomToolRecord)
+async def update_workflow_custom_tool_route(
+    tool_id: str,
+    payload: WorkflowCustomToolUpdateRequest,
+    request: Request,
+) -> WorkflowCustomToolRecord:
+    user = require_user(request)
+    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    return update_workflow_custom_tool(workspace, tool_id, payload)
+
+
+@app.delete("/api/workflow-agents/custom-tools/{tool_id}")
+async def delete_workflow_custom_tool_route(tool_id: str, request: Request) -> dict[str, bool]:
+    user = require_user(request)
+    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    return delete_workflow_custom_tool(workspace, tool_id)
 
 
 @app.get("/api/workflow-agents/{agent_id}", response_model=WorkflowAgentRecord)

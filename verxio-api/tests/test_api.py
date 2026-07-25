@@ -780,6 +780,69 @@ def test_workflow_tool_capabilities_use_runtime_metadata(client, monkeypatch):
     assert body["tools"][0]["category"] == "messaging"
 
 
+def test_workflow_custom_tools_round_trip(client):
+    _payload, token = signup(client, "custom-tools@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    created = client.post(
+        "/api/workflow-agents/custom-tools",
+        headers=headers,
+        json={
+            "name": "YouCam Skin Analysis",
+            "description": "Analyze customer face images for cosmetic recommendations.",
+            "method": "POST",
+            "url": "https://api.youcam.example/v1/skin/analyze",
+            "auth_type": "bearer",
+            "api_key_env": "YOUCAM_API_KEY",
+            "headers": {"X-Client": "verxio"},
+            "request_schema": {"type": "object", "properties": {"image_url": {"type": "string"}}},
+            "response_hint": "Return skin concerns, confidence, and suggested product category.",
+        },
+    )
+
+    assert created.status_code == 200
+    tool = created.json()
+    assert tool["name"] == "YouCam Skin Analysis"
+    assert tool["api_key_env"] == "YOUCAM_API_KEY"
+    assert tool["headers"] == {"X-Client": "verxio"}
+
+    listed = client.get("/api/workflow-agents/custom-tools", headers=headers)
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()["tools"]] == [tool["id"]]
+
+    updated = client.put(
+        f"/api/workflow-agents/custom-tools/{tool['id']}",
+        headers=headers,
+        json={"enabled": False, "method": "PATCH"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["enabled"] is False
+    assert updated.json()["method"] == "PATCH"
+
+    deleted = client.delete(f"/api/workflow-agents/custom-tools/{tool['id']}", headers=headers)
+    assert deleted.status_code == 200
+    assert deleted.json() == {"ok": True}
+    assert client.get("/api/workflow-agents/custom-tools", headers=headers).json()["tools"] == []
+
+
+def test_workflow_custom_tools_reject_inline_secrets(client):
+    _payload, token = signup(client, "custom-tool-secrets@example.com")
+
+    response = client.post(
+        "/api/workflow-agents/custom-tools",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={
+            "name": "Unsafe Tool",
+            "url": "https://api.example.com",
+            "auth_type": "none",
+            "headers": {"Authorization": "Bearer secret"},
+        },
+    )
+
+    assert response.status_code == 422
+    assert "Do not store raw secrets" in response.json()["detail"]
+
+
 def test_workflow_integration_capabilities_include_connected_composio_accounts(client, monkeypatch):
     payload, token = signup(client, "workflow-integrations@example.com")
 

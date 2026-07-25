@@ -475,6 +475,26 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     )
     """,
     """
+    CREATE TABLE IF NOT EXISTS workflow_custom_tools (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        method TEXT NOT NULL DEFAULT 'POST',
+        url TEXT NOT NULL,
+        auth_type TEXT NOT NULL DEFAULT 'api_key',
+        api_key_env TEXT NOT NULL DEFAULT '',
+        headers_json TEXT NOT NULL DEFAULT '{}',
+        request_schema_json TEXT NOT NULL DEFAULT '{}',
+        response_hint TEXT NOT NULL DEFAULT '',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+    )
+    """,
+    """
     CREATE TABLE IF NOT EXISTS workflow_triggers (
         id TEXT PRIMARY KEY,
         tenant_id TEXT NOT NULL,
@@ -679,6 +699,7 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_usage_events_user_created ON usage_events(user_id, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_usage_events_runtime ON usage_events(runtime_id, session_id)",
     "CREATE INDEX IF NOT EXISTS idx_workflow_agents_workspace ON workflow_agents(workspace_id, runtime_agent_id, updated_at)",
+    "CREATE INDEX IF NOT EXISTS idx_workflow_custom_tools_workspace ON workflow_custom_tools(workspace_id, updated_at)",
     "CREATE INDEX IF NOT EXISTS idx_workflow_triggers_agent ON workflow_triggers(workspace_id, workflow_agent_id, enabled)",
     "CREATE INDEX IF NOT EXISTS idx_workflow_deliveries_agent ON workflow_deliveries(workspace_id, workflow_agent_id, enabled)",
     "CREATE INDEX IF NOT EXISTS idx_workflow_runs_agent ON workflow_runs(workspace_id, workflow_agent_id, created_at)",

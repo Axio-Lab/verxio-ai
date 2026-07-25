@@ -30,6 +30,10 @@ from app.models import (
     WorkflowAgentSetupDraftUpdateRequest,
     WorkflowAgentsResponse,
     WorkflowAgentUpdateRequest,
+    WorkflowCustomToolCreateRequest,
+    WorkflowCustomToolRecord,
+    WorkflowCustomToolsResponse,
+    WorkflowCustomToolUpdateRequest,
     WorkflowAgentEmbedAssetRequest,
     WorkflowAgentEmbedConfigRecord,
     WorkflowAgentEmbedConfigUpdateRequest,
@@ -86,6 +90,10 @@ def _json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
+def _json_object(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 def _parse_iso(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -104,6 +112,61 @@ def _string_list(value: list[str] | None) -> list[str]:
             seen.add(text)
             out.append(text)
     return out
+
+
+def _normalize_method(value: str) -> str:
+    method = value.strip().upper()
+    allowed = {"GET", "POST", "PUT", "PATCH", "DELETE"}
+    if method not in allowed:
+        raise HTTPException(status_code=422, detail=f"Unsupported custom tool method '{value}'.")
+    return method
+
+
+def _normalize_auth_type(value: str) -> str:
+    auth_type = value.strip().lower() or "none"
+    allowed = {"none", "api_key", "bearer"}
+    if auth_type not in allowed:
+        raise HTTPException(status_code=422, detail=f"Unsupported custom tool auth type '{value}'.")
+    return auth_type
+
+
+def _normalize_env_key(value: str) -> str:
+    env_key = value.strip().upper()
+    if not env_key:
+        return ""
+    if not re.fullmatch(r"[A-Z][A-Z0-9_]{1,119}", env_key):
+        raise HTTPException(status_code=422, detail="API key env var must look like YOUCAM_API_KEY.")
+    return env_key
+
+
+def _reject_inline_secret(headers: dict[str, str]) -> None:
+    for key, value in headers.items():
+        combined = f"{key} {value}".lower()
+        if "authorization" in combined or "api-key" in combined or "apikey" in combined or "bearer " in combined:
+            raise HTTPException(
+                status_code=422,
+                detail="Do not store raw secrets in custom tool headers. Use the API key env field.",
+            )
+
+
+def _custom_tool_from_row(row: dict[str, Any]) -> WorkflowCustomToolRecord:
+    return WorkflowCustomToolRecord(
+        id=str(row["id"]),
+        tenant_id=str(row["tenant_id"]),
+        workspace_id=str(row["workspace_id"]),
+        name=str(row["name"]),
+        description=str(row.get("description") or ""),
+        method=str(row.get("method") or "POST"),
+        url=str(row["url"]),
+        auth_type=str(row.get("auth_type") or "api_key"),
+        api_key_env=str(row.get("api_key_env") or ""),
+        headers=_json_object(_json_loads(row.get("headers_json"), {})),
+        request_schema=_json_object(_json_loads(row.get("request_schema_json"), {})),
+        response_hint=str(row.get("response_hint") or ""),
+        enabled=bool(row.get("enabled", 1)),
+        created_at=str(row["created_at"]),
+        updated_at=str(row["updated_at"]),
+    )
 
 
 def _secret() -> str:
@@ -532,6 +595,117 @@ async def list_tool_capabilities() -> WorkflowToolCapabilitiesResponse:
                 tools.append(tool)
     tools.sort(key=lambda item: (item.category.lower(), item.name.lower()))
     return WorkflowToolCapabilitiesResponse(tools=tools, errors=metadata.errors)
+
+
+def list_custom_tools(workspace: Workspace) -> WorkflowCustomToolsResponse:
+    rows = db.fetch_all(
+        """
+        SELECT * FROM workflow_custom_tools
+        WHERE workspace_id = ?
+        ORDER BY updated_at DESC, name ASC
+        """,
+        (workspace.id,),
+    )
+    return WorkflowCustomToolsResponse(tools=[_custom_tool_from_row(row) for row in rows])
+
+
+def create_custom_tool(workspace: Workspace, payload: WorkflowCustomToolCreateRequest) -> WorkflowCustomToolRecord:
+    headers = dict(payload.headers)
+    _reject_inline_secret(headers)
+    auth_type = _normalize_auth_type(payload.auth_type)
+    api_key_env = _normalize_env_key(payload.api_key_env)
+    if auth_type in {"api_key", "bearer"} and not api_key_env:
+        raise HTTPException(status_code=422, detail="API key env var is required for this auth type.")
+    created_at = now_iso()
+    tool_id = new_id("workflow_tool")
+    db.execute(
+        """
+        INSERT INTO workflow_custom_tools (
+            id, tenant_id, workspace_id, name, description, method, url, auth_type,
+            api_key_env, headers_json, request_schema_json, response_hint, enabled,
+            created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            tool_id,
+            workspace.tenant_id,
+            workspace.id,
+            payload.name.strip(),
+            payload.description.strip(),
+            _normalize_method(payload.method),
+            payload.url.strip(),
+            auth_type,
+            api_key_env,
+            _json_dumps(headers),
+            _json_dumps(payload.request_schema),
+            payload.response_hint.strip(),
+            1 if payload.enabled else 0,
+            created_at,
+            created_at,
+        ),
+    )
+    return get_custom_tool(workspace, tool_id)
+
+
+def get_custom_tool(workspace: Workspace, tool_id: str) -> WorkflowCustomToolRecord:
+    row = db.fetch_one(
+        "SELECT * FROM workflow_custom_tools WHERE id = ? AND workspace_id = ?",
+        (tool_id, workspace.id),
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Custom tool not found.")
+    return _custom_tool_from_row(row)
+
+
+def update_custom_tool(
+    workspace: Workspace,
+    tool_id: str,
+    payload: WorkflowCustomToolUpdateRequest,
+) -> WorkflowCustomToolRecord:
+    current = get_custom_tool(workspace, tool_id)
+    data = current.model_dump()
+    updates = payload.model_dump(exclude_unset=True)
+    data.update({key: value for key, value in updates.items() if value is not None})
+    headers = dict(data.get("headers") or {})
+    _reject_inline_secret(headers)
+    auth_type = _normalize_auth_type(str(data.get("auth_type") or "none"))
+    api_key_env = _normalize_env_key(str(data.get("api_key_env") or ""))
+    if auth_type in {"api_key", "bearer"} and not api_key_env:
+        raise HTTPException(status_code=422, detail="API key env var is required for this auth type.")
+    db.execute(
+        """
+        UPDATE workflow_custom_tools
+        SET name = ?, description = ?, method = ?, url = ?, auth_type = ?, api_key_env = ?,
+            headers_json = ?, request_schema_json = ?, response_hint = ?, enabled = ?, updated_at = ?
+        WHERE id = ? AND workspace_id = ?
+        """,
+        (
+            str(data["name"]).strip(),
+            str(data.get("description") or "").strip(),
+            _normalize_method(str(data.get("method") or "POST")),
+            str(data["url"]).strip(),
+            auth_type,
+            api_key_env,
+            _json_dumps(headers),
+            _json_dumps(_json_object(data.get("request_schema"))),
+            str(data.get("response_hint") or "").strip(),
+            1 if data.get("enabled") else 0,
+            now_iso(),
+            tool_id,
+            workspace.id,
+        ),
+    )
+    return get_custom_tool(workspace, tool_id)
+
+
+def delete_custom_tool(workspace: Workspace, tool_id: str) -> dict[str, bool]:
+    get_custom_tool(workspace, tool_id)
+    db.execute(
+        "DELETE FROM workflow_custom_tools WHERE id = ? AND workspace_id = ?",
+        (tool_id, workspace.id),
+    )
+    return {"ok": True}
 
 
 def list_integration_capabilities(user_id: str) -> WorkflowIntegrationCapabilitiesResponse:

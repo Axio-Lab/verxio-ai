@@ -935,11 +935,65 @@ class WorkflowToolCapability(BaseModel):
     category: str = ""
     source: str = "hermes"
     enabled: bool = True
+    id: str | None = None
+    auth_type: str = ""
+    api_key_env: str = ""
+    configured: bool = True
+    method: str = ""
+    url: str = ""
 
 
 class WorkflowToolCapabilitiesResponse(BaseModel):
     tools: list[WorkflowToolCapability]
     errors: list[str] = Field(default_factory=list)
+
+
+class WorkflowCustomToolCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=1000)
+    method: str = Field(default="POST", max_length=12)
+    url: str = Field(min_length=1, max_length=2000)
+    auth_type: str = Field(default="api_key", max_length=40)
+    api_key_env: str = Field(default="", max_length=120)
+    headers: dict[str, str] = Field(default_factory=dict)
+    request_schema: dict[str, Any] = Field(default_factory=dict)
+    response_hint: str = Field(default="", max_length=2000)
+    enabled: bool = True
+
+
+class WorkflowCustomToolUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=1000)
+    method: str | None = Field(default=None, max_length=12)
+    url: str | None = Field(default=None, min_length=1, max_length=2000)
+    auth_type: str | None = Field(default=None, max_length=40)
+    api_key_env: str | None = Field(default=None, max_length=120)
+    headers: dict[str, str] | None = None
+    request_schema: dict[str, Any] | None = None
+    response_hint: str | None = Field(default=None, max_length=2000)
+    enabled: bool | None = None
+
+
+class WorkflowCustomToolRecord(BaseModel):
+    id: str
+    tenant_id: str
+    workspace_id: str
+    name: str
+    description: str = ""
+    method: str = "POST"
+    url: str
+    auth_type: str = "api_key"
+    api_key_env: str = ""
+    headers: dict[str, str] = Field(default_factory=dict)
+    request_schema: dict[str, Any] = Field(default_factory=dict)
+    response_hint: str = ""
+    enabled: bool = True
+    created_at: str
+    updated_at: str
+
+
+class WorkflowCustomToolsResponse(BaseModel):
+    tools: list[WorkflowCustomToolRecord]
 
 
 class WorkflowIntegrationCapability(BaseModel):
