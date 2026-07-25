@@ -516,13 +516,18 @@ async def list_tool_capabilities() -> WorkflowToolCapabilitiesResponse:
     for item in metadata.toolsets:
         if isinstance(item, dict) and isinstance(item.get("tools"), list):
             category = str(item.get("name") or item.get("id") or item.get("slug") or "")
+            toolset_enabled = bool(item.get("enabled", True))
+            toolset_configured = bool(item.get("configured", True))
             candidates = item["tools"]
         else:
             category = ""
+            toolset_enabled = True
+            toolset_configured = True
             candidates = [item]
         for candidate in candidates:
             tool = _tool_from_payload(candidate, category)
             if tool and tool.name not in seen:
+                tool.enabled = bool(tool.enabled and toolset_enabled and toolset_configured)
                 seen.add(tool.name)
                 tools.append(tool)
     tools.sort(key=lambda item: (item.category.lower(), item.name.lower()))

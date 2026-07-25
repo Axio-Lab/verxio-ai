@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import { SkillEditorDialog } from '@/components/skill-editor-dialog'
 import { Button } from '@/components/ui/button'
@@ -60,6 +61,8 @@ import {
   type WorkflowTriggerType
 } from '@/lib/verxio-api'
 import { getScopedModelOptions } from '@/lib/verxio-model-options'
+
+import { SKILLS_ROUTE } from '../routes'
 
 type AgentTab =
   | 'instructions'
@@ -223,6 +226,7 @@ function formatDate(value: string | null | undefined): string {
 }
 
 export function AgentsView() {
+  const navigate = useNavigate()
   const [agents, setAgents] = useState<WorkflowAgent[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
@@ -585,6 +589,7 @@ export function AgentsView() {
                 modelOptions={modelOptions}
                 onCancel={closeEditor}
                 onChange={setDraft}
+                onConfigureTools={() => navigate(`${SKILLS_ROUTE}?tab=toolsets`)}
                 onDelete={selected ? removeAgent : undefined}
                 onGenerateSetupDraft={generateSetupDraft}
                 onKnowledgeBasesChange={setKnowledgeBases}
@@ -743,6 +748,7 @@ function AgentEditor({
   modelOptions,
   onCancel,
   onChange,
+  onConfigureTools,
   onDelete,
   onGenerateSetupDraft,
   onKnowledgeBasesChange,
@@ -770,6 +776,7 @@ function AgentEditor({
   modelOptions: AgentModelOption[]
   onCancel: () => void
   onChange: (draft: DraftState) => void
+  onConfigureTools: () => void
   onDelete?: () => void
   onGenerateSetupDraft: () => Promise<void>
   onKnowledgeBasesChange: (knowledgeBases: KnowledgeBase[]) => void
@@ -1003,6 +1010,7 @@ function AgentEditor({
           disabled={busy}
           errors={toolCapabilityErrors}
           onChange={items => patch({ toolsText: items.join('\n') })}
+          onConfigureTools={onConfigureTools}
           selected={lines(draft.toolsText)}
           tools={toolCapabilities}
         />
@@ -1143,12 +1151,14 @@ function SetupDraftList({ empty, items, title }: { empty: string; items: string[
 function ToolSelector({
   disabled,
   errors,
+  onConfigureTools,
   onChange,
   selected,
   tools
 }: {
   disabled: boolean
   errors: string[]
+  onConfigureTools: () => void
   onChange: (items: string[]) => void
   selected: string[]
   tools: WorkflowToolCapability[]
@@ -1190,11 +1200,30 @@ function ToolSelector({
         </div>
       ) : null}
       {tools.length === 0 ? (
-        <div className="rounded-md border border-dashed border-(--stroke-nous) p-4 text-xs text-muted-foreground">
-          No workflow tools are available yet. Runtime tools and custom API tools will appear here when configured.
+        <div className="grid gap-3 rounded-md border border-dashed border-(--stroke-nous) p-4 text-xs text-muted-foreground">
+          <div className="grid gap-1">
+            <p className="font-medium text-foreground">No tools are available for this runtime yet</p>
+            <p className="leading-relaxed">
+              Agent tools are selected from the shared Hermes toolsets. Add API keys or enable toolsets in Skills &
+              Tools, then return here to choose what this agent can use.
+            </p>
+          </div>
+          <div>
+            <Button disabled={disabled} onClick={onConfigureTools} size="sm" type="button" variant="outline">
+              Configure tools and keys
+            </Button>
+          </div>
         </div>
       ) : (
         <div className="grid gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground">
+              Pick the runtime tools this agent can use. API keys stay in the shared toolset setup.
+            </p>
+            <Button disabled={disabled} onClick={onConfigureTools} size="sm" type="button" variant="outline">
+              Configure keys
+            </Button>
+          </div>
           {visibleTools.map(tool => {
             const checked = selectedSet.has(tool.name)
 

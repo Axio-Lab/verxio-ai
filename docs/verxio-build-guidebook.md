@@ -65,6 +65,8 @@ Use this guide to keep Verxio consistent across the web app, desktop shell, API 
 
 - Do not create a second integration system when existing Verxio/Hermes/Composio infrastructure can support the feature.
 - Store feature-level allowlists or bindings when a product area should restrict which tools or integrations it can use.
+- Agent Tools screens are for selecting or allowlisting tools an agent may use. API keys and provider credentials should
+  stay in the shared Skills & Tools/Settings setup path so sessions, agents, and messaging gateways use one credential source.
 - Validate that a connected account or provider exists before presenting an action as ready.
 - Show clear setup states for missing credentials, expired connections, and unavailable providers.
 
