@@ -188,7 +188,7 @@ export interface WorkflowSetupDeliveryDraft {
   delivery_type: string
   destination: string
   enabled: boolean
-  name: string
+  name?: string
   require_approval: boolean
   template: string
 }
@@ -196,22 +196,27 @@ export interface WorkflowSetupDeliveryDraft {
 export interface WorkflowAgentSetupDraftData {
   agent: WorkflowAgentInput & { name: string }
   deliveries: WorkflowSetupDeliveryDraft[]
-  missing_setup: string[]
+  missing?: string[]
+  missing_setup?: string[]
   notes: string[]
   triggers: WorkflowSetupTriggerDraft[]
 }
 
 export interface WorkflowAgentSetupApproval {
+  action?: string
+  action_label?: string
+  approved_at?: string | null
   id: string
-  tenant_id: string
-  workspace_id: string
-  workflow_agent_id: string | null
-  setup_draft_id: string
-  risk: WorkflowSetupApprovalRisk
-  action_label: string
+  metadata?: Record<string, unknown>
+  risk?: WorkflowSetupApprovalRisk
+  risk_type?: WorkflowSetupApprovalRisk
+  runtime_agent_id?: string
+  setup_draft_id?: string | null
   status: 'approved' | 'pending' | 'rejected'
-  approved_at: string | null
+  tenant_id: string
   created_at: string
+  workflow_agent_id: string | null
+  workspace_id: string
   updated_at: string
 }
 

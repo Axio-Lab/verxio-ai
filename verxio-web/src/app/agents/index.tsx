@@ -1062,21 +1062,32 @@ function AgentEditor({
 
 function SetupDraftReview({ response }: { response: WorkflowAgentSetupDraftResponse }) {
   const { draft } = response.draft
-  const pendingApprovals = response.approvals.filter(approval => approval.status === 'pending')
+  const triggers = Array.isArray(draft.triggers) ? draft.triggers : []
+  const deliveries = Array.isArray(draft.deliveries) ? draft.deliveries : []
+  const notes = Array.isArray(draft.notes) ? draft.notes : []
+
+  const missingSetup = Array.isArray(draft.missing_setup)
+    ? draft.missing_setup
+    : Array.isArray(draft.missing)
+      ? draft.missing
+      : []
+
+  const approvals = Array.isArray(response.approvals) ? response.approvals : []
+  const pendingApprovals = approvals.filter(approval => approval.status === 'pending')
 
   return (
     <div className="grid gap-3 rounded-md border border-(--stroke-nous) bg-muted/20 p-3">
       <div className="grid gap-2 md:grid-cols-3">
-        <SetupDraftMetric label="Triggers" value={draft.triggers.length} />
-        <SetupDraftMetric label="Delivery" value={draft.deliveries.length} />
+        <SetupDraftMetric label="Triggers" value={triggers.length} />
+        <SetupDraftMetric label="Delivery" value={deliveries.length} />
         <SetupDraftMetric label="Approvals" value={pendingApprovals.length} />
       </div>
 
-      {draft.notes.length > 0 ? (
+      {notes.length > 0 ? (
         <div className="grid gap-1">
           <p className="text-[0.7rem] font-medium text-foreground">Setup notes</p>
           <div className="grid gap-1">
-            {draft.notes.map(note => (
+            {notes.map(note => (
               <p className="text-[0.7rem] leading-relaxed text-muted-foreground" key={note}>
                 {note}
               </p>
@@ -1085,29 +1096,31 @@ function SetupDraftReview({ response }: { response: WorkflowAgentSetupDraftRespo
         </div>
       ) : null}
 
-      {draft.missing_setup.length > 0 ? (
+      {missingSetup.length > 0 ? (
         <div className="grid gap-1 rounded-md border border-amber-500/25 bg-amber-500/8 p-2">
           <p className="text-[0.7rem] font-medium text-foreground">Needs setup before activation</p>
-          <p className="text-[0.7rem] leading-relaxed text-muted-foreground">{draft.missing_setup.join(', ')}</p>
+          <p className="text-[0.7rem] leading-relaxed text-muted-foreground">{missingSetup.join(', ')}</p>
         </div>
       ) : null}
 
       <div className="grid gap-2 md:grid-cols-2">
         <SetupDraftList
           empty="No trigger draft generated."
-          items={draft.triggers.map(
+          items={triggers.map(
             trigger => `${trigger.name} · ${trigger.trigger_type} · ${trigger.enabled ? 'enabled' : 'disabled'}`
           )}
           title="Generated triggers"
         />
         <SetupDraftList
           empty="No delivery draft generated."
-          items={draft.deliveries.map(
-            delivery =>
-              `${delivery.name} · ${delivery.delivery_type}${delivery.channel ? ` · ${delivery.channel}` : ''} · ${
-                delivery.enabled ? 'enabled' : 'disabled'
-              }`
-          )}
+          items={deliveries.map(delivery => {
+            const name =
+              delivery.name || delivery.delivery_type || delivery.channel || delivery.destination || 'Delivery'
+
+            return `${name} · ${delivery.delivery_type}${delivery.channel ? ` · ${delivery.channel}` : ''} · ${
+              delivery.enabled ? 'enabled' : 'disabled'
+            }`
+          })}
           title="Generated delivery"
         />
       </div>
@@ -1115,7 +1128,12 @@ function SetupDraftReview({ response }: { response: WorkflowAgentSetupDraftRespo
       {pendingApprovals.length > 0 ? (
         <SetupDraftList
           empty="No approvals needed."
-          items={pendingApprovals.map(approval => `${approval.action_label} · ${approval.risk.replace(/_/g, ' ')}`)}
+          items={pendingApprovals.map(approval => {
+            const action = approval.action_label || approval.action || 'Approval required'
+            const risk = approval.risk || approval.risk_type || 'external_delivery'
+
+            return `${action} · ${risk.replace(/_/g, ' ')}`
+          })}
           title="Approval required"
         />
       ) : null}
