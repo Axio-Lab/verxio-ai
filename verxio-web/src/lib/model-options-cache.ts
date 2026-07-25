@@ -3,7 +3,9 @@ import type { QueryClient } from '@tanstack/react-query'
 import { readVerxioAuthScope } from '@/lib/auth-scope'
 import type { ModelOptionsResponse } from '@/types/hermes'
 
-const MODEL_OPTIONS_CACHE_KEY = 'verxio.model-options.cache.v2'
+// Bump when the runtime provider eligibility contract changes so an old
+// inventory cannot keep unsupported providers visible after deployment.
+const MODEL_OPTIONS_CACHE_KEY = 'verxio.model-options.cache.v3'
 
 /** While true, model-options loaders should pass refresh=1 to Hermes. */
 let forceRefreshActive = false
