@@ -123,6 +123,13 @@ export interface VerxioNotepadNoteInput {
 
 export type WorkflowTriggerType = 'api' | 'app_event' | 'chat' | 'manual' | 'schedule' | 'webhook'
 export type WorkflowRunStatus = 'completed' | 'failed' | 'queued' | 'running'
+export type WorkflowDeliveryType =
+  | 'approval_first'
+  | 'composio_action'
+  | 'reply_to_source'
+  | 'save_only'
+  | 'send_message'
+  | 'webhook_callback'
 
 export interface WorkflowAgent {
   id: string
@@ -312,6 +319,34 @@ export interface WorkflowTriggerInput {
   name?: string
   rotate_secret?: boolean
   trigger_type?: WorkflowTriggerType
+}
+
+export interface WorkflowDelivery {
+  id: string
+  tenant_id: string
+  workspace_id: string
+  workflow_agent_id: string
+  delivery_type: WorkflowDeliveryType
+  name: string
+  channel: string
+  destination: string
+  template: string
+  enabled: boolean
+  require_approval: boolean
+  config: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowDeliveryInput {
+  channel?: string
+  config?: Record<string, unknown>
+  delivery_type?: WorkflowDeliveryType
+  destination?: string
+  enabled?: boolean
+  name?: string
+  require_approval?: boolean
+  template?: string
 }
 
 export interface WorkflowRun {
@@ -1092,6 +1127,45 @@ export function updateWorkflowTrigger(
 export function deleteWorkflowTrigger(agentId: string, triggerId: string): Promise<{ ok: boolean }> {
   return verxioFetch<{ ok: boolean }>(
     `/api/workflow-agents/${encodeURIComponent(agentId)}/triggers/${encodeURIComponent(triggerId)}`,
+    {
+      method: 'DELETE'
+    }
+  )
+}
+
+export function listWorkflowDeliveries(agentId: string): Promise<{ deliveries: WorkflowDelivery[] }> {
+  return verxioFetch<{ deliveries: WorkflowDelivery[] }>(
+    `/api/workflow-agents/${encodeURIComponent(agentId)}/deliveries`
+  )
+}
+
+export function createWorkflowDelivery(
+  agentId: string,
+  input: WorkflowDeliveryInput & { delivery_type: WorkflowDeliveryType }
+): Promise<WorkflowDelivery> {
+  return verxioFetch<WorkflowDelivery>(`/api/workflow-agents/${encodeURIComponent(agentId)}/deliveries`, {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
+}
+
+export function updateWorkflowDelivery(
+  agentId: string,
+  deliveryId: string,
+  input: WorkflowDeliveryInput
+): Promise<WorkflowDelivery> {
+  return verxioFetch<WorkflowDelivery>(
+    `/api/workflow-agents/${encodeURIComponent(agentId)}/deliveries/${encodeURIComponent(deliveryId)}`,
+    {
+      body: JSON.stringify(input),
+      method: 'PUT'
+    }
+  )
+}
+
+export function deleteWorkflowDelivery(agentId: string, deliveryId: string): Promise<{ ok: boolean }> {
+  return verxioFetch<{ ok: boolean }>(
+    `/api/workflow-agents/${encodeURIComponent(agentId)}/deliveries/${encodeURIComponent(deliveryId)}`,
     {
       method: 'DELETE'
     }

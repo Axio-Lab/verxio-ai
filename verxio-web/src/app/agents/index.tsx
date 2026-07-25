@@ -2,6 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { SkillEditorDialog } from '@/components/skill-editor-dialog'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Loader } from '@/components/ui/loader'
 import { PaginationControl } from '@/components/ui/pagination'
@@ -13,15 +21,18 @@ import {
   createKnowledgeBase,
   createKnowledgeDocument,
   createWorkflowAgent,
+  createWorkflowDelivery,
   createWorkflowTrigger,
   deleteKnowledgeBase,
   deleteWorkflowAgent,
+  deleteWorkflowDelivery,
   deleteWorkflowTrigger,
   draftWorkflowAgentSetup,
   draftWorkflowAgentSetupUpdate,
   type KnowledgeBase,
   listKnowledgeBases,
   listWorkflowAgents,
+  listWorkflowDeliveries,
   listWorkflowIntegrationCapabilities,
   listWorkflowRunEvents,
   listWorkflowRuns,
@@ -29,9 +40,12 @@ import {
   listWorkflowTriggers,
   runWorkflowAgent,
   updateWorkflowAgent,
+  updateWorkflowDelivery,
   updateWorkflowTrigger,
   type WorkflowAgent,
   type WorkflowAgentSetupDraftResponse,
+  type WorkflowDelivery,
+  type WorkflowDeliveryType,
   type WorkflowIntegrationCapability,
   type WorkflowRun,
   type WorkflowRunEvent,
@@ -43,18 +57,29 @@ import { getScopedModelOptions } from '@/lib/verxio-model-options'
 
 import { OverlayView } from '../overlays/overlay-view'
 
-type AgentTab = 'instructions' | 'skills' | 'knowledge' | 'integrations' | 'triggers' | 'runs'
+type AgentTab = 'instructions' | 'skills' | 'knowledge' | 'integrations' | 'delivery' | 'triggers' | 'runs'
 
 const AGENT_TABS: Array<{ id: AgentTab; label: string }> = [
   { id: 'instructions', label: 'Instructions' },
   { id: 'skills', label: 'Skills' },
   { id: 'knowledge', label: 'Knowledge' },
   { id: 'integrations', label: 'Integrations' },
+  { id: 'delivery', label: 'Delivery' },
   { id: 'triggers', label: 'Triggers' },
   { id: 'runs', label: 'Runs' }
 ]
 
 const TRIGGER_TYPES: WorkflowTriggerType[] = ['manual', 'webhook', 'schedule', 'api', 'app_event', 'chat']
+
+const DELIVERY_TYPES: WorkflowDeliveryType[] = [
+  'save_only',
+  'reply_to_source',
+  'send_message',
+  'composio_action',
+  'webhook_callback',
+  'approval_first'
+]
+
 const AGENT_PAGE_SIZE = 8
 const PANEL_PAGE_SIZE = 6
 
@@ -121,6 +146,7 @@ export function AgentsView({ onClose }: AgentsViewProps) {
   const [agents, setAgents] = useState<WorkflowAgent[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft] = useState<DraftState>(() => draftFromAgent())
+  const [deliveries, setDeliveries] = useState<WorkflowDelivery[]>([])
   const [triggers, setTriggers] = useState<WorkflowTrigger[]>([])
   const [runs, setRuns] = useState<WorkflowRun[]>([])
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([])
@@ -223,7 +249,13 @@ export function AgentsView({ onClose }: AgentsViewProps) {
 
   const refreshDetails = useCallback(async (agentId: string) => {
     try {
-      const [triggerResult, runResult] = await Promise.all([listWorkflowTriggers(agentId), listWorkflowRuns(agentId)])
+      const [deliveryResult, triggerResult, runResult] = await Promise.all([
+        listWorkflowDeliveries(agentId),
+        listWorkflowTriggers(agentId),
+        listWorkflowRuns(agentId)
+      ])
+
+      setDeliveries(deliveryResult.deliveries)
       setTriggers(triggerResult.triggers)
       setRuns(runResult.runs)
     } catch (err) {
@@ -256,6 +288,7 @@ export function AgentsView({ onClose }: AgentsViewProps) {
     if (selected) {
       void refreshDetails(selected.id)
     } else {
+      setDeliveries([])
       setTriggers([])
       setRuns([])
     }
@@ -324,6 +357,7 @@ export function AgentsView({ onClose }: AgentsViewProps) {
     setDraft({ ...draftFromAgent(), model_id: defaultModelId })
     setSetupDraftResponse(null)
     setSetupPrompt('')
+    setDeliveries([])
     setTriggers([])
     setRuns([])
     setTab('instructions')
@@ -452,6 +486,16 @@ export function AgentsView({ onClose }: AgentsViewProps) {
                     onError={setError}
                     onRefresh={() => refreshDetails(selected.id)}
                     triggers={triggers}
+                  />
+                ) : null}
+                {tab === 'delivery' ? (
+                  <DeliveryPanel
+                    agent={selected}
+                    busy={busy}
+                    deliveries={deliveries}
+                    onBusy={setBusy}
+                    onError={setError}
+                    onRefresh={() => refreshDetails(selected.id)}
                   />
                 ) : null}
                 {tab === 'runs' ? (
@@ -1432,6 +1476,327 @@ function SkillSelector({
         open={editorOpen}
       />
     </div>
+  )
+}
+
+interface DeliveryFormState {
+  channel: string
+  configText: string
+  delivery_type: WorkflowDeliveryType
+  destination: string
+  enabled: boolean
+  name: string
+  require_approval: boolean
+  template: string
+}
+
+function deliveryFormFromRecord(delivery?: WorkflowDelivery | null): DeliveryFormState {
+  return {
+    channel: delivery?.channel ?? '',
+    configText: JSON.stringify(delivery?.config ?? {}, null, 2),
+    delivery_type: delivery?.delivery_type ?? 'save_only',
+    destination: delivery?.destination ?? '',
+    enabled: delivery?.enabled ?? true,
+    name: delivery?.name ?? '',
+    require_approval: delivery?.require_approval ?? false,
+    template: delivery?.template ?? ''
+  }
+}
+
+function DeliveryPanel({
+  agent,
+  busy,
+  deliveries,
+  onBusy,
+  onError,
+  onRefresh
+}: {
+  agent: WorkflowAgent
+  busy: boolean
+  deliveries: WorkflowDelivery[]
+  onBusy: (busy: boolean) => void
+  onError: (error: string | null) => void
+  onRefresh: () => Promise<void>
+}) {
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editing, setEditing] = useState<WorkflowDelivery | null>(null)
+  const [form, setForm] = useState<DeliveryFormState>(() => deliveryFormFromRecord())
+  const [page, setPage] = useState(1)
+  const visibleDeliveries = deliveries.slice((page - 1) * PANEL_PAGE_SIZE, page * PANEL_PAGE_SIZE)
+
+  useEffect(() => {
+    const pageCount = Math.max(1, Math.ceil(deliveries.length / PANEL_PAGE_SIZE))
+
+    if (page > pageCount) {
+      setPage(pageCount)
+    }
+  }, [deliveries.length, page])
+
+  const openCreate = () => {
+    setEditing(null)
+    setForm(deliveryFormFromRecord())
+    setDialogOpen(true)
+  }
+
+  const openEdit = (delivery: WorkflowDelivery) => {
+    setEditing(delivery)
+    setForm(deliveryFormFromRecord(delivery))
+    setDialogOpen(true)
+  }
+
+  const save = async () => {
+    onBusy(true)
+    onError(null)
+
+    try {
+      const config = JSON.parse(form.configText || '{}') as Record<string, unknown>
+
+      const input = {
+        channel: form.channel,
+        config,
+        delivery_type: form.delivery_type,
+        destination: form.destination,
+        enabled: form.enabled,
+        name: form.name,
+        require_approval: form.require_approval,
+        template: form.template
+      }
+
+      if (editing) {
+        await updateWorkflowDelivery(agent.id, editing.id, input)
+      } else {
+        await createWorkflowDelivery(agent.id, input)
+      }
+
+      setDialogOpen(false)
+      await onRefresh()
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Could not save delivery. Check the config JSON.')
+    } finally {
+      onBusy(false)
+    }
+  }
+
+  const toggle = async (delivery: WorkflowDelivery) => {
+    onBusy(true)
+    onError(null)
+
+    try {
+      await updateWorkflowDelivery(agent.id, delivery.id, { enabled: !delivery.enabled })
+      await onRefresh()
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Could not update delivery.')
+    } finally {
+      onBusy(false)
+    }
+  }
+
+  const remove = async (delivery: WorkflowDelivery) => {
+    onBusy(true)
+    onError(null)
+
+    try {
+      await deleteWorkflowDelivery(agent.id, delivery.id)
+      await onRefresh()
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Could not delete delivery.')
+    } finally {
+      onBusy(false)
+    }
+  }
+
+  return (
+    <section className="mt-4 grid gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-xs font-semibold">Delivery rules</h3>
+          <p className="text-[0.7rem] leading-relaxed text-muted-foreground">
+            Choose where completed agent output is saved, held, or queued.
+          </p>
+        </div>
+        <Button disabled={busy} onClick={openCreate} size="sm">
+          <Plus className="size-4" />
+          Add delivery
+        </Button>
+      </div>
+
+      {deliveries.length === 0 ? (
+        <div className="grid min-h-32 place-items-center rounded-md border border-dashed border-(--stroke-nous) p-4 text-center">
+          <div className="grid gap-2">
+            <Send className="mx-auto size-5 text-primary" />
+            <p className="text-xs font-medium">No delivery rules yet</p>
+            <p className="max-w-md text-[0.7rem] leading-relaxed text-muted-foreground">
+              Runs will save output by default. Add delivery when the agent should reply to a source, send a message,
+              call Composio, or queue a webhook callback.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="grid gap-2">
+          {visibleDeliveries.map(delivery => (
+            <div className="grid gap-2 rounded-md border border-(--stroke-nous) p-3" key={delivery.id}>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="grid gap-1">
+                  <span className="flex items-center gap-2 text-xs font-medium">
+                    <span
+                      className={cn(
+                        'size-1.5 rounded-full',
+                        delivery.enabled ? 'bg-primary' : 'bg-muted-foreground/50'
+                      )}
+                    />
+                    {delivery.name || delivery.delivery_type.replace('_', ' ')}
+                    {delivery.require_approval ? (
+                      <span className="text-[0.65rem] font-normal text-muted-foreground">approval first</span>
+                    ) : null}
+                  </span>
+                  <span className="text-[0.7rem] leading-relaxed text-muted-foreground">
+                    {delivery.delivery_type.replace('_', ' ')}
+                    {delivery.channel ? ` · ${delivery.channel}` : ''}
+                    {delivery.destination ? ` · ${delivery.destination}` : ''}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button disabled={busy} onClick={() => toggle(delivery)} size="sm" variant="ghost">
+                    {delivery.enabled ? 'Disable' : 'Enable'}
+                  </Button>
+                  <Button disabled={busy} onClick={() => openEdit(delivery)} size="sm" variant="ghost">
+                    Edit
+                  </Button>
+                  <Button disabled={busy} onClick={() => remove(delivery)} size="sm" variant="ghost">
+                    <Trash2 className="size-4" />
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ))}
+          <PaginationControl
+            itemLabel="delivery rules"
+            onPageChange={setPage}
+            page={page}
+            pageSize={PANEL_PAGE_SIZE}
+            total={deliveries.length}
+          />
+        </div>
+      )}
+
+      <Dialog onOpenChange={open => !busy && setDialogOpen(open)} open={dialogOpen}>
+        <DialogContent className="max-w-2xl" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>{editing ? 'Edit delivery' : 'Add delivery'}</DialogTitle>
+            <DialogDescription>Configure where this agent sends or stores completed output.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="grid gap-1.5 text-xs font-medium">
+                Type
+                <Select
+                  disabled={busy}
+                  onValueChange={value =>
+                    setForm(current => ({ ...current, delivery_type: value as WorkflowDeliveryType }))
+                  }
+                  value={form.delivery_type}
+                >
+                  <SelectTrigger size="sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DELIVERY_TYPES.map(item => (
+                      <SelectItem key={item} value={item}>
+                        {item.replace('_', ' ')}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </label>
+              <label className="grid gap-1.5 text-xs font-medium">
+                Name
+                <Input
+                  disabled={busy}
+                  onChange={event => setForm(current => ({ ...current, name: event.target.value }))}
+                  placeholder="Reply to customer"
+                  value={form.name}
+                />
+              </label>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="grid gap-1.5 text-xs font-medium">
+                Channel
+                <Input
+                  disabled={busy}
+                  onChange={event => setForm(current => ({ ...current, channel: event.target.value }))}
+                  placeholder="whatsapp / slack / gmail / webhook"
+                  value={form.channel}
+                />
+              </label>
+              <label className="grid gap-1.5 text-xs font-medium">
+                Destination
+                <Input
+                  disabled={busy}
+                  onChange={event => setForm(current => ({ ...current, destination: event.target.value }))}
+                  placeholder="Phone, email, channel, CRM id, or callback URL"
+                  value={form.destination}
+                />
+              </label>
+            </div>
+            <label className="grid gap-1.5 text-xs font-medium">
+              Template
+              <Textarea
+                className="min-h-24"
+                disabled={busy}
+                onChange={event => setForm(current => ({ ...current, template: event.target.value }))}
+                placeholder="Use {{output}}, {{customer.name}}, or payload fields when delivery execution is enabled."
+                value={form.template}
+              />
+            </label>
+            <label className="grid gap-1.5 text-xs font-medium">
+              Config JSON
+              <Textarea
+                className="min-h-24 font-mono text-[0.72rem]"
+                disabled={busy}
+                onChange={event => setForm(current => ({ ...current, configText: event.target.value }))}
+                value={form.configText}
+              />
+            </label>
+            <div className="flex flex-wrap items-center gap-4">
+              <button
+                className="flex items-center gap-2 text-xs text-muted-foreground"
+                disabled={busy}
+                onClick={() => setForm(current => ({ ...current, enabled: !current.enabled }))}
+                type="button"
+              >
+                <span className={cn('size-2 rounded-full', form.enabled ? 'bg-primary' : 'bg-muted-foreground/50')} />
+                {form.enabled ? 'Enabled' : 'Disabled'}
+              </button>
+              <button
+                className="flex items-center gap-2 text-xs text-muted-foreground"
+                disabled={busy}
+                onClick={() => setForm(current => ({ ...current, require_approval: !current.require_approval }))}
+                type="button"
+              >
+                <span
+                  className={cn('size-2 rounded-full', form.require_approval ? 'bg-primary' : 'bg-muted-foreground/50')}
+                />
+                {form.require_approval ? 'Approval required' : 'No approval hold'}
+              </button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button disabled={busy} onClick={() => setDialogOpen(false)} type="button" variant="ghost">
+              Cancel
+            </Button>
+            <Button disabled={busy} onClick={() => void save()} type="button">
+              {busy ? (
+                <Loader className="size-4 text-primary" label="Saving delivery" strokeScale={0.7} type="rose-two" />
+              ) : (
+                <Save className="size-4" />
+              )}
+              Save delivery
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </section>
   )
 }
 
