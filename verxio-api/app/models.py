@@ -808,10 +808,6 @@ class WorkflowAgentUpdateRequest(BaseModel):
     approval_policy: str | None = Field(default=None, max_length=80)
 
 
-class WorkflowAgentsResponse(BaseModel):
-    agents: list[WorkflowAgentRecord]
-
-
 WorkflowSetupActor = Literal["web", "session", "gateway"]
 WorkflowSetupApprovalStatus = Literal["pending", "approved", "rejected"]
 WorkflowSetupApprovalRisk = Literal[
@@ -894,6 +890,11 @@ class WorkflowAgentSetupApprovalRecord(BaseModel):
 class WorkflowAgentSetupDraftResponse(BaseModel):
     draft: WorkflowAgentSetupDraftRecord
     approvals: list[WorkflowAgentSetupApprovalRecord] = Field(default_factory=list)
+
+
+class WorkflowAgentsResponse(BaseModel):
+    agents: list[WorkflowAgentRecord]
+    setup_drafts: list[WorkflowAgentSetupDraftRecord] = Field(default_factory=list)
 
 
 class WorkflowAgentSetupApprovalRequest(BaseModel):

@@ -206,6 +206,29 @@ def test_workflow_agent_setup_draft_stages_risky_actions(client):
     assert approve.json()["approvals"][0]["status"] == "approved"
 
 
+def test_workflow_agent_list_includes_setup_drafts(client):
+    _payload, token = signup(client, "workflow-setup-list-drafts@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    response = client.post(
+        "/api/workflow-agents/draft",
+        headers=headers,
+        json={
+            "prompt": "Create a lead agent that researches a Google Form submission before a strategy call.",
+            "source": "web",
+        },
+    )
+    assert response.status_code == 200
+    draft = response.json()["draft"]
+
+    listed = client.get("/api/workflow-agents", headers=headers)
+    assert listed.status_code == 200
+    body = listed.json()
+    assert body["agents"] == []
+    assert [item["id"] for item in body["setup_drafts"]] == [draft["id"]]
+    assert body["setup_drafts"][0]["draft"]["agent"]["name"] == "Lead Research Agent"
+
+
 def test_workflow_agent_setup_apply_creates_agent_triggers_and_deliveries(client):
     _payload, token = signup(client, "workflow-setup-apply@example.com")
     headers = {"Cookie": f"{SESSION_COOKIE}={token}"}

@@ -221,13 +221,15 @@ export interface WorkflowAgentSetupApproval {
 }
 
 export interface WorkflowAgentSetupDraft {
+  approvals_required: WorkflowSetupApprovalRisk[]
   id: string
+  runtime_agent_id: string
   tenant_id: string
   workspace_id: string
   workflow_agent_id: string | null
   source: WorkflowSetupActor
-  source_ref: string
   prompt: string
+  status: string
   draft: WorkflowAgentSetupDraftData
   created_at: string
   updated_at: string
@@ -847,20 +849,24 @@ export async function verxioFetch<T>(path: string, init: RequestInit & { timeout
       const detail = await response.text().catch(() => '')
 
       if (detail) {
+        let parsedMessage = ''
+
         try {
           const parsed = JSON.parse(detail) as { detail?: unknown; message?: unknown }
 
           if (typeof parsed.detail === 'string' && parsed.detail.trim()) {
-            throw new Error(parsed.detail.trim())
+            parsedMessage = parsed.detail.trim()
           }
 
           if (typeof parsed.message === 'string' && parsed.message.trim()) {
-            throw new Error(parsed.message.trim())
+            parsedMessage = parsed.message.trim()
           }
-        } catch (error) {
-          if (error instanceof Error && error.message !== detail) {
-            throw error
-          }
+        } catch {
+          parsedMessage = ''
+        }
+
+        if (parsedMessage) {
+          throw new Error(parsedMessage)
         }
       }
 
@@ -1078,8 +1084,8 @@ export function revokeNotepadShare(noteId: string): Promise<{ ok: boolean }> {
   })
 }
 
-export function listWorkflowAgents(): Promise<{ agents: WorkflowAgent[] }> {
-  return verxioFetch<{ agents: WorkflowAgent[] }>('/api/workflow-agents')
+export function listWorkflowAgents(): Promise<{ agents: WorkflowAgent[]; setup_drafts?: WorkflowAgentSetupDraft[] }> {
+  return verxioFetch<{ agents: WorkflowAgent[]; setup_drafts?: WorkflowAgentSetupDraft[] }>('/api/workflow-agents')
 }
 
 export function listWorkflowSkillCapabilities(): Promise<WorkflowSkillCapabilitiesResponse> {

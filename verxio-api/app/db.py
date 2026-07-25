@@ -835,6 +835,19 @@ def run_migrations() -> None:
         else:
             for statement in SCHEMA_STATEMENTS:
                 conn.execute(statement)
+        _ensure_legacy_columns(conn)
+
+
+def _table_columns(conn: Any, table: str) -> set[str]:
+    cursor = conn.execute(f"PRAGMA table_info({table})")
+    return {str(row[1] if not isinstance(row, sqlite3.Row) else row["name"]) for row in cursor.fetchall()}
+
+
+def _ensure_legacy_columns(conn: Any) -> None:
+    workflow_agent_columns = _table_columns(conn, "workflow_agents")
+
+    if "model_id" not in workflow_agent_columns:
+        conn.execute("ALTER TABLE workflow_agents ADD COLUMN model_id TEXT NOT NULL DEFAULT ''")
 
 
 def _split_sql_script(script: str) -> list[str]:

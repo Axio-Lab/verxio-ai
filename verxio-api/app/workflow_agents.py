@@ -910,7 +910,7 @@ def list_integration_capabilities(user_id: str) -> WorkflowIntegrationCapabiliti
 
 
 def list_agents(workspace: Workspace, profile: AgentProfile) -> WorkflowAgentsResponse:
-    rows = db.fetch_all(
+    agent_rows = db.fetch_all(
         """
         SELECT * FROM workflow_agents
         WHERE workspace_id = ? AND runtime_agent_id = ?
@@ -918,7 +918,18 @@ def list_agents(workspace: Workspace, profile: AgentProfile) -> WorkflowAgentsRe
         """,
         (workspace.id, profile.id),
     )
-    return WorkflowAgentsResponse(agents=[_agent_from_row(row) for row in rows])
+    draft_rows = db.fetch_all(
+        """
+        SELECT * FROM workflow_agent_setup_drafts
+        WHERE workspace_id = ? AND runtime_agent_id = ? AND status = 'draft'
+        ORDER BY updated_at DESC
+        """,
+        (workspace.id, profile.id),
+    )
+    return WorkflowAgentsResponse(
+        agents=[_agent_from_row(row) for row in agent_rows],
+        setup_drafts=[_setup_draft_from_row(row) for row in draft_rows],
+    )
 
 
 def _approval_action_for_risk(risk: WorkflowSetupApprovalRisk) -> str:

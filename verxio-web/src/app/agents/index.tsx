@@ -50,6 +50,7 @@ import {
   uploadWorkflowAgentEmbedAsset,
   type WorkflowAgent,
   type WorkflowAgentEmbedConfig,
+  type WorkflowAgentSetupDraft,
   type WorkflowAgentSetupDraftResponse,
   type WorkflowDelivery,
   type WorkflowDeliveryType,
@@ -200,6 +201,32 @@ function draftFromAgent(agent?: WorkflowAgent | null): DraftState {
   }
 }
 
+function draftFromSetupDraft(setupDraft: WorkflowAgentSetupDraft, defaultModelId = ''): DraftState {
+  const agent = setupDraft.draft.agent
+
+  return {
+    approval_policy: agent.approval_policy ?? 'default',
+    description: agent.description ?? '',
+    enabled: agent.enabled ?? false,
+    instructions: agent.instructions ?? '',
+    integrationsText: (agent.integrations ?? []).join('\n'),
+    knowledgeText: (agent.knowledge ?? []).join('\n'),
+    model_id: agent.model_id || defaultModelId,
+    name: agent.name ?? '',
+    role: agent.role ?? '',
+    skillsText: (agent.skills ?? []).join('\n'),
+    toolsText: (agent.tools ?? []).join('\n')
+  }
+}
+
+interface AgentListItem {
+  agent?: WorkflowAgent
+  draft?: WorkflowAgentSetupDraft
+  id: string
+  timestamp: string
+  type: 'agent' | 'draft'
+}
+
 interface AgentModelOption {
   id: string
   label: string
@@ -254,7 +281,9 @@ function formatDate(value: string | null | undefined): string {
 export function AgentsView() {
   const navigate = useNavigate()
   const [agents, setAgents] = useState<WorkflowAgent[]>([])
+  const [setupDrafts, setSetupDrafts] = useState<WorkflowAgentSetupDraft[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedDraftId, setSelectedDraftId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [draft, setDraft] = useState<DraftState>(() => draftFromAgent())
   const [deliveries, setDeliveries] = useState<WorkflowDelivery[]>([])
@@ -280,6 +309,29 @@ export function AgentsView() {
   const [setupBusy, setSetupBusy] = useState(false)
 
   const selected = useMemo(() => agents.find(agent => agent.id === selectedId) ?? null, [agents, selectedId])
+
+  const selectedSetupDraft = useMemo(
+    () => setupDrafts.find(setupDraft => setupDraft.id === selectedDraftId) ?? null,
+    [selectedDraftId, setupDrafts]
+  )
+
+  const listItems = useMemo<AgentListItem[]>(() => {
+    const agentItems: AgentListItem[] = agents.map(agent => ({
+      agent,
+      id: agent.id,
+      timestamp: agent.updated_at,
+      type: 'agent'
+    }))
+
+    const draftItems: AgentListItem[] = setupDrafts.map(setupDraft => ({
+      draft: setupDraft,
+      id: setupDraft.id,
+      timestamp: setupDraft.updated_at,
+      type: 'draft'
+    }))
+
+    return [...agentItems, ...draftItems].sort((first, second) => second.timestamp.localeCompare(first.timestamp))
+  }, [agents, setupDrafts])
 
   const refreshAgents = useCallback(async () => {
     setError(null)
@@ -365,7 +417,11 @@ export function AgentsView() {
       }
 
       setAgents(result.value.agents)
+      setSetupDrafts(result.value.setup_drafts ?? [])
       setSelectedId(current => (current && result.value.agents.some(agent => agent.id === current) ? current : null))
+      setSelectedDraftId(current =>
+        current && (result.value.setup_drafts ?? []).some(setupDraft => setupDraft.id === current) ? current : null
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load agents.')
     } finally {
@@ -419,6 +475,10 @@ export function AgentsView() {
 
   useEffect(() => {
     setDraft(() => {
+      if (selectedSetupDraft) {
+        return draftFromSetupDraft(selectedSetupDraft, defaultModelId)
+      }
+
       const next = draftFromAgent(selected)
 
       return selected ? next : { ...next, model_id: defaultModelId }
@@ -432,7 +492,7 @@ export function AgentsView() {
       setRuns([])
       setEmbedConfig(null)
     }
-  }, [defaultModelId, refreshDetails, selected])
+  }, [defaultModelId, refreshDetails, selected, selectedSetupDraft])
 
   const saveAgent = async () => {
     if (!draft.name.trim()) {
@@ -466,6 +526,8 @@ export function AgentsView() {
         return exists ? current.map(agent => (agent.id === saved.id ? saved : agent)) : [saved, ...current]
       })
       setSelectedId(saved.id)
+      setSelectedDraftId(null)
+      setSetupDrafts(current => current.filter(setupDraft => setupDraft.id !== selectedDraftId))
       setCreating(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save agent.')
@@ -496,6 +558,7 @@ export function AgentsView() {
 
   const createNew = () => {
     setSelectedId(null)
+    setSelectedDraftId(null)
     setCreating(true)
     setDraft({ ...draftFromAgent(), model_id: defaultModelId })
     setSetupDraftResponse(null)
@@ -509,6 +572,7 @@ export function AgentsView() {
 
   const closeEditor = () => {
     setSelectedId(null)
+    setSelectedDraftId(null)
     setCreating(false)
     setDraft({ ...draftFromAgent(), model_id: defaultModelId })
     setSetupDraftResponse(null)
@@ -522,11 +586,28 @@ export function AgentsView() {
 
   const selectAgent = (agentId: string) => {
     setCreating(false)
+    setSelectedDraftId(null)
     setSelectedId(agentId)
     setTab('instructions')
   }
 
-  const editorOpen = creating || selected !== null
+  const selectSetupDraft = (setupDraftId: string) => {
+    const setupDraft = setupDrafts.find(item => item.id === setupDraftId)
+
+    if (!setupDraft) {
+      return
+    }
+
+    setCreating(true)
+    setSelectedId(null)
+    setSelectedDraftId(setupDraft.id)
+    setSetupPrompt(setupDraft.prompt)
+    setSetupDraftResponse({ approvals: [], draft: setupDraft })
+    setDraft(draftFromSetupDraft(setupDraft, defaultModelId))
+    setTab('instructions')
+  }
+
+  const editorOpen = creating || selected !== null || selectedSetupDraft !== null
 
   const generateSetupDraft = async () => {
     if (!setupPrompt.trim()) {
@@ -612,7 +693,14 @@ export function AgentsView() {
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-hidden">
-          {!editorOpen ? <AgentList agents={agents} onCreate={createNew} onSelect={selectAgent} /> : null}
+          {!editorOpen ? (
+            <AgentList
+              items={listItems}
+              onCreate={createNew}
+              onSelectAgent={selectAgent}
+              onSelectDraft={selectSetupDraft}
+            />
+          ) : null}
           {editorOpen ? (
             <main className="h-full min-w-0 overflow-y-auto pr-1">
               <AgentEditor
@@ -701,26 +789,28 @@ export function AgentsView() {
 }
 
 function AgentList({
-  agents,
+  items,
   onCreate,
-  onSelect
+  onSelectAgent,
+  onSelectDraft
 }: {
-  agents: WorkflowAgent[]
+  items: AgentListItem[]
   onCreate: () => void
-  onSelect: (id: string) => void
+  onSelectAgent: (id: string) => void
+  onSelectDraft: (id: string) => void
 }) {
   const [page, setPage] = useState(1)
-  const visibleAgents = agents.slice((page - 1) * AGENT_PAGE_SIZE, page * AGENT_PAGE_SIZE)
+  const visibleItems = items.slice((page - 1) * AGENT_PAGE_SIZE, page * AGENT_PAGE_SIZE)
 
   useEffect(() => {
-    const pageCount = Math.max(1, Math.ceil(agents.length / AGENT_PAGE_SIZE))
+    const pageCount = Math.max(1, Math.ceil(items.length / AGENT_PAGE_SIZE))
 
     if (page > pageCount) {
       setPage(pageCount)
     }
-  }, [agents.length, page])
+  }, [items.length, page])
 
-  if (agents.length === 0) {
+  if (items.length === 0) {
     return (
       <div className="grid h-full min-h-80 place-items-center rounded-md border border-dashed border-(--stroke-nous) p-5 text-center">
         <div className="grid gap-3">
@@ -741,25 +831,15 @@ function AgentList({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="grid min-h-0 flex-1 content-start gap-2 overflow-y-auto sm:grid-cols-2 xl:grid-cols-3">
-        {visibleAgents.map(agent => (
+        {visibleItems.map(item => (
           <button
             className="grid min-h-28 content-between gap-3 rounded-md border border-(--stroke-nous) p-4 text-left transition-colors hover:bg-(--chrome-action-hover) focus-visible:ring-2 focus-visible:ring-primary"
-            key={agent.id}
-            onClick={() => onSelect(agent.id)}
+            key={`${item.type}:${item.id}`}
+            onClick={() => (item.type === 'agent' ? onSelectAgent(item.id) : onSelectDraft(item.id))}
             type="button"
           >
-            <span className="grid gap-1">
-              <span className="flex items-center gap-2 text-xs font-medium">
-                <span
-                  className={cn('size-1.5 rounded-full', agent.enabled ? 'bg-primary' : 'bg-muted-foreground/50')}
-                />
-                {agent.name}
-              </span>
-              <span className="line-clamp-2 text-[0.7rem] leading-relaxed text-muted-foreground">
-                {agent.role || agent.description || 'Reusable workflow agent'}
-              </span>
-            </span>
-            <span className="text-[0.65rem] font-medium text-primary">Configure agent</span>
+            {item.agent ? <AgentListAgentCard agent={item.agent} /> : null}
+            {item.draft ? <AgentListDraftCard setupDraft={item.draft} /> : null}
           </button>
         ))}
       </div>
@@ -769,9 +849,50 @@ function AgentList({
         onPageChange={setPage}
         page={page}
         pageSize={AGENT_PAGE_SIZE}
-        total={agents.length}
+        total={items.length}
       />
     </div>
+  )
+}
+
+function AgentListAgentCard({ agent }: { agent: WorkflowAgent }) {
+  return (
+    <>
+      <span className="grid gap-1">
+        <span className="flex items-center gap-2 text-xs font-medium">
+          <span className={cn('size-1.5 rounded-full', agent.enabled ? 'bg-primary' : 'bg-muted-foreground/50')} />
+          {agent.name}
+        </span>
+        <span className="line-clamp-2 text-[0.7rem] leading-relaxed text-muted-foreground">
+          {agent.role || agent.description || 'Reusable workflow agent'}
+        </span>
+      </span>
+      <span className="text-[0.65rem] font-medium text-primary">Configure agent</span>
+    </>
+  )
+}
+
+function AgentListDraftCard({ setupDraft }: { setupDraft: WorkflowAgentSetupDraft }) {
+  const agent = setupDraft.draft.agent
+  const missing = setupDraft.draft.missing ?? []
+
+  return (
+    <>
+      <span className="grid gap-1">
+        <span className="flex items-center gap-2 text-xs font-medium">
+          <span className="size-1.5 rounded-full bg-amber-500" />
+          {agent.name || 'Untitled setup draft'}
+        </span>
+        <span className="line-clamp-2 text-[0.7rem] leading-relaxed text-muted-foreground">
+          {agent.role || agent.description || setupDraft.prompt}
+        </span>
+      </span>
+      <span className="flex flex-wrap items-center gap-2 text-[0.65rem] font-medium">
+        <span className="rounded-full border border-amber-500/25 bg-amber-500/8 px-2 py-0.5 text-amber-600">Draft</span>
+        {missing.length > 0 ? <span className="text-muted-foreground">{missing.length} setup item(s)</span> : null}
+        <span className="text-primary">Review setup</span>
+      </span>
+    </>
   )
 }
 
