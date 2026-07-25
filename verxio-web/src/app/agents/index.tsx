@@ -37,6 +37,7 @@ import {
   listWorkflowRunEvents,
   listWorkflowRuns,
   listWorkflowSkillCapabilities,
+  listWorkflowToolCapabilities,
   listWorkflowTriggers,
   runWorkflowAgent,
   updateWorkflowAgent,
@@ -50,6 +51,7 @@ import {
   type WorkflowRun,
   type WorkflowRunEvent,
   type WorkflowSkillCapability,
+  type WorkflowToolCapability,
   type WorkflowTrigger,
   type WorkflowTriggerType
 } from '@/lib/verxio-api'
@@ -57,13 +59,14 @@ import { getScopedModelOptions } from '@/lib/verxio-model-options'
 
 import { OverlayView } from '../overlays/overlay-view'
 
-type AgentTab = 'instructions' | 'skills' | 'knowledge' | 'integrations' | 'delivery' | 'triggers' | 'runs'
+type AgentTab = 'instructions' | 'skills' | 'knowledge' | 'integrations' | 'tools' | 'delivery' | 'triggers' | 'runs'
 
 const AGENT_TABS: Array<{ id: AgentTab; label: string }> = [
   { id: 'instructions', label: 'Instructions' },
   { id: 'skills', label: 'Skills' },
   { id: 'knowledge', label: 'Knowledge' },
   { id: 'integrations', label: 'Integrations' },
+  { id: 'tools', label: 'Tools' },
   { id: 'delivery', label: 'Delivery' },
   { id: 'triggers', label: 'Triggers' },
   { id: 'runs', label: 'Runs' }
@@ -98,6 +101,7 @@ interface DraftState {
   name: string
   role: string
   skillsText: string
+  toolsText: string
 }
 
 function draftFromAgent(agent?: WorkflowAgent | null): DraftState {
@@ -111,7 +115,8 @@ function draftFromAgent(agent?: WorkflowAgent | null): DraftState {
     model_id: agent?.model_id ?? '',
     name: agent?.name ?? '',
     role: agent?.role ?? '',
-    skillsText: (agent?.skills ?? []).join('\n')
+    skillsText: (agent?.skills ?? []).join('\n'),
+    toolsText: (agent?.tools ?? []).join('\n')
   }
 }
 
@@ -154,6 +159,8 @@ export function AgentsView({ onClose }: AgentsViewProps) {
   const [integrationCapabilityErrors, setIntegrationCapabilityErrors] = useState<string[]>([])
   const [skillCapabilities, setSkillCapabilities] = useState<WorkflowSkillCapability[]>([])
   const [skillCapabilityErrors, setSkillCapabilityErrors] = useState<string[]>([])
+  const [toolCapabilities, setToolCapabilities] = useState<WorkflowToolCapability[]>([])
+  const [toolCapabilityErrors, setToolCapabilityErrors] = useState<string[]>([])
   const [modelOptions, setModelOptions] = useState<AgentModelOption[]>([])
   const [defaultModelId, setDefaultModelId] = useState('')
   const [modelErrors, setModelErrors] = useState<string[]>([])
@@ -172,13 +179,15 @@ export function AgentsView({ onClose }: AgentsViewProps) {
     setLoading(true)
 
     try {
-      const [result, skillsResult, knowledgeResult, integrationsResult, modelsResult] = await Promise.allSettled([
-        listWorkflowAgents(),
-        listWorkflowSkillCapabilities(),
-        listKnowledgeBases(),
-        listWorkflowIntegrationCapabilities(),
-        getScopedModelOptions()
-      ])
+      const [result, skillsResult, toolsResult, knowledgeResult, integrationsResult, modelsResult] =
+        await Promise.allSettled([
+          listWorkflowAgents(),
+          listWorkflowSkillCapabilities(),
+          listWorkflowToolCapabilities(),
+          listKnowledgeBases(),
+          listWorkflowIntegrationCapabilities(),
+          getScopedModelOptions()
+        ])
 
       if (skillsResult.status === 'fulfilled') {
         setSkillCapabilities(skillsResult.value.skills)
@@ -192,6 +201,16 @@ export function AgentsView({ onClose }: AgentsViewProps) {
 
       if (result.status === 'rejected') {
         throw result.reason
+      }
+
+      if (toolsResult.status === 'fulfilled') {
+        setToolCapabilities(toolsResult.value.tools)
+        setToolCapabilityErrors(toolsResult.value.errors)
+      } else {
+        setToolCapabilities([])
+        setToolCapabilityErrors([
+          toolsResult.reason instanceof Error ? toolsResult.reason.message : 'Could not load tools.'
+        ])
       }
 
       if (knowledgeResult.status === 'fulfilled') {
@@ -314,7 +333,8 @@ export function AgentsView({ onClose }: AgentsViewProps) {
       model_id: draft.model_id || defaultModelId,
       name: draft.name,
       role: draft.role,
-      skills: lines(draft.skillsText)
+      skills: lines(draft.skillsText),
+      tools: lines(draft.toolsText)
     }
 
     try {
@@ -400,7 +420,8 @@ export function AgentsView({ onClose }: AgentsViewProps) {
         model_id: agentDraft.model_id || current.model_id || defaultModelId,
         name: agentDraft.name || current.name,
         role: agentDraft.role ?? current.role,
-        skillsText: (agentDraft.skills ?? []).join('\n')
+        skillsText: (agentDraft.skills ?? []).join('\n'),
+        toolsText: (agentDraft.tools ?? []).join('\n')
       }))
       setTab('instructions')
     } catch (err) {
@@ -475,6 +496,8 @@ export function AgentsView({ onClose }: AgentsViewProps) {
               skillCapabilities={skillCapabilities}
               skillCapabilityErrors={skillCapabilityErrors}
               tab={tab}
+              toolCapabilities={toolCapabilities}
+              toolCapabilityErrors={toolCapabilityErrors}
             />
             {selected ? (
               <>
@@ -615,7 +638,9 @@ function AgentEditor({
   setSetupPrompt,
   skillCapabilities,
   skillCapabilityErrors,
-  tab
+  tab,
+  toolCapabilities,
+  toolCapabilityErrors
 }: {
   busy: boolean
   defaultModelId: string
@@ -640,6 +665,8 @@ function AgentEditor({
   skillCapabilities: WorkflowSkillCapability[]
   skillCapabilityErrors: string[]
   tab: AgentTab
+  toolCapabilities: WorkflowToolCapability[]
+  toolCapabilityErrors: string[]
 }) {
   const patch = (updates: Partial<DraftState>) => onChange({ ...draft, ...updates })
   const savedModelMissing = draft.model_id && !modelOptions.some(model => model.id === draft.model_id)
@@ -845,6 +872,15 @@ function AgentEditor({
           selected={lines(draft.integrationsText)}
         />
       ) : null}
+      {tab === 'tools' ? (
+        <ToolSelector
+          disabled={busy}
+          errors={toolCapabilityErrors}
+          onChange={items => patch({ toolsText: items.join('\n') })}
+          selected={lines(draft.toolsText)}
+          tools={toolCapabilities}
+        />
+      ) : null}
     </section>
   )
 }
@@ -934,6 +970,116 @@ function SetupDraftList({ empty, items, title }: { empty: string; items: string[
           </p>
         ))
       )}
+    </div>
+  )
+}
+
+function ToolSelector({
+  disabled,
+  errors,
+  onChange,
+  selected,
+  tools
+}: {
+  disabled: boolean
+  errors: string[]
+  onChange: (items: string[]) => void
+  selected: string[]
+  tools: WorkflowToolCapability[]
+}) {
+  const selectedSet = useMemo(() => new Set(selected), [selected])
+  const missingSelected = selected.filter(name => !tools.some(tool => tool.name === name))
+  const [page, setPage] = useState(1)
+  const visibleTools = tools.slice((page - 1) * PANEL_PAGE_SIZE, page * PANEL_PAGE_SIZE)
+
+  useEffect(() => {
+    const pageCount = Math.max(1, Math.ceil(tools.length / PANEL_PAGE_SIZE))
+
+    if (page > pageCount) {
+      setPage(pageCount)
+    }
+  }, [page, tools.length])
+
+  const toggle = (name: string) => {
+    if (disabled) {
+      return
+    }
+
+    const next = new Set(selectedSet)
+
+    if (next.has(name)) {
+      next.delete(name)
+    } else {
+      next.add(name)
+    }
+
+    onChange(Array.from(next).sort((a, b) => a.localeCompare(b)))
+  }
+
+  return (
+    <div className="grid gap-3">
+      {errors.length > 0 ? (
+        <div className="rounded-md border border-(--stroke-nous) bg-muted/25 px-3 py-2 text-[0.7rem] leading-relaxed text-muted-foreground">
+          {errors.join(' ')}
+        </div>
+      ) : null}
+      {tools.length === 0 ? (
+        <div className="rounded-md border border-dashed border-(--stroke-nous) p-4 text-xs text-muted-foreground">
+          No workflow tools are available yet. Runtime tools and custom API tools will appear here when configured.
+        </div>
+      ) : (
+        <div className="grid gap-2">
+          {visibleTools.map(tool => {
+            const checked = selectedSet.has(tool.name)
+
+            return (
+              <button
+                className={cn(
+                  'grid gap-1 rounded-md border border-(--stroke-nous) p-3 text-left transition-colors hover:bg-(--chrome-action-hover)',
+                  checked && 'border-primary/45 bg-primary/8'
+                )}
+                disabled={disabled || !tool.enabled}
+                key={`${tool.source}:${tool.name}`}
+                onClick={() => toggle(tool.name)}
+                type="button"
+              >
+                <span className="flex flex-wrap items-center gap-2 text-xs font-medium">
+                  <span
+                    className={cn(
+                      'grid size-3 place-items-center rounded-sm border',
+                      checked && 'border-primary bg-primary'
+                    )}
+                  >
+                    {checked ? <CheckCircle2 className="size-2.5 text-primary-foreground" /> : null}
+                  </span>
+                  {tool.name}
+                  <span className="text-[0.65rem] font-normal text-muted-foreground">{tool.source}</span>
+                  {!tool.enabled ? (
+                    <span className="text-[0.65rem] font-normal text-muted-foreground">setup required</span>
+                  ) : null}
+                </span>
+                {tool.description ? (
+                  <span className="text-[0.7rem] leading-relaxed text-muted-foreground">{tool.description}</span>
+                ) : null}
+                <span className="text-[0.65rem] leading-relaxed text-muted-foreground">{tool.category}</span>
+              </button>
+            )
+          })}
+          <PaginationControl
+            itemLabel="tools"
+            onPageChange={setPage}
+            page={page}
+            pageSize={PANEL_PAGE_SIZE}
+            total={tools.length}
+          />
+        </div>
+      )}
+      {missingSelected.length > 0 ? (
+        <div className="grid gap-1 rounded-md border border-(--stroke-nous) p-3">
+          <p className="text-xs font-medium">Saved tools not in live catalog</p>
+          <p className="text-[0.7rem] leading-relaxed text-muted-foreground">{missingSelected.join(', ')}</p>
+        </div>
+      ) : null}
     </div>
   )
 }
