@@ -780,6 +780,52 @@ def test_workflow_tool_capabilities_use_runtime_metadata(client, monkeypatch):
     assert body["tools"][0]["category"] == "messaging"
 
 
+def test_workflow_tool_capabilities_include_custom_tools(client, monkeypatch):
+    _payload, token = signup(client, "workflow-tools-custom@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    class FakeMetadata:
+        skills = []
+        toolsets = []
+        errors = []
+
+    class FakeAdapter:
+        async def metadata(self):
+            return FakeMetadata()
+
+    monkeypatch.setattr(workflow_agents, "HermesRuntimeAdapter", FakeAdapter)
+    created = client.post(
+        "/api/workflow-agents/custom-tools",
+        headers=headers,
+        json={
+            "name": "YouCam Skin Analysis",
+            "url": "https://api.youcam.example/v1/skin/analyze",
+            "auth_type": "api_key",
+            "api_key_env": "YOUCAM_API_KEY",
+        },
+    ).json()
+
+    response = client.get("/api/workflow-agents/capabilities/tools", headers=headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["tools"] == [
+        {
+            "id": created["id"],
+            "name": f"custom:{created['id']}",
+            "description": "",
+            "category": "custom api",
+            "source": "custom",
+            "enabled": True,
+            "auth_type": "api_key",
+            "api_key_env": "YOUCAM_API_KEY",
+            "configured": True,
+            "method": "POST",
+            "url": "https://api.youcam.example/v1/skin/analyze",
+        }
+    ]
+
+
 def test_workflow_custom_tools_round_trip(client):
     _payload, token = signup(client, "custom-tools@example.com")
     headers = {"Cookie": f"{SESSION_COOKIE}={token}"}

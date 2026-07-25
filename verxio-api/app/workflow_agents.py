@@ -572,7 +572,7 @@ async def list_skill_capabilities() -> WorkflowSkillCapabilitiesResponse:
     return WorkflowSkillCapabilitiesResponse(skills=skills, errors=metadata.errors)
 
 
-async def list_tool_capabilities() -> WorkflowToolCapabilitiesResponse:
+async def list_tool_capabilities(workspace: Workspace) -> WorkflowToolCapabilitiesResponse:
     metadata = await HermesRuntimeAdapter().metadata()
     seen: set[str] = set()
     tools: list[WorkflowToolCapability] = []
@@ -593,6 +593,23 @@ async def list_tool_capabilities() -> WorkflowToolCapabilitiesResponse:
                 tool.enabled = bool(tool.enabled and toolset_enabled and toolset_configured)
                 seen.add(tool.name)
                 tools.append(tool)
+    for custom_tool in list_custom_tools(workspace).tools:
+        name = f"custom:{custom_tool.id}"
+        tools.append(
+            WorkflowToolCapability(
+                id=custom_tool.id,
+                name=name,
+                description=custom_tool.description,
+                category="custom api",
+                source="custom",
+                enabled=custom_tool.enabled,
+                auth_type=custom_tool.auth_type,
+                api_key_env=custom_tool.api_key_env,
+                configured=custom_tool.auth_type == "none" or bool(custom_tool.api_key_env),
+                method=custom_tool.method,
+                url=custom_tool.url,
+            )
+        )
     tools.sort(key=lambda item: (item.category.lower(), item.name.lower()))
     return WorkflowToolCapabilitiesResponse(tools=tools, errors=metadata.errors)
 
