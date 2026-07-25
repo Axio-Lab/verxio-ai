@@ -64,7 +64,7 @@ import {
 import { getScopedModelOptions } from '@/lib/verxio-model-options'
 import { notify, notifyError } from '@/store/notifications'
 
-import { SKILLS_ROUTE } from '../routes'
+import { SETTINGS_ROUTE } from '../routes'
 
 type AgentTab =
   | 'instructions'
@@ -626,10 +626,10 @@ export function AgentsView() {
                 modelOptions={modelOptions}
                 onCancel={closeEditor}
                 onChange={setDraft}
-                onConfigureTools={() => navigate(`${SKILLS_ROUTE}?tab=toolsets`)}
                 onDelete={selected ? removeAgent : undefined}
                 onGenerateSetupDraft={generateSetupDraft}
                 onKnowledgeBasesChange={setKnowledgeBases}
+                onManageApiKeys={() => navigate(`${SETTINGS_ROUTE}?tab=keys`)}
                 onSave={saveAgent}
                 onSkillsRefresh={refreshSkills}
                 onToolsRefresh={refreshTools}
@@ -786,10 +786,10 @@ function AgentEditor({
   modelOptions,
   onCancel,
   onChange,
-  onConfigureTools,
   onDelete,
   onGenerateSetupDraft,
   onKnowledgeBasesChange,
+  onManageApiKeys,
   onSave,
   onSkillsRefresh,
   onToolsRefresh,
@@ -815,10 +815,10 @@ function AgentEditor({
   modelOptions: AgentModelOption[]
   onCancel: () => void
   onChange: (draft: DraftState) => void
-  onConfigureTools: () => void
   onDelete?: () => void
   onGenerateSetupDraft: () => Promise<void>
   onKnowledgeBasesChange: (knowledgeBases: KnowledgeBase[]) => void
+  onManageApiKeys: () => void
   onSave: () => void
   onSkillsRefresh: () => Promise<void>
   onToolsRefresh: () => Promise<void>
@@ -1050,7 +1050,7 @@ function AgentEditor({
           disabled={busy}
           errors={toolCapabilityErrors}
           onChange={items => patch({ toolsText: items.join('\n') })}
-          onConfigureTools={onConfigureTools}
+          onManageApiKeys={onManageApiKeys}
           onRefresh={onToolsRefresh}
           selected={lines(draft.toolsText)}
           tools={toolCapabilities}
@@ -1192,16 +1192,16 @@ function SetupDraftList({ empty, items, title }: { empty: string; items: string[
 function ToolSelector({
   disabled,
   errors,
-  onConfigureTools,
   onChange,
+  onManageApiKeys,
   onRefresh,
   selected,
   tools
 }: {
   disabled: boolean
   errors: string[]
-  onConfigureTools: () => void
   onChange: (items: string[]) => void
+  onManageApiKeys: () => void
   onRefresh: () => Promise<void>
   selected: string[]
   tools: WorkflowToolCapability[]
@@ -1212,7 +1212,7 @@ function ToolSelector({
   const [mode, setMode] = useState<ToolCatalogMode>('default')
   const [draft, setDraft] = useState<CustomToolDraft>(() => emptyCustomToolDraft())
   const [saving, setSaving] = useState(false)
-  const defaultTools = useMemo(() => tools.filter(tool => tool.source !== 'custom'), [tools])
+  const defaultTools = useMemo(() => tools.filter(tool => tool.source !== 'custom' && tool.enabled), [tools])
   const customTools = useMemo(() => tools.filter(tool => tool.source === 'custom'), [tools])
   const activeTools = mode === 'custom' ? customTools : defaultTools
   const visibleTools = activeTools.slice((page - 1) * PANEL_PAGE_SIZE, page * PANEL_PAGE_SIZE)
@@ -1306,8 +1306,8 @@ function ToolSelector({
             </button>
           ))}
         </div>
-        <Button disabled={disabled} onClick={onConfigureTools} size="sm" type="button" variant="outline">
-          API keys
+        <Button disabled={disabled} onClick={onManageApiKeys} size="sm" type="button" variant="outline">
+          Manage API keys
         </Button>
       </div>
 
@@ -1316,7 +1316,7 @@ function ToolSelector({
           <div className="grid gap-1">
             <p className="text-xs font-semibold text-foreground">Add custom API tool</p>
             <p className="text-[0.7rem] leading-relaxed text-muted-foreground">
-              Define the endpoint and the env var that stores its API key. Do not paste the secret here.
+              Define the endpoint and env var name. Store the actual API key in Settings / Keys.
             </p>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
@@ -1388,6 +1388,14 @@ function ToolSelector({
               />
             </label>
           </div>
+          <div className="flex items-center justify-between gap-3 rounded-md border border-(--stroke-nous) bg-muted/20 px-3 py-2">
+            <p className="text-[0.7rem] leading-relaxed text-muted-foreground">
+              Add or update the secret value in Settings / Keys using the same env var name.
+            </p>
+            <Button disabled={disabled || saving} onClick={onManageApiKeys} size="sm" type="button" variant="outline">
+              Open keys
+            </Button>
+          </div>
           <label className="grid gap-1.5 text-xs font-medium">
             Description
             <Textarea
@@ -1437,32 +1445,28 @@ function ToolSelector({
         <div className="grid gap-3 rounded-md border border-dashed border-(--stroke-nous) p-4 text-xs text-muted-foreground">
           <div className="grid gap-1">
             <p className="font-medium text-foreground">
-              {mode === 'custom' ? 'No custom tools yet' : 'No default tools are available for this runtime yet'}
+              {mode === 'custom' ? 'No custom tools yet' : 'No active tools are available for this agent yet'}
             </p>
             <p className="leading-relaxed">
               {mode === 'custom'
                 ? 'Add a custom API tool for APIs like YouCam, courier services, internal systems, or pricing engines.'
-                : 'Default tools come from shared Hermes toolsets. Add API keys or enable toolsets in Skills & Tools, then return here to choose what this agent can use.'}
+                : 'Active runtime tools appear here when they are available in the user workspace.'}
             </p>
           </div>
-          <div>
-            <Button
-              disabled={disabled}
-              onClick={mode === 'custom' ? () => setMode('add') : onConfigureTools}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              {mode === 'custom' ? 'Add custom tool' : 'Configure default tools'}
-            </Button>
-          </div>
+          {mode === 'custom' ? (
+            <div>
+              <Button disabled={disabled} onClick={() => setMode('add')} size="sm" type="button" variant="outline">
+                Add custom tool
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="grid gap-2">
           <p className="text-xs text-muted-foreground">
             {mode === 'custom'
               ? 'Pick custom API tools this agent can use. The API key value stays in shared credentials.'
-              : 'Pick default runtime tools this agent can use.'}
+              : 'Pick active runtime tools this agent can use.'}
           </p>
           {visibleTools.map(tool => {
             const checked = selectedSet.has(tool.name)

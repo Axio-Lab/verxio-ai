@@ -65,8 +65,9 @@ Use this guide to keep Verxio consistent across the web app, desktop shell, API 
 
 - Do not create a second integration system when existing Verxio/Hermes/Composio infrastructure can support the feature.
 - Store feature-level allowlists or bindings when a product area should restrict which tools or integrations it can use.
-- Agent Tools screens are for selecting or allowlisting tools an agent may use. API keys and provider credentials should
-  stay in the shared Skills & Tools/Settings setup path so sessions, agents, and messaging gateways use one credential source.
+- Agent Tools screens are for selecting or allowlisting tools an agent may use. Show active/default tools as a direct
+  selectable list, matching the Integrations picker pattern. API keys and provider credentials should stay in the shared
+  Settings > Keys setup path so sessions, agents, and messaging gateways use one credential source.
 - Custom API tools are reusable workspace assets. Let users create them from the agent Tools surface for flow, but store
   them globally so other agents can reuse them.
 - Custom API tool definitions should store endpoint/method/schema/response guidance and an env var reference such as
