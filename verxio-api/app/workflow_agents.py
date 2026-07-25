@@ -309,9 +309,13 @@ def _public_token() -> str:
 
 
 def _base_url(request: Request | None) -> str:
+    public_base = os.getenv("VERXIO_PUBLIC_WEB_URL", "").strip().rstrip("/")
+    if public_base:
+        return public_base
     if request is None:
-        return ""
-    return str(request.base_url).rstrip("/")
+        return "http://127.0.0.1:8080"
+    base = str(request.base_url).rstrip("/")
+    return "http://127.0.0.1:8080" if base == "http://127.0.0.1" else base
 
 
 def _contains_any(text: str, words: list[str]) -> bool:

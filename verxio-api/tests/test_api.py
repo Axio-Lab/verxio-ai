@@ -761,6 +761,7 @@ def test_workflow_messaging_gateway_triggers_match_channel_and_reply_context(cli
 def test_workflow_agent_embed_config_asset_and_public_run(client, monkeypatch):
     _payload, token = signup(client, "workflow-embed@example.com")
     headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+    monkeypatch.setenv("VERXIO_PUBLIC_WEB_URL", "http://127.0.0.1:8080")
 
     async def fake_oneshot(workspace, profile, user_input, *, instructions=None):
         assert workspace.id
@@ -777,7 +778,8 @@ def test_workflow_agent_embed_config_asset_and_public_run(client, monkeypatch):
     config = client.get(f"/api/workflow-agents/{agent['id']}/embed", headers=headers)
     assert config.status_code == 200
     assert config.json()["enabled"] is False
-    assert "/agent/" in config.json()["share_url"]
+    assert config.json()["share_url"].startswith("http://127.0.0.1:8080/agent/")
+    assert 'src="http://127.0.0.1:8080/api/public/workflow-agent-embed.js"' in config.json()["embed_script"]
     assert "data-agent-token" in config.json()["embed_script"]
 
     updated = client.put(
