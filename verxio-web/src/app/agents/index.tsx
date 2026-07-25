@@ -74,6 +74,73 @@ const AGENT_TABS: Array<{ id: AgentTab; label: string }> = [
 
 const TRIGGER_TYPES: WorkflowTriggerType[] = ['manual', 'webhook', 'schedule', 'api', 'app_event', 'chat']
 
+type TriggerSourceId = 'app_event' | 'embed' | 'manual' | 'messaging' | 'schedule' | 'webhook'
+
+const TRIGGER_SOURCES: Array<{
+  config: Record<string, unknown>
+  description: string
+  eventName: string
+  id: TriggerSourceId
+  name: string
+  title: string
+  triggerType: WorkflowTriggerType
+}> = [
+  {
+    config: { version: 1 },
+    description: 'Start from the Run button or a direct in-app test.',
+    eventName: 'manual.run',
+    id: 'manual',
+    name: 'Manual run',
+    title: 'Manual',
+    triggerType: 'manual'
+  },
+  {
+    config: { version: 1 },
+    description: 'Receive JSON from payments, forms, backend APIs, or external systems.',
+    eventName: 'external.event',
+    id: 'webhook',
+    name: 'External webhook',
+    title: 'Webhook/API',
+    triggerType: 'webhook'
+  },
+  {
+    config: { everyMinutes: 60, version: 1 },
+    description: 'Run on an interval or cron-like schedule.',
+    eventName: 'scheduled.run',
+    id: 'schedule',
+    name: 'Scheduled run',
+    title: 'Schedule',
+    triggerType: 'schedule'
+  },
+  {
+    config: { appSlug: 'hubspot', event: 'lead.created', version: 1 },
+    description: 'Start from a connected Composio app event such as CRM, email, or forms.',
+    eventName: 'lead.created',
+    id: 'app_event',
+    name: 'Connected app event',
+    title: 'Connected app',
+    triggerType: 'app_event'
+  },
+  {
+    config: { channel: 'whatsapp', enabledWhenGatewayConnected: true, version: 1 },
+    description: 'Start from WhatsApp, Telegram, Slack, Discord, or email inbound messages.',
+    eventName: 'message.received',
+    id: 'messaging',
+    name: 'Messaging gateway',
+    title: 'Messaging gateway',
+    triggerType: 'chat'
+  },
+  {
+    config: { source: 'embed', enabledWhenEmbedConfigured: true, version: 1 },
+    description: 'Start when a website widget or share page submits input.',
+    eventName: 'embed.submitted',
+    id: 'embed',
+    name: 'Embed or share form',
+    title: 'Embed/share',
+    triggerType: 'api'
+  }
+]
+
 const DELIVERY_TYPES: WorkflowDeliveryType[] = [
   'save_only',
   'reply_to_source',
@@ -1961,6 +2028,7 @@ function TriggersPanel({
   onRefresh: () => Promise<void>
   triggers: WorkflowTrigger[]
 }) {
+  const [sourceId, setSourceId] = useState<TriggerSourceId>('webhook')
   const [type, setType] = useState<WorkflowTriggerType>('webhook')
   const [eventName, setEventName] = useState('payment.succeeded')
   const [configText, setConfigText] = useState('{}')
@@ -1976,18 +2044,12 @@ function TriggersPanel({
     }
   }, [page, triggers.length])
 
-  const setTriggerType = (value: WorkflowTriggerType) => {
-    setType(value)
-
-    if (value === 'schedule') {
-      setEventName('daily.digest')
-      setConfigText('{"everyMinutes":60}')
-    } else if (value === 'app_event') {
-      setEventName('new_record')
-      setConfigText('{"appSlug":"airtable"}')
-    } else {
-      setConfigText('{}')
-    }
+  const selectSource = (source: (typeof TRIGGER_SOURCES)[number]) => {
+    setSourceId(source.id)
+    setType(source.triggerType)
+    setEventName(source.eventName)
+    setName(source.name)
+    setConfigText(JSON.stringify(source.config, null, 2))
   }
 
   const addTrigger = async () => {
@@ -2038,9 +2100,38 @@ function TriggersPanel({
   return (
     <section className="mt-4 grid gap-4">
       <div className="grid gap-3 rounded-md border border-(--stroke-nous) p-4">
-        <h3 className="text-xs font-semibold">Add trigger</h3>
+        <div>
+          <h3 className="text-xs font-semibold">Add trigger</h3>
+          <p className="text-[0.7rem] leading-relaxed text-muted-foreground">
+            Pick what starts this agent. The selected source fills the trigger type and starter config.
+          </p>
+        </div>
+        <div className="grid gap-2 md:grid-cols-3">
+          {TRIGGER_SOURCES.map(source => {
+            const selected = sourceId === source.id
+
+            return (
+              <button
+                className={cn(
+                  'grid gap-1 rounded-md border border-(--stroke-nous) p-3 text-left transition-colors hover:bg-(--chrome-action-hover)',
+                  selected && 'border-primary/45 bg-primary/8'
+                )}
+                disabled={busy}
+                key={source.id}
+                onClick={() => selectSource(source)}
+                type="button"
+              >
+                <span className="flex items-center gap-2 text-xs font-medium">
+                  <span className={cn('size-2 rounded-full', selected ? 'bg-primary' : 'bg-muted-foreground/45')} />
+                  {source.title}
+                </span>
+                <span className="text-[0.7rem] leading-relaxed text-muted-foreground">{source.description}</span>
+              </button>
+            )
+          })}
+        </div>
         <div className="grid gap-3 md:grid-cols-[12rem_minmax(0,1fr)_minmax(0,1fr)_auto]">
-          <Select onValueChange={value => setTriggerType(value as WorkflowTriggerType)} value={type}>
+          <Select disabled={busy} onValueChange={value => setType(value as WorkflowTriggerType)} value={type}>
             <SelectTrigger size="sm">
               <SelectValue />
             </SelectTrigger>
@@ -2073,6 +2164,12 @@ function TriggersPanel({
             Add
           </Button>
         </div>
+        {(sourceId === 'messaging' || sourceId === 'embed') && (
+          <div className="rounded-md border border-amber-500/25 bg-amber-500/8 px-3 py-2 text-[0.7rem] leading-relaxed text-muted-foreground">
+            This trigger source can be configured now, but activation depends on the matching gateway/embed setup in a
+            later phase.
+          </div>
+        )}
         <Textarea
           className="min-h-20 font-mono text-[0.72rem]"
           disabled={busy}
@@ -2084,7 +2181,16 @@ function TriggersPanel({
 
       <div className="grid gap-2">
         {triggers.length === 0 ? (
-          <p className="text-xs text-muted-foreground">No triggers yet. Start with a webhook or manual trigger.</p>
+          <div className="grid min-h-32 place-items-center rounded-md border border-dashed border-(--stroke-nous) p-4 text-center">
+            <div className="grid gap-2">
+              <Zap className="mx-auto size-5 text-primary" />
+              <p className="text-xs font-medium">No triggers yet</p>
+              <p className="max-w-md text-[0.7rem] leading-relaxed text-muted-foreground">
+                Add the first source that should start this agent: webhook, schedule, connected app, messaging gateway,
+                embed/share, or manual run.
+              </p>
+            </div>
+          </div>
         ) : null}
         {visibleTriggers.map(trigger => (
           <div className="grid gap-2 rounded-md border border-(--stroke-nous) p-3" key={trigger.id}>
