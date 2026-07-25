@@ -21,6 +21,8 @@ from app.models import (
     WorkflowAgentSetupApprovalRecord,
     WorkflowAgentSetupApprovalRequest,
     WorkflowAgentSetupApprovalResponse,
+    WorkflowAgentSetupApplyRequest,
+    WorkflowAgentSetupApplyResponse,
     WorkflowAgentSetupDraftData,
     WorkflowAgentSetupDraftRecord,
     WorkflowAgentSetupDraftRequest,
@@ -746,6 +748,88 @@ def update_setup_approvals(
         (workspace.id, profile.id, *payload.approval_ids),
     )
     return WorkflowAgentSetupApprovalResponse(approvals=[_setup_approval_from_row(row) for row in updated])
+
+
+def apply_setup_draft(
+    workspace: Workspace,
+    profile: AgentProfile,
+    payload: WorkflowAgentSetupApplyRequest,
+    request: Request | None = None,
+) -> WorkflowAgentSetupApplyResponse:
+    row = db.fetch_one(
+        """
+        SELECT * FROM workflow_agent_setup_drafts
+        WHERE id = ? AND workspace_id = ? AND runtime_agent_id = ?
+        """,
+        (payload.setup_draft_id, workspace.id, profile.id),
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Workflow setup draft not found.")
+    draft_record = _setup_draft_from_row(row)
+    approvals = _approvals_for_draft(draft_record.id)
+    if any(approval.status == "rejected" for approval in approvals):
+        raise HTTPException(status_code=409, detail="Rejected setup approvals must be resolved before applying this draft.")
+    if any(approval.status == "pending" for approval in approvals):
+        raise HTTPException(status_code=409, detail="Approve required setup actions before applying this draft.")
+
+    agent_input = draft_record.draft.agent
+    if draft_record.workflow_agent_id:
+        agent = update_agent(workspace, profile, draft_record.workflow_agent_id, WorkflowAgentUpdateRequest(**agent_input.model_dump()))
+    else:
+        agent = create_agent(workspace, profile, agent_input)
+
+    created_triggers: list[WorkflowTriggerRecord] = []
+    for trigger in draft_record.draft.triggers:
+        created_triggers.append(
+            create_trigger(
+                workspace,
+                profile,
+                agent.id,
+                WorkflowTriggerCreateRequest(
+                    config=trigger.config,
+                    enabled=payload.enable_created_records and trigger.enabled,
+                    event_name=trigger.event_name,
+                    name=trigger.name,
+                    trigger_type=trigger.trigger_type,
+                ),
+                request,
+            )
+        )
+
+    created_deliveries: list[WorkflowDeliveryRecord] = []
+    for delivery in draft_record.draft.deliveries:
+        created_deliveries.append(
+            create_delivery(
+                workspace,
+                profile,
+                agent.id,
+                WorkflowDeliveryCreateRequest(
+                    channel=delivery.channel,
+                    config=delivery.config,
+                    delivery_type=delivery.delivery_type,
+                    destination=delivery.destination,
+                    enabled=payload.enable_created_records and delivery.enabled,
+                    name=delivery.channel or delivery.delivery_type,
+                    require_approval=delivery.require_approval,
+                    template=delivery.template,
+                ),
+            )
+        )
+
+    db.execute(
+        """
+        UPDATE workflow_agent_setup_drafts
+        SET workflow_agent_id = ?, status = 'applied', updated_at = ?
+        WHERE id = ? AND workspace_id = ? AND runtime_agent_id = ?
+        """,
+        (agent.id, now_iso(), draft_record.id, workspace.id, profile.id),
+    )
+    return WorkflowAgentSetupApplyResponse(
+        agent=agent,
+        approvals=approvals,
+        deliveries=created_deliveries,
+        triggers=created_triggers,
+    )
 
 
 def create_agent(workspace: Workspace, profile: AgentProfile, payload: WorkflowAgentCreateRequest) -> WorkflowAgentRecord:

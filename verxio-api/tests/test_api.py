@@ -206,6 +206,50 @@ def test_workflow_agent_setup_draft_stages_risky_actions(client):
     assert approve.json()["approvals"][0]["status"] == "approved"
 
 
+def test_workflow_agent_setup_apply_creates_agent_triggers_and_deliveries(client):
+    _payload, token = signup(client, "workflow-setup-apply@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    response = client.post(
+        "/api/workflow-agents/draft",
+        headers=headers,
+        json={
+            "prompt": "Create a WhatsApp support agent that replies when customers message about delivery status.",
+            "source": "gateway",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    draft_id = body["draft"]["id"]
+    approval_ids = [approval["id"] for approval in body["approvals"]]
+
+    blocked = client.post(
+        "/api/workflow-agents/setup-actions/apply",
+        headers=headers,
+        json={"setup_draft_id": draft_id, "enable_created_records": True},
+    )
+    assert blocked.status_code == 409
+
+    approve = client.post(
+        "/api/workflow-agents/setup-actions/approve",
+        headers=headers,
+        json={"approval_ids": approval_ids, "status": "approved"},
+    )
+    assert approve.status_code == 200
+
+    applied = client.post(
+        "/api/workflow-agents/setup-actions/apply",
+        headers=headers,
+        json={"setup_draft_id": draft_id, "enable_created_records": True},
+    )
+    assert applied.status_code == 200
+    applied_body = applied.json()
+    assert applied_body["agent"]["name"] == "Customer Support Agent"
+    assert applied_body["agent"]["enabled"] is False
+    assert applied_body["triggers"][0]["trigger_type"] == "chat"
+    assert applied_body["deliveries"][0]["delivery_type"] == "reply_to_source"
+
+
 def test_workflow_agent_setup_update_draft_is_workspace_scoped(client):
     _payload, token = signup(client, "workflow-setup-update@example.com")
     headers = {"Cookie": f"{SESSION_COOKIE}={token}"}

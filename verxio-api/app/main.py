@@ -158,6 +158,8 @@ from app.models import (
     WorkflowAgentRecord,
     WorkflowAgentSetupApprovalRequest,
     WorkflowAgentSetupApprovalResponse,
+    WorkflowAgentSetupApplyRequest,
+    WorkflowAgentSetupApplyResponse,
     WorkflowAgentSetupDraftRequest,
     WorkflowAgentSetupDraftResponse,
     WorkflowAgentSetupDraftUpdateRequest,
@@ -248,6 +250,7 @@ from app.runtime_manager import (
 from app.store import AUDIT_LOG, PROFILE, RUNS, WORKSPACE
 from app.transcription_catalog import list_transcription_catalog
 from app.workflow_agents import (
+    apply_setup_draft as apply_workflow_setup_draft,
     create_agent as create_workflow_agent,
     create_setup_draft as create_workflow_setup_draft,
     create_setup_update_draft as create_workflow_setup_update_draft,
@@ -915,6 +918,16 @@ async def approve_workflow_agent_setup_actions_route(
     user = require_user(request)
     workspace, profile, _runtime_instance = get_context_for_user(user)
     return update_workflow_setup_approvals(workspace, profile, payload)
+
+
+@app.post("/api/workflow-agents/setup-actions/apply", response_model=WorkflowAgentSetupApplyResponse)
+async def apply_workflow_agent_setup_draft_route(
+    payload: WorkflowAgentSetupApplyRequest,
+    request: Request,
+) -> WorkflowAgentSetupApplyResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return apply_workflow_setup_draft(workspace, profile, payload, request)
 
 
 @app.get("/api/knowledge-bases", response_model=KnowledgeBasesResponse)

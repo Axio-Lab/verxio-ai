@@ -905,6 +905,18 @@ class WorkflowAgentSetupApprovalResponse(BaseModel):
     approvals: list[WorkflowAgentSetupApprovalRecord]
 
 
+class WorkflowAgentSetupApplyRequest(BaseModel):
+    setup_draft_id: str = Field(min_length=1, max_length=180)
+    enable_created_records: bool = False
+
+
+class WorkflowAgentSetupApplyResponse(BaseModel):
+    agent: WorkflowAgentRecord
+    approvals: list[WorkflowAgentSetupApprovalRecord] = Field(default_factory=list)
+    deliveries: list[WorkflowDeliveryRecord] = Field(default_factory=list)
+    triggers: list[WorkflowTriggerRecord] = Field(default_factory=list)
+
+
 class WorkflowSkillCapability(BaseModel):
     name: str
     description: str = ""
