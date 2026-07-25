@@ -530,6 +530,60 @@ def test_workflow_api_chat_app_and_schedule_triggers_run(client, monkeypatch):
     assert schedule_again.json()["runs"] == []
 
 
+def test_workflow_messaging_gateway_triggers_match_channel_and_reply_context(client, monkeypatch):
+    _payload, token = signup(client, "workflow-messaging-trigger@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+    seen: list[dict[str, str]] = []
+
+    async def fake_oneshot(workspace, profile, user_input, *, instructions=None):
+        seen.append({"workspace": workspace.id, "profile": profile.id, "input": user_input})
+        return "WhatsApp reply drafted."
+
+    monkeypatch.setattr(workflow_agents, "run_agent_via_dashboard", fake_oneshot)
+    agent = client.post("/api/workflow-agents", headers=headers, json={"name": "WhatsApp Support Agent"}).json()
+    trigger = client.post(
+        f"/api/workflow-agents/{agent['id']}/triggers",
+        headers=headers,
+        json={
+            "trigger_type": "chat",
+            "event_name": "message.received",
+            "name": "WhatsApp inbound",
+            "config": {"channel": "whatsapp", "keyword": "delivery"},
+        },
+    )
+    assert trigger.status_code == 200
+
+    ignored = client.post(
+        "/api/workflow-agents/triggers/messaging",
+        headers=headers,
+        json={"channel": "telegram", "message": "delivery status", "sender_id": "tg_1"},
+    )
+    assert ignored.status_code == 200
+    assert ignored.json()["runs"] == []
+
+    matched = client.post(
+        "/api/workflow-agents/triggers/messaging",
+        headers=headers,
+        json={
+            "channel": "whatsapp",
+            "message": "Need my delivery status",
+            "sender_id": "wa_123",
+            "sender_name": "Ada",
+            "thread_id": "thread_1",
+            "conversation_id": "conv_1",
+            "message_id": "msg_1",
+            "input": {"order_id": "ord_1"},
+        },
+    )
+    assert matched.status_code == 200
+    body = matched.json()
+    assert body["runs"][0]["trigger_type"] == "chat"
+    assert body["runs"][0]["trigger_id"] == trigger.json()["id"]
+    assert seen
+    assert '"channel":"whatsapp"' in seen[0]["input"]
+    assert '"reply_to_source":{"channel":"whatsapp","conversation_id":"conv_1","sender_id":"wa_123","thread_id":"thread_1"}' in seen[0]["input"]
+
+
 def test_workflow_skill_capabilities_use_runtime_metadata(client, monkeypatch):
     _payload, token = signup(client, "workflow-skills@example.com")
 

@@ -1104,6 +1104,21 @@ class WorkflowTriggerRunRequest(BaseModel):
     input: dict[str, Any] = Field(default_factory=dict)
 
 
+WorkflowMessagingChannel = Literal["whatsapp", "telegram", "slack", "discord", "email", "webchat", "other"]
+
+
+class WorkflowMessagingTriggerRequest(BaseModel):
+    channel: WorkflowMessagingChannel
+    message: str = Field(default="", max_length=50000)
+    event_name: str = Field(default="message.received", max_length=180)
+    sender_id: str = Field(default="", max_length=320)
+    sender_name: str = Field(default="", max_length=320)
+    thread_id: str = Field(default="", max_length=320)
+    conversation_id: str = Field(default="", max_length=320)
+    message_id: str = Field(default="", max_length=320)
+    input: dict[str, Any] = Field(default_factory=dict)
+
+
 class WorkflowRunsResponse(BaseModel):
     runs: list[WorkflowRunRecord]
 

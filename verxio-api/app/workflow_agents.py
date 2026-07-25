@@ -37,6 +37,7 @@ from app.models import (
     WorkflowRunRecord,
     WorkflowRunsResponse,
     WorkflowTriggerRunsResponse,
+    WorkflowMessagingTriggerRequest,
     WorkflowSkillCapabilitiesResponse,
     WorkflowSkillCapability,
     WorkflowToolCapabilitiesResponse,
@@ -1385,6 +1386,86 @@ async def run_matching_triggers(
                 WorkflowRunCreateRequest(input={"event": row["event_name"], "payload": payload}),
                 trigger_id=str(row["id"]),
                 trigger_type=trigger_type,
+            )
+        )
+    return WorkflowTriggerRunsResponse(runs=runs)
+
+
+def _string_matches_filter(actual: str, expected: Any) -> bool:
+    if expected is None or str(expected).strip() == "":
+        return True
+    if isinstance(expected, list):
+        return any(_string_matches_filter(actual, item) for item in expected)
+    return actual.strip().lower() == str(expected).strip().lower()
+
+
+def _trigger_accepts_messaging_event(config: dict[str, Any], payload: WorkflowMessagingTriggerRequest) -> bool:
+    if not _string_matches_filter(payload.channel, config.get("channel") or config.get("channels")):
+        return False
+    if not _string_matches_filter(payload.sender_id, config.get("senderId") or config.get("sender_id")):
+        return False
+    if not _string_matches_filter(payload.thread_id, config.get("threadId") or config.get("thread_id")):
+        return False
+    if not _string_matches_filter(payload.conversation_id, config.get("conversationId") or config.get("conversation_id")):
+        return False
+    keyword = str(config.get("keyword") or "").strip().lower()
+    if keyword and keyword not in payload.message.lower():
+        return False
+    keywords = config.get("keywords")
+    if isinstance(keywords, list) and keywords:
+        lowered = payload.message.lower()
+        return any(str(item).strip().lower() in lowered for item in keywords if str(item).strip())
+    return True
+
+
+async def run_messaging_gateway_triggers(
+    workspace: Workspace,
+    profile: AgentProfile,
+    payload: WorkflowMessagingTriggerRequest,
+) -> WorkflowTriggerRunsResponse:
+    rows = db.fetch_all(
+        """
+        SELECT t.*
+        FROM workflow_triggers t
+        JOIN workflow_agents a ON a.id = t.workflow_agent_id
+        WHERE t.workspace_id = ?
+            AND a.runtime_agent_id = ?
+            AND t.trigger_type = 'chat'
+            AND t.enabled = 1
+            AND (? = '' OR t.event_name = ?)
+        ORDER BY t.updated_at ASC
+        """,
+        (workspace.id, profile.id, payload.event_name.strip(), payload.event_name.strip()),
+    )
+    event_payload = {
+        **payload.input,
+        "channel": payload.channel,
+        "conversation_id": payload.conversation_id,
+        "message": payload.message,
+        "message_id": payload.message_id,
+        "reply_to_source": {
+            "channel": payload.channel,
+            "conversation_id": payload.conversation_id,
+            "sender_id": payload.sender_id,
+            "thread_id": payload.thread_id,
+        },
+        "sender_id": payload.sender_id,
+        "sender_name": payload.sender_name,
+        "thread_id": payload.thread_id,
+    }
+    runs: list[WorkflowRunRecord] = []
+    for row in rows:
+        config = _json_loads(row.get("config_json"), {})
+        if not isinstance(config, dict) or not _trigger_accepts_messaging_event(config, payload):
+            continue
+        runs.append(
+            await run_agent(
+                workspace,
+                profile,
+                str(row["workflow_agent_id"]),
+                WorkflowRunCreateRequest(input={"event": row["event_name"], "payload": event_payload}),
+                trigger_id=str(row["id"]),
+                trigger_type="chat",
             )
         )
     return WorkflowTriggerRunsResponse(runs=runs)

@@ -168,6 +168,7 @@ from app.models import (
     WorkflowDeliveryRecord,
     WorkflowDeliveryUpdateRequest,
     WorkflowIntegrationCapabilitiesResponse,
+    WorkflowMessagingTriggerRequest,
     WorkflowRunCreateRequest,
     WorkflowRunEventsResponse,
     WorkflowRunRecord,
@@ -260,6 +261,7 @@ from app.workflow_agents import (
     list_triggers as list_workflow_triggers,
     run_agent as run_workflow_agent,
     run_matching_triggers as run_matching_workflow_triggers,
+    run_messaging_gateway_triggers as run_workflow_messaging_gateway_triggers,
     run_webhook_trigger,
     tick_due_schedule_triggers as tick_due_workflow_schedule_triggers,
     update_agent as update_workflow_agent,
@@ -1098,6 +1100,16 @@ async def run_workflow_chat_triggers_route(
     user = require_user(request)
     workspace, profile, _runtime_instance = get_context_for_user(user)
     return await run_matching_workflow_triggers(workspace, profile, "chat", payload.event_name, payload.input)
+
+
+@app.post("/api/workflow-agents/triggers/messaging", response_model=WorkflowTriggerRunsResponse)
+async def run_workflow_messaging_gateway_triggers_route(
+    payload: WorkflowMessagingTriggerRequest,
+    request: Request,
+) -> WorkflowTriggerRunsResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return await run_workflow_messaging_gateway_triggers(workspace, profile, payload)
 
 
 @app.post("/api/workflow-agents/triggers/app-events", response_model=WorkflowTriggerRunsResponse)
