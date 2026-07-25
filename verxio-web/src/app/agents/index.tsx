@@ -423,7 +423,10 @@ export function AgentsView() {
         current && (result.value.setup_drafts ?? []).some(setupDraft => setupDraft.id === current) ? current : null
       )
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load agents.')
+      const message = 'Could not load agents'
+
+      setError(err instanceof Error ? err.message : `${message}.`)
+      notifyError(err, message)
     } finally {
       setLoading(false)
     }
@@ -443,7 +446,10 @@ export function AgentsView() {
       setRuns(runResult.runs)
       setEmbedConfig(embedResult)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load agent details.')
+      const message = 'Could not load agent details.'
+
+      setError(err instanceof Error ? err.message : message)
+      notifyError(err, message)
     }
   }, [])
 
@@ -455,6 +461,7 @@ export function AgentsView() {
     } catch (err) {
       setSkillCapabilities([])
       setSkillCapabilityErrors([err instanceof Error ? err.message : 'Could not load skills.'])
+      notifyError(err, 'Could not load skills')
     }
   }, [])
 
@@ -466,6 +473,7 @@ export function AgentsView() {
     } catch (err) {
       setToolCapabilities([])
       setToolCapabilityErrors([err instanceof Error ? err.message : 'Could not load tools.'])
+      notifyError(err, 'Could not load tools')
     }
   }, [])
 
@@ -496,7 +504,10 @@ export function AgentsView() {
 
   const saveAgent = async () => {
     if (!draft.name.trim()) {
-      setError('Agent name is required.')
+      const message = 'Agent name is required.'
+
+      setError(message)
+      notify({ kind: 'error', message })
 
       return
     }
@@ -519,7 +530,10 @@ export function AgentsView() {
     }
 
     try {
+      const isUpdate = Boolean(selected)
+      const draftId = selectedDraftId
       const saved = selected ? await updateWorkflowAgent(selected.id, input) : await createWorkflowAgent(input)
+
       setAgents(current => {
         const exists = current.some(agent => agent.id === saved.id)
 
@@ -527,10 +541,18 @@ export function AgentsView() {
       })
       setSelectedId(saved.id)
       setSelectedDraftId(null)
-      setSetupDrafts(current => current.filter(setupDraft => setupDraft.id !== selectedDraftId))
+      setSetupDrafts(current => current.filter(setupDraft => setupDraft.id !== draftId))
       setCreating(false)
+      notify({
+        kind: 'success',
+        message: saved.name,
+        title: isUpdate ? 'Agent saved' : 'Agent created'
+      })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save agent.')
+      const message = selected ? 'Could not save agent' : 'Could not create agent'
+
+      setError(err instanceof Error ? err.message : `${message}.`)
+      notifyError(err, message)
     } finally {
       setBusy(false)
     }
@@ -545,12 +567,18 @@ export function AgentsView() {
     setError(null)
 
     try {
+      const name = selected.name
+
       await deleteWorkflowAgent(selected.id)
       setAgents(current => current.filter(agent => agent.id !== selected.id))
       setSelectedId(null)
       setDraft(draftFromAgent())
+      notify({ kind: 'success', message: name, title: 'Agent deleted' })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not delete agent.')
+      const message = 'Could not delete agent'
+
+      setError(err instanceof Error ? err.message : `${message}.`)
+      notifyError(err, message)
     } finally {
       setBusy(false)
     }
@@ -611,7 +639,10 @@ export function AgentsView() {
 
   const generateSetupDraft = async () => {
     if (!setupPrompt.trim()) {
-      setError('Describe the agent you want to create or update.')
+      const message = 'Describe the agent you want to create or update.'
+
+      setError(message)
+      notify({ kind: 'error', message })
 
       return
     }
@@ -650,8 +681,16 @@ export function AgentsView() {
         toolsText: (agentDraft.tools ?? []).join('\n')
       }))
       setTab('instructions')
+      notify({
+        kind: 'success',
+        message: agentDraft.name || 'Review the generated setup below.',
+        title: selected ? 'Agent setup draft updated' : 'Agent setup draft created'
+      })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not generate agent setup.')
+      const message = 'Could not generate agent setup'
+
+      setError(err instanceof Error ? err.message : `${message}.`)
+      notifyError(err, message)
     } finally {
       setSetupBusy(false)
     }
@@ -1842,7 +1881,10 @@ function KnowledgeSelector({
 
   const addKnowledgeBase = async () => {
     if (!name.trim()) {
-      setError('Knowledge base name is required.')
+      const message = 'Knowledge base name is required.'
+
+      setError(message)
+      notify({ kind: 'error', message })
 
       return
     }
@@ -1856,8 +1898,12 @@ function KnowledgeSelector({
       setDescription('')
       await refreshKnowledgeBases()
       onChange(Array.from(new Set([...selected, created.id])).sort((a, b) => a.localeCompare(b)))
+      notify({ kind: 'success', title: 'Knowledge base created', message: created.name })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create knowledge base.')
+      const message = 'Could not create knowledge base'
+
+      setError(err instanceof Error ? err.message : `${message}.`)
+      notifyError(err, message)
     } finally {
       setLocalBusy(false)
     }
@@ -1865,7 +1911,10 @@ function KnowledgeSelector({
 
   const addDocument = async () => {
     if (!documentBaseId || !documentTitle.trim() || !documentContent.trim()) {
-      setError('Select a knowledge base and add a document title and content.')
+      const message = 'Select a knowledge base and add a document title and content.'
+
+      setError(message)
+      notify({ kind: 'error', message })
 
       return
     }
@@ -1882,8 +1931,12 @@ function KnowledgeSelector({
       setDocumentTitle('')
       setDocumentContent('')
       await refreshKnowledgeBases()
+      notify({ kind: 'success', title: 'Knowledge document added', message: documentTitle.trim() })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not add knowledge document.')
+      const message = 'Could not add knowledge document'
+
+      setError(err instanceof Error ? err.message : `${message}.`)
+      notifyError(err, message)
     } finally {
       setLocalBusy(false)
     }
@@ -1897,8 +1950,12 @@ function KnowledgeSelector({
       await deleteKnowledgeBase(id)
       await refreshKnowledgeBases()
       onChange(selected.filter(item => item !== id))
+      notify({ kind: 'success', message: 'Knowledge base removed' })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not delete knowledge base.')
+      const message = 'Could not delete knowledge base'
+
+      setError(err instanceof Error ? err.message : `${message}.`)
+      notifyError(err, message)
     } finally {
       setLocalBusy(false)
     }
