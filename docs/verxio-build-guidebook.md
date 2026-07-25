@@ -7,6 +7,11 @@ Use this guide to keep Verxio consistent across the web app, desktop shell, API 
 - Build actual usable product screens, not marketing-style placeholder pages.
 - Keep primary navigation clean and focused. Add a top-level sidebar item only when it represents a durable product area.
 - Put related setup, details, history, and settings inside the owning route instead of scattering them across the sidebar.
+- Keep collection routes in a clear browse state by default. Show creation or configuration forms only after the user
+  explicitly starts creating an item or selects an existing item to edit.
+- Use the shared pagination control for growing collections and keep pagination visible with the collection it controls.
+- When configuration depends on a saved record, explain the save prerequisite in the relevant section instead of
+  rendering a blank panel.
 - Prefer clear operational UI: dense enough to scan, restrained in decoration, and predictable for repeated work.
 - Match the existing Verxio layout language before introducing a new page pattern.
 

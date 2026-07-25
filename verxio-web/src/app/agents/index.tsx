@@ -15,7 +15,7 @@ import { Loader } from '@/components/ui/loader'
 import { PaginationControl } from '@/components/ui/pagination'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { AlertCircle, CheckCircle2, Plus, RefreshCw, Save, Send, Sparkles, Trash2, Zap } from '@/lib/icons'
+import { AlertCircle, CheckCircle2, ChevronLeft, Plus, RefreshCw, Save, Send, Sparkles, Trash2, Zap } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import {
   createKnowledgeBase,
@@ -225,6 +225,7 @@ function formatDate(value: string | null | undefined): string {
 export function AgentsView() {
   const [agents, setAgents] = useState<WorkflowAgent[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
   const [draft, setDraft] = useState<DraftState>(() => draftFromAgent())
   const [deliveries, setDeliveries] = useState<WorkflowDelivery[]>([])
   const [triggers, setTriggers] = useState<WorkflowTrigger[]>([])
@@ -334,7 +335,7 @@ export function AgentsView() {
       }
 
       setAgents(result.value.agents)
-      setSelectedId(current => current ?? result.value.agents[0]?.id ?? null)
+      setSelectedId(current => (current && result.value.agents.some(agent => agent.id === current) ? current : null))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load agents.')
     } finally {
@@ -424,6 +425,7 @@ export function AgentsView() {
         return exists ? current.map(agent => (agent.id === saved.id ? saved : agent)) : [saved, ...current]
       })
       setSelectedId(saved.id)
+      setCreating(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save agent.')
     } finally {
@@ -453,6 +455,7 @@ export function AgentsView() {
 
   const createNew = () => {
     setSelectedId(null)
+    setCreating(true)
     setDraft({ ...draftFromAgent(), model_id: defaultModelId })
     setSetupDraftResponse(null)
     setSetupPrompt('')
@@ -462,6 +465,27 @@ export function AgentsView() {
     setEmbedConfig(null)
     setTab('instructions')
   }
+
+  const closeEditor = () => {
+    setSelectedId(null)
+    setCreating(false)
+    setDraft({ ...draftFromAgent(), model_id: defaultModelId })
+    setSetupDraftResponse(null)
+    setSetupPrompt('')
+    setDeliveries([])
+    setTriggers([])
+    setRuns([])
+    setEmbedConfig(null)
+    setTab('instructions')
+  }
+
+  const selectAgent = (agentId: string) => {
+    setCreating(false)
+    setSelectedId(agentId)
+    setTab('instructions')
+  }
+
+  const editorOpen = creating || selected !== null
 
   const generateSetupDraft = async () => {
     if (!setupPrompt.trim()) {
@@ -520,16 +544,18 @@ export function AgentsView() {
             Create reusable workers with skills, knowledge, tools, integrations, triggers, and runs.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button disabled={loading || busy} onClick={() => void refreshAgents()} size="sm" variant="ghost">
-            <RefreshCw className="size-4" />
-            Refresh
-          </Button>
-          <Button disabled={busy} onClick={createNew} size="sm">
-            <Plus className="size-4" />
-            New agent
-          </Button>
-        </div>
+        {!editorOpen ? (
+          <div className="flex items-center gap-2">
+            <Button disabled={loading || busy} onClick={() => void refreshAgents()} size="sm" variant="ghost">
+              <RefreshCw className="size-4" />
+              Refresh
+            </Button>
+            <Button disabled={busy} onClick={createNew} size="sm">
+              <Plus className="size-4" />
+              Create agent
+            </Button>
+          </div>
+        ) : null}
       </header>
 
       {error ? (
@@ -544,82 +570,87 @@ export function AgentsView() {
           <Loader className="size-10 text-primary" label="Loading agents" strokeScale={0.72} type="rose-curve" />
         </div>
       ) : (
-        <div className="grid min-h-0 flex-1 gap-4 overflow-hidden lg:grid-cols-[18rem_minmax(0,1fr)]">
-          <AgentList agents={agents} onCreate={createNew} onSelect={setSelectedId} selectedId={selectedId} />
-          <main className="min-h-0 min-w-0 overflow-y-auto pr-1">
-            <AgentEditor
-              busy={busy}
-              defaultModelId={defaultModelId}
-              draft={draft}
-              integrationCapabilities={integrationCapabilities}
-              integrationCapabilityErrors={integrationCapabilityErrors}
-              knowledgeBases={knowledgeBases}
-              modelErrors={modelErrors}
-              modelOptions={modelOptions}
-              onChange={setDraft}
-              onDelete={selected ? removeAgent : undefined}
-              onGenerateSetupDraft={generateSetupDraft}
-              onKnowledgeBasesChange={setKnowledgeBases}
-              onSave={saveAgent}
-              onSkillsRefresh={refreshSkills}
-              selected={selected}
-              setSetupPrompt={setSetupPrompt}
-              setTab={setTab}
-              setupBusy={setupBusy}
-              setupDraftResponse={setupDraftResponse}
-              setupPrompt={setupPrompt}
-              skillCapabilities={skillCapabilities}
-              skillCapabilityErrors={skillCapabilityErrors}
-              tab={tab}
-              toolCapabilities={toolCapabilities}
-              toolCapabilityErrors={toolCapabilityErrors}
-            />
-            {selected ? (
-              <>
-                {tab === 'triggers' ? (
-                  <TriggersPanel
-                    agent={selected}
-                    busy={busy}
-                    onBusy={setBusy}
-                    onError={setError}
-                    onRefresh={() => refreshDetails(selected.id)}
-                    triggers={triggers}
-                  />
-                ) : null}
-                {tab === 'delivery' ? (
-                  <DeliveryPanel
-                    agent={selected}
-                    busy={busy}
-                    deliveries={deliveries}
-                    onBusy={setBusy}
-                    onError={setError}
-                    onRefresh={() => refreshDetails(selected.id)}
-                  />
-                ) : null}
-                {tab === 'runs' ? (
-                  <RunsPanel
-                    agent={selected}
-                    busy={busy}
-                    onBusy={setBusy}
-                    onError={setError}
-                    onRefresh={() => refreshDetails(selected.id)}
-                    runs={runs}
-                  />
-                ) : null}
-                {tab === 'embed' ? (
-                  <EmbedPanel
-                    agent={selected}
-                    busy={busy}
-                    config={embedConfig}
-                    onBusy={setBusy}
-                    onConfigChange={setEmbedConfig}
-                    onError={setError}
-                    onRefresh={() => refreshDetails(selected.id)}
-                  />
-                ) : null}
-              </>
-            ) : null}
-          </main>
+        <div className="min-h-0 flex-1 overflow-hidden">
+          {!editorOpen ? <AgentList agents={agents} onCreate={createNew} onSelect={selectAgent} /> : null}
+          {editorOpen ? (
+            <main className="h-full min-w-0 overflow-y-auto pr-1">
+              <AgentEditor
+                busy={busy}
+                defaultModelId={defaultModelId}
+                draft={draft}
+                integrationCapabilities={integrationCapabilities}
+                integrationCapabilityErrors={integrationCapabilityErrors}
+                knowledgeBases={knowledgeBases}
+                modelErrors={modelErrors}
+                modelOptions={modelOptions}
+                onCancel={closeEditor}
+                onChange={setDraft}
+                onDelete={selected ? removeAgent : undefined}
+                onGenerateSetupDraft={generateSetupDraft}
+                onKnowledgeBasesChange={setKnowledgeBases}
+                onSave={saveAgent}
+                onSkillsRefresh={refreshSkills}
+                selected={selected}
+                setSetupPrompt={setSetupPrompt}
+                setTab={setTab}
+                setupBusy={setupBusy}
+                setupDraftResponse={setupDraftResponse}
+                setupPrompt={setupPrompt}
+                skillCapabilities={skillCapabilities}
+                skillCapabilityErrors={skillCapabilityErrors}
+                tab={tab}
+                toolCapabilities={toolCapabilities}
+                toolCapabilityErrors={toolCapabilityErrors}
+              />
+              {selected ? (
+                <>
+                  {tab === 'triggers' ? (
+                    <TriggersPanel
+                      agent={selected}
+                      busy={busy}
+                      onBusy={setBusy}
+                      onError={setError}
+                      onRefresh={() => refreshDetails(selected.id)}
+                      triggers={triggers}
+                    />
+                  ) : null}
+                  {tab === 'delivery' ? (
+                    <DeliveryPanel
+                      agent={selected}
+                      busy={busy}
+                      deliveries={deliveries}
+                      onBusy={setBusy}
+                      onError={setError}
+                      onRefresh={() => refreshDetails(selected.id)}
+                    />
+                  ) : null}
+                  {tab === 'runs' ? (
+                    <RunsPanel
+                      agent={selected}
+                      busy={busy}
+                      onBusy={setBusy}
+                      onError={setError}
+                      onRefresh={() => refreshDetails(selected.id)}
+                      runs={runs}
+                    />
+                  ) : null}
+                  {tab === 'embed' ? (
+                    <EmbedPanel
+                      agent={selected}
+                      busy={busy}
+                      config={embedConfig}
+                      onBusy={setBusy}
+                      onConfigChange={setEmbedConfig}
+                      onError={setError}
+                      onRefresh={() => refreshDetails(selected.id)}
+                    />
+                  ) : null}
+                </>
+              ) : (
+                <AgentSaveRequired tab={tab} />
+              )}
+            </main>
+          ) : null}
         </div>
       )}
     </section>
@@ -629,13 +660,11 @@ export function AgentsView() {
 function AgentList({
   agents,
   onCreate,
-  onSelect,
-  selectedId
+  onSelect
 }: {
   agents: WorkflowAgent[]
   onCreate: () => void
   onSelect: (id: string) => void
-  selectedId: null | string
 }) {
   const [page, setPage] = useState(1)
   const visibleAgents = agents.slice((page - 1) * AGENT_PAGE_SIZE, page * AGENT_PAGE_SIZE)
@@ -650,7 +679,7 @@ function AgentList({
 
   if (agents.length === 0) {
     return (
-      <aside className="grid place-items-center rounded-md border border-dashed border-(--stroke-nous) p-5 text-center">
+      <div className="grid h-full min-h-80 place-items-center rounded-md border border-dashed border-(--stroke-nous) p-5 text-center">
         <div className="grid gap-3">
           <Sparkles className="mx-auto size-6 text-primary" />
           <p className="text-sm font-medium">No agents yet</p>
@@ -662,30 +691,32 @@ function AgentList({
             Create agent
           </Button>
         </div>
-      </aside>
+      </div>
     )
   }
 
   return (
-    <aside className="flex min-h-0 flex-col rounded-md border border-(--stroke-nous) p-2">
-      <div className="grid min-h-0 flex-1 content-start gap-1 overflow-y-auto">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="grid min-h-0 flex-1 content-start gap-2 overflow-y-auto sm:grid-cols-2 xl:grid-cols-3">
         {visibleAgents.map(agent => (
           <button
-            className={cn(
-              'grid gap-1 rounded-md px-3 py-2 text-left transition-colors hover:bg-(--chrome-action-hover)',
-              selectedId === agent.id && 'bg-primary/10 text-foreground'
-            )}
+            className="grid min-h-28 content-between gap-3 rounded-md border border-(--stroke-nous) p-4 text-left transition-colors hover:bg-(--chrome-action-hover) focus-visible:ring-2 focus-visible:ring-primary"
             key={agent.id}
             onClick={() => onSelect(agent.id)}
             type="button"
           >
-            <span className="flex items-center gap-2 text-xs font-medium">
-              <span className={cn('size-1.5 rounded-full', agent.enabled ? 'bg-primary' : 'bg-muted-foreground/50')} />
-              {agent.name}
+            <span className="grid gap-1">
+              <span className="flex items-center gap-2 text-xs font-medium">
+                <span
+                  className={cn('size-1.5 rounded-full', agent.enabled ? 'bg-primary' : 'bg-muted-foreground/50')}
+                />
+                {agent.name}
+              </span>
+              <span className="line-clamp-2 text-[0.7rem] leading-relaxed text-muted-foreground">
+                {agent.role || agent.description || 'Reusable workflow agent'}
+              </span>
             </span>
-            <span className="line-clamp-2 text-[0.7rem] leading-relaxed text-muted-foreground">
-              {agent.role || agent.description || 'Reusable workflow agent'}
-            </span>
+            <span className="text-[0.65rem] font-medium text-primary">Configure agent</span>
           </button>
         ))}
       </div>
@@ -697,7 +728,7 @@ function AgentList({
         pageSize={AGENT_PAGE_SIZE}
         total={agents.length}
       />
-    </aside>
+    </div>
   )
 }
 
@@ -710,6 +741,7 @@ function AgentEditor({
   knowledgeBases,
   modelErrors,
   modelOptions,
+  onCancel,
   onChange,
   onDelete,
   onGenerateSetupDraft,
@@ -736,6 +768,7 @@ function AgentEditor({
   knowledgeBases: KnowledgeBase[]
   modelErrors: string[]
   modelOptions: AgentModelOption[]
+  onCancel: () => void
   onChange: (draft: DraftState) => void
   onDelete?: () => void
   onGenerateSetupDraft: () => Promise<void>
@@ -759,6 +792,13 @@ function AgentEditor({
 
   return (
     <section className="grid gap-4">
+      <div className="flex items-center justify-between gap-3">
+        <Button disabled={busy || setupBusy} onClick={onCancel} size="sm" variant="ghost">
+          <ChevronLeft className="size-4" />
+          Back to agents
+        </Button>
+        <span className="text-xs text-muted-foreground">{selected ? `Editing ${selected.name}` : 'New agent'}</span>
+      </div>
       <div className="grid gap-3 rounded-md border border-(--stroke-nous) p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -1031,6 +1071,46 @@ function SetupDraftReview({ response }: { response: WorkflowAgentSetupDraftRespo
         />
       ) : null}
     </div>
+  )
+}
+
+function AgentSaveRequired({ tab }: { tab: AgentTab }) {
+  const messages: Partial<Record<AgentTab, { description: string; title: string }>> = {
+    delivery: {
+      description:
+        'Create the agent first, then add output destinations such as the source conversation, WhatsApp, Slack, email, a Composio action, or a callback webhook.',
+      title: 'Save before adding delivery'
+    },
+    embed: {
+      description:
+        'Create the agent first so Verxio can issue its public share URL and embed token, then configure branding, allowed websites, and uploaded assets.',
+      title: 'Save before publishing'
+    },
+    runs: {
+      description: 'Create the agent first, then test it manually and review its execution history and events here.',
+      title: 'Save before running'
+    },
+    triggers: {
+      description:
+        'Create the agent first, then choose what starts it: manual input, webhook/API, schedule, connected app, messaging gateway, or embed/share input.',
+      title: 'Save before adding triggers'
+    }
+  }
+
+  const message = messages[tab]
+
+  if (!message) {
+    return null
+  }
+
+  return (
+    <section className="mt-4 grid min-h-40 place-items-center rounded-md border border-dashed border-(--stroke-nous) p-5 text-center">
+      <div className="grid max-w-lg gap-2">
+        <Sparkles aria-hidden="true" className="mx-auto size-5 text-primary" />
+        <p className="text-xs font-medium">{message.title}</p>
+        <p className="text-[0.7rem] leading-relaxed text-muted-foreground">{message.description}</p>
+      </div>
+    </section>
   )
 }
 
