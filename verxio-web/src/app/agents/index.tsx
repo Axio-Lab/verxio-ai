@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
+import { PageLoader } from '@/components/page-loader'
 import { SkillEditorDialog } from '@/components/skill-editor-dialog'
 import { Button } from '@/components/ui/button'
 import {
@@ -31,6 +32,7 @@ import {
   deleteWorkflowTrigger,
   draftWorkflowAgentSetup,
   draftWorkflowAgentSetupUpdate,
+  getPublicWorkflowAgent,
   getWorkflowAgentEmbedConfig,
   type KnowledgeBase,
   listKnowledgeBases,
@@ -42,6 +44,7 @@ import {
   listWorkflowSkillCapabilities,
   listWorkflowToolCapabilities,
   listWorkflowTriggers,
+  runPublicWorkflowAgent,
   runWorkflowAgent,
   updateWorkflowAgent,
   updateWorkflowAgentEmbedConfig,
@@ -50,6 +53,7 @@ import {
   uploadWorkflowAgentEmbedAsset,
   type WorkflowAgent,
   type WorkflowAgentEmbedConfig,
+  type WorkflowAgentPublicInfo,
   type WorkflowAgentSetupDraft,
   type WorkflowAgentSetupDraftResponse,
   type WorkflowDelivery,
@@ -824,6 +828,185 @@ export function AgentsView() {
         </div>
       )}
     </section>
+  )
+}
+
+function publicAgentToken(): string {
+  return decodeURIComponent(window.location.pathname.split('/').filter(Boolean).pop() || '')
+}
+
+function PublicAgentFooter({ label = 'Verxio' }: { label?: string }) {
+  return (
+    <footer className="fixed inset-x-0 bottom-0 border-t border-(--ui-stroke-secondary) bg-background/95 px-4 py-3 backdrop-blur">
+      <p className="text-center text-xs text-muted-foreground">Powered by {label || 'Verxio'}</p>
+    </footer>
+  )
+}
+
+export function PublicAgentShareView() {
+  const [agent, setAgent] = useState<WorkflowAgentPublicInfo | null>(null)
+  const [message, setMessage] = useState('')
+  const [output, setOutput] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [running, setRunning] = useState(false)
+  const token = publicAgentToken()
+
+  useEffect(() => {
+    let cancelled = false
+
+    getPublicWorkflowAgent(token)
+      .then(response => {
+        if (!cancelled) {
+          setAgent(response)
+        }
+      })
+      .catch(fetchError => {
+        if (!cancelled) {
+          setError(fetchError instanceof Error ? fetchError.message : 'Agent not found')
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
+  const primaryColor = agent?.primary_color || '#0ea5e9'
+
+  async function submit() {
+    if (!message.trim()) {
+      setError('Enter a message for this agent.')
+
+      return
+    }
+
+    setError(null)
+    setOutput('')
+    setRunning(true)
+
+    try {
+      const result = await runPublicWorkflowAgent(token, message.trim())
+      const text = result.run.output_text.trim()
+
+      setOutput(
+        text || (result.run.status === 'failed' ? result.run.error || 'Agent run failed.' : 'Agent run queued.')
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not run this agent.')
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  if (error && !agent) {
+    return (
+      <>
+        <main className="grid min-h-dvh place-items-center bg-background px-4 pb-14 text-foreground">
+          <section className="w-full max-w-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-5">
+            <h1 className="text-base font-semibold tracking-normal">Agent unavailable</h1>
+            <p className="mt-2 text-sm text-muted-foreground">{error}</p>
+          </section>
+        </main>
+        <PublicAgentFooter />
+      </>
+    )
+  }
+
+  if (!agent) {
+    return (
+      <>
+        <div className="grid min-h-dvh place-items-center bg-background pb-14 text-foreground">
+          <PageLoader label="Loading agent" />
+        </div>
+        <PublicAgentFooter />
+      </>
+    )
+  }
+
+  return (
+    <>
+      <main className="min-h-dvh bg-background px-4 pb-20 pt-8 text-foreground">
+        <section className="mx-auto grid w-full max-w-3xl gap-5">
+          <header className="border-b border-(--ui-stroke-secondary) pb-5">
+            <div className="flex items-start gap-3">
+              {agent.logo_url ? (
+                <img
+                  alt=""
+                  className="size-12 rounded-md border border-(--ui-stroke-secondary) object-cover"
+                  src={agent.logo_url}
+                />
+              ) : (
+                <div
+                  aria-hidden="true"
+                  className="grid size-12 place-items-center rounded-md text-lg font-semibold text-white"
+                  style={{ backgroundColor: primaryColor }}
+                >
+                  {(agent.display_name || agent.name).slice(0, 1).toUpperCase()}
+                </div>
+              )}
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-muted-foreground">Verxio Agent</p>
+                <h1 className="mt-1 text-2xl font-semibold tracking-normal">{agent.display_name || agent.name}</h1>
+                {agent.description ? (
+                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{agent.description}</p>
+                ) : null}
+              </div>
+            </div>
+          </header>
+
+          {agent.asset_url ? (
+            <img
+              alt=""
+              className="max-h-72 w-full rounded-md border border-(--ui-stroke-secondary) object-cover"
+              src={agent.asset_url}
+            />
+          ) : null}
+
+          <section className="grid gap-3 border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-4">
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              {agent.welcome_message || 'How can I help?'}
+            </p>
+            <Textarea
+              onChange={event => setMessage(event.target.value)}
+              onKeyDown={event => {
+                if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                  event.preventDefault()
+                  void submit()
+                }
+              }}
+              placeholder="Ask this agent anything"
+              rows={6}
+              value={message}
+            />
+            {error ? <p className="text-xs text-destructive">{error}</p> : null}
+            <div className="flex justify-end">
+              <Button
+                className="min-w-28 text-white"
+                disabled={running}
+                onClick={() => void submit()}
+                style={{ backgroundColor: primaryColor }}
+                type="button"
+              >
+                {running ? (
+                  <Loader className="size-4 text-white" label="Running agent" strokeScale={0.7} type="rose-two" />
+                ) : (
+                  <Send className="size-4" />
+                )}
+                Send
+              </Button>
+            </div>
+          </section>
+
+          {output ? (
+            <section className="border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-4">
+              <h2 className="text-sm font-semibold tracking-normal">Response</h2>
+              <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">{output}</p>
+            </section>
+          ) : null}
+        </section>
+      </main>
+      <PublicAgentFooter label={agent.powered_by} />
+    </>
   )
 }
 

@@ -430,6 +430,18 @@ export interface WorkflowAgentEmbedAssetInput {
   file_name: string
 }
 
+export interface WorkflowAgentPublicInfo {
+  public_token: string
+  name: string
+  description: string
+  display_name: string
+  welcome_message: string
+  primary_color: string
+  logo_url: string
+  asset_url: string
+  powered_by: string
+}
+
 export interface WorkflowRun {
   id: string
   tenant_id: string
@@ -1316,6 +1328,50 @@ export async function getPublicNotepadShare(token: string): Promise<VerxioPublic
   }
 
   return (await response.json()) as VerxioPublicNotepadShareResponse
+}
+
+export async function getPublicWorkflowAgent(token: string): Promise<WorkflowAgentPublicInfo> {
+  const response = await fetch(verxioApiUrl(`/api/public/workflow-agents/${encodeURIComponent(token)}`), {
+    credentials: 'omit'
+  })
+
+  if (!response.ok) {
+    throw new Error(`${response.status} ${response.statusText}`)
+  }
+
+  return (await response.json()) as WorkflowAgentPublicInfo
+}
+
+export async function runPublicWorkflowAgent(token: string, message: string): Promise<{ run: WorkflowRun }> {
+  let visitorId = ''
+
+  if (typeof window !== 'undefined') {
+    visitorId = window.localStorage.getItem('verxio.public.visitor_id') || ''
+
+    if (!visitorId) {
+      visitorId = crypto.randomUUID()
+      window.localStorage.setItem('verxio.public.visitor_id', visitorId)
+    }
+  }
+
+  const response = await fetch(verxioApiUrl(`/api/public/workflow-agents/${encodeURIComponent(token)}/runs`), {
+    body: JSON.stringify({
+      message,
+      page_url: typeof window === 'undefined' ? '' : window.location.href,
+      visitor_id: visitorId
+    }),
+    credentials: 'omit',
+    headers: { 'content-type': 'application/json' },
+    method: 'POST'
+  })
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { detail?: string }
+
+    throw new Error(body.detail || `${response.status} ${response.statusText}`)
+  }
+
+  return (await response.json()) as { run: WorkflowRun }
 }
 
 export function listComposioConnections(): Promise<ComposioConnectionsResponse> {
