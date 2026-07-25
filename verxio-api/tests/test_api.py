@@ -845,9 +845,8 @@ def test_workflow_skill_capabilities_use_runtime_metadata(client, monkeypatch):
 def test_workflow_tool_capabilities_use_runtime_metadata(client, monkeypatch):
     _payload, token = signup(client, "workflow-tools@example.com")
 
-    class FakeMetadata:
-        skills = []
-        toolsets = [
+    async def fake_toolsets(_workspace, _profile):
+        return [
             {
                 "name": "messaging",
                 "tools": [
@@ -856,13 +855,8 @@ def test_workflow_tool_capabilities_use_runtime_metadata(client, monkeypatch):
                 ],
             }
         ]
-        errors = []
 
-    class FakeAdapter:
-        async def metadata(self):
-            return FakeMetadata()
-
-    monkeypatch.setattr(workflow_agents, "HermesRuntimeAdapter", FakeAdapter)
+    monkeypatch.setattr(workflow_agents, "list_toolsets_via_dashboard", fake_toolsets)
     response = client.get("/api/workflow-agents/capabilities/tools", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
 
     assert response.status_code == 200
@@ -890,16 +884,10 @@ def test_workflow_tool_capabilities_include_custom_tools(client, monkeypatch):
     _payload, token = signup(client, "workflow-tools-custom@example.com")
     headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
 
-    class FakeMetadata:
-        skills = []
-        toolsets = []
-        errors = []
+    async def fake_toolsets(_workspace, _profile):
+        return []
 
-    class FakeAdapter:
-        async def metadata(self):
-            return FakeMetadata()
-
-    monkeypatch.setattr(workflow_agents, "HermesRuntimeAdapter", FakeAdapter)
+    monkeypatch.setattr(workflow_agents, "list_toolsets_via_dashboard", fake_toolsets)
     created = client.post(
         "/api/workflow-agents/custom-tools",
         headers=headers,

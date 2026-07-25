@@ -74,7 +74,7 @@ from app.composio_catalog import (
     list_composio_apps,
 )
 from app.runtime import HermesRuntimeAdapter
-from app.runtime_dashboard import run_agent_via_dashboard
+from app.runtime_dashboard import list_toolsets_via_dashboard, run_agent_via_dashboard
 
 STATIC_AGENT_ASSETS_ROOT = Path(__file__).resolve().parent.parent / "static" / "agent-assets"
 
@@ -704,11 +704,24 @@ async def list_skill_capabilities() -> WorkflowSkillCapabilitiesResponse:
     return WorkflowSkillCapabilitiesResponse(skills=skills, errors=metadata.errors)
 
 
-async def list_tool_capabilities(workspace: Workspace) -> WorkflowToolCapabilitiesResponse:
-    metadata = await HermesRuntimeAdapter().metadata()
+async def list_tool_capabilities(workspace: Workspace, profile: AgentProfile | None = None) -> WorkflowToolCapabilitiesResponse:
+    errors: list[str] = []
+    if profile is not None:
+        try:
+            toolsets = await list_toolsets_via_dashboard(workspace, profile)
+        except HTTPException as exc:
+            errors.append(str(exc.detail))
+            metadata = await HermesRuntimeAdapter().metadata()
+            toolsets = metadata.toolsets
+            errors.extend(metadata.errors)
+    else:
+        metadata = await HermesRuntimeAdapter().metadata()
+        toolsets = metadata.toolsets
+        errors.extend(metadata.errors)
+
     seen: set[str] = set()
     tools: list[WorkflowToolCapability] = []
-    for item in metadata.toolsets:
+    for item in toolsets:
         if isinstance(item, dict) and isinstance(item.get("tools"), list):
             name = str(item.get("name") or item.get("id") or item.get("slug") or "").strip()
             if not name or name in seen:
@@ -758,7 +771,7 @@ async def list_tool_capabilities(workspace: Workspace) -> WorkflowToolCapabiliti
             )
         )
     tools.sort(key=lambda item: (item.category.lower(), item.name.lower()))
-    return WorkflowToolCapabilitiesResponse(tools=tools, errors=metadata.errors)
+    return WorkflowToolCapabilitiesResponse(tools=tools, errors=errors)
 
 
 def list_custom_tools(workspace: Workspace) -> WorkflowCustomToolsResponse:
