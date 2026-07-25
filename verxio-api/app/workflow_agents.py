@@ -1682,7 +1682,7 @@ def upload_embed_asset(
     return update_embed_config(workspace, profile, agent_id, WorkflowAgentEmbedConfigUpdateRequest(asset_url=asset_url), request)
 
 
-def _public_embed_row(public_token: str) -> dict[str, Any]:
+def _public_embed_row(public_token: str, *, require_enabled: bool = True) -> dict[str, Any]:
     row = db.fetch_one(
         """
         SELECT c.*, a.name AS agent_name, a.description AS agent_description, a.enabled AS agent_enabled
@@ -1692,13 +1692,13 @@ def _public_embed_row(public_token: str) -> dict[str, Any]:
         """,
         (public_token,),
     )
-    if not row or not row.get("enabled") or not row.get("agent_enabled"):
+    if not row or not row.get("agent_enabled") or (require_enabled and not row.get("enabled")):
         raise HTTPException(status_code=404, detail="Public workflow agent is not available.")
     return row
 
 
 def get_public_embed_info(public_token: str) -> WorkflowAgentPublicInfo:
-    row = _public_embed_row(public_token)
+    row = _public_embed_row(public_token, require_enabled=False)
     return WorkflowAgentPublicInfo(
         public_token=str(row["public_token"]),
         name=str(row["agent_name"]),
@@ -1725,7 +1725,7 @@ async def run_public_embed_agent(
     payload: WorkflowAgentPublicRunRequest,
     request: Request,
 ) -> WorkflowAgentPublicRunResponse:
-    row = _public_embed_row(public_token)
+    row = _public_embed_row(public_token, require_enabled=True)
     _assert_public_origin_allowed(row, request)
     workspace_row = db.fetch_one("SELECT * FROM workspaces WHERE id = ?", (row["workspace_id"],))
     runtime_agent_row = db.fetch_one("SELECT * FROM agents WHERE id = ?", (row["runtime_agent_id"],))

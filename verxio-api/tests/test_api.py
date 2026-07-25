@@ -781,6 +781,14 @@ def test_workflow_agent_embed_config_asset_and_public_run(client, monkeypatch):
     assert config.json()["share_url"].startswith("http://127.0.0.1:8080/agent/")
     assert 'src="http://127.0.0.1:8080/api/public/workflow-agent-embed.js"' in config.json()["embed_script"]
     assert "data-agent-token" in config.json()["embed_script"]
+    public_info = client.get(f"/api/public/workflow-agents/{config.json()['public_token']}")
+    assert public_info.status_code == 200
+    assert public_info.json()["display_name"] == "Website Consultant"
+    public_run_disabled = client.post(
+        f"/api/public/workflow-agents/{config.json()['public_token']}/runs",
+        json={"message": "Hello"},
+    )
+    assert public_run_disabled.status_code == 404
 
     updated = client.put(
         f"/api/workflow-agents/{agent['id']}/embed",

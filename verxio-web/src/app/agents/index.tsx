@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { type CSSProperties, useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { PageLoader } from '@/components/page-loader'
@@ -17,6 +17,7 @@ import { Loader } from '@/components/ui/loader'
 import { PaginationControl } from '@/components/ui/pagination'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { VerxioWordmark } from '@/components/verxio-wordmark'
 import { AlertCircle, CheckCircle2, ChevronLeft, Plus, RefreshCw, Save, Send, Sparkles, Trash2, Zap } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import {
@@ -835,10 +836,25 @@ function publicAgentToken(): string {
   return decodeURIComponent(window.location.pathname.split('/').filter(Boolean).pop() || '')
 }
 
-function PublicAgentFooter({ label = 'Verxio' }: { label?: string }) {
+const VERXIO_WEBSITE_URL = 'https://www.verxio.xyz'
+
+function PublicAgentFooter() {
   return (
-    <footer className="fixed inset-x-0 bottom-0 border-t border-(--ui-stroke-secondary) bg-background/95 px-4 py-3 backdrop-blur">
-      <p className="text-center text-xs text-muted-foreground">Powered by {label || 'Verxio'}</p>
+    <footer className="fixed inset-x-0 bottom-0 z-10 border-t border-(--ui-stroke-secondary) bg-background py-3 text-center text-xs text-muted-foreground">
+      Powered by{' '}
+      <a
+        aria-label="Verxio"
+        className="inline-flex w-16 align-middle focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none"
+        href={VERXIO_WEBSITE_URL}
+        rel="noopener noreferrer"
+        target="_blank"
+      >
+        <VerxioWordmark
+          className="w-full"
+          style={{ '--fit-text-line-height': '0.9', '--fit-text-min': '0.78rem' } as CSSProperties}
+          variant="solid"
+        />
+      </a>
     </footer>
   )
 }
@@ -1005,7 +1021,7 @@ export function PublicAgentShareView() {
           ) : null}
         </section>
       </main>
-      <PublicAgentFooter label={agent.powered_by} />
+      <PublicAgentFooter />
     </>
   )
 }
