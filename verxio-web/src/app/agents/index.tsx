@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input'
 import { Loader } from '@/components/ui/loader'
 import { PaginationControl } from '@/components/ui/pagination'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { VerxioWordmark } from '@/components/verxio-wordmark'
 import { AlertCircle, CheckCircle2, ChevronLeft, Plus, RefreshCw, Save, Send, Sparkles, Trash2, Zap } from '@/lib/icons'
@@ -213,7 +214,7 @@ function draftFromSetupDraft(setupDraft: WorkflowAgentSetupDraft, defaultModelId
   return {
     approval_policy: agent.approval_policy ?? 'default',
     description: agent.description ?? '',
-    enabled: agent.enabled ?? false,
+    enabled: agent.enabled ?? true,
     instructions: agent.instructions ?? '',
     integrationsText: (agent.integrations ?? []).join('\n'),
     knowledgeText: (agent.knowledge ?? []).join('\n'),
@@ -1411,11 +1412,16 @@ function AgentEditor({
         </label>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <button
-            className="flex items-center gap-2 text-xs text-muted-foreground"
+            className={cn(
+              'inline-flex h-8 items-center gap-2 rounded-md border px-3 text-xs transition-colors',
+              draft.enabled
+                ? 'border-primary/45 bg-primary/5 text-foreground'
+                : 'border-(--stroke-nous) bg-(--ui-bg-elevated) text-muted-foreground'
+            )}
             onClick={() => patch({ enabled: !draft.enabled })}
             type="button"
           >
-            <span className={cn('size-2 rounded-full', draft.enabled ? 'bg-primary' : 'bg-muted-foreground/50')} />
+            <Switch checked={draft.enabled} size="xs" tabIndex={-1} />
             {draft.enabled ? 'Enabled' : 'Disabled'}
           </button>
           <div className="flex items-center gap-2">
