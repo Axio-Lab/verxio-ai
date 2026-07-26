@@ -1018,7 +1018,11 @@ export function PublicAgentShareView() {
         <main className="grid min-h-dvh place-items-center bg-background px-4 pb-14 text-foreground">
           <section className="w-full max-w-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-5">
             <h1 className="text-base font-semibold tracking-normal">Agent unavailable</h1>
-            <p className="mt-2 text-sm text-muted-foreground">{error}</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {error === 'Public workflow agent is not available.'
+                ? 'This agent is disabled or no longer public.'
+                : error}
+            </p>
           </section>
         </main>
         <PublicAgentFooter />

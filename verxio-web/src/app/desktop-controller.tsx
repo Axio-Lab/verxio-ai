@@ -1058,7 +1058,7 @@ export function DesktopController() {
                 <AgentsView />
               </Suspense>
             }
-            path="agents"
+            path="agents/*"
           />
           <Route
             element={

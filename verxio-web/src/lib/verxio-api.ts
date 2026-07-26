@@ -1336,7 +1336,9 @@ export async function getPublicWorkflowAgent(token: string): Promise<WorkflowAge
   })
 
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`)
+    const body = (await response.json().catch(() => ({}))) as { detail?: string }
+
+    throw new Error(body.detail || `${response.status} ${response.statusText}`)
   }
 
   return (await response.json()) as WorkflowAgentPublicInfo
