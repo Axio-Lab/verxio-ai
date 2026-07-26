@@ -2697,6 +2697,8 @@ function EmbedPanel({
     )
   }
 
+  const publicLinkReady = agent.enabled && config.enabled
+
   return (
     <section className="mt-4 grid gap-3 rounded-md border border-(--stroke-nous) p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2713,9 +2715,21 @@ function EmbedPanel({
           variant="outline"
         >
           <span className={cn('size-1.5 rounded-full', config.enabled ? 'bg-primary' : 'bg-muted-foreground/50')} />
-          {config.enabled ? 'Enabled' : 'Disabled'}
+          {config.enabled ? 'Public link enabled' : 'Public link disabled'}
         </Button>
       </div>
+
+      {!agent.enabled ? (
+        <div className="rounded-md border border-primary/35 bg-primary/5 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+          This agent is disabled. Enable and save the agent before its public URL or embed script can be used.
+        </div>
+      ) : null}
+
+      {agent.enabled && !config.enabled ? (
+        <div className="rounded-md border border-primary/35 bg-primary/5 px-3 py-2 text-xs leading-relaxed text-muted-foreground">
+          Public sharing is disabled. Turn on the public link before sharing this URL or installing the embed script.
+        </div>
+      ) : null}
 
       <div className="grid gap-3 md:grid-cols-2">
         <label className="grid gap-1.5 text-xs">
@@ -2798,7 +2812,7 @@ function EmbedPanel({
         <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
           <Input readOnly value={config.share_url} />
           <Button
-            disabled={!config.share_url}
+            disabled={!config.share_url || !publicLinkReady}
             onClick={() => copy('url', config.share_url)}
             size="sm"
             variant="outline"
@@ -2810,7 +2824,7 @@ function EmbedPanel({
         <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
           <Textarea className="min-h-20 font-mono text-[0.72rem]" readOnly value={config.embed_script} />
           <Button
-            disabled={!config.embed_script}
+            disabled={!config.embed_script || !publicLinkReady}
             onClick={() => copy('script', config.embed_script)}
             size="sm"
             variant="outline"
