@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { PaginationControl } from '@/components/ui/pagination'
 import { SearchField } from '@/components/ui/search-field'
-import { AlertTriangle, ExternalLink, Loader2, PlugOff } from '@/lib/icons'
+import { AlertTriangle, Check, Copy, ExternalLink, Loader2, PlugOff } from '@/lib/icons'
 import { isVerxioDesktop } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import {
@@ -1050,6 +1050,14 @@ function ConnectionToolsDialog({
   )
 }
 
+const COMPOSIO_OAUTH_REDIRECT_URI = 'https://backend.composio.dev/api/v3.1/toolkits/auth/callback'
+
+function isCustomOAuthCredentialField(field: ComposioAuthInputField): boolean {
+  const name = field.name.trim().toLowerCase()
+
+  return name === 'client_id' || name === 'client_secret' || name === 'clientid' || name === 'clientsecret'
+}
+
 function ConnectionConnectDialog({
   app,
   error,
@@ -1077,6 +1085,14 @@ function ConnectionConnectDialog({
   submitting: boolean
   values: Record<string, string>
 }) {
+  const [redirectUriCopied, setRedirectUriCopied] = useState(false)
+
+  useEffect(() => {
+    if (!open) {
+      setRedirectUriCopied(false)
+    }
+  }, [open])
+
   if (!app) {
     return null
   }
@@ -1085,7 +1101,28 @@ function ConnectionConnectDialog({
   const canSubmitInline = setup?.supportsInline && fields.length > 0
   const requiredMissing = fields.some(field => field.required && !values[field.name]?.trim())
   const needsOAuthApp = setup?.authMode === 'requires_oauth_app'
+  const showsCustomOAuthCredentials = fields.some(isCustomOAuthCredentialField)
   const composioDashboardUrl = 'https://app.composio.dev'
+
+  async function copyRedirectUri() {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(COMPOSIO_OAUTH_REDIRECT_URI)
+      } else {
+        throw new Error('Clipboard is unavailable.')
+      }
+
+      setRedirectUriCopied(true)
+      window.setTimeout(() => setRedirectUriCopied(false), 1600)
+      notify({
+        kind: 'success',
+        message: 'Redirect URI copied to clipboard.',
+        title: 'Copied'
+      })
+    } catch (err) {
+      notifyError(err, 'Could not copy redirect URI')
+    }
+  }
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
@@ -1148,12 +1185,33 @@ function ConnectionConnectDialog({
                   ) : null}
                 </div>
               ))}
-              {fields.some(field => field.name === 'client_id' || field.name === 'client_secret') ? (
-                <div className="rounded-[6px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-3 py-2 text-[0.68rem] leading-5 text-muted-foreground">
-                  Add this redirect URI to your OAuth client in the provider console:{' '}
-                  <span className="break-all font-medium text-foreground">
-                    https://backend.composio.dev/api/v3.1/toolkits/auth/callback
-                  </span>
+              {showsCustomOAuthCredentials ? (
+                <div className="space-y-2 rounded-[6px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-3 py-2 text-[0.68rem] leading-5 text-muted-foreground">
+                  <p>
+                    Using your own OAuth client? Add this Composio redirect URI in the provider console (Google, Slack,
+                    etc.):
+                  </p>
+                  <div className="flex items-start gap-2">
+                    <button
+                      className="min-w-0 flex-1 break-all rounded-[4px] border border-(--ui-stroke-secondary) bg-background px-2 py-1.5 text-left font-medium text-foreground transition-colors hover:bg-(--ui-bg-secondary)"
+                      onClick={() => void copyRedirectUri()}
+                      title="Click to copy redirect URI"
+                      type="button"
+                    >
+                      {COMPOSIO_OAUTH_REDIRECT_URI}
+                    </button>
+                    <Button
+                      aria-label={redirectUriCopied ? 'Redirect URI copied' : 'Copy redirect URI'}
+                      className="shrink-0"
+                      onClick={() => void copyRedirectUri()}
+                      size="icon-sm"
+                      title={redirectUriCopied ? 'Copied' : 'Copy redirect URI'}
+                      type="button"
+                      variant="outline"
+                    >
+                      {redirectUriCopied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                    </Button>
+                  </div>
                 </div>
               ) : null}
             </div>
