@@ -1,8 +1,10 @@
 import { type CSSProperties, useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
+import { CompactMarkdown } from '@/components/chat/compact-markdown'
 import { PageLoader } from '@/components/page-loader'
 import { SkillEditorDialog } from '@/components/skill-editor-dialog'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import {
@@ -20,7 +22,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { VerxioWordmark } from '@/components/verxio-wordmark'
-import { AlertCircle, CheckCircle2, ChevronLeft, Plus, RefreshCw, Save, Send, Sparkles, Trash2, Zap } from '@/lib/icons'
+import {
+  AlertCircle,
+  CheckCircle2,
+  ChevronLeft,
+  Copy,
+  Plus,
+  RefreshCw,
+  Save,
+  Send,
+  Sparkles,
+  Trash2,
+  Zap
+} from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import {
   createKnowledgeBase,
@@ -3270,6 +3284,40 @@ function DeliveryPanel({
   )
 }
 
+function googleFormsWebhookScript(webhookUrl: string, secret: string): string {
+  return [
+    '/** Paste into Google Forms → Extensions → Apps Script, then set installable onFormSubmit trigger. */',
+    'const VERXIO_WEBHOOK_URL = ' + JSON.stringify(webhookUrl) + ';',
+    'const VERXIO_WEBHOOK_SECRET = ' + JSON.stringify(secret) + ';',
+    '',
+    'function onFormSubmit(e) {',
+    '  const form = FormApp.getActiveForm();',
+    '  const response = e.response;',
+    '  const answers = {};',
+    '  response.getItemResponses().forEach(function (item) {',
+    '    answers[item.getItem().getTitle()] = item.getResponse();',
+    '  });',
+    '  const payload = {',
+    '    source: "googleforms",',
+    '    event: "googleforms.response_submitted",',
+    '    form: { title: form.getTitle(), id: form.getId() },',
+    '    response: {',
+    '      respondentEmail: response.getRespondentEmail() || "",',
+    '      submittedAt: new Date().toISOString(),',
+    '      answers: answers',
+    '    }',
+    '  };',
+    '  UrlFetchApp.fetch(VERXIO_WEBHOOK_URL, {',
+    '    method: "post",',
+    '    contentType: "application/json",',
+    '    headers: { "X-Verxio-Webhook-Secret": VERXIO_WEBHOOK_SECRET },',
+    '    payload: JSON.stringify(payload),',
+    '    muteHttpExceptions: true',
+    '  });',
+    '}'
+  ].join('\n')
+}
+
 function TriggersPanel({
   agent,
   busy,
@@ -3291,6 +3339,7 @@ function TriggersPanel({
   const [configText, setConfigText] = useState('{}')
   const [name, setName] = useState('')
   const [page, setPage] = useState(1)
+  const [copiedScriptTriggerId, setCopiedScriptTriggerId] = useState<string | null>(null)
   const visibleTriggers = triggers.slice((page - 1) * PANEL_PAGE_SIZE, page * PANEL_PAGE_SIZE)
 
   useEffect(() => {
@@ -3351,6 +3400,32 @@ function TriggersPanel({
       onError(err instanceof Error ? err.message : 'Could not delete trigger.')
     } finally {
       onBusy(false)
+    }
+  }
+
+  const copyGoogleFormsScript = async (trigger: WorkflowTrigger) => {
+    if (!trigger.webhook_url || !trigger.secret) {
+      onError('Webhook URL and secret are required before copying the Google Forms script.')
+
+      return
+    }
+
+    try {
+      const webhookUrl = trigger.webhook_url
+      const isLocalWebhook = /^(https?:\/\/)?(127\.0\.0\.1|localhost)(:\d+)?\b/i.test(webhookUrl)
+
+      await navigator.clipboard.writeText(googleFormsWebhookScript(webhookUrl, trigger.secret))
+      setCopiedScriptTriggerId(trigger.id)
+      window.setTimeout(() => setCopiedScriptTriggerId(current => (current === trigger.id ? null : current)), 1600)
+      notify({
+        kind: isLocalWebhook ? 'warning' : 'success',
+        message: isLocalWebhook
+          ? 'Script copied. Replace the localhost webhook host with a public tunnel URL (ngrok/cloudflared) before deploying the Apps Script.'
+          : 'Paste into Google Forms → Extensions → Apps Script, then add an onFormSubmit trigger.',
+        title: 'Google Forms script copied'
+      })
+    } catch (err) {
+      notifyError(err, 'Could not copy Google Forms script')
     }
   }
 
@@ -3469,9 +3544,26 @@ function TriggersPanel({
               </div>
             </div>
             {trigger.trigger_type === 'webhook' ? (
-              <div className="grid gap-1 rounded-md bg-muted/35 p-2 font-mono text-[0.68rem] text-muted-foreground">
+              <div className="grid gap-2 rounded-md bg-muted/35 p-2 font-mono text-[0.68rem] text-muted-foreground">
                 <span className="wrap-anywhere">URL: {trigger.webhook_url}</span>
                 <span className="wrap-anywhere">Secret header: X-Verxio-Webhook-Secret: {trigger.secret}</span>
+                {trigger.webhook_url && trigger.secret ? (
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <Button
+                      disabled={busy}
+                      onClick={() => void copyGoogleFormsScript(trigger)}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      <Copy className="size-3.5" />
+                      {copiedScriptTriggerId === trigger.id ? 'Copied Forms script' : 'Copy Google Forms script'}
+                    </Button>
+                    <span className="font-sans text-[0.65rem] leading-relaxed text-muted-foreground">
+                      Paste into Forms → Apps Script, then add an installable onFormSubmit trigger.
+                    </span>
+                  </div>
+                ) : null}
               </div>
             ) : null}
             {Object.keys(trigger.config || {}).length > 0 ? (
@@ -3493,6 +3585,73 @@ function TriggersPanel({
       </div>
     </section>
   )
+}
+
+function runStatusVariant(status: WorkflowRun['status']): 'default' | 'destructive' | 'muted' | 'warn' {
+  if (status === 'completed') {
+    return 'default'
+  }
+
+  if (status === 'failed') {
+    return 'destructive'
+  }
+
+  if (status === 'running' || status === 'queued') {
+    return 'warn'
+  }
+
+  return 'muted'
+}
+
+function runOutputTitle(outputText: string): string | null {
+  const firstLine = outputText
+    .split('\n')
+    .map(line => line.trim())
+    .find(Boolean)
+
+  if (!firstLine) {
+    return null
+  }
+
+  const heading = firstLine.match(/^#{1,6}\s+(.+)$/)
+
+  return heading?.[1]?.trim() || null
+}
+
+/** Prefer a compact key/value table when the model returns bullet fields like `- **Score:** 80`. */
+function formatRunOutputMarkdown(outputText: string): string {
+  const lines = outputText.replace(/\r\n/g, '\n').split('\n')
+  const pairs: Array<{ key: string; value: string }> = []
+  const other: string[] = []
+
+  for (const line of lines) {
+    const match = line.match(/^\s*[-*]\s+\*\*(.+?)\*\*\s*[:：]\s*(.+)\s*$/)
+
+    if (match) {
+      pairs.push({ key: match[1].trim(), value: match[2].trim() })
+
+      continue
+    }
+
+    other.push(line)
+  }
+
+  if (pairs.length < 2) {
+    return outputText
+  }
+
+  const titleLine = other.map(line => line.trim()).find(line => line.length > 0) || ''
+
+  const leftover = other
+    .filter(line => line.trim() && line.trim() !== titleLine)
+    .join('\n')
+    .trim()
+
+  const table = ['| Field | Detail |', '| --- | --- |', ...pairs.map(pair => `| ${pair.key} | ${pair.value} |`)].join(
+    '\n'
+  )
+
+  return [titleLine, table, leftover].filter(Boolean).join('\n\n')
 }
 
 function RunsPanel({
@@ -3586,66 +3745,86 @@ function RunsPanel({
           Run agent
         </Button>
       </div>
-      <div className="grid gap-2">
+      <div className="grid gap-3">
         {runs.length === 0 ? <p className="text-xs text-muted-foreground">No runs yet.</p> : null}
-        {visibleRuns.map(run => (
-          <div className="grid gap-2 rounded-md border border-(--stroke-nous) p-3" key={run.id}>
-            <div className="flex items-center justify-between gap-2">
-              <p className="flex items-center gap-2 text-xs font-medium">
-                {run.status === 'completed' ? (
-                  <CheckCircle2 className="size-4 text-primary" />
-                ) : run.status === 'failed' ? (
-                  <AlertCircle className="size-4 text-destructive" />
-                ) : (
-                  <Zap className="size-4 text-primary" />
-                )}
-                {run.trigger_type} · {run.status}
-              </p>
-              <span className="text-[0.68rem] text-muted-foreground">{formatDate(run.created_at)}</span>
-            </div>
-            {run.output_text ? <p className="text-xs leading-relaxed text-foreground/90">{run.output_text}</p> : null}
-            {run.error ? <p className="text-xs leading-relaxed text-destructive">{run.error}</p> : null}
-            <details className="text-[0.68rem] text-muted-foreground">
-              <summary className="cursor-pointer">Input</summary>
-              <pre className="mt-2 overflow-x-auto rounded-md bg-muted/35 p-2">
-                {JSON.stringify(run.input, null, 2)}
-              </pre>
-            </details>
-            <details
-              className="text-[0.68rem] text-muted-foreground"
-              onToggle={event => {
-                if (event.currentTarget.open) {
-                  void loadEvents(run.id)
-                }
-              }}
-            >
-              <summary className="cursor-pointer">Events</summary>
-              <div className="mt-2 grid gap-2 rounded-md bg-muted/35 p-2">
-                {loadingEventsRunId === run.id ? (
-                  <Loader
-                    className="size-4 text-primary"
-                    label="Loading run events"
-                    strokeScale={0.7}
-                    type="rose-two"
-                  />
-                ) : null}
-                {(eventsByRunId[run.id] || []).map(event => (
-                  <div className="grid gap-1 border-l-2 border-primary/45 pl-2" key={event.id}>
-                    <span className="font-medium text-foreground/90">
-                      {event.event_type} · {formatDate(event.created_at)}
-                    </span>
-                    {event.message ? <span>{event.message}</span> : null}
-                    {Object.keys(event.metadata || {}).length > 0 ? (
-                      <pre className="overflow-x-auto rounded-md bg-background/70 p-2">
-                        {JSON.stringify(event.metadata, null, 2)}
-                      </pre>
+        {visibleRuns.map(item => {
+          const title = item.output_text ? runOutputTitle(item.output_text) : null
+          const formattedOutput = item.output_text ? formatRunOutputMarkdown(item.output_text) : ''
+
+          return (
+            <article className="grid gap-3 rounded-md border border-(--stroke-nous) p-3" key={item.id}>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0 grid gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {item.status === 'completed' ? (
+                      <CheckCircle2 className="size-4 shrink-0 text-primary" />
+                    ) : item.status === 'failed' ? (
+                      <AlertCircle className="size-4 shrink-0 text-destructive" />
+                    ) : (
+                      <Zap className="size-4 shrink-0 text-primary" />
+                    )}
+                    <Badge variant={runStatusVariant(item.status)}>{item.status}</Badge>
+                    <Badge variant="outline">{item.trigger_type}</Badge>
+                  </div>
+                  {title ? <p className="text-sm font-medium text-foreground">{title}</p> : null}
+                </div>
+                <span className="shrink-0 text-[0.68rem] text-muted-foreground">{formatDate(item.created_at)}</span>
+              </div>
+
+              {formattedOutput ? (
+                <div className="rounded-md border border-(--stroke-nous) bg-muted/20 p-3">
+                  <CompactMarkdown className="text-foreground/90" text={formattedOutput} />
+                </div>
+              ) : null}
+              {item.error ? <p className="text-xs leading-relaxed text-destructive">{item.error}</p> : null}
+
+              <div className="grid gap-2 border-t border-(--stroke-nous) pt-2">
+                <details className="text-[0.68rem] text-muted-foreground">
+                  <summary className="cursor-pointer font-medium text-foreground/80">Input</summary>
+                  <pre className="mt-2 overflow-x-auto rounded-md bg-muted/35 p-2 font-mono">
+                    {JSON.stringify(item.input, null, 2)}
+                  </pre>
+                </details>
+                <details
+                  className="text-[0.68rem] text-muted-foreground"
+                  onToggle={event => {
+                    if (event.currentTarget.open) {
+                      void loadEvents(item.id)
+                    }
+                  }}
+                >
+                  <summary className="cursor-pointer font-medium text-foreground/80">Events</summary>
+                  <div className="mt-2 grid gap-2 rounded-md bg-muted/35 p-2">
+                    {loadingEventsRunId === item.id ? (
+                      <Loader
+                        className="size-4 text-primary"
+                        label="Loading run events"
+                        strokeScale={0.7}
+                        type="rose-two"
+                      />
+                    ) : null}
+                    {(eventsByRunId[item.id] || []).map(event => (
+                      <div className="grid gap-1 border-l-2 border-primary/45 pl-2" key={event.id}>
+                        <span className="font-medium text-foreground/90">
+                          {event.event_type} · {formatDate(event.created_at)}
+                        </span>
+                        {event.message ? <span>{event.message}</span> : null}
+                        {Object.keys(event.metadata || {}).length > 0 ? (
+                          <pre className="overflow-x-auto rounded-md bg-background/70 p-2 font-mono">
+                            {JSON.stringify(event.metadata, null, 2)}
+                          </pre>
+                        ) : null}
+                      </div>
+                    ))}
+                    {!loadingEventsRunId && (eventsByRunId[item.id] || []).length === 0 ? (
+                      <span>No events recorded for this run.</span>
                     ) : null}
                   </div>
-                ))}
+                </details>
               </div>
-            </details>
-          </div>
-        ))}
+            </article>
+          )
+        })}
         {runs.length > 0 ? (
           <PaginationControl
             itemLabel="runs"
