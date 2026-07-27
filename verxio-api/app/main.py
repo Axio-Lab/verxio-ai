@@ -264,6 +264,7 @@ from app.workflow_agents import (
     delete_agent as delete_workflow_agent,
     delete_custom_tool as delete_workflow_custom_tool,
     delete_delivery as delete_workflow_delivery,
+    delete_setup_draft as delete_workflow_setup_draft,
     delete_trigger as delete_workflow_trigger,
     get_agent as get_workflow_agent,
     get_embed_config as get_workflow_embed_config,
@@ -937,6 +938,13 @@ async def apply_workflow_agent_setup_draft_route(
     user = require_user(request)
     workspace, profile, _runtime_instance = get_context_for_user(user)
     return apply_workflow_setup_draft(workspace, profile, payload, request)
+
+
+@app.delete("/api/workflow-agents/setup-drafts/{draft_id}")
+async def delete_workflow_agent_setup_draft_route(draft_id: str, request: Request) -> dict[str, bool]:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return delete_workflow_setup_draft(workspace, profile, draft_id)
 
 
 @app.get("/api/knowledge-bases", response_model=KnowledgeBasesResponse)

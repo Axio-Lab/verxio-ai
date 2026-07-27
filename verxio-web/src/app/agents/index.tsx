@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { PageLoader } from '@/components/page-loader'
 import { SkillEditorDialog } from '@/components/skill-editor-dialog'
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import {
   Dialog,
   DialogContent,
@@ -30,6 +31,7 @@ import {
   createWorkflowTrigger,
   deleteKnowledgeBase,
   deleteWorkflowAgent,
+  deleteWorkflowAgentSetupDraft,
   deleteWorkflowDelivery,
   deleteWorkflowTrigger,
   draftWorkflowAgentSetup,
@@ -377,6 +379,9 @@ export function AgentsView() {
   const [setupDraftResponse, setSetupDraftResponse] = useState<WorkflowAgentSetupDraftResponse | null>(null)
   const [setupPrompt, setSetupPrompt] = useState('')
   const [setupBusy, setSetupBusy] = useState(false)
+
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; kind: 'agent' | 'draft'; name: string } | null>(null)
+
   const routeSelection = useMemo(() => parseAgentRoute(location.pathname), [location.pathname])
 
   const selected = useMemo(() => agents.find(agent => agent.id === selectedId) ?? null, [agents, selectedId])
@@ -696,30 +701,86 @@ export function AgentsView() {
     }
   }
 
-  const removeAgent = async () => {
-    if (!selected) {
-      return
-    }
-
+  const removeAgent = async (agentId: string, name: string) => {
     setBusy(true)
     setError(null)
 
     try {
-      const name = selected.name
+      await deleteWorkflowAgent(agentId)
+      setAgents(current => current.filter(agent => agent.id !== agentId))
 
-      await deleteWorkflowAgent(selected.id)
-      setAgents(current => current.filter(agent => agent.id !== selected.id))
-      setSelectedId(null)
-      setDraft(draftFromAgent())
-      navigate(AGENTS_ROUTE)
+      if (selectedId === agentId) {
+        setSelectedId(null)
+        setDraft(draftFromAgent())
+        navigate(AGENTS_ROUTE)
+      }
+
       notify({ kind: 'success', message: name, title: 'Agent deleted' })
     } catch (err) {
       const message = 'Could not delete agent'
 
       setError(err instanceof Error ? err.message : `${message}.`)
       notifyError(err, message)
+      throw err instanceof Error ? err : new Error(message)
     } finally {
       setBusy(false)
+    }
+  }
+
+  const removeSetupDraft = async (draftId: string, name: string) => {
+    setBusy(true)
+    setError(null)
+
+    try {
+      await deleteWorkflowAgentSetupDraft(draftId)
+      setSetupDrafts(current => current.filter(setupDraft => setupDraft.id !== draftId))
+
+      if (selectedDraftId === draftId) {
+        setSelectedDraftId(null)
+        setSetupDraftResponse(null)
+        setDraft(draftFromAgent())
+        navigate(AGENTS_ROUTE)
+      }
+
+      notify({ kind: 'success', message: name, title: 'Draft deleted' })
+    } catch (err) {
+      const message = 'Could not delete draft'
+
+      setError(err instanceof Error ? err.message : `${message}.`)
+      notifyError(err, message)
+      throw err instanceof Error ? err : new Error(message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) {
+      return
+    }
+
+    if (deleteTarget.kind === 'agent') {
+      await removeAgent(deleteTarget.id, deleteTarget.name)
+
+      return
+    }
+
+    await removeSetupDraft(deleteTarget.id, deleteTarget.name)
+  }
+
+  const requestDeleteSelected = () => {
+    if (selected) {
+      setDeleteTarget({ id: selected.id, kind: 'agent', name: selected.name })
+
+      return
+    }
+
+    if (selectedSetupDraft) {
+      setDeleteTarget({
+        id: selectedSetupDraft.id,
+        kind: 'draft',
+        name: selectedSetupDraft.draft.agent.name || 'Untitled draft'
+      })
     }
   }
 
@@ -840,6 +901,14 @@ export function AgentsView() {
             <AgentList
               items={listItems}
               onCreate={createNew}
+              onDeleteAgent={agent => setDeleteTarget({ id: agent.id, kind: 'agent', name: agent.name })}
+              onDeleteDraft={setupDraft =>
+                setDeleteTarget({
+                  id: setupDraft.id,
+                  kind: 'draft',
+                  name: setupDraft.draft.agent.name || 'Untitled draft'
+                })
+              }
               onSelectAgent={selectAgent}
               onSelectDraft={selectSetupDraft}
             />
@@ -857,7 +926,7 @@ export function AgentsView() {
                 modelOptions={modelOptions}
                 onCancel={closeEditor}
                 onChange={setDraft}
-                onDelete={selected ? removeAgent : undefined}
+                onDelete={selected || selectedSetupDraft ? requestDeleteSelected : undefined}
                 onGenerateSetupDraft={generateSetupDraft}
                 onKnowledgeBasesChange={setKnowledgeBases}
                 onManageApiKeys={() => navigate(`${SETTINGS_ROUTE}?tab=keys`)}
@@ -927,6 +996,24 @@ export function AgentsView() {
           ) : null}
         </div>
       )}
+      <ConfirmDialog
+        busyLabel="Deleting…"
+        confirmLabel="Delete"
+        description={
+          deleteTarget?.kind === 'draft'
+            ? 'This removes the unfinished setup draft. This cannot be undone.'
+            : 'This permanently removes the agent and its triggers, deliveries, and runs from this workspace.'
+        }
+        destructive
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+        open={Boolean(deleteTarget)}
+        title={
+          deleteTarget?.kind === 'draft'
+            ? `Delete draft “${deleteTarget.name}”?`
+            : `Delete agent “${deleteTarget?.name ?? ''}”?`
+        }
+      />
     </section>
   )
 }
@@ -1132,11 +1219,15 @@ export function PublicAgentShareView() {
 function AgentList({
   items,
   onCreate,
+  onDeleteAgent,
+  onDeleteDraft,
   onSelectAgent,
   onSelectDraft
 }: {
   items: AgentListItem[]
   onCreate: () => void
+  onDeleteAgent: (agent: WorkflowAgent) => void
+  onDeleteDraft: (setupDraft: WorkflowAgentSetupDraft) => void
   onSelectAgent: (id: string) => void
   onSelectDraft: (id: string) => void
 }) {
@@ -1173,15 +1264,46 @@ function AgentList({
     <div className="flex h-full min-h-0 flex-col">
       <div className="grid min-h-0 flex-1 content-start gap-2 overflow-y-auto sm:grid-cols-2 xl:grid-cols-3">
         {visibleItems.map(item => (
-          <button
-            className="grid min-h-28 content-between gap-3 rounded-md border border-(--stroke-nous) p-4 text-left transition-colors hover:bg-(--chrome-action-hover) focus-visible:ring-2 focus-visible:ring-primary"
+          <div
+            className="relative grid min-h-28 content-between gap-3 rounded-md border border-(--stroke-nous) p-4 text-left transition-colors hover:bg-(--chrome-action-hover)"
             key={`${item.type}:${item.id}`}
-            onClick={() => (item.type === 'agent' ? onSelectAgent(item.id) : onSelectDraft(item.id))}
-            type="button"
           >
-            {item.agent ? <AgentListAgentCard agent={item.agent} /> : null}
-            {item.draft ? <AgentListDraftCard setupDraft={item.draft} /> : null}
-          </button>
+            <button
+              className="absolute inset-0 rounded-md focus-visible:ring-2 focus-visible:ring-primary"
+              onClick={() => (item.type === 'agent' ? onSelectAgent(item.id) : onSelectDraft(item.id))}
+              type="button"
+            >
+              <span className="sr-only">Open {item.agent?.name || item.draft?.draft.agent.name || 'item'}</span>
+            </button>
+            <div className="relative z-10 pointer-events-none grid gap-3">
+              {item.agent ? <AgentListAgentCard agent={item.agent} /> : null}
+              {item.draft ? <AgentListDraftCard setupDraft={item.draft} /> : null}
+            </div>
+            <div className="relative z-10 flex justify-end">
+              <Button
+                className="pointer-events-auto"
+                onClick={event => {
+                  event.stopPropagation()
+
+                  if (item.agent) {
+                    onDeleteAgent(item.agent)
+
+                    return
+                  }
+
+                  if (item.draft) {
+                    onDeleteDraft(item.draft)
+                  }
+                }}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                <Trash2 className="size-4" />
+                Delete
+              </Button>
+            </div>
+          </div>
         ))}
       </div>
       <PaginationControl

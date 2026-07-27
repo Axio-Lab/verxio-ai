@@ -1200,6 +1200,12 @@ export function deleteWorkflowAgent(agentId: string): Promise<{ ok: boolean }> {
   })
 }
 
+export function deleteWorkflowAgentSetupDraft(draftId: string): Promise<{ ok: boolean }> {
+  return verxioFetch<{ ok: boolean }>(`/api/workflow-agents/setup-drafts/${encodeURIComponent(draftId)}`, {
+    method: 'DELETE'
+  })
+}
+
 export function listWorkflowTriggers(agentId: string): Promise<{ triggers: WorkflowTrigger[] }> {
   return verxioFetch<{ triggers: WorkflowTrigger[] }>(`/api/workflow-agents/${encodeURIComponent(agentId)}/triggers`)
 }

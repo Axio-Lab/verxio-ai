@@ -229,6 +229,54 @@ def test_workflow_agent_list_includes_setup_drafts(client):
     assert body["setup_drafts"][0]["draft"]["agent"]["name"] == "Lead Research Agent"
 
 
+def test_workflow_agent_and_setup_draft_can_be_deleted(client):
+    _payload, token = signup(client, "workflow-agent-delete@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    draft_response = client.post(
+        "/api/workflow-agents/draft",
+        headers=headers,
+        json={
+            "prompt": "Create a lead agent that researches a Google Form submission before a strategy call.",
+            "source": "web",
+        },
+    )
+    assert draft_response.status_code == 200
+    draft_id = draft_response.json()["draft"]["id"]
+
+    delete_draft = client.delete(f"/api/workflow-agents/setup-drafts/{draft_id}", headers=headers)
+    assert delete_draft.status_code == 200
+    assert delete_draft.json()["ok"] is True
+
+    listed_after_draft = client.get("/api/workflow-agents", headers=headers)
+    assert listed_after_draft.status_code == 200
+    assert listed_after_draft.json()["setup_drafts"] == []
+
+    created = client.post(
+        "/api/workflow-agents",
+        headers=headers,
+        json={
+            "name": "Delete Me Agent",
+            "role": "ops",
+            "description": "Temporary agent",
+            "instructions": "Delete after create.",
+            "enabled": True,
+        },
+    )
+    assert created.status_code == 200
+    agent_id = created.json()["id"]
+
+    deleted = client.delete(f"/api/workflow-agents/{agent_id}", headers=headers)
+    assert deleted.status_code == 200
+    assert deleted.json()["ok"] is True
+
+    listed = client.get("/api/workflow-agents", headers=headers)
+    assert listed.status_code == 200
+    assert listed.json()["agents"] == []
+    missing = client.delete(f"/api/workflow-agents/setup-drafts/{draft_id}", headers=headers)
+    assert missing.status_code == 404
+
+
 def test_workflow_agent_setup_apply_creates_agent_triggers_and_deliveries(client):
     _payload, token = signup(client, "workflow-setup-apply@example.com")
     headers = {"Cookie": f"{SESSION_COOKIE}={token}"}

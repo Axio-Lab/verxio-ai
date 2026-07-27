@@ -486,6 +486,8 @@ def _draft_from_prompt(prompt: str, *, existing: WorkflowAgentRecord | None = No
         "airtable": "airtable",
         "discord": "discord",
         "gmail": "gmail",
+        "google form": "googleforms",
+        "google forms": "googleforms",
         "hubspot": "hubspot",
         "paystack": "paystack",
         "slack": "slack",
@@ -1295,6 +1297,33 @@ def delete_agent(workspace: Workspace, profile: AgentProfile, agent_id: str) -> 
     db.execute(
         "DELETE FROM workflow_agents WHERE id = ? AND workspace_id = ? AND runtime_agent_id = ?",
         (agent_id, workspace.id, profile.id),
+    )
+    return {"ok": True}
+
+
+def delete_setup_draft(workspace: Workspace, profile: AgentProfile, draft_id: str) -> dict[str, bool]:
+    row = db.fetch_one(
+        """
+        SELECT id FROM workflow_agent_setup_drafts
+        WHERE id = ? AND workspace_id = ? AND runtime_agent_id = ?
+        """,
+        (draft_id, workspace.id, profile.id),
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Agent setup draft was not found.")
+    db.execute(
+        """
+        DELETE FROM workflow_agent_setup_approvals
+        WHERE setup_draft_id = ? AND workspace_id = ? AND runtime_agent_id = ?
+        """,
+        (draft_id, workspace.id, profile.id),
+    )
+    db.execute(
+        """
+        DELETE FROM workflow_agent_setup_drafts
+        WHERE id = ? AND workspace_id = ? AND runtime_agent_id = ?
+        """,
+        (draft_id, workspace.id, profile.id),
     )
     return {"ok": True}
 
