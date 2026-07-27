@@ -1224,6 +1224,13 @@ def _load_connection_setup_fields(app_slug: str, auth_scheme: str) -> list[Compo
         return []
 
 
+def _composio_oauth_redirect_uri() -> str:
+    return os.getenv(
+        "COMPOSIO_OAUTH_REDIRECT_URI",
+        "https://backend.composio.dev/api/v3.1/toolkits/auth/callback",
+    ).strip()
+
+
 def _build_oauth_app_credential_payload(credentials: dict[str, str]) -> dict[str, str]:
     payload: dict[str, str] = {}
     missing: list[str] = []
@@ -1239,6 +1246,11 @@ def _build_oauth_app_credential_payload(credentials: dict[str, str]) -> dict[str
     if missing:
         raise RuntimeError(f"Missing required fields: {', '.join(missing)}.")
 
+    # Composio hosts the OAuth callback; include it so custom Google apps can complete.
+    redirect_uri = str(credentials.get("oauth_redirect_uri") or "").strip() or _composio_oauth_redirect_uri()
+    if redirect_uri:
+        payload["oauth_redirect_uri"] = redirect_uri
+
     return payload
 
 
@@ -1248,9 +1260,11 @@ def _save_custom_auth_config_credentials(
     target_scheme = auth_scheme.upper()
     existing = _find_existing_custom_auth_config(app_slug, target_scheme)
     if existing:
+        # Composio update schema discriminator is "custom" | "default"
+        # (create still uses "use_custom_auth").
         _patch(
             f"{_tools_api_base()}/auth_configs/{existing}",
-            {"credentials": credentials},
+            {"type": "custom", "credentials": credentials},
             timeout=20,
         )
         return existing
@@ -1262,6 +1276,7 @@ def _save_custom_auth_config_credentials(
             "auth_config": {
                 "type": "use_custom_auth",
                 "authScheme": target_scheme,
+                "name": f"Verxio {app_slug}",
                 "credentials": credentials,
                 "restrict_to_following_tools": [],
             },
