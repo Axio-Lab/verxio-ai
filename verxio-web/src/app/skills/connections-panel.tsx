@@ -649,7 +649,9 @@ export function ConnectionsPanel({
 
     try {
       const result = await completeComposioConnection(connectDialogApp.slug, connectValues)
-      const needsOAuthLink = connectSetup?.authMode === 'requires_oauth_app'
+      // OAuth app credentials only save an auth config; account linking still needs Composio redirect.
+      const needsOAuthLink = result.status === 'AUTH_CONFIG_READY' || connectSetup?.authMode === 'requires_oauth_app'
+      const appToAuthorize = connectDialogApp
       setConnectDialogApp(null)
       setConnectSetup(null)
       setConnectValues({})
@@ -659,9 +661,9 @@ export function ConnectionsPanel({
         notify({
           kind: 'info',
           message: 'OAuth app saved. Finish authorization to connect your account.',
-          title: `${connectDialogApp.name} authorization`
+          title: `${appToAuthorize.name} authorization`
         })
-        await openConnectLink(connectDialogApp)
+        await openConnectLink(appToAuthorize)
 
         return
       }
@@ -669,7 +671,7 @@ export function ConnectionsPanel({
       onSearchChange('')
       notify({
         kind: 'success',
-        message: `${connectDialogApp.name} is connected. Agent tools were refreshed.`,
+        message: `${appToAuthorize.name} is connected. Agent tools were refreshed.`,
         title: 'Connection ready'
       })
     } catch (err) {
@@ -1146,6 +1148,14 @@ function ConnectionConnectDialog({
                   ) : null}
                 </div>
               ))}
+              {fields.some(field => field.name === 'client_id' || field.name === 'client_secret') ? (
+                <div className="rounded-[6px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-3 py-2 text-[0.68rem] leading-5 text-muted-foreground">
+                  Add this redirect URI to your OAuth client in the provider console:{' '}
+                  <span className="break-all font-medium text-foreground">
+                    https://backend.composio.dev/api/v3.1/toolkits/auth/callback
+                  </span>
+                </div>
+              ) : null}
             </div>
 
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
