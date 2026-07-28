@@ -6,11 +6,12 @@ import json
 import os
 import re
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 import httpx
+from croniter import croniter
 from fastapi import HTTPException, Request
 
 from app import db
@@ -492,6 +493,8 @@ def _validate_trigger_payload(trigger_type: str, event_name: str, config: dict[s
                 status_code=422,
                 detail="Schedule triggers require config.schedule, config.cron, config.everyMinutes, or config.intervalSeconds.",
             )
+        if schedule and not croniter.is_valid(schedule):
+            raise HTTPException(status_code=422, detail="Schedule trigger cron expression is invalid.")
     if trigger_type == "app_event":
         app_slug = str(config.get("appSlug") or config.get("app_slug") or "").strip()
         event = str(config.get("event") or event_name or "").strip()
@@ -1409,6 +1412,23 @@ def list_triggers(
     return WorkflowTriggersResponse(triggers=[_trigger_from_row(row, request) for row in rows])
 
 
+def _next_schedule_at(config: dict[str, Any], *, after: datetime | None = None) -> str | None:
+    after = after or datetime.now(timezone.utc)
+    schedule = str(config.get("schedule") or config.get("cron") or "").strip()
+    if schedule:
+        next_run = croniter(schedule, after).get_next(datetime)
+        if next_run.tzinfo is None:
+            next_run = next_run.replace(tzinfo=timezone.utc)
+        return next_run.astimezone(timezone.utc).isoformat()
+
+    interval_seconds = int(config.get("intervalSeconds") or config.get("interval_seconds") or 0)
+    if interval_seconds <= 0:
+        interval_seconds = int(config.get("everyMinutes") or config.get("every_minutes") or 0) * 60
+    if interval_seconds <= 0:
+        return None
+    return (after + timedelta(seconds=interval_seconds)).isoformat()
+
+
 def create_trigger(
     workspace: Workspace,
     profile: AgentProfile,
@@ -1420,13 +1440,18 @@ def create_trigger(
     _validate_trigger_payload(payload.trigger_type, payload.event_name, payload.config)
     created_at = now_iso()
     trigger_id = new_id("workflow_trigger")
+    next_run_at = (
+        _next_schedule_at(payload.config)
+        if payload.trigger_type == "schedule" and payload.enabled
+        else None
+    )
     db.execute(
         """
         INSERT INTO workflow_triggers (
             id, tenant_id, workspace_id, workflow_agent_id, trigger_type, event_name,
-            name, enabled, secret, config_json, created_at, updated_at
+            name, enabled, secret, config_json, next_run_at, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             trigger_id,
@@ -1439,6 +1464,7 @@ def create_trigger(
             1 if payload.enabled else 0,
             _secret() if payload.trigger_type == "webhook" else "",
             _json_dumps(payload.config),
+            next_run_at,
             created_at,
             created_at,
         ),
@@ -1484,10 +1510,17 @@ def update_trigger(
         data.get("config") if isinstance(data.get("config"), dict) else {},
     )
     secret = _secret() if payload.rotate_secret and current.trigger_type == "webhook" else current.secret
+    config = data.get("config") if isinstance(data.get("config"), dict) else {}
+    next_run_at = (
+        _next_schedule_at(config)
+        if current.trigger_type == "schedule" and data.get("enabled")
+        else None
+    )
     db.execute(
         """
         UPDATE workflow_triggers
-        SET event_name = ?, name = ?, enabled = ?, secret = ?, config_json = ?, updated_at = ?
+        SET event_name = ?, name = ?, enabled = ?, secret = ?, config_json = ?,
+            next_run_at = ?, claim_token = '', claimed_at = NULL, updated_at = ?
         WHERE id = ? AND workspace_id = ? AND workflow_agent_id = ?
         """,
         (
@@ -1495,7 +1528,8 @@ def update_trigger(
             str(data.get("name") or "").strip(),
             1 if data.get("enabled") else 0,
             secret,
-            _json_dumps(data.get("config") if isinstance(data.get("config"), dict) else {}),
+            _json_dumps(config),
+            next_run_at,
             now_iso(),
             trigger_id,
             workspace.id,
@@ -2330,48 +2364,121 @@ async def run_messaging_gateway_triggers(
     return WorkflowTriggerRunsResponse(runs=runs)
 
 
-async def tick_due_schedule_triggers(workspace: Workspace, profile: AgentProfile) -> WorkflowTriggerRunsResponse:
+def _trigger_owner_context(row: dict[str, Any]) -> tuple[Workspace, AgentProfile]:
+    workspace_row = db.fetch_one("SELECT * FROM workspaces WHERE id = ?", (row["workspace_id"],))
+    runtime_agent_row = db.fetch_one("SELECT * FROM agents WHERE id = ?", (row["runtime_agent_id"],))
+    if not workspace_row or not runtime_agent_row:
+        raise HTTPException(status_code=404, detail="Workflow trigger owner not found.")
+    workspace = Workspace(
+        id=str(workspace_row["id"]),
+        tenant_id=str(workspace_row["tenant_id"]),
+        name=str(workspace_row["name"]),
+        slug=str(workspace_row["slug"]),
+        kind=str(workspace_row["kind"]),
+        plan="local",
+        region="local",
+    )
+    profile = AgentProfile(
+        id=str(runtime_agent_row["id"]),
+        tenant_id=str(runtime_agent_row["tenant_id"]),
+        workspace_id=str(runtime_agent_row["workspace_id"]),
+        name=str(runtime_agent_row["name"]),
+        role=str(runtime_agent_row["role"]),
+        status=str(runtime_agent_row["status"]),
+        description=str(runtime_agent_row["description"]),
+        capabilities=[],
+        starters=[],
+    )
+    return workspace, profile
+
+
+async def _run_claimed_schedule_trigger(row: dict[str, Any], claim_token: str) -> WorkflowRunRecord:
+    workspace, profile = _trigger_owner_context(row)
+    config = _json_loads(row.get("config_json"), {})
+    scheduled_at = now_iso()
+    try:
+        return await run_agent(
+            workspace,
+            profile,
+            str(row["workflow_agent_id"]),
+            WorkflowRunCreateRequest(
+                input={
+                    "event": row["event_name"],
+                    "payload": {"scheduledAt": scheduled_at, "config": config},
+                }
+            ),
+            trigger_id=str(row["id"]),
+            trigger_type="schedule",
+        )
+    finally:
+        db.execute(
+            """
+            UPDATE workflow_triggers
+            SET last_run_at = ?, claim_token = '', claimed_at = NULL, updated_at = ?
+            WHERE id = ? AND claim_token = ?
+            """,
+            (scheduled_at, now_iso(), row["id"], claim_token),
+        )
+
+
+async def tick_due_schedule_triggers(
+    workspace: Workspace | None = None,
+    profile: AgentProfile | None = None,
+) -> WorkflowTriggerRunsResponse:
     now = datetime.now(timezone.utc)
+    where = [
+        "t.trigger_type = 'schedule'",
+        "t.enabled = 1",
+        "(t.next_run_at IS NULL OR t.next_run_at <= ?)",
+    ]
+    params: list[Any] = [now.isoformat()]
+    if workspace is not None:
+        where.append("t.workspace_id = ?")
+        params.append(workspace.id)
+    if profile is not None:
+        where.append("a.runtime_agent_id = ?")
+        params.append(profile.id)
     rows = db.fetch_all(
-        """
-        SELECT t.*
+        f"""
+        SELECT t.*, a.runtime_agent_id
         FROM workflow_triggers t
         JOIN workflow_agents a ON a.id = t.workflow_agent_id
-        WHERE t.workspace_id = ?
-            AND a.runtime_agent_id = ?
-            AND t.trigger_type = 'schedule'
-            AND t.enabled = 1
+        WHERE {" AND ".join(where)}
         ORDER BY t.updated_at ASC
         """,
-        (workspace.id, profile.id),
+        params,
     )
     runs: list[WorkflowRunRecord] = []
     for row in rows:
         config = _json_loads(row.get("config_json"), {})
-        interval_seconds = int(config.get("intervalSeconds") or config.get("interval_seconds") or 0)
-        if interval_seconds <= 0:
-            minutes = int(config.get("everyMinutes") or config.get("every_minutes") or 0)
-            interval_seconds = minutes * 60
-        if interval_seconds <= 0:
+        next_run_at = _next_schedule_at(config, after=now)
+        if not next_run_at:
             continue
-        last_run = _parse_iso(str(config.get("lastRunAt") or ""))
-        if last_run and (now - last_run).total_seconds() < interval_seconds:
-            continue
-        config["lastRunAt"] = now_iso()
-        db.execute("UPDATE workflow_triggers SET config_json = ?, updated_at = ? WHERE id = ?", (_json_dumps(config), now_iso(), row["id"]))
-        runs.append(
-            await run_agent(
-                workspace,
-                profile,
-                str(row["workflow_agent_id"]),
-                WorkflowRunCreateRequest(
-                    input={
-                        "event": row["event_name"],
-                        "payload": {"scheduledAt": config["lastRunAt"], "config": config},
-                    }
-                ),
-                trigger_id=str(row["id"]),
-                trigger_type="schedule",
-            )
+        claim_token = secrets.token_urlsafe(18)
+        stale_before = (now - timedelta(minutes=10)).isoformat()
+        db.execute(
+            """
+            UPDATE workflow_triggers
+            SET claim_token = ?, claimed_at = ?, next_run_at = ?, updated_at = ?
+            WHERE id = ? AND enabled = 1
+                AND (next_run_at IS NULL OR next_run_at <= ?)
+                AND (claim_token = '' OR claimed_at IS NULL OR claimed_at <= ?)
+            """,
+            (
+                claim_token,
+                now.isoformat(),
+                next_run_at,
+                now_iso(),
+                row["id"],
+                now.isoformat(),
+                stale_before,
+            ),
         )
+        claimed = db.fetch_one(
+            "SELECT id FROM workflow_triggers WHERE id = ? AND claim_token = ?",
+            (row["id"], claim_token),
+        )
+        if not claimed:
+            continue
+        runs.append(await _run_claimed_schedule_trigger(row, claim_token))
     return WorkflowTriggerRunsResponse(runs=runs)

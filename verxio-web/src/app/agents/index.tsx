@@ -3348,7 +3348,9 @@ function TriggersPanel({
   const [eventName, setEventName] = useState('external.event')
   const [name, setName] = useState('')
   const [webhookSource, setWebhookSource] = useState('generic')
+  const [scheduleMode, setScheduleMode] = useState('interval')
   const [scheduleMinutes, setScheduleMinutes] = useState('60')
+  const [cronExpression, setCronExpression] = useState('0 9 * * 1-5')
   const [connectedAccounts, setConnectedAccounts] = useState<ComposioConnectedAccount[]>([])
   const [connectedAccountId, setConnectedAccountId] = useState('')
   const [messagingPlatforms, setMessagingPlatforms] = useState<MessagingPlatformInfo[]>([])
@@ -3453,13 +3455,21 @@ function TriggersPanel({
       if (sourceId === 'webhook') {
         config.source = webhookSource
       } else if (sourceId === 'schedule') {
-        const everyMinutes = Number.parseInt(scheduleMinutes, 10)
+        if (scheduleMode === 'cron') {
+          if (!cronExpression.trim()) {
+            throw new Error('Enter a cron expression.')
+          }
 
-        if (!Number.isFinite(everyMinutes) || everyMinutes < 1) {
-          throw new Error('Schedule interval must be at least one minute.')
+          config.cron = cronExpression.trim()
+        } else {
+          const everyMinutes = Number.parseInt(scheduleMinutes, 10)
+
+          if (!Number.isFinite(everyMinutes) || everyMinutes < 1) {
+            throw new Error('Schedule interval must be at least one minute.')
+          }
+
+          config.everyMinutes = everyMinutes
         }
-
-        config.everyMinutes = everyMinutes
       } else if (sourceId === 'app_event') {
         const account = connectedAccounts.find(item => item.id === connectedAccountId)
 
@@ -3613,20 +3623,53 @@ function TriggersPanel({
           </div>
         ) : null}
         {sourceId === 'schedule' ? (
-          <div className="grid gap-1.5">
-            <label className="text-xs font-medium" htmlFor="schedule-minutes">
-              Run every (minutes)
-            </label>
-            <Input
-              disabled={busy}
-              id="schedule-minutes"
-              inputMode="numeric"
-              min="1"
-              onChange={event => setScheduleMinutes(event.target.value)}
-              pattern="[0-9]*"
-              type="text"
-              value={scheduleMinutes}
-            />
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-1.5">
+              <label className="text-xs font-medium" htmlFor="schedule-mode">
+                Schedule type
+              </label>
+              <Select disabled={busy} onValueChange={setScheduleMode} value={scheduleMode}>
+                <SelectTrigger id="schedule-mode" size="sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="interval">Repeat every few minutes</SelectItem>
+                  <SelectItem value="cron">Cron expression</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {scheduleMode === 'cron' ? (
+              <div className="grid gap-1.5">
+                <label className="text-xs font-medium" htmlFor="cron-expression">
+                  Cron expression <span className="font-normal text-muted-foreground">(UTC)</span>
+                </label>
+                <Input
+                  autoComplete="off"
+                  disabled={busy}
+                  id="cron-expression"
+                  onChange={event => setCronExpression(event.target.value)}
+                  placeholder="0 9 * * 1-5"
+                  spellCheck={false}
+                  value={cronExpression}
+                />
+              </div>
+            ) : (
+              <div className="grid gap-1.5">
+                <label className="text-xs font-medium" htmlFor="schedule-minutes">
+                  Run every (minutes)
+                </label>
+                <Input
+                  disabled={busy}
+                  id="schedule-minutes"
+                  inputMode="numeric"
+                  min="1"
+                  onChange={event => setScheduleMinutes(event.target.value)}
+                  pattern="[0-9]*"
+                  type="text"
+                  value={scheduleMinutes}
+                />
+              </div>
+            )}
           </div>
         ) : null}
         {sourceId === 'app_event' ? (

@@ -22,6 +22,7 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setenv("VERXIO_DATABASE_MODE", "sqlite")
     monkeypatch.setenv("VERXIO_DATABASE_PATH", str(tmp_path / "verxio-control.sqlite3"))
     monkeypatch.setenv("VERXIO_RUNTIME_MODE", "demo")
+    monkeypatch.setenv("VERXIO_WORKFLOW_SCHEDULER_ENABLED", "0")
     monkeypatch.setenv("VERXIO_AUTH_CODE_SECRET", "test-auth-code-secret")
     monkeypatch.delenv("VERXIO_SMTP_HOST", raising=False)
     monkeypatch.delenv("VERXIO_SMTP_FROM", raising=False)
@@ -729,6 +730,7 @@ def test_workflow_api_chat_app_and_schedule_triggers_run(client, monkeypatch):
 
     monkeypatch.setattr(workflow_agents, "run_agent_via_dashboard", fake_oneshot)
     agent = client.post("/api/workflow-agents", headers=headers, json={"name": "Trigger Agent"}).json()
+    schedule_trigger_id = ""
 
     for trigger_type, event_name, config in [
         ("api", "lead.created", {}),
@@ -743,6 +745,33 @@ def test_workflow_api_chat_app_and_schedule_triggers_run(client, monkeypatch):
             json={"trigger_type": trigger_type, "event_name": event_name, "config": config},
         )
         assert response.status_code == 200
+        if trigger_type == "schedule":
+            schedule_trigger_id = response.json()["id"]
+
+    cron_trigger = client.post(
+        f"/api/workflow-agents/{agent['id']}/triggers",
+        headers=headers,
+        json={
+            "trigger_type": "schedule",
+            "event_name": "weekday.digest",
+            "config": {"cron": "0 9 * * 1-5"},
+        },
+    )
+    assert cron_trigger.status_code == 200
+    assert db.fetch_one(
+        "SELECT next_run_at FROM workflow_triggers WHERE id = ?",
+        (cron_trigger.json()["id"],),
+    )["next_run_at"]
+    invalid_cron = client.post(
+        f"/api/workflow-agents/{agent['id']}/triggers",
+        headers=headers,
+        json={
+            "trigger_type": "schedule",
+            "event_name": "invalid.schedule",
+            "config": {"cron": "not-a-cron"},
+        },
+    )
+    assert invalid_cron.status_code == 422
 
     api_run = client.post(
         "/api/workflow-agents/triggers/api",
@@ -769,6 +798,10 @@ def test_workflow_api_chat_app_and_schedule_triggers_run(client, monkeypatch):
     assert len(app_run.json()["runs"]) == 1
     assert app_run.json()["runs"][0]["trigger_type"] == "app_event"
 
+    db.execute(
+        "UPDATE workflow_triggers SET next_run_at = ? WHERE id = ?",
+        ("2000-01-01T00:00:00+00:00", schedule_trigger_id),
+    )
     schedule_run = client.post("/api/workflow-agents/triggers/schedules/tick", headers=headers)
     assert schedule_run.status_code == 200
     assert schedule_run.json()["runs"][0]["trigger_type"] == "schedule"
@@ -776,6 +809,13 @@ def test_workflow_api_chat_app_and_schedule_triggers_run(client, monkeypatch):
     schedule_again = client.post("/api/workflow-agents/triggers/schedules/tick", headers=headers)
     assert schedule_again.status_code == 200
     assert schedule_again.json()["runs"] == []
+
+    db.execute(
+        "UPDATE workflow_triggers SET next_run_at = ? WHERE id = ?",
+        ("2000-01-01T00:00:00+00:00", schedule_trigger_id),
+    )
+    background_tick = asyncio.run(workflow_agents.tick_due_schedule_triggers())
+    assert background_tick.runs[0].trigger_type == "schedule"
 
 
 def test_workflow_messaging_gateway_triggers_match_channel_and_reply_context(client, monkeypatch):

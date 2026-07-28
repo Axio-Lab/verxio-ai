@@ -8,7 +8,7 @@ import mimetypes
 import os
 import re
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse
@@ -370,7 +370,33 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             logging.getLogger(__name__).exception("Failed to warm runtime docker network cache")
 
     asyncio.create_task(_warm())
-    yield
+
+    async def _run_workflow_scheduler() -> None:
+        try:
+            interval = max(5.0, float(os.getenv("VERXIO_WORKFLOW_SCHEDULER_INTERVAL_SECONDS", "15")))
+        except ValueError:
+            interval = 15.0
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                await tick_due_workflow_schedule_triggers()
+            except Exception:
+                logging.getLogger(__name__).exception("Workflow schedule tick failed")
+
+    scheduler_enabled = os.getenv("VERXIO_WORKFLOW_SCHEDULER_ENABLED", "1").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+    scheduler_task = asyncio.create_task(_run_workflow_scheduler()) if scheduler_enabled else None
+    try:
+        yield
+    finally:
+        if scheduler_task is not None:
+            scheduler_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await scheduler_task
 
 
 app = FastAPI(
