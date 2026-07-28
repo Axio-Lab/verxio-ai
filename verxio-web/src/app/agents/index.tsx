@@ -7,6 +7,7 @@ import { SkillEditorDialog } from '@/components/skill-editor-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { writeClipboardText } from '@/components/ui/copy-button'
 import {
   Dialog,
   DialogContent,
@@ -384,48 +385,6 @@ function parseAgentRoute(pathname: string): AgentRouteSelection {
   }
 
   return { id: decodeURIComponent(parts[1]), kind: 'agent' }
-}
-
-async function writeClipboardText(value: string) {
-  if (window.hermesDesktop?.writeClipboard) {
-    const copied = await window.hermesDesktop.writeClipboard(value)
-
-    if (copied) {
-      return
-    }
-  }
-
-  if (navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(value)
-
-      return
-    } catch {
-      // Fall through to the selection-based copy path when browser permissions deny Clipboard API access.
-    }
-  }
-
-  if (!document.hasFocus()) {
-    throw new Error('Focus the Verxio window, then try copying again.')
-  }
-
-  const textarea = document.createElement('textarea')
-  textarea.value = value
-  textarea.setAttribute('readonly', '')
-  textarea.style.left = '-9999px'
-  textarea.style.position = 'fixed'
-  textarea.style.top = '0'
-  document.body.appendChild(textarea)
-  textarea.focus()
-  textarea.select()
-
-  try {
-    if (!document.execCommand('copy')) {
-      throw new Error('Browser clipboard copy failed.')
-    }
-  } finally {
-    document.body.removeChild(textarea)
-  }
 }
 
 function lines(value: string): string[] {

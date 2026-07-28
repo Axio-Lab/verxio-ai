@@ -1,5 +1,6 @@
 import { atom } from 'nanostores'
 
+import { writeClipboardText } from '@/components/ui/copy-button'
 import {
   cancelOAuthSession,
   getGlobalModelOptions,
@@ -747,7 +748,7 @@ export function cancelOnboardingFlow() {
 
 async function copyAndFlash(text: string, predicate: (flow: OnboardingFlow) => boolean) {
   try {
-    await navigator.clipboard.writeText(text)
+    await writeClipboardText(text)
   } catch {
     return
   }

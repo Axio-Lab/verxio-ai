@@ -5,6 +5,7 @@ import { CompactMarkdown } from '@/components/chat/compact-markdown'
 import { PageLoader } from '@/components/page-loader'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
+import { writeClipboardText } from '@/components/ui/copy-button'
 import {
   Dialog,
   DialogContent,
@@ -1128,7 +1129,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     try {
       const share = await shareNotepadNote(selectedNote.id)
       setNotes(current => replaceNote(current, share.note))
-      await navigator.clipboard?.writeText(shareUrlFromToken(share.token))
+      await writeClipboardText(shareUrlFromToken(share.token))
       notify({ kind: 'success', message: 'Share URL copied' })
     } catch (error) {
       notifyError(error, 'Could not share note')
@@ -1142,8 +1143,12 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       return
     }
 
-    await navigator.clipboard?.writeText(shareUrlFromToken(selectedNote.share_token))
-    notify({ kind: 'success', message: 'Share URL copied' })
+    try {
+      await writeClipboardText(shareUrlFromToken(selectedNote.share_token))
+      notify({ kind: 'success', message: 'Share URL copied' })
+    } catch (error) {
+      notifyError(error, 'Could not copy share URL')
+    }
   }
 
   async function handleRevokeShare() {

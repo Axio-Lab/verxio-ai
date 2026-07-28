@@ -36,6 +36,31 @@ import {
 } from '@/lib/web-local-fs'
 import { $currentCwd, setCurrentCwd } from '@/store/session'
 
+/** Captured before the clipboard shim can wrap `navigator.clipboard.writeText`. */
+const nativeClipboardWriteText = navigator.clipboard?.writeText?.bind(navigator.clipboard) ?? null
+
+function copyTextWithExecCommand(text: string): boolean {
+  if (typeof document === 'undefined' || !document.hasFocus()) {
+    return false
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.left = '-9999px'
+  textarea.style.position = 'fixed'
+  textarea.style.top = '0'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+
+  try {
+    return document.execCommand('copy')
+  } finally {
+    document.body.removeChild(textarea)
+  }
+}
+
 async function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -673,10 +698,22 @@ export function installWebBridge(): void {
       return []
     },
     writeClipboard: async (text: string) => {
-      try {
-        await navigator.clipboard.writeText(text)
+      if (!text) {
+        return false
+      }
 
-        return true
+      try {
+        if (nativeClipboardWriteText) {
+          await nativeClipboardWriteText(text)
+
+          return true
+        }
+      } catch {
+        // Fall through to execCommand when the Clipboard API is blocked.
+      }
+
+      try {
+        return copyTextWithExecCommand(text)
       } catch {
         return false
       }

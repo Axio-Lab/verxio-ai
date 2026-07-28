@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PageLoader } from '@/components/page-loader'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { writeClipboardText } from '@/components/ui/copy-button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { PaginationControl } from '@/components/ui/pagination'
@@ -1106,12 +1107,7 @@ function ConnectionConnectDialog({
 
   async function copyRedirectUri() {
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(COMPOSIO_OAUTH_REDIRECT_URI)
-      } else {
-        throw new Error('Clipboard is unavailable.')
-      }
-
+      await writeClipboardText(COMPOSIO_OAUTH_REDIRECT_URI)
       setRedirectUriCopied(true)
       window.setTimeout(() => setRedirectUriCopied(false), 1600)
       notify({
