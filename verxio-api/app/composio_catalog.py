@@ -634,6 +634,33 @@ def create_composio_trigger_instance(
     return trigger_id
 
 
+def execute_composio_tool(
+    tool_slug: str,
+    *,
+    connected_account_id: str,
+    user_id: str,
+    arguments: dict[str, Any],
+) -> dict[str, Any]:
+    response = _post(
+        f"{_tools_api_base()}/tools/execute/{tool_slug}",
+        {
+            "arguments": arguments,
+            "connected_account_id": connected_account_id,
+            "user_id": user_id,
+        },
+        timeout=90,
+    )
+    if not isinstance(response, dict):
+        raise HTTPException(status_code=502, detail="Composio returned an invalid delivery response.")
+    successful = response.get("successful")
+    if successful is False or response.get("error"):
+        error = response.get("error")
+        if isinstance(error, dict):
+            error = error.get("message") or error.get("detail")
+        raise HTTPException(status_code=502, detail=str(error or "Connected app delivery failed."))
+    return response
+
+
 def delete_composio_trigger_instance(trigger_id: str) -> None:
     if trigger_id:
         _delete(f"{_tools_api_base()}/trigger_instances/manage/{trigger_id}", timeout=30)
@@ -1795,7 +1822,13 @@ def _tool_to_preview(item: dict[str, Any]) -> ComposioToolPreview:
     slug = str(item.get("slug") or item.get("name") or "")
     name = str(item.get("name") or slug.replace("_", " ").title())
     description = str(item.get("description") or item.get("display_description") or "")
-    return ComposioToolPreview(description=description, name=name, slug=slug)
+    input_parameters = item.get("input_parameters")
+    return ComposioToolPreview(
+        description=description,
+        inputParameters=input_parameters if isinstance(input_parameters, dict) else {},
+        name=name,
+        slug=slug,
+    )
 
 
 def _account_to_model(item: dict[str, Any]) -> ComposioConnectedAccount:

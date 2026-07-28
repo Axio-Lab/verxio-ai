@@ -40,6 +40,7 @@ import { cn } from '@/lib/utils'
 import {
   type ComposioApp,
   type ComposioConnectedAccount,
+  type ComposioToolPreview,
   type ComposioTriggerType,
   createKnowledgeBase,
   createKnowledgeDocument,
@@ -58,6 +59,7 @@ import {
   getWorkflowAgentEmbedConfig,
   type KnowledgeBase,
   listComposioApps,
+  listComposioAppTools,
   listComposioConnections,
   listComposioTriggerTypes,
   listKnowledgeBases,
@@ -179,13 +181,41 @@ const TRIGGER_SOURCES: Array<{
   }
 ]
 
-const DELIVERY_TYPES: WorkflowDeliveryType[] = [
-  'save_only',
-  'reply_to_source',
-  'send_message',
-  'composio_action',
-  'webhook_callback',
-  'approval_first'
+const DELIVERY_TYPES: Array<{
+  description: string
+  label: string
+  value: WorkflowDeliveryType
+}> = [
+  {
+    value: 'save_only',
+    label: 'Save with the run',
+    description: 'Keep the completed report in Verxio without sending it externally.'
+  },
+  {
+    value: 'reply_to_source',
+    label: 'Reply to trigger source',
+    description: 'Reply through the same messaging connection and conversation that started the run.'
+  },
+  {
+    value: 'send_message',
+    label: 'Messaging gateway',
+    description: 'Send through a configured Telegram, Slack, Discord, WhatsApp, or other gateway.'
+  },
+  {
+    value: 'composio_action',
+    label: 'Connected app',
+    description: 'Deliver through a connected app action, such as sending a Gmail message.'
+  },
+  {
+    value: 'webhook_callback',
+    label: 'Webhook callback',
+    description: 'POST the completed report to another HTTP endpoint.'
+  },
+  {
+    value: 'approval_first',
+    label: 'Hold for approval',
+    description: 'Save the report and wait for approval before any external delivery.'
+  }
 ]
 
 const AGENT_PAGE_SIZE = 8
@@ -2771,25 +2801,36 @@ function SkillSelector({
 }
 
 interface DeliveryFormState {
+  action: string
   channel: string
+  connectedAccountId: string
+  connectionId: string
   configText: string
   delivery_type: WorkflowDeliveryType
   destination: string
   enabled: boolean
   name: string
   require_approval: boolean
+  subject: string
   template: string
 }
 
 function deliveryFormFromRecord(delivery?: WorkflowDelivery | null): DeliveryFormState {
+  const config = delivery?.config ?? {}
+  const argumentsValue = typeof config.arguments === 'object' && config.arguments !== null ? config.arguments : {}
+
   return {
+    action: String(config.action ?? ''),
     channel: delivery?.channel ?? '',
-    configText: JSON.stringify(delivery?.config ?? {}, null, 2),
+    connectedAccountId: String(config.connectedAccountId ?? config.connected_account_id ?? ''),
+    connectionId: String(config.connectionId ?? config.connection_id ?? 'default'),
+    configText: JSON.stringify(argumentsValue, null, 2),
     delivery_type: delivery?.delivery_type ?? 'save_only',
     destination: delivery?.destination ?? '',
     enabled: delivery?.enabled ?? true,
     name: delivery?.name ?? '',
     require_approval: delivery?.require_approval ?? false,
+    subject: String((argumentsValue as Record<string, unknown>).subject ?? ''),
     template: delivery?.template ?? ''
   }
 }
@@ -3061,8 +3102,71 @@ function DeliveryPanel({
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<WorkflowDelivery | null>(null)
   const [form, setForm] = useState<DeliveryFormState>(() => deliveryFormFromRecord())
+  const [connectedAccounts, setConnectedAccounts] = useState<ComposioConnectedAccount[]>([])
+  const [composioApps, setComposioApps] = useState<ComposioApp[]>([])
+  const [messagingPlatforms, setMessagingPlatforms] = useState<MessagingPlatformInfo[]>([])
+  const [appTools, setAppTools] = useState<ComposioToolPreview[]>([])
+  const [sourcesLoading, setSourcesLoading] = useState(true)
+  const [sourcesError, setSourcesError] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const visibleDeliveries = deliveries.slice((page - 1) * PANEL_PAGE_SIZE, page * PANEL_PAGE_SIZE)
+  const selectedDeliveryType = DELIVERY_TYPES.find(item => item.value === form.delivery_type) ?? DELIVERY_TYPES[0]
+  const selectedAccount = connectedAccounts.find(account => account.id === form.connectedAccountId)
+  const selectedAppTool = appTools.find(tool => tool.slug === form.action)
+
+  const appActionProperties =
+    selectedAppTool?.inputParameters &&
+    typeof selectedAppTool.inputParameters.properties === 'object' &&
+    selectedAppTool.inputParameters.properties !== null
+      ? (selectedAppTool.inputParameters.properties as Record<string, Record<string, unknown>>)
+      : {}
+
+  const appActionRequired = Array.isArray(selectedAppTool?.inputParameters?.required)
+    ? selectedAppTool.inputParameters.required.map(String)
+    : []
+
+  const managedAppActionKeys =
+    form.action === 'GMAIL_SEND_EMAIL' ? new Set(['body', 'recipient_email', 'subject']) : new Set<string>()
+
+  const visibleAppActionProperties = Object.entries(appActionProperties).filter(
+    ([key]) => !managedAppActionKeys.has(key)
+  )
+
+  const appActionArguments = useMemo(() => {
+    try {
+      const parsed = JSON.parse(form.configText || '{}') as unknown
+
+      return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : {}
+    } catch {
+      return {}
+    }
+  }, [form.configText])
+
+  const messagingOptions = useMemo(
+    () =>
+      messagingPlatforms.flatMap(platform => {
+        if (!platform.configured || !platform.enabled) {
+          return []
+        }
+
+        const connections = (platform.connections ?? []).filter(
+          connection => connection.configured && connection.enabled
+        )
+
+        if (connections.length === 0) {
+          return [{ id: `${platform.id}::default`, label: platform.name, platformId: platform.id }]
+        }
+
+        return connections.map(connection => ({
+          id: `${platform.id}::${connection.id}`,
+          label: `${platform.name} · ${connection.label}`,
+          platformId: platform.id
+        }))
+      }),
+    [messagingPlatforms]
+  )
 
   useEffect(() => {
     const pageCount = Math.max(1, Math.ceil(deliveries.length / PANEL_PAGE_SIZE))
@@ -3071,6 +3175,71 @@ function DeliveryPanel({
       setPage(pageCount)
     }
   }, [deliveries.length, page])
+
+  useEffect(() => {
+    let active = true
+    void Promise.allSettled([getMessagingPlatforms(), listComposioConnections(), listComposioApps()]).then(
+      ([gatewaysResult, accountsResult, appsResult]) => {
+        if (!active) {
+          return
+        }
+
+        const errors: string[] = []
+
+        if (gatewaysResult.status === 'fulfilled') {
+          setMessagingPlatforms(gatewaysResult.value.platforms)
+        } else {
+          errors.push('messaging gateways')
+        }
+
+        if (accountsResult.status === 'fulfilled') {
+          setConnectedAccounts(
+            accountsResult.value.accounts.filter(account => account.status.toUpperCase() === 'ACTIVE')
+          )
+        } else {
+          errors.push('connected apps')
+        }
+
+        if (appsResult.status === 'fulfilled') {
+          setComposioApps(appsResult.value.apps)
+        }
+
+        setSourcesError(errors.length ? `Could not load ${errors.join(' or ')}.` : null)
+        setSourcesLoading(false)
+      }
+    )
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    setAppTools([])
+
+    if (!selectedAccount) {
+      return () => {
+        active = false
+      }
+    }
+
+    void listComposioAppTools(selectedAccount.appSlug, 100)
+      .then(result => {
+        if (active) {
+          setAppTools(result.tools)
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setSourcesError(`Could not load ${connectedAppDisplayName(selectedAccount.appSlug, composioApps)} actions.`)
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [composioApps, selectedAccount])
 
   const openCreate = () => {
     setEditing(null)
@@ -3084,18 +3253,150 @@ function DeliveryPanel({
     setDialogOpen(true)
   }
 
+  const setAppActionArgument = (key: string, value: string) => {
+    setForm(current => {
+      let argumentsValue: Record<string, unknown> = {}
+
+      try {
+        const parsed = JSON.parse(current.configText || '{}') as unknown
+
+        if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+          argumentsValue = parsed as Record<string, unknown>
+        }
+      } catch {
+        // Replace malformed advanced JSON once a schema-backed field is edited.
+      }
+
+      return {
+        ...current,
+        configText: JSON.stringify({ ...argumentsValue, [key]: value }, null, 2)
+      }
+    })
+  }
+
   const save = async () => {
     onBusy(true)
     onError(null)
 
     try {
-      const config = JSON.parse(form.configText || '{}') as Record<string, unknown>
+      const config: Record<string, unknown> = { version: 1 }
+      let channel = form.channel
+      let destination = form.destination
+
+      if (form.delivery_type === 'send_message') {
+        const connection = messagingOptions.find(item => item.id === `${form.channel}::${form.connectionId}`)
+
+        if (!connection) {
+          throw new Error('Select a configured messaging connection.')
+        }
+
+        if (!destination.trim()) {
+          throw new Error('Enter the destination channel, chat, phone number, or email address.')
+        }
+
+        config.connectionId = form.connectionId
+      } else if (form.delivery_type === 'reply_to_source') {
+        channel = ''
+        destination = 'trigger.source'
+      } else if (form.delivery_type === 'composio_action') {
+        const account = connectedAccounts.find(item => item.id === form.connectedAccountId)
+
+        if (!account || !form.action) {
+          throw new Error('Select a connected app and delivery action.')
+        }
+
+        const rawArguments = JSON.parse(form.configText || '{}') as Record<string, unknown>
+
+        const managedGmailKeys =
+          form.action === 'GMAIL_SEND_EMAIL' ? new Set(['body', 'recipient_email', 'subject']) : new Set<string>()
+
+        const schemaArguments = Object.fromEntries(
+          Object.entries(appActionProperties).flatMap<[string, unknown]>(([key, schema]) => {
+            if (managedGmailKeys.has(key)) {
+              return []
+            }
+
+            const rawValue = rawArguments[key]
+
+            if (rawValue === undefined || rawValue === null || rawValue === '') {
+              if (appActionRequired.includes(key)) {
+                throw new Error(`${String(schema.title || key)} is required.`)
+              }
+
+              return []
+            }
+
+            if (typeof rawValue !== 'string') {
+              return [[key, rawValue]]
+            }
+
+            if (schema.type === 'number' || schema.type === 'integer') {
+              const value = Number(rawValue)
+
+              if (!Number.isFinite(value) || (schema.type === 'integer' && !Number.isInteger(value))) {
+                throw new Error(`${String(schema.title || key)} must be a number.`)
+              }
+
+              return [[key, value]]
+            }
+
+            if (schema.type === 'boolean') {
+              return [[key, rawValue === 'true']]
+            }
+
+            if (schema.type === 'array' || schema.type === 'object') {
+              try {
+                const value: unknown = JSON.parse(rawValue)
+
+                if (
+                  (schema.type === 'array' && !Array.isArray(value)) ||
+                  (schema.type === 'object' && (typeof value !== 'object' || value === null || Array.isArray(value)))
+                ) {
+                  throw new Error('type mismatch')
+                }
+
+                return [[key, value]]
+              } catch {
+                throw new Error(`${String(schema.title || key)} must be valid JSON.`)
+              }
+            }
+
+            return [[key, rawValue]]
+          })
+        )
+
+        const argumentsValue = Object.keys(appActionProperties).length > 0 ? schemaArguments : rawArguments
+
+        if (normalizeComposioSlug(account.appSlug) === 'gmail' && form.subject.trim()) {
+          argumentsValue.subject = form.subject.trim()
+        }
+
+        if (form.action === 'GMAIL_SEND_EMAIL' && !destination.trim()) {
+          throw new Error('Enter the Gmail recipient email address.')
+        }
+
+        channel = account.appSlug
+        config.appSlug = account.appSlug
+        config.connectedAccountId = account.id
+        config.action = form.action
+        config.arguments = argumentsValue
+      } else if (form.delivery_type === 'webhook_callback') {
+        if (!destination.startsWith('https://') && !destination.startsWith('http://')) {
+          throw new Error('Enter a valid HTTP or HTTPS callback URL.')
+        }
+
+        channel = 'webhook'
+        config.url = destination
+      } else {
+        channel = ''
+        destination = ''
+      }
 
       const input = {
-        channel: form.channel,
+        channel,
         config,
         delivery_type: form.delivery_type,
-        destination: form.destination,
+        destination,
         enabled: form.enabled,
         name: form.name,
         require_approval: form.require_approval,
@@ -3151,7 +3452,7 @@ function DeliveryPanel({
         <div>
           <h3 className="text-xs font-semibold">Delivery rules</h3>
           <p className="text-[0.7rem] leading-relaxed text-muted-foreground">
-            Choose where completed agent output is saved, held, or queued.
+            Send completed reports through a messaging connection, connected app, or webhook.
           </p>
         </div>
         <Button disabled={busy} onClick={openCreate} size="sm">
@@ -3166,8 +3467,7 @@ function DeliveryPanel({
             <Send className="mx-auto size-5 text-primary" />
             <p className="text-xs font-medium">No delivery rules yet</p>
             <p className="max-w-md text-[0.7rem] leading-relaxed text-muted-foreground">
-              Runs will save output by default. Add delivery when the agent should reply to a source, send a message,
-              call Composio, or queue a webhook callback.
+              Runs save output by default. Add a rule to deliver the report automatically when a run completes.
             </p>
           </div>
         </div>
@@ -3227,98 +3527,342 @@ function DeliveryPanel({
             <DialogDescription>Configure where this agent sends or stores completed output.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3">
+            {sourcesError ? (
+              <p className="rounded-md border border-destructive/20 bg-destructive/5 p-3 text-xs text-destructive">
+                {sourcesError} Refresh the page after checking the related setup.
+              </p>
+            ) : null}
             <div className="grid gap-3 md:grid-cols-2">
-              <label className="grid gap-1.5 text-xs font-medium">
-                Type
+              <div className="grid gap-1.5">
+                <label className="text-xs font-medium" htmlFor="delivery-type">
+                  Delivery method
+                </label>
                 <Select
-                  disabled={busy}
-                  onValueChange={value =>
-                    setForm(current => ({ ...current, delivery_type: value as WorkflowDeliveryType }))
-                  }
+                  disabled={busy || sourcesLoading}
+                  onValueChange={value => {
+                    const deliveryType = value as WorkflowDeliveryType
+                    setForm(current => ({
+                      ...current,
+                      action: deliveryType === 'composio_action' ? current.action : '',
+                      channel: deliveryType === 'send_message' ? current.channel : '',
+                      connectedAccountId: deliveryType === 'composio_action' ? current.connectedAccountId : '',
+                      connectionId: deliveryType === 'send_message' ? current.connectionId : 'default',
+                      delivery_type: deliveryType,
+                      destination:
+                        deliveryType === 'reply_to_source'
+                          ? 'trigger.source'
+                          : deliveryType === current.delivery_type
+                            ? current.destination
+                            : ''
+                    }))
+                  }}
                   value={form.delivery_type}
                 >
-                  <SelectTrigger size="sm">
+                  <SelectTrigger id="delivery-type" size="sm">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent avoidCollisions={false} side="bottom">
                     {DELIVERY_TYPES.map(item => (
-                      <SelectItem key={item} value={item}>
-                        {item.replace('_', ' ')}
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.label}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              </label>
-              <label className="grid gap-1.5 text-xs font-medium">
-                Name
+                <p className="text-[0.7rem] leading-relaxed text-muted-foreground">
+                  {selectedDeliveryType.description}
+                </p>
+              </div>
+              <div className="grid content-start gap-1.5">
+                <label className="text-xs font-medium" htmlFor="delivery-name">
+                  Rule name
+                </label>
                 <Input
                   disabled={busy}
+                  id="delivery-name"
                   onChange={event => setForm(current => ({ ...current, name: event.target.value }))}
-                  placeholder="Reply to customer"
+                  placeholder="Daily team report"
                   value={form.name}
                 />
-              </label>
+              </div>
             </div>
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="grid gap-1.5 text-xs font-medium">
-                Channel
+
+            {form.delivery_type === 'send_message' ? (
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="grid gap-1.5">
+                  <label className="text-xs font-medium" htmlFor="delivery-gateway">
+                    Messaging connection
+                  </label>
+                  <Select
+                    disabled={busy || sourcesLoading || messagingOptions.length === 0}
+                    onValueChange={value => {
+                      const [channel, connectionId] = value.split('::')
+                      setForm(current => ({ ...current, channel, connectionId }))
+                    }}
+                    value={form.channel ? `${form.channel}::${form.connectionId}` : ''}
+                  >
+                    <SelectTrigger id="delivery-gateway" size="sm">
+                      <SelectValue
+                        placeholder={sourcesLoading ? 'Loading connections…' : 'Select a messaging connection'}
+                      />
+                    </SelectTrigger>
+                    <SelectContent avoidCollisions={false} side="bottom">
+                      {messagingOptions.map(option => (
+                        <SelectItem key={option.id} value={option.id}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {messagingOptions.length === 0 && !sourcesLoading ? (
+                    <p className="text-[0.7rem] text-muted-foreground">
+                      Configure and enable a connection in Messaging first.
+                    </p>
+                  ) : null}
+                </div>
+                <div className="grid gap-1.5">
+                  <label className="text-xs font-medium" htmlFor="delivery-destination">
+                    Destination
+                  </label>
+                  <Input
+                    disabled={busy}
+                    id="delivery-destination"
+                    onChange={event => setForm(current => ({ ...current, destination: event.target.value }))}
+                    placeholder="Chat, channel, phone number, or user ID"
+                    value={form.destination}
+                  />
+                  <p className="text-[0.7rem] text-muted-foreground">
+                    Use the platform&apos;s native destination ID. Telegram topics support chatId:threadId.
+                  </p>
+                </div>
+              </div>
+            ) : null}
+
+            {form.delivery_type === 'reply_to_source' ? (
+              <div className="rounded-md border border-(--stroke-nous) bg-muted/30 p-3 text-xs">
+                Verxio will use the platform, connection, conversation, and thread from the message that triggered this
+                run.
+              </div>
+            ) : null}
+
+            {form.delivery_type === 'composio_action' ? (
+              <>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="grid gap-1.5">
+                    <label className="text-xs font-medium" htmlFor="delivery-app-account">
+                      Connected app
+                    </label>
+                    <Select
+                      disabled={busy || sourcesLoading || connectedAccounts.length === 0}
+                      onValueChange={connectedAccountId =>
+                        setForm(current => ({ ...current, action: '', connectedAccountId }))
+                      }
+                      value={form.connectedAccountId}
+                    >
+                      <SelectTrigger id="delivery-app-account" size="sm">
+                        <SelectValue placeholder="Select a connected account" />
+                      </SelectTrigger>
+                      <SelectContent avoidCollisions={false} side="bottom">
+                        {connectedAccounts.map(account => (
+                          <SelectItem key={account.id} value={account.id}>
+                            {connectedAppDisplayName(account.appSlug, composioApps)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-1.5">
+                    <label className="text-xs font-medium" htmlFor="delivery-app-action">
+                      Delivery action
+                    </label>
+                    <Select
+                      disabled={busy || !selectedAccount || appTools.length === 0}
+                      onValueChange={action => setForm(current => ({ ...current, action, configText: '{}' }))}
+                      value={form.action}
+                    >
+                      <SelectTrigger id="delivery-app-action" size="sm">
+                        <SelectValue placeholder="Select an action" />
+                      </SelectTrigger>
+                      <SelectContent avoidCollisions={false} side="bottom">
+                        {appTools.map(tool => (
+                          <SelectItem key={tool.slug} value={tool.slug}>
+                            {tool.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                {normalizeComposioSlug(selectedAccount?.appSlug ?? '') === 'gmail' &&
+                form.action === 'GMAIL_SEND_EMAIL' ? (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="grid gap-1.5">
+                      <label className="text-xs font-medium" htmlFor="delivery-email-recipient">
+                        Recipient email
+                      </label>
+                      <Input
+                        autoComplete="email"
+                        disabled={busy}
+                        id="delivery-email-recipient"
+                        onChange={event => setForm(current => ({ ...current, destination: event.target.value }))}
+                        placeholder="team@example.com"
+                        type="email"
+                        value={form.destination}
+                      />
+                    </div>
+                    <div className="grid gap-1.5">
+                      <label className="text-xs font-medium" htmlFor="delivery-email-subject">
+                        Subject
+                      </label>
+                      <Input
+                        disabled={busy}
+                        id="delivery-email-subject"
+                        onChange={event => setForm(current => ({ ...current, subject: event.target.value }))}
+                        placeholder="Daily team report"
+                        value={form.subject}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+                {visibleAppActionProperties.length > 0 ? (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {visibleAppActionProperties.map(([key, schema]) => (
+                      <div className="grid gap-1.5" key={key}>
+                        <label className="text-xs font-medium" htmlFor={`delivery-action-${key}`}>
+                          {String(schema.title || key)}
+                          {!appActionRequired.includes(key) ? (
+                            <span className="font-normal text-muted-foreground"> (optional)</span>
+                          ) : null}
+                        </label>
+                        {Array.isArray(schema.enum) && schema.enum.length > 0 ? (
+                          <Select
+                            disabled={busy}
+                            onValueChange={value => setAppActionArgument(key, value)}
+                            value={String(appActionArguments[key] ?? '')}
+                          >
+                            <SelectTrigger id={`delivery-action-${key}`} size="sm">
+                              <SelectValue placeholder={`Select ${String(schema.title || key).toLowerCase()}`} />
+                            </SelectTrigger>
+                            <SelectContent avoidCollisions={false} side="bottom">
+                              {schema.enum.map(value => (
+                                <SelectItem key={String(value)} value={String(value)}>
+                                  {String(value)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : schema.type === 'boolean' ? (
+                          <Select
+                            disabled={busy}
+                            onValueChange={value => setAppActionArgument(key, value)}
+                            value={String(appActionArguments[key] ?? '')}
+                          >
+                            <SelectTrigger id={`delivery-action-${key}`} size="sm">
+                              <SelectValue placeholder="Select true or false" />
+                            </SelectTrigger>
+                            <SelectContent avoidCollisions={false} side="bottom">
+                              <SelectItem value="true">True</SelectItem>
+                              <SelectItem value="false">False</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : schema.type === 'array' || schema.type === 'object' ? (
+                          <Textarea
+                            className="min-h-20 font-mono text-[0.72rem]"
+                            disabled={busy}
+                            id={`delivery-action-${key}`}
+                            onChange={event => setAppActionArgument(key, event.target.value)}
+                            placeholder={schema.type === 'array' ? '[]' : '{}'}
+                            value={String(appActionArguments[key] ?? '')}
+                          />
+                        ) : (
+                          <Input
+                            disabled={busy}
+                            id={`delivery-action-${key}`}
+                            inputMode={schema.type === 'number' || schema.type === 'integer' ? 'decimal' : undefined}
+                            onChange={event => setAppActionArgument(key, event.target.value)}
+                            placeholder={String(schema.description || '')}
+                            value={String(appActionArguments[key] ?? '')}
+                          />
+                        )}
+                        {schema.description ? (
+                          <p className="text-[0.7rem] leading-relaxed text-muted-foreground">
+                            {String(schema.description)}
+                          </p>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : selectedAppTool && Object.keys(selectedAppTool.inputParameters ?? {}).length === 0 ? (
+                  <label className="grid gap-1.5 text-xs font-medium">
+                    Action arguments (JSON)
+                    <Textarea
+                      className="min-h-24 font-mono text-[0.72rem]"
+                      disabled={busy}
+                      onChange={event => setForm(current => ({ ...current, configText: event.target.value }))}
+                      value={form.configText}
+                    />
+                    <span className="font-normal text-muted-foreground">
+                      Values can include the same report variables as the output template.
+                    </span>
+                  </label>
+                ) : null}
+              </>
+            ) : null}
+
+            {form.delivery_type === 'webhook_callback' ? (
+              <div className="grid gap-1.5">
+                <label className="text-xs font-medium" htmlFor="delivery-webhook-url">
+                  Callback URL
+                </label>
                 <Input
                   disabled={busy}
-                  onChange={event => setForm(current => ({ ...current, channel: event.target.value }))}
-                  placeholder="whatsapp / slack / gmail / webhook"
-                  value={form.channel}
-                />
-              </label>
-              <label className="grid gap-1.5 text-xs font-medium">
-                Destination
-                <Input
-                  disabled={busy}
+                  id="delivery-webhook-url"
                   onChange={event => setForm(current => ({ ...current, destination: event.target.value }))}
-                  placeholder="Phone, email, channel, CRM id, or callback URL"
+                  placeholder="https://example.com/hooks/report"
+                  type="url"
                   value={form.destination}
                 />
-              </label>
-            </div>
-            <label className="grid gap-1.5 text-xs font-medium">
-              Template
-              <Textarea
-                className="min-h-24"
-                disabled={busy}
-                onChange={event => setForm(current => ({ ...current, template: event.target.value }))}
-                placeholder="Use {{output}}, {{customer.name}}, or payload fields when delivery execution is enabled."
-                value={form.template}
-              />
-            </label>
-            <label className="grid gap-1.5 text-xs font-medium">
-              Config JSON
-              <Textarea
-                className="min-h-24 font-mono text-[0.72rem]"
-                disabled={busy}
-                onChange={event => setForm(current => ({ ...current, configText: event.target.value }))}
-                value={form.configText}
-              />
-            </label>
-            <div className="flex flex-wrap items-center gap-4">
-              <button
-                className="flex items-center gap-2 text-xs text-muted-foreground"
-                disabled={busy}
-                onClick={() => setForm(current => ({ ...current, enabled: !current.enabled }))}
-                type="button"
-              >
-                <span className={cn('size-2 rounded-full', form.enabled ? 'bg-primary' : 'bg-muted-foreground/50')} />
-                {form.enabled ? 'Enabled' : 'Disabled'}
-              </button>
-              <button
-                className="flex items-center gap-2 text-xs text-muted-foreground"
-                disabled={busy}
-                onClick={() => setForm(current => ({ ...current, require_approval: !current.require_approval }))}
-                type="button"
-              >
-                <span
-                  className={cn('size-2 rounded-full', form.require_approval ? 'bg-primary' : 'bg-muted-foreground/50')}
+              </div>
+            ) : null}
+
+            {!['save_only', 'approval_first'].includes(form.delivery_type) ? (
+              <div className="grid gap-1.5">
+                <label className="text-xs font-medium" htmlFor="delivery-template">
+                  Output template <span className="font-normal text-muted-foreground">(optional)</span>
+                </label>
+                <Textarea
+                  className="min-h-24"
+                  disabled={busy}
+                  id="delivery-template"
+                  onChange={event => setForm(current => ({ ...current, template: event.target.value }))}
+                  placeholder="{{agent.output}}"
+                  value={form.template}
                 />
-                {form.require_approval ? 'Approval required' : 'No approval hold'}
-              </button>
+                <p className="text-[0.7rem] leading-relaxed text-muted-foreground">
+                  Leave blank to deliver the agent&apos;s report exactly as returned. Use {'{{agent.output}}'},{' '}
+                  {'{{run.id}}'}, or input fields such as {'{{input.customer.name}}'} to add a stable wrapper.
+                </p>
+              </div>
+            ) : null}
+            <div className="flex flex-wrap items-center gap-4">
+              <label className="flex min-h-10 cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                <Switch
+                  checked={form.enabled}
+                  disabled={busy}
+                  onCheckedChange={enabled => setForm(current => ({ ...current, enabled }))}
+                  size="xs"
+                />
+                Enable this delivery
+              </label>
+              <label className="flex min-h-10 cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                <Switch
+                  checked={form.require_approval}
+                  disabled={busy || form.delivery_type === 'approval_first'}
+                  onCheckedChange={require_approval => setForm(current => ({ ...current, require_approval }))}
+                  size="xs"
+                />
+                Require approval before sending
+              </label>
             </div>
           </div>
           <DialogFooter>

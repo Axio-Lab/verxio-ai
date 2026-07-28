@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import json
@@ -72,6 +73,7 @@ from app.composio_catalog import (
     create_composio_trigger_instance,
     delete_composio_trigger_instance,
     ensure_composio_webhook_subscription,
+    execute_composio_tool,
     get_composio_catalog_error,
     is_composio_configured,
     list_composio_accounts,
@@ -79,7 +81,7 @@ from app.composio_catalog import (
     set_composio_trigger_instance_enabled,
 )
 from app.runtime import HermesRuntimeAdapter
-from app.runtime_dashboard import list_toolsets_via_dashboard, run_agent_via_dashboard
+from app.runtime_dashboard import list_toolsets_via_dashboard, run_agent_via_dashboard, send_message_via_dashboard
 
 STATIC_AGENT_ASSETS_ROOT = Path(__file__).resolve().parent.parent / "static" / "agent-assets"
 
@@ -522,8 +524,6 @@ def _validate_delivery_payload(
     config = config or {}
     if delivery_type == "send_message" and not (channel.strip() and destination.strip()):
         raise HTTPException(status_code=422, detail="Send-message deliveries require channel and destination.")
-    if delivery_type == "reply_to_source" and not channel.strip():
-        raise HTTPException(status_code=422, detail="Reply-to-source deliveries require a channel.")
     if delivery_type == "webhook_callback":
         url = str(config.get("url") or destination or "").strip()
         if not (url.startswith("https://") or url.startswith("http://")):
@@ -531,8 +531,17 @@ def _validate_delivery_payload(
     if delivery_type == "composio_action":
         action = str(config.get("action") or "").strip()
         app_slug = str(config.get("appSlug") or config.get("app_slug") or channel or "").strip()
-        if not app_slug or not action:
-            raise HTTPException(status_code=422, detail="Composio action deliveries require appSlug and action.")
+        account_id = str(config.get("connectedAccountId") or config.get("connected_account_id") or "").strip()
+        if not app_slug or not action or not account_id:
+            raise HTTPException(
+                status_code=422,
+                detail="Connected app deliveries require appSlug, connectedAccountId, and action.",
+            )
+        arguments = config.get("arguments", {})
+        if not isinstance(arguments, dict):
+            raise HTTPException(status_code=422, detail="Connected app delivery arguments must be an object.")
+        if action == "GMAIL_SEND_EMAIL" and not destination.strip():
+            raise HTTPException(status_code=422, detail="Gmail deliveries require a recipient email address.")
 
 
 def _setup_approval_risks(draft: WorkflowAgentSetupDraftData) -> list[WorkflowSetupApprovalRisk]:
@@ -2079,7 +2088,141 @@ def _set_run_status(run_id: str, status: str, *, output: str = "", error: str | 
         _record_run_event(_run_from_row(row), status, message, metadata)
 
 
-def _record_delivery_events(run: WorkflowRunRecord, output: str) -> None:
+def _delivery_context_value(context: dict[str, Any], path: str) -> Any:
+    def resolve(root: Any) -> Any:
+        value = root
+        for part in path.split("."):
+            if not isinstance(value, dict) or part not in value:
+                return None
+            value = value[part]
+        return value
+
+    value = resolve(context)
+    return resolve(context.get("input")) if value is None else value
+
+
+def _render_delivery_text(template: str, context: dict[str, Any]) -> str:
+    source = template.strip() or "{{agent.output}}"
+
+    def replace(match: re.Match[str]) -> str:
+        value = _delivery_context_value(context, match.group(1).strip())
+        if value is None:
+            return match.group(0)
+        if isinstance(value, (dict, list)):
+            return _json_dumps(value)
+        return str(value)
+
+    return re.sub(r"\{\{\s*([^{}]+?)\s*\}\}", replace, source).strip()
+
+
+def _render_delivery_value(value: Any, context: dict[str, Any]) -> Any:
+    if isinstance(value, str):
+        return _render_delivery_text(value, context)
+    if isinstance(value, list):
+        return [_render_delivery_value(item, context) for item in value]
+    if isinstance(value, dict):
+        return {key: _render_delivery_value(item, context) for key, item in value.items()}
+    return value
+
+
+async def _execute_delivery(
+    workspace: Workspace,
+    profile: AgentProfile,
+    run: WorkflowRunRecord,
+    delivery: WorkflowDeliveryRecord,
+    output: str,
+    run_input: dict[str, Any],
+) -> dict[str, Any]:
+    context = {
+        "agent": {"output": output},
+        "input": run_input,
+        "output": output,
+        "run": {"id": run.id, "trigger_type": run.trigger_type},
+    }
+    content = _render_delivery_text(delivery.template, context)
+    if delivery.delivery_type in {"send_message", "reply_to_source"}:
+        channel = delivery.channel
+        destination = delivery.destination
+        connection_id = str(
+            delivery.config.get("connectionId") or delivery.config.get("connection_id") or "default"
+        )
+        if delivery.delivery_type == "reply_to_source":
+            payload = run_input.get("payload") if isinstance(run_input.get("payload"), dict) else run_input
+            reply = payload.get("reply_to_source") if isinstance(payload, dict) else None
+            if not isinstance(reply, dict):
+                raise HTTPException(status_code=422, detail="This run has no messaging source to reply to.")
+            channel = str(reply.get("channel") or channel).strip()
+            connection_id = str(reply.get("connection_id") or connection_id).strip() or "default"
+            destination = str(reply.get("conversation_id") or reply.get("sender_id") or "").strip()
+            thread_id = str(reply.get("thread_id") or "").strip()
+            if destination and thread_id:
+                destination = f"{destination}:{thread_id}"
+        if not channel or not destination:
+            raise HTTPException(status_code=422, detail="Messaging delivery has no channel or destination.")
+        result = await send_message_via_dashboard(
+            workspace,
+            profile,
+            platform=channel,
+            connection_id=connection_id,
+            destination=destination,
+            message=content,
+        )
+        return {
+            "provider": "hermes",
+            "message_id": result.get("message_id"),
+            "success": bool(result.get("success", True)),
+        }
+
+    if delivery.delivery_type == "webhook_callback":
+        url = str(delivery.config.get("url") or delivery.destination).strip()
+        headers = delivery.config.get("headers")
+        safe_headers = (
+            {str(key): str(value) for key, value in headers.items()}
+            if isinstance(headers, dict)
+            else {}
+        )
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                url,
+                json={"output": content, "run": run.model_dump(mode="json"), "input": run_input},
+                headers=safe_headers,
+            )
+            response.raise_for_status()
+        return {"provider": "webhook", "status_code": response.status_code}
+
+    if delivery.delivery_type == "composio_action":
+        config = delivery.config
+        action = str(config.get("action") or "").strip()
+        account_id = str(config.get("connectedAccountId") or config.get("connected_account_id") or "").strip()
+        arguments = _render_delivery_value(config.get("arguments") or {}, context)
+        if not isinstance(arguments, dict):
+            raise HTTPException(status_code=422, detail="Connected app delivery arguments must be an object.")
+        if action == "GMAIL_SEND_EMAIL":
+            arguments.setdefault("recipient_email", delivery.destination)
+            arguments.setdefault("subject", delivery.name or "Verxio agent report")
+            arguments.setdefault("body", content)
+        result = await asyncio.to_thread(
+            execute_composio_tool,
+            action,
+            connected_account_id=account_id,
+            user_id=workspace.tenant_id,
+            arguments=arguments,
+        )
+        return {
+            "provider": "composio",
+            "successful": bool(result.get("successful", True)),
+        }
+
+    raise HTTPException(status_code=422, detail=f"Unsupported delivery type: {delivery.delivery_type}")
+
+
+async def _record_delivery_events(
+    workspace: Workspace,
+    profile: AgentProfile,
+    run: WorkflowRunRecord,
+    output: str,
+    run_input: dict[str, Any],
+) -> None:
     rows = db.fetch_all(
         """
         SELECT * FROM workflow_deliveries
@@ -2122,12 +2265,14 @@ def _record_delivery_events(run: WorkflowRunRecord, output: str) -> None:
         if delivery.delivery_type == "save_only":
             _record_run_event(run, "delivery_saved", "Workflow output was saved to the run.", metadata)
             continue
-        _record_run_event(
-            run,
-            "delivery_queued",
-            "Workflow delivery was queued for the configured destination.",
-            metadata,
-        )
+        try:
+            result = await _execute_delivery(workspace, profile, run, delivery, output, run_input)
+        except Exception as exc:
+            metadata["error"] = str(exc)
+            _record_run_event(run, "delivery_failed", "Workflow delivery failed.", metadata)
+            continue
+        metadata["result"] = result
+        _record_run_event(run, "delivery_sent", "Workflow delivery was sent.", metadata)
 
 
 def _build_instructions(
@@ -2240,7 +2385,7 @@ async def run_agent(
         return _run_from_row(db.fetch_one("SELECT * FROM workflow_runs WHERE id = ?", (run.id,)) or {})
     _set_run_status(run.id, "completed", output=output, completed=True)
     completed_run = _run_from_row(db.fetch_one("SELECT * FROM workflow_runs WHERE id = ?", (run.id,)) or {})
-    _record_delivery_events(completed_run, output)
+    await _record_delivery_events(workspace, profile, completed_run, output, payload.input)
     return _run_from_row(db.fetch_one("SELECT * FROM workflow_runs WHERE id = ?", (run.id,)) or {})
 
 
@@ -2465,6 +2610,7 @@ async def run_messaging_gateway_triggers(
         "message_id": payload.message_id,
         "reply_to_source": {
             "channel": payload.channel,
+            "connection_id": payload.connection_id,
             "conversation_id": payload.conversation_id,
             "sender_id": payload.sender_id,
             "thread_id": payload.thread_id,

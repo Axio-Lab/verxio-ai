@@ -596,6 +596,7 @@ class ComposioToolPreview(BaseModel):
     slug: str
     name: str
     description: str = ""
+    inputParameters: dict[str, Any] = Field(default_factory=dict)
 
 
 class ComposioToolBridgeStatus(BaseModel):

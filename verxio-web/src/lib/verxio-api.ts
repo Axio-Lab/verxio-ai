@@ -483,6 +483,7 @@ export interface ComposioToolPreview {
   slug: string
   name: string
   description: string
+  inputParameters: Record<string, unknown>
 }
 
 export interface ComposioToolBridgeStatus {

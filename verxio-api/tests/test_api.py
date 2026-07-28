@@ -384,7 +384,20 @@ def test_workflow_delivery_crud_and_run_events(client, monkeypatch):
     async def fake_oneshot(workspace, profile, user_input, *, instructions=None):
         return "Delivery output ready."
 
+    sent_messages = []
+    composio_calls = []
+
+    async def fake_send_message(workspace, profile, **payload):
+        sent_messages.append(payload)
+        return {"success": True, "message_id": "msg_1"}
+
     monkeypatch.setattr(workflow_agents, "run_agent_via_dashboard", fake_oneshot)
+    monkeypatch.setattr(workflow_agents, "send_message_via_dashboard", fake_send_message)
+    monkeypatch.setattr(
+        workflow_agents,
+        "execute_composio_tool",
+        lambda action, **payload: composio_calls.append({"action": action, **payload}) or {"successful": True},
+    )
 
     agent = client.post("/api/workflow-agents", headers=headers, json={"name": "Delivery Agent"}).json()
     save_only = client.post(
@@ -414,7 +427,12 @@ def test_workflow_delivery_crud_and_run_events(client, monkeypatch):
             "delivery_type": "composio_action",
             "name": "Slack ops action",
             "channel": "slack",
-            "config": {"action": "SLACK_SENDS_A_MESSAGE_TO_A_SLACK_CHANNEL", "appSlug": "slack"},
+            "config": {
+                "action": "SLACK_SENDS_A_MESSAGE_TO_A_SLACK_CHANNEL",
+                "appSlug": "slack",
+                "connectedAccountId": "ca_slack",
+                "arguments": {"message": "{{agent.output}}"},
+            },
         },
     )
     assert composio_delivery.status_code == 200
@@ -442,7 +460,11 @@ def test_workflow_delivery_crud_and_run_events(client, monkeypatch):
     assert events.status_code == 200
     event_types = [event["event_type"] for event in events.json()["events"]]
     assert event_types.count("delivery_saved") == 1
-    assert event_types.count("delivery_queued") == 2
+    assert event_types.count("delivery_sent") == 2
+    assert sent_messages[0]["platform"] == "whatsapp"
+    assert sent_messages[0]["destination"] == "+15557654321"
+    assert sent_messages[0]["message"] == "Delivery output ready."
+    assert composio_calls[0]["arguments"]["message"] == "Delivery output ready."
     composio_event = next(event for event in events.json()["events"] if event["metadata"].get("delivery_id") == composio_delivery.json()["id"])
     assert composio_event["metadata"]["appSlug"] == "slack"
     assert composio_event["metadata"]["action"] == "SLACK_SENDS_A_MESSAGE_TO_A_SLACK_CHANNEL"
@@ -1010,7 +1032,80 @@ def test_workflow_messaging_gateway_triggers_match_channel_and_reply_context(cli
     assert seen
     assert '"channel":"whatsapp"' in seen[0]["input"]
     assert '"connection_id":"conn_support"' in seen[0]["input"]
-    assert '"reply_to_source":{"channel":"whatsapp","conversation_id":"conv_1","sender_id":"wa_123","thread_id":"thread_1"}' in seen[0]["input"]
+    assert '"reply_to_source":{"channel":"whatsapp","connection_id":"conn_support","conversation_id":"conv_1","sender_id":"wa_123","thread_id":"thread_1"}' in seen[0]["input"]
+
+
+def test_telegram_trigger_delivers_agent_report_back_through_same_gateway(client, monkeypatch):
+    _payload, token = signup(client, "workflow-telegram-delivery@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+    sent: list[dict[str, str]] = []
+
+    async def fake_oneshot(workspace, profile, user_input, *, instructions=None):
+        return "## Daily report\n\nAll assigned work is on track."
+
+    async def fake_send_message(workspace, profile, **payload):
+        sent.append(payload)
+        return {"success": True, "platform": "telegram", "message_id": "tg_report_1"}
+
+    monkeypatch.setattr(workflow_agents, "run_agent_via_dashboard", fake_oneshot)
+    monkeypatch.setattr(workflow_agents, "send_message_via_dashboard", fake_send_message)
+    agent = client.post("/api/workflow-agents", headers=headers, json={"name": "Team Reporter"}).json()
+    trigger = client.post(
+        f"/api/workflow-agents/{agent['id']}/triggers",
+        headers=headers,
+        json={
+            "trigger_type": "chat",
+            "event_name": "message.received",
+            "name": "Telegram reports",
+            "config": {"channel": "telegram", "connectionId": "conn_reports"},
+        },
+    )
+    assert trigger.status_code == 200
+    delivery = client.post(
+        f"/api/workflow-agents/{agent['id']}/deliveries",
+        headers=headers,
+        json={
+            "delivery_type": "reply_to_source",
+            "name": "Reply with report",
+            "channel": "telegram",
+            "destination": "trigger.source",
+            "template": "Report complete\n\n{{agent.output}}",
+        },
+    )
+    assert delivery.status_code == 200
+
+    runtime_token = "telegram-delivery-runtime-token"
+    db.execute(
+        "UPDATE runtime_instances SET dashboard_token = ? WHERE agent_id = ?",
+        (runtime_token, agent["runtime_agent_id"]),
+    )
+    response = client.post(
+        "/api/workflow-agents/triggers/messaging",
+        headers={"Authorization": f"Bearer {runtime_token}"},
+        json={
+            "channel": "telegram",
+            "connection_id": "conn_reports",
+            "conversation_id": "-100123456",
+            "thread_id": "77",
+            "message": "Send the daily report",
+            "sender_id": "1234",
+        },
+    )
+
+    assert response.status_code == 200
+    assert sent == [
+        {
+            "platform": "telegram",
+            "connection_id": "conn_reports",
+            "destination": "-100123456:77",
+            "message": "Report complete\n\n## Daily report\n\nAll assigned work is on track.",
+        }
+    ]
+    events = client.get(
+        f"/api/workflow-agents/{agent['id']}/runs/{response.json()['runs'][0]['id']}/events",
+        headers=headers,
+    )
+    assert any(event["event_type"] == "delivery_sent" for event in events.json()["events"])
 
 
 def test_workflow_agent_embed_config_asset_and_public_run(client, monkeypatch):
@@ -2527,6 +2622,39 @@ def test_composio_trigger_catalog_uses_current_api_and_preserves_config_schema(m
             {"limit": 100, "toolkit_slugs": ["github"]},
         )
     ]
+
+
+def test_composio_delivery_tools_preserve_input_schema(monkeypatch):
+    monkeypatch.setenv("COMPOSIO_API_KEY", "test-key")
+
+    def fake_get(base_url: str, path: str, params=None, timeout: int = 30):
+        assert base_url == "https://backend.composio.dev/api/v3.1"
+        assert path == "/tools"
+        return {
+            "items": [
+                {
+                    "slug": "GMAIL_SEND_EMAIL",
+                    "name": "Send email",
+                    "description": "Send a Gmail message.",
+                    "input_parameters": {
+                        "type": "object",
+                        "required": ["recipient_email"],
+                        "properties": {
+                            "recipient_email": {"type": "string", "title": "Recipient email"},
+                            "subject": {"type": "string", "title": "Subject"},
+                        },
+                    },
+                }
+            ]
+        }
+
+    monkeypatch.setattr(composio_catalog, "_get", fake_get)
+
+    tools = composio_catalog.list_composio_app_tools("gmail", limit=100)
+
+    assert tools[0].slug == "GMAIL_SEND_EMAIL"
+    assert tools[0].inputParameters["required"] == ["recipient_email"]
+    assert tools[0].inputParameters["properties"]["subject"]["type"] == "string"
 
 
 def test_composio_accounts_fall_back_to_legacy_api(monkeypatch):
