@@ -22,6 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { VerxioWordmark } from '@/components/verxio-wordmark'
+import { getMessagingPlatforms, type MessagingPlatformInfo } from '@/hermes'
 import {
   AlertCircle,
   CheckCircle2,
@@ -37,6 +38,7 @@ import {
 } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import {
+  type ComposioConnectedAccount,
   createKnowledgeBase,
   createKnowledgeDocument,
   createWorkflowAgent,
@@ -53,6 +55,7 @@ import {
   getPublicWorkflowAgent,
   getWorkflowAgentEmbedConfig,
   type KnowledgeBase,
+  listComposioConnections,
   listKnowledgeBases,
   listWorkflowAgents,
   listWorkflowDeliveries,
@@ -112,12 +115,9 @@ const AGENT_TABS: Array<{ id: AgentTab; label: string }> = [
   { id: 'runs', label: 'Runs' }
 ]
 
-const TRIGGER_TYPES: WorkflowTriggerType[] = ['manual', 'webhook', 'schedule', 'api', 'app_event', 'chat']
-
 type TriggerSourceId = 'app_event' | 'embed' | 'manual' | 'messaging' | 'schedule' | 'webhook'
 
 const TRIGGER_SOURCES: Array<{
-  config: Record<string, unknown>
   description: string
   eventName: string
   id: TriggerSourceId
@@ -126,7 +126,6 @@ const TRIGGER_SOURCES: Array<{
   triggerType: WorkflowTriggerType
 }> = [
   {
-    config: { version: 1 },
     description: 'Start from the Run button or a direct in-app test.',
     eventName: 'manual.run',
     id: 'manual',
@@ -135,7 +134,6 @@ const TRIGGER_SOURCES: Array<{
     triggerType: 'manual'
   },
   {
-    config: { version: 1 },
     description: 'Receive JSON from payments, forms, backend APIs, or external systems.',
     eventName: 'external.event',
     id: 'webhook',
@@ -144,7 +142,6 @@ const TRIGGER_SOURCES: Array<{
     triggerType: 'webhook'
   },
   {
-    config: { everyMinutes: 60, version: 1 },
     description: 'Run on an interval or cron-like schedule.',
     eventName: 'scheduled.run',
     id: 'schedule',
@@ -153,16 +150,14 @@ const TRIGGER_SOURCES: Array<{
     triggerType: 'schedule'
   },
   {
-    config: { appSlug: 'hubspot', event: 'lead.created', version: 1 },
     description: 'Start from a connected Composio app event such as CRM, email, or forms.',
-    eventName: 'lead.created',
+    eventName: '',
     id: 'app_event',
     name: 'Connected app event',
     title: 'Connected app',
     triggerType: 'app_event'
   },
   {
-    config: { channel: 'whatsapp', enabledWhenGatewayConnected: true, version: 1 },
     description: 'Start from WhatsApp, Telegram, Slack, Discord, or email inbound messages.',
     eventName: 'message.received',
     id: 'messaging',
@@ -171,7 +166,6 @@ const TRIGGER_SOURCES: Array<{
     triggerType: 'chat'
   },
   {
-    config: { source: 'embed', enabledWhenEmbedConfigured: true, version: 1 },
     description: 'Start when a website widget or share page submits input.',
     eventName: 'embed.submitted',
     id: 'embed',
@@ -317,10 +311,26 @@ function parseAgentRoute(pathname: string): AgentRouteSelection {
 }
 
 async function writeClipboardText(value: string) {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(value)
+  if (window.hermesDesktop?.writeClipboard) {
+    const copied = await window.hermesDesktop.writeClipboard(value)
 
-    return
+    if (copied) {
+      return
+    }
+  }
+
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value)
+
+      return
+    } catch {
+      // Fall through to the selection-based copy path when browser permissions deny Clipboard API access.
+    }
+  }
+
+  if (!document.hasFocus()) {
+    throw new Error('Focus the Verxio window, then try copying again.')
   }
 
   const textarea = document.createElement('textarea')
@@ -3335,12 +3345,46 @@ function TriggersPanel({
 }) {
   const [sourceId, setSourceId] = useState<TriggerSourceId>('webhook')
   const [type, setType] = useState<WorkflowTriggerType>('webhook')
-  const [eventName, setEventName] = useState('payment.succeeded')
-  const [configText, setConfigText] = useState('{}')
+  const [eventName, setEventName] = useState('external.event')
   const [name, setName] = useState('')
+  const [webhookSource, setWebhookSource] = useState('generic')
+  const [scheduleMinutes, setScheduleMinutes] = useState('60')
+  const [connectedAccounts, setConnectedAccounts] = useState<ComposioConnectedAccount[]>([])
+  const [connectedAccountId, setConnectedAccountId] = useState('')
+  const [messagingPlatforms, setMessagingPlatforms] = useState<MessagingPlatformInfo[]>([])
+  const [messagingBinding, setMessagingBinding] = useState('')
+  const [messageKeyword, setMessageKeyword] = useState('')
+  const [sourcesLoading, setSourcesLoading] = useState(true)
+  const [sourcesError, setSourcesError] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [copiedScriptTriggerId, setCopiedScriptTriggerId] = useState<string | null>(null)
+  const [copiedWebhookValue, setCopiedWebhookValue] = useState<string | null>(null)
   const visibleTriggers = triggers.slice((page - 1) * PANEL_PAGE_SIZE, page * PANEL_PAGE_SIZE)
+  const selectedSource = TRIGGER_SOURCES.find(source => source.id === sourceId) ?? TRIGGER_SOURCES[0]
+
+  const messagingOptions = useMemo(
+    () =>
+      messagingPlatforms.flatMap(platform => {
+        if (!platform.configured || !platform.enabled) {
+          return []
+        }
+
+        const connections = (platform.connections ?? []).filter(
+          connection => connection.configured && connection.enabled
+        )
+
+        if (connections.length === 0) {
+          return [{ id: `${platform.id}::default`, label: platform.name, platformId: platform.id }]
+        }
+
+        return connections.map(connection => ({
+          id: `${platform.id}::${connection.id}`,
+          label: `${platform.name} · ${connection.label}`,
+          platformId: platform.id
+        }))
+      }),
+    [messagingPlatforms]
+  )
 
   useEffect(() => {
     const pageCount = Math.max(1, Math.ceil(triggers.length / PANEL_PAGE_SIZE))
@@ -3350,26 +3394,110 @@ function TriggersPanel({
     }
   }, [page, triggers.length])
 
-  const selectSource = (source: (typeof TRIGGER_SOURCES)[number]) => {
+  useEffect(() => {
+    let active = true
+
+    void Promise.allSettled([listComposioConnections(), getMessagingPlatforms()]).then(
+      ([accountsResult, gatewaysResult]) => {
+        if (!active) {
+          return
+        }
+
+        const errors: string[] = []
+
+        if (accountsResult.status === 'fulfilled') {
+          setConnectedAccounts(
+            accountsResult.value.accounts.filter(account => account.status.toUpperCase() === 'ACTIVE')
+          )
+        } else {
+          errors.push('connected apps')
+        }
+
+        if (gatewaysResult.status === 'fulfilled') {
+          setMessagingPlatforms(gatewaysResult.value.platforms)
+        } else {
+          errors.push('messaging gateways')
+        }
+
+        setSourcesError(
+          errors.length > 0 ? `Could not load ${errors.join(' or ')}. Retry from their setup pages.` : null
+        )
+        setSourcesLoading(false)
+      }
+    )
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const selectSource = (id: TriggerSourceId) => {
+    const source = TRIGGER_SOURCES.find(item => item.id === id)
+
+    if (!source) {
+      return
+    }
+
     setSourceId(source.id)
     setType(source.triggerType)
     setEventName(source.eventName)
     setName(source.name)
-    setConfigText(JSON.stringify(source.config, null, 2))
   }
 
   const addTrigger = async () => {
-    onBusy(true)
     onError(null)
 
     try {
-      const config = JSON.parse(configText || '{}') as Record<string, unknown>
+      const config: Record<string, unknown> = { version: 1 }
 
+      if (sourceId === 'webhook') {
+        config.source = webhookSource
+      } else if (sourceId === 'schedule') {
+        const everyMinutes = Number.parseInt(scheduleMinutes, 10)
+
+        if (!Number.isFinite(everyMinutes) || everyMinutes < 1) {
+          throw new Error('Schedule interval must be at least one minute.')
+        }
+
+        config.everyMinutes = everyMinutes
+      } else if (sourceId === 'app_event') {
+        const account = connectedAccounts.find(item => item.id === connectedAccountId)
+
+        if (!account) {
+          throw new Error('Select a connected app account.')
+        }
+
+        if (!eventName.trim()) {
+          throw new Error('Enter the exact event emitted by the connected app.')
+        }
+
+        config.appSlug = account.appSlug
+        config.connectedAccountId = account.id
+        config.event = eventName.trim()
+      } else if (sourceId === 'messaging') {
+        const option = messagingOptions.find(item => item.id === messagingBinding)
+
+        if (!option) {
+          throw new Error('Select a configured messaging connection.')
+        }
+
+        const [, connectionId] = option.id.split('::')
+        config.channel = option.platformId === 'whatsapp_cloud' ? 'whatsapp' : option.platformId
+        config.connectionId = connectionId
+
+        if (messageKeyword.trim()) {
+          config.keyword = messageKeyword.trim()
+        }
+      } else if (sourceId === 'embed') {
+        config.source = 'embed'
+      }
+
+      onBusy(true)
       await createWorkflowTrigger(agent.id, { config, event_name: eventName, name, trigger_type: type })
       setName('')
       await onRefresh()
     } catch (err) {
-      onError(err instanceof Error ? err.message : 'Could not create trigger. Check the trigger config JSON.')
+      onError(err instanceof Error ? err.message : 'Could not create trigger.')
     } finally {
       onBusy(false)
     }
@@ -3403,6 +3531,17 @@ function TriggersPanel({
     }
   }
 
+  const copyWebhookValue = async (key: string, label: string, value: string) => {
+    try {
+      await writeClipboardText(value)
+      setCopiedWebhookValue(key)
+      window.setTimeout(() => setCopiedWebhookValue(current => (current === key ? null : current)), 1600)
+      notify({ kind: 'success', message: `${label} is ready to paste.`, title: `${label} copied` })
+    } catch (err) {
+      notifyError(err, `Could not copy ${label.toLowerCase()}`)
+    }
+  }
+
   const copyGoogleFormsScript = async (trigger: WorkflowTrigger) => {
     if (!trigger.webhook_url || !trigger.secret) {
       onError('Webhook URL and secret are required before copying the Google Forms script.')
@@ -3414,7 +3553,7 @@ function TriggersPanel({
       const webhookUrl = trigger.webhook_url
       const isLocalWebhook = /^(https?:\/\/)?(127\.0\.0\.1|localhost)(:\d+)?\b/i.test(webhookUrl)
 
-      await navigator.clipboard.writeText(googleFormsWebhookScript(webhookUrl, trigger.secret))
+      await writeClipboardText(googleFormsWebhookScript(webhookUrl, trigger.secret))
       setCopiedScriptTriggerId(trigger.id)
       window.setTimeout(() => setCopiedScriptTriggerId(current => (current === trigger.id ? null : current)), 1600)
       notify({
@@ -3435,80 +3574,175 @@ function TriggersPanel({
         <div>
           <h3 className="text-xs font-semibold">Add trigger</h3>
           <p className="text-[0.7rem] leading-relaxed text-muted-foreground">
-            Pick what starts this agent. The selected source fills the trigger type and starter config.
+            Choose one source, then bind it to a real connection or endpoint.
           </p>
         </div>
-        <div className="grid gap-2 md:grid-cols-3">
-          {TRIGGER_SOURCES.map(source => {
-            const selected = sourceId === source.id
-
-            return (
-              <button
-                className={cn(
-                  'grid gap-1 rounded-md border border-(--stroke-nous) p-3 text-left transition-colors hover:bg-(--chrome-action-hover)',
-                  selected && 'border-primary/45 bg-primary/8'
-                )}
-                disabled={busy}
-                key={source.id}
-                onClick={() => selectSource(source)}
-                type="button"
-              >
-                <span className="flex items-center gap-2 text-xs font-medium">
-                  <span className={cn('size-2 rounded-full', selected ? 'bg-primary' : 'bg-muted-foreground/45')} />
-                  {source.title}
-                </span>
-                <span className="text-[0.7rem] leading-relaxed text-muted-foreground">{source.description}</span>
-              </button>
-            )
-          })}
-        </div>
-        <div className="grid gap-3 md:grid-cols-[12rem_minmax(0,1fr)_minmax(0,1fr)_auto]">
-          <Select disabled={busy} onValueChange={value => setType(value as WorkflowTriggerType)} value={type}>
-            <SelectTrigger size="sm">
+        <div className="grid gap-1.5">
+          <label className="text-xs font-medium" htmlFor="trigger-source">
+            What starts this agent?
+          </label>
+          <Select disabled={busy} onValueChange={value => selectSource(value as TriggerSourceId)} value={sourceId}>
+            <SelectTrigger id="trigger-source" size="sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {TRIGGER_TYPES.map(item => (
-                <SelectItem key={item} value={item}>
-                  {item.replace('_', ' ')}
+              {TRIGGER_SOURCES.map(source => (
+                <SelectItem key={source.id} value={source.id}>
+                  {source.title}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Input
-            disabled={busy}
-            onChange={event => setEventName(event.target.value)}
-            placeholder="payment.succeeded"
-            value={eventName}
-          />
-          <Input
-            disabled={busy}
-            onChange={event => setName(event.target.value)}
-            placeholder="Trigger name"
-            value={name}
-          />
+          <p className="text-[0.7rem] leading-relaxed text-muted-foreground">{selectedSource.description}</p>
+        </div>
+        {sourceId === 'webhook' ? (
+          <div className="grid gap-1.5">
+            <label className="text-xs font-medium" htmlFor="webhook-source">
+              Payload source
+            </label>
+            <Select disabled={busy} onValueChange={setWebhookSource} value={webhookSource}>
+              <SelectTrigger id="webhook-source" size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="generic">Generic JSON / custom backend</SelectItem>
+                <SelectItem value="airtable">Airtable automation</SelectItem>
+                <SelectItem value="google_forms">Google Forms</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        ) : null}
+        {sourceId === 'schedule' ? (
+          <div className="grid gap-1.5">
+            <label className="text-xs font-medium" htmlFor="schedule-minutes">
+              Run every (minutes)
+            </label>
+            <Input
+              disabled={busy}
+              id="schedule-minutes"
+              inputMode="numeric"
+              min="1"
+              onChange={event => setScheduleMinutes(event.target.value)}
+              pattern="[0-9]*"
+              type="text"
+              value={scheduleMinutes}
+            />
+          </div>
+        ) : null}
+        {sourceId === 'app_event' ? (
+          <div className="grid gap-1.5">
+            <label className="text-xs font-medium" htmlFor="connected-app-account">
+              Connected app account
+            </label>
+            <Select
+              disabled={busy || sourcesLoading || connectedAccounts.length === 0}
+              onValueChange={setConnectedAccountId}
+              value={connectedAccountId}
+            >
+              <SelectTrigger id="connected-app-account" size="sm">
+                <SelectValue placeholder={sourcesLoading ? 'Loading connections…' : 'Select an account'} />
+              </SelectTrigger>
+              <SelectContent>
+                {connectedAccounts.map(account => (
+                  <SelectItem key={account.id} value={account.id}>
+                    {account.appSlug} · {account.id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {!sourcesLoading && connectedAccounts.length === 0 ? (
+              <p className="text-[0.7rem] text-muted-foreground">
+                No active connected apps. Connect one in Settings before adding this trigger.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {sourceId === 'messaging' ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-1.5">
+              <label className="text-xs font-medium" htmlFor="messaging-binding">
+                Messaging connection
+              </label>
+              <Select
+                disabled={busy || sourcesLoading || messagingOptions.length === 0}
+                onValueChange={setMessagingBinding}
+                value={messagingBinding}
+              >
+                <SelectTrigger id="messaging-binding" size="sm">
+                  <SelectValue placeholder={sourcesLoading ? 'Loading gateways…' : 'Select a connection'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {messagingOptions.map(option => (
+                    <SelectItem key={option.id} value={option.id}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-1.5">
+              <label className="text-xs font-medium" htmlFor="message-keyword">
+                Only messages containing <span className="font-normal text-muted-foreground">(optional)</span>
+              </label>
+              <Input
+                disabled={busy}
+                id="message-keyword"
+                onChange={event => setMessageKeyword(event.target.value)}
+                placeholder="@verxioBot"
+                value={messageKeyword}
+              />
+            </div>
+            {!sourcesLoading && messagingOptions.length === 0 ? (
+              <p className="text-[0.7rem] text-muted-foreground md:col-span-2">
+                No enabled messaging connections. Configure one in Messaging before adding this trigger.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {sourcesError && (sourceId === 'app_event' || sourceId === 'messaging') ? (
+          <div className="flex items-start gap-2 rounded-md border border-destructive/20 bg-destructive/5 p-3 text-xs text-destructive">
+            <AlertCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+            {sourcesError}
+          </div>
+        ) : null}
+        <div className="grid gap-3 md:grid-cols-2">
+          {sourceId !== 'manual' && sourceId !== 'embed' ? (
+            <div className="grid gap-1.5">
+              <label className="text-xs font-medium" htmlFor="trigger-event">
+                Event name
+              </label>
+              <Input
+                disabled={busy}
+                id="trigger-event"
+                onChange={event => setEventName(event.target.value)}
+                placeholder={sourceId === 'app_event' ? 'page.created' : 'external.event'}
+                value={eventName}
+              />
+            </div>
+          ) : null}
+          <div className="grid gap-1.5">
+            <label className="text-xs font-medium" htmlFor="trigger-name">
+              Trigger name
+            </label>
+            <Input
+              disabled={busy}
+              id="trigger-name"
+              onChange={event => setName(event.target.value)}
+              placeholder={selectedSource.name}
+              value={name}
+            />
+          </div>
+        </div>
+        <div className="flex justify-end">
           <Button disabled={busy} onClick={addTrigger} size="sm">
             {busy ? (
               <Loader className="size-4 text-primary" label="Creating trigger" strokeScale={0.7} type="rose-two" />
             ) : (
               <Plus className="size-4" />
             )}
-            Add
+            Add trigger
           </Button>
         </div>
-        {(sourceId === 'messaging' || sourceId === 'embed') && (
-          <div className="rounded-md border border-amber-500/25 bg-amber-500/8 px-3 py-2 text-[0.7rem] leading-relaxed text-muted-foreground">
-            This trigger source can be configured now, but activation depends on the matching gateway/embed setup in a
-            later phase.
-          </div>
-        )}
-        <Textarea
-          className="min-h-20 font-mono text-[0.72rem]"
-          disabled={busy}
-          onChange={event => setConfigText(event.target.value)}
-          placeholder='{"appSlug":"airtable"} or {"everyMinutes":60}'
-          value={configText}
-        />
       </div>
 
       <div className="grid gap-2">
@@ -3551,17 +3785,49 @@ function TriggersPanel({
                   <div className="flex flex-wrap items-center gap-2 pt-1">
                     <Button
                       disabled={busy}
-                      onClick={() => void copyGoogleFormsScript(trigger)}
+                      onClick={() =>
+                        void copyWebhookValue(`${trigger.id}:url`, 'Webhook URL', trigger.webhook_url as string)
+                      }
                       size="sm"
                       type="button"
                       variant="outline"
                     >
                       <Copy className="size-3.5" />
-                      {copiedScriptTriggerId === trigger.id ? 'Copied Forms script' : 'Copy Google Forms script'}
+                      {copiedWebhookValue === `${trigger.id}:url` ? 'Copied URL' : 'Copy URL'}
                     </Button>
-                    <span className="font-sans text-[0.65rem] leading-relaxed text-muted-foreground">
-                      Paste into Forms → Apps Script, then add an installable onFormSubmit trigger.
-                    </span>
+                    <Button
+                      disabled={busy}
+                      onClick={() =>
+                        void copyWebhookValue(
+                          `${trigger.id}:secret`,
+                          'Webhook secret',
+                          `X-Verxio-Webhook-Secret: ${trigger.secret}`
+                        )
+                      }
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      <Copy className="size-3.5" />
+                      {copiedWebhookValue === `${trigger.id}:secret` ? 'Copied secret' : 'Copy secret'}
+                    </Button>
+                    {trigger.config?.source === 'google_forms' || trigger.event_name.startsWith('googleforms.') ? (
+                      <>
+                        <Button
+                          disabled={busy}
+                          onClick={() => void copyGoogleFormsScript(trigger)}
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          <Copy className="size-3.5" />
+                          {copiedScriptTriggerId === trigger.id ? 'Copied Forms script' : 'Copy Google Forms script'}
+                        </Button>
+                        <span className="font-sans text-[0.65rem] leading-relaxed text-muted-foreground">
+                          Paste into Forms → Apps Script, then add an installable onFormSubmit trigger.
+                        </span>
+                      </>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
