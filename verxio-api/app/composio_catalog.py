@@ -1,9 +1,13 @@
 from __future__ import annotations
 
-import os
+import base64
 import hashlib
+import hmac
 import json
 import logging
+import os
+import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +15,8 @@ import httpx
 import yaml
 from fastapi import HTTPException
 
+from app import db
+from app.control_plane import now_iso
 from app.models import (
     ComposioApp,
     ComposioAuthInputField,
@@ -20,6 +26,8 @@ from app.models import (
     ComposioInitiateResponse,
     ComposioToolBridgeStatus,
     ComposioToolPreview,
+    ComposioTriggerType,
+    ComposioTriggerTypesResponse,
     RuntimeInstance,
 )
 
@@ -518,6 +526,201 @@ def sync_composio_runtime_bridge(
         enabled=True,
         message="Connected Composio tools are available to Verxio.",
         serverName=COMPOSIO_MCP_SERVER_NAME,
+    )
+
+
+def list_composio_trigger_types(app_slug: str) -> ComposioTriggerTypesResponse:
+    if not is_composio_configured():
+        return ComposioTriggerTypesResponse(triggers=[], configured=False)
+
+    slug = app_slug.strip().lower()
+    response = _get(
+        _tools_api_base(),
+        "/triggers_types",
+        params={"limit": 100, "toolkit_slugs": [slug]},
+        timeout=30,
+    )
+    triggers: list[ComposioTriggerType] = []
+    for item in _extract_items(response):
+        toolkit = item.get("toolkit") if isinstance(item.get("toolkit"), dict) else {}
+        toolkit_slug = str(toolkit.get("slug") or toolkit.get("name") or "").strip().lower()
+        if toolkit_slug and toolkit_slug != slug:
+            continue
+        trigger_slug = str(item.get("slug") or "").strip()
+        trigger_type = str(item.get("type") or "").strip().lower()
+        if not trigger_slug or trigger_type not in {"poll", "webhook"}:
+            continue
+        triggers.append(
+            ComposioTriggerType(
+                slug=trigger_slug,
+                name=str(item.get("name") or trigger_slug),
+                description=str(item.get("description") or ""),
+                instructions=str(item.get("instructions") or ""),
+                type=trigger_type,
+                config=item.get("config") if isinstance(item.get("config"), dict) else {},
+                payload=item.get("payload") if isinstance(item.get("payload"), dict) else {},
+                requiresWebhookEndpointSetup=bool(item.get("requires_webhook_endpoint_setup")),
+            )
+        )
+    triggers.sort(key=lambda item: item.name.lower())
+    return ComposioTriggerTypesResponse(triggers=triggers, configured=True)
+
+
+def ensure_composio_webhook_subscription(webhook_url: str) -> dict[str, Any]:
+    if not is_composio_configured():
+        raise HTTPException(status_code=409, detail="Composio is not configured.")
+    normalized_url = webhook_url.strip()
+    if not normalized_url.startswith("https://"):
+        raise HTTPException(
+            status_code=422,
+            detail="Connected app triggers require VERXIO_PUBLIC_WEB_URL to be a public HTTPS URL.",
+        )
+
+    base_url = _tools_api_base()
+    listed = _get(base_url, "/webhook_subscriptions", params={"limit": 1}, timeout=30)
+    items = _extract_items(listed)
+    desired = {
+        "enabled_events": ["composio.trigger.message"],
+        "version": "V3",
+        "webhook_url": normalized_url,
+    }
+    subscription = (
+        _patch(f"{base_url}/webhook_subscriptions/{items[0]['id']}", desired, timeout=30)
+        if items
+        else _post(f"{base_url}/webhook_subscriptions", desired, timeout=30)
+    )
+    if not isinstance(subscription, dict):
+        raise HTTPException(status_code=502, detail="Composio returned an invalid webhook subscription.")
+    subscription_id = str(subscription.get("id") or "").strip()
+    secret = str(subscription.get("secret") or "").strip()
+    if not subscription_id or not secret:
+        raise HTTPException(status_code=502, detail="Composio did not return a webhook subscription secret.")
+    db.execute(
+        """
+        INSERT INTO composio_webhook_subscription (id, webhook_url, secret, version, updated_at)
+        VALUES (?, ?, ?, 'V3', ?)
+        ON CONFLICT(id) DO UPDATE SET
+            webhook_url = excluded.webhook_url,
+            secret = excluded.secret,
+            version = excluded.version,
+            updated_at = excluded.updated_at
+        """,
+        (subscription_id, normalized_url, secret, now_iso()),
+    )
+    return subscription
+
+
+def create_composio_trigger_instance(
+    trigger_slug: str,
+    *,
+    connected_account_id: str,
+    trigger_config: dict[str, Any],
+    user_id: str,
+) -> str:
+    response = _post(
+        f"{_tools_api_base()}/trigger_instances/{trigger_slug}/upsert",
+        {
+            "connected_account_id": connected_account_id,
+            "trigger_config": trigger_config,
+            "user_id": user_id,
+        },
+        timeout=60,
+    )
+    if not isinstance(response, dict):
+        raise HTTPException(status_code=502, detail="Composio returned an invalid trigger instance.")
+    trigger_id = str(response.get("trigger_id") or response.get("id") or "").strip()
+    if not trigger_id:
+        raise HTTPException(status_code=502, detail="Composio did not return a trigger instance id.")
+    return trigger_id
+
+
+def delete_composio_trigger_instance(trigger_id: str) -> None:
+    if trigger_id:
+        _delete(f"{_tools_api_base()}/trigger_instances/manage/{trigger_id}", timeout=30)
+
+
+def set_composio_trigger_instance_enabled(trigger_id: str, enabled: bool) -> None:
+    if trigger_id:
+        _patch(
+            f"{_tools_api_base()}/trigger_instances/manage/{trigger_id}",
+            {"status": "enable" if enabled else "disable"},
+            timeout=30,
+        )
+
+
+def verify_composio_webhook(
+    body: bytes,
+    *,
+    webhook_id: str,
+    webhook_timestamp: str,
+    webhook_signature: str,
+    tolerance_seconds: int = 300,
+) -> dict[str, Any]:
+    row = db.fetch_one("SELECT secret FROM composio_webhook_subscription ORDER BY updated_at DESC LIMIT 1")
+    secret = str(row.get("secret") or "").strip() if row else ""
+    if not secret:
+        secret = os.getenv("COMPOSIO_WEBHOOK_SECRET", "").strip()
+    if not secret:
+        raise HTTPException(status_code=503, detail="Composio webhook verification is not configured.")
+    if not webhook_id or not webhook_timestamp or not webhook_signature:
+        raise HTTPException(status_code=401, detail="Missing Composio webhook signature headers.")
+    try:
+        timestamp = int(webhook_timestamp)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail="Invalid Composio webhook timestamp.") from exc
+    if tolerance_seconds > 0 and abs(int(time.time()) - timestamp) > tolerance_seconds:
+        raise HTTPException(status_code=401, detail="Expired Composio webhook timestamp.")
+
+    signing_string = f"{webhook_id}.{webhook_timestamp}.{body.decode('utf-8')}"
+    expected = base64.b64encode(
+        hmac.new(secret.encode(), signing_string.encode(), hashlib.sha256).digest()
+    ).decode()
+    received = webhook_signature.split(",", 1)[1] if "," in webhook_signature else webhook_signature
+    if not hmac.compare_digest(expected, received):
+        raise HTTPException(status_code=401, detail="Invalid Composio webhook signature.")
+    try:
+        payload = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid Composio webhook JSON.") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Invalid Composio webhook payload.")
+    return payload
+
+
+def claim_composio_webhook(webhook_id: str) -> bool:
+    completed_cutoff = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    abandoned_cutoff = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    with db.transaction() as conn:
+        conn.execute(
+            """
+            DELETE FROM composio_webhook_receipts
+            WHERE (completed_at IS NOT NULL AND completed_at < ?)
+               OR (completed_at IS NULL AND received_at < ?)
+            """,
+            (completed_cutoff, abandoned_cutoff),
+        )
+        cursor = conn.execute(
+            """
+            INSERT INTO composio_webhook_receipts (webhook_id, received_at)
+            VALUES (?, ?)
+            ON CONFLICT(webhook_id) DO NOTHING
+            """,
+            (webhook_id, now_iso()),
+        )
+        return cursor.rowcount > 0
+
+
+def complete_composio_webhook(webhook_id: str) -> None:
+    db.execute(
+        "UPDATE composio_webhook_receipts SET completed_at = ? WHERE webhook_id = ?",
+        (now_iso(), webhook_id),
+    )
+
+
+def release_composio_webhook(webhook_id: str) -> None:
+    db.execute(
+        "DELETE FROM composio_webhook_receipts WHERE webhook_id = ? AND completed_at IS NULL",
+        (webhook_id,),
     )
 
 
@@ -1039,6 +1242,13 @@ def _get(base_url: str, path: str, params: dict[str, Any] | None = None, timeout
 
 def _post(url: str, payload: dict[str, Any], timeout: int = 30) -> Any:
     response = httpx.post(url, headers={**_headers(), "Content-Type": "application/json"}, json=payload, timeout=timeout)
+    if response.status_code >= 400:
+        raise RuntimeError(_format_composio_error(response))
+    return response.json()
+
+
+def _patch(url: str, payload: dict[str, Any], timeout: int = 30) -> Any:
+    response = httpx.patch(url, headers={**_headers(), "Content-Type": "application/json"}, json=payload, timeout=timeout)
     if response.status_code >= 400:
         raise RuntimeError(_format_composio_error(response))
     return response.json()

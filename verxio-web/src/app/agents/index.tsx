@@ -39,6 +39,7 @@ import {
 import { cn } from '@/lib/utils'
 import {
   type ComposioConnectedAccount,
+  type ComposioTriggerType,
   createKnowledgeBase,
   createKnowledgeDocument,
   createWorkflowAgent,
@@ -56,6 +57,7 @@ import {
   getWorkflowAgentEmbedConfig,
   type KnowledgeBase,
   listComposioConnections,
+  listComposioTriggerTypes,
   listKnowledgeBases,
   listWorkflowAgents,
   listWorkflowDeliveries,
@@ -3353,6 +3355,11 @@ function TriggersPanel({
   const [cronExpression, setCronExpression] = useState('0 9 * * 1-5')
   const [connectedAccounts, setConnectedAccounts] = useState<ComposioConnectedAccount[]>([])
   const [connectedAccountId, setConnectedAccountId] = useState('')
+  const [appTriggerTypes, setAppTriggerTypes] = useState<ComposioTriggerType[]>([])
+  const [appTriggerTypesLoading, setAppTriggerTypesLoading] = useState(false)
+  const [appTriggerTypesError, setAppTriggerTypesError] = useState<string | null>(null)
+  const [appTriggerSlug, setAppTriggerSlug] = useState('')
+  const [appTriggerConfig, setAppTriggerConfig] = useState<Record<string, string>>({})
   const [messagingPlatforms, setMessagingPlatforms] = useState<MessagingPlatformInfo[]>([])
   const [messagingBinding, setMessagingBinding] = useState('')
   const [messageKeyword, setMessageKeyword] = useState('')
@@ -3363,6 +3370,18 @@ function TriggersPanel({
   const [copiedWebhookValue, setCopiedWebhookValue] = useState<string | null>(null)
   const visibleTriggers = triggers.slice((page - 1) * PANEL_PAGE_SIZE, page * PANEL_PAGE_SIZE)
   const selectedSource = TRIGGER_SOURCES.find(source => source.id === sourceId) ?? TRIGGER_SOURCES[0]
+  const selectedAppTrigger = appTriggerTypes.find(trigger => trigger.slug === appTriggerSlug)
+
+  const appTriggerProperties =
+    selectedAppTrigger?.config &&
+    typeof selectedAppTrigger.config.properties === 'object' &&
+    selectedAppTrigger.config.properties !== null
+      ? (selectedAppTrigger.config.properties as Record<string, Record<string, unknown>>)
+      : {}
+
+  const appTriggerRequired = Array.isArray(selectedAppTrigger?.config?.required)
+    ? selectedAppTrigger.config.required.map(String)
+    : []
 
   const messagingOptions = useMemo(
     () =>
@@ -3433,6 +3452,43 @@ function TriggersPanel({
     }
   }, [])
 
+  useEffect(() => {
+    const account = connectedAccounts.find(item => item.id === connectedAccountId)
+    let active = true
+    setAppTriggerTypes([])
+    setAppTriggerSlug('')
+    setAppTriggerConfig({})
+    setAppTriggerTypesError(null)
+
+    if (!account) {
+      return () => {
+        active = false
+      }
+    }
+
+    setAppTriggerTypesLoading(true)
+    void listComposioTriggerTypes(account.appSlug)
+      .then(result => {
+        if (active) {
+          setAppTriggerTypes(result.triggers)
+        }
+      })
+      .catch(error => {
+        if (active) {
+          setAppTriggerTypesError(error instanceof Error ? error.message : 'Could not load app events.')
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setAppTriggerTypesLoading(false)
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [connectedAccountId, connectedAccounts])
+
   const selectSource = (id: TriggerSourceId) => {
     const source = TRIGGER_SOURCES.find(item => item.id === id)
 
@@ -3472,18 +3528,65 @@ function TriggersPanel({
         }
       } else if (sourceId === 'app_event') {
         const account = connectedAccounts.find(item => item.id === connectedAccountId)
+        const trigger = appTriggerTypes.find(item => item.slug === appTriggerSlug)
 
         if (!account) {
           throw new Error('Select a connected app account.')
         }
 
-        if (!eventName.trim()) {
-          throw new Error('Enter the exact event emitted by the connected app.')
+        if (!trigger) {
+          throw new Error('Select an event from the connected app.')
         }
 
         config.appSlug = account.appSlug
         config.connectedAccountId = account.id
-        config.event = eventName.trim()
+        config.triggerSlug = trigger.slug
+        config.triggerConfig = Object.fromEntries(
+          Object.entries(appTriggerProperties).flatMap<[string, unknown]>(([key, schema]) => {
+            const rawValue = appTriggerConfig[key]?.trim() ?? ''
+
+            if (!rawValue) {
+              if (appTriggerRequired.includes(key)) {
+                throw new Error(`${String(schema.title || key)} is required.`)
+              }
+
+              return []
+            }
+
+            if (schema.type === 'number' || schema.type === 'integer') {
+              const value = Number(rawValue)
+
+              if (!Number.isFinite(value) || (schema.type === 'integer' && !Number.isInteger(value))) {
+                throw new Error(`${String(schema.title || key)} must be a number.`)
+              }
+
+              return [[key, value]]
+            }
+
+            if (schema.type === 'boolean') {
+              return [[key, rawValue === 'true']]
+            }
+
+            if (schema.type === 'array' || schema.type === 'object') {
+              try {
+                const value: unknown = JSON.parse(rawValue)
+
+                if (
+                  (schema.type === 'array' && !Array.isArray(value)) ||
+                  (schema.type === 'object' && (typeof value !== 'object' || value === null || Array.isArray(value)))
+                ) {
+                  throw new Error('type mismatch')
+                }
+
+                return [[key, value]]
+              } catch {
+                throw new Error(`${String(schema.title || key)} must be valid JSON.`)
+              }
+            }
+
+            return [[key, rawValue]]
+          })
+        )
       } else if (sourceId === 'messaging') {
         const option = messagingOptions.find(item => item.id === messagingBinding)
 
@@ -3503,7 +3606,12 @@ function TriggersPanel({
       }
 
       onBusy(true)
-      await createWorkflowTrigger(agent.id, { config, event_name: eventName, name, trigger_type: type })
+      await createWorkflowTrigger(agent.id, {
+        config,
+        event_name: sourceId === 'app_event' ? appTriggerSlug : eventName,
+        name,
+        trigger_type: type
+      })
       setName('')
       await onRefresh()
     } catch (err) {
@@ -3673,30 +3781,134 @@ function TriggersPanel({
           </div>
         ) : null}
         {sourceId === 'app_event' ? (
-          <div className="grid gap-1.5">
-            <label className="text-xs font-medium" htmlFor="connected-app-account">
-              Connected app account
-            </label>
-            <Select
-              disabled={busy || sourcesLoading || connectedAccounts.length === 0}
-              onValueChange={setConnectedAccountId}
-              value={connectedAccountId}
-            >
-              <SelectTrigger id="connected-app-account" size="sm">
-                <SelectValue placeholder={sourcesLoading ? 'Loading connections…' : 'Select an account'} />
-              </SelectTrigger>
-              <SelectContent>
-                {connectedAccounts.map(account => (
-                  <SelectItem key={account.id} value={account.id}>
-                    {account.appSlug} · {account.id}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-1.5">
+              <label className="text-xs font-medium" htmlFor="connected-app-account">
+                Connected app account
+              </label>
+              <Select
+                disabled={busy || sourcesLoading || connectedAccounts.length === 0}
+                onValueChange={setConnectedAccountId}
+                value={connectedAccountId}
+              >
+                <SelectTrigger id="connected-app-account" size="sm">
+                  <SelectValue placeholder={sourcesLoading ? 'Loading connections…' : 'Select an account'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {connectedAccounts.map(account => (
+                    <SelectItem key={account.id} value={account.id}>
+                      {account.appSlug} · {account.id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-1.5">
+              <label className="text-xs font-medium" htmlFor="connected-app-event">
+                App event
+              </label>
+              <Select
+                disabled={busy || appTriggerTypesLoading || appTriggerTypes.length === 0}
+                onValueChange={value => {
+                  setAppTriggerSlug(value)
+                  const trigger = appTriggerTypes.find(item => item.slug === value)
+
+                  const properties =
+                    trigger?.config &&
+                    typeof trigger.config.properties === 'object' &&
+                    trigger.config.properties !== null
+                      ? (trigger.config.properties as Record<string, Record<string, unknown>>)
+                      : {}
+
+                  setAppTriggerConfig(
+                    Object.fromEntries(
+                      Object.entries(properties).flatMap(([key, schema]) =>
+                        schema.default === undefined
+                          ? []
+                          : [
+                              [
+                                key,
+                                typeof schema.default === 'object'
+                                  ? JSON.stringify(schema.default)
+                                  : String(schema.default)
+                              ]
+                            ]
+                      )
+                    )
+                  )
+                }}
+                value={appTriggerSlug}
+              >
+                <SelectTrigger id="connected-app-event" size="sm">
+                  <SelectValue placeholder={appTriggerTypesLoading ? 'Loading events…' : 'Select an event'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {appTriggerTypes.map(trigger => (
+                    <SelectItem key={trigger.slug} value={trigger.slug}>
+                      {trigger.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {Object.entries(appTriggerProperties).map(([key, schema]) => (
+              <div className="grid gap-1.5" key={key}>
+                <label className="text-xs font-medium" htmlFor={`app-trigger-${key}`}>
+                  {String(schema.title || key)}
+                  {!appTriggerRequired.includes(key) ? (
+                    <span className="font-normal text-muted-foreground"> (optional)</span>
+                  ) : null}
+                </label>
+                {Array.isArray(schema.enum) && schema.enum.length > 0 ? (
+                  <Select
+                    disabled={busy}
+                    onValueChange={value => setAppTriggerConfig(current => ({ ...current, [key]: value }))}
+                    value={appTriggerConfig[key] ?? ''}
+                  >
+                    <SelectTrigger id={`app-trigger-${key}`} size="sm">
+                      <SelectValue placeholder="Select a value" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {schema.enum.map(option => (
+                        <SelectItem key={String(option)} value={String(option)}>
+                          {String(option)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : schema.type === 'boolean' ? (
+                  <Select
+                    disabled={busy}
+                    onValueChange={value => setAppTriggerConfig(current => ({ ...current, [key]: value }))}
+                    value={appTriggerConfig[key] ?? ''}
+                  >
+                    <SelectTrigger id={`app-trigger-${key}`} size="sm">
+                      <SelectValue placeholder="Select a value" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="true">Yes</SelectItem>
+                      <SelectItem value="false">No</SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    disabled={busy}
+                    id={`app-trigger-${key}`}
+                    onChange={event => setAppTriggerConfig(current => ({ ...current, [key]: event.target.value }))}
+                    placeholder={String(schema.description || schema.default || '')}
+                    type={schema.type === 'number' || schema.type === 'integer' ? 'number' : 'text'}
+                    value={appTriggerConfig[key] ?? ''}
+                  />
+                )}
+              </div>
+            ))}
             {!sourcesLoading && connectedAccounts.length === 0 ? (
-              <p className="text-[0.7rem] text-muted-foreground">
+              <p className="text-[0.7rem] text-muted-foreground md:col-span-2">
                 No active connected apps. Connect one in Settings before adding this trigger.
               </p>
+            ) : null}
+            {appTriggerTypesError ? (
+              <p className="text-[0.7rem] text-destructive md:col-span-2">{appTriggerTypesError}</p>
             ) : null}
           </div>
         ) : null}
@@ -3749,7 +3961,7 @@ function TriggersPanel({
           </div>
         ) : null}
         <div className="grid gap-3 md:grid-cols-2">
-          {sourceId !== 'manual' && sourceId !== 'embed' ? (
+          {sourceId !== 'manual' && sourceId !== 'embed' && sourceId !== 'app_event' ? (
             <div className="grid gap-1.5">
               <label className="text-xs font-medium" htmlFor="trigger-event">
                 Event name
@@ -3758,7 +3970,7 @@ function TriggersPanel({
                 disabled={busy}
                 id="trigger-event"
                 onChange={event => setEventName(event.target.value)}
-                placeholder={sourceId === 'app_event' ? 'page.created' : 'external.event'}
+                placeholder="external.event"
                 value={eventName}
               />
             </div>

@@ -642,6 +642,22 @@ class ComposioAppToolsResponse(BaseModel):
     catalogError: str | None = None
 
 
+class ComposioTriggerType(BaseModel):
+    slug: str
+    name: str
+    description: str = ""
+    instructions: str = ""
+    type: Literal["poll", "webhook"]
+    config: dict[str, Any] = Field(default_factory=dict)
+    payload: dict[str, Any] = Field(default_factory=dict)
+    requiresWebhookEndpointSetup: bool = False
+
+
+class ComposioTriggerTypesResponse(BaseModel):
+    triggers: list[ComposioTriggerType]
+    configured: bool
+
+
 class ComposioAuthInputField(BaseModel):
     name: str
     displayName: str

@@ -680,6 +680,22 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         FOREIGN KEY (knowledge_document_id) REFERENCES knowledge_documents(id) ON DELETE CASCADE
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS composio_webhook_subscription (
+        id TEXT PRIMARY KEY,
+        webhook_url TEXT NOT NULL,
+        secret TEXT NOT NULL,
+        version TEXT NOT NULL DEFAULT 'V3',
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS composio_webhook_receipts (
+        webhook_id TEXT PRIMARY KEY,
+        received_at TEXT NOT NULL,
+        completed_at TEXT
+    )
+    """,
     "CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash)",
     "CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON workspace_members(user_id)",
     "CREATE INDEX IF NOT EXISTS idx_agents_workspace ON agents(workspace_id)",

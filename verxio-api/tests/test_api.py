@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
+import hmac
 import json
 import os
+import time
 from pathlib import Path
 from subprocess import CompletedProcess
 
@@ -687,7 +690,7 @@ def test_workflow_agent_uses_attached_knowledge_context(client, monkeypatch):
     assert event_types == ["queued", "running", "knowledge_retrieved", "completed", "delivery_saved"]
 
 
-def test_workflow_trigger_validation(client):
+def test_workflow_trigger_validation(client, monkeypatch):
     _payload, token = signup(client, "workflow-trigger-validation@example.com")
     create = client.post(
         "/api/workflow-agents",
@@ -716,7 +719,55 @@ def test_workflow_trigger_validation(client):
         headers={"Cookie": f"{SESSION_COOKIE}={token}"},
         json={"trigger_type": "app_event", "event_name": "new_record", "config": {"appSlug": "airtable"}},
     )
-    assert app_event.status_code == 200
+    assert app_event.status_code == 422
+
+    monkeypatch.setenv("VERXIO_PUBLIC_WEB_URL", "https://verxio.example")
+    monkeypatch.setattr(workflow_agents, "list_composio_accounts", lambda _user_id: [
+        ComposioConnectedAccount(id="ca_airtable", appSlug="airtable", status="ACTIVE")
+    ])
+    monkeypatch.setattr(workflow_agents, "ensure_composio_webhook_subscription", lambda _url: {})
+    monkeypatch.setattr(workflow_agents, "create_composio_trigger_instance", lambda *_args, **_kwargs: "ti_1")
+    valid_app_event = client.post(
+        f"/api/workflow-agents/{agent_id}/triggers",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={
+            "trigger_type": "app_event",
+            "event_name": "AIRTABLE_NEW_RECORD",
+            "config": {
+                "appSlug": "airtable",
+                "connectedAccountId": "ca_airtable",
+                "triggerSlug": "AIRTABLE_NEW_RECORD",
+                "triggerConfig": {"base_id": "base_1"},
+            },
+        },
+    )
+    assert valid_app_event.status_code == 200
+    status_updates: list[tuple[str, bool]] = []
+    deleted_instances: list[str] = []
+    monkeypatch.setattr(
+        workflow_agents,
+        "set_composio_trigger_instance_enabled",
+        lambda trigger_id, enabled: status_updates.append((trigger_id, enabled)),
+    )
+    monkeypatch.setattr(
+        workflow_agents,
+        "delete_composio_trigger_instance",
+        lambda trigger_id: deleted_instances.append(trigger_id),
+    )
+    trigger_id = valid_app_event.json()["id"]
+    disabled = client.put(
+        f"/api/workflow-agents/{agent_id}/triggers/{trigger_id}",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"enabled": False},
+    )
+    assert disabled.status_code == 200
+    assert status_updates == [("ti_1", False)]
+    deleted = client.delete(
+        f"/api/workflow-agents/{agent_id}/triggers/{trigger_id}",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+    )
+    assert deleted.status_code == 200
+    assert deleted_instances == ["ti_1"]
 
 
 def test_workflow_api_chat_app_and_schedule_triggers_run(client, monkeypatch):
@@ -729,14 +780,48 @@ def test_workflow_api_chat_app_and_schedule_triggers_run(client, monkeypatch):
         return f"handled {user_input}"
 
     monkeypatch.setattr(workflow_agents, "run_agent_via_dashboard", fake_oneshot)
+    monkeypatch.setenv("VERXIO_PUBLIC_WEB_URL", "https://verxio.example")
+    monkeypatch.setenv("COMPOSIO_WEBHOOK_SECRET", "test-composio-secret")
+    monkeypatch.setattr(
+        workflow_agents,
+        "list_composio_accounts",
+        lambda _user_id: [
+            ComposioConnectedAccount(id="ca_airtable", appSlug="airtable", status="ACTIVE"),
+            ComposioConnectedAccount(id="ca_slack", appSlug="slack", status="ACTIVE"),
+        ],
+    )
+    monkeypatch.setattr(workflow_agents, "ensure_composio_webhook_subscription", lambda _url: {})
+    monkeypatch.setattr(
+        workflow_agents,
+        "create_composio_trigger_instance",
+        lambda _slug, *, connected_account_id, **_kwargs: f"ti_{connected_account_id}",
+    )
     agent = client.post("/api/workflow-agents", headers=headers, json={"name": "Trigger Agent"}).json()
     schedule_trigger_id = ""
 
     for trigger_type, event_name, config in [
         ("api", "lead.created", {}),
         ("chat", "lead.question", {}),
-        ("app_event", "new_record", {"appSlug": "airtable"}),
-        ("app_event", "new_record", {"appSlug": "slack"}),
+        (
+            "app_event",
+            "new_record",
+            {
+                "appSlug": "airtable",
+                "connectedAccountId": "ca_airtable",
+                "triggerSlug": "new_record",
+                "triggerConfig": {},
+            },
+        ),
+        (
+            "app_event",
+            "new_record",
+            {
+                "appSlug": "slack",
+                "connectedAccountId": "ca_slack",
+                "triggerSlug": "new_record",
+                "triggerConfig": {},
+            },
+        ),
         ("schedule", "daily.digest", {"everyMinutes": 1}),
     ]:
         response = client.post(
@@ -789,14 +874,50 @@ def test_workflow_api_chat_app_and_schedule_triggers_run(client, monkeypatch):
     assert chat_run.status_code == 200
     assert chat_run.json()["runs"][0]["trigger_type"] == "chat"
 
+    app_payload = {
+        "type": "composio.trigger.message",
+        "metadata": {
+            "trigger_id": "ti_ca_airtable",
+            "trigger_slug": "new_record",
+            "connected_account_id": "ca_airtable",
+        },
+        "data": {"recordId": "rec_1"},
+    }
+    app_body = json.dumps(app_payload, separators=(",", ":")).encode()
+    webhook_id = "msg_1"
+    webhook_timestamp = str(int(time.time()))
+    webhook_signature = base64.b64encode(
+        hmac.new(
+            b"test-composio-secret",
+            f"{webhook_id}.{webhook_timestamp}.".encode() + app_body,
+            hashlib.sha256,
+        ).digest()
+    ).decode()
     app_run = client.post(
-        "/api/workflow-agents/triggers/app-events",
-        headers=headers,
-        json={"event_name": "new_record", "input": {"appSlug": "airtable", "recordId": "rec_1"}},
+        "/api/composio/webhooks",
+        content=app_body,
+        headers={
+            "content-type": "application/json",
+            "webhook-id": webhook_id,
+            "webhook-timestamp": webhook_timestamp,
+            "webhook-signature": f"v1,{webhook_signature}",
+        },
     )
     assert app_run.status_code == 200
     assert len(app_run.json()["runs"]) == 1
     assert app_run.json()["runs"][0]["trigger_type"] == "app_event"
+    duplicate_app_run = client.post(
+        "/api/composio/webhooks",
+        content=app_body,
+        headers={
+            "content-type": "application/json",
+            "webhook-id": webhook_id,
+            "webhook-timestamp": webhook_timestamp,
+            "webhook-signature": f"v1,{webhook_signature}",
+        },
+    )
+    assert duplicate_app_run.status_code == 200
+    assert duplicate_app_run.json()["runs"] == []
 
     db.execute(
         "UPDATE workflow_triggers SET next_run_at = ? WHERE id = ?",
@@ -2363,6 +2484,47 @@ def test_composio_accounts_use_current_api_and_parse_auth_config_toolkit(monkeyp
             "https://current.example/api/v3.1",
             "/connected_accounts",
             {"user_ids": ["user_123"], "statuses": ["ACTIVE"], "limit": 1000},
+        )
+    ]
+
+
+def test_composio_trigger_catalog_uses_current_api_and_preserves_config_schema(monkeypatch):
+    monkeypatch.setenv("COMPOSIO_API_KEY", "test-key")
+    calls: list[tuple[str, str, dict]] = []
+
+    def fake_get(base_url: str, path: str, params=None, timeout: int = 30):
+        calls.append((base_url, path, params or {}))
+        return {
+            "items": [
+                {
+                    "slug": "GITHUB_COMMIT_EVENT",
+                    "name": "New commit",
+                    "description": "Runs when a commit is pushed.",
+                    "instructions": "Choose a repository.",
+                    "type": "webhook",
+                    "toolkit": {"slug": "github"},
+                    "config": {
+                        "type": "object",
+                        "properties": {"owner": {"type": "string", "title": "Owner"}},
+                        "required": ["owner"],
+                    },
+                    "payload": {"type": "object"},
+                }
+            ]
+        }
+
+    monkeypatch.setattr(composio_catalog, "_get", fake_get)
+
+    result = composio_catalog.list_composio_trigger_types("github")
+
+    assert result.configured is True
+    assert result.triggers[0].slug == "GITHUB_COMMIT_EVENT"
+    assert result.triggers[0].config["required"] == ["owner"]
+    assert calls == [
+        (
+            "https://backend.composio.dev/api/v3.1",
+            "/triggers_types",
+            {"limit": 100, "toolkit_slugs": ["github"]},
         )
     ]
 

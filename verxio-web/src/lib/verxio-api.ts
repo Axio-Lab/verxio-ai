@@ -550,6 +550,19 @@ export interface ComposioAppToolsResponse {
   catalogError?: string | null
 }
 
+export interface ComposioTriggerType {
+  slug: string
+  name: string
+  description: string
+  config: Record<string, unknown>
+  payload: Record<string, unknown>
+}
+
+export interface ComposioTriggerTypesResponse {
+  triggers: ComposioTriggerType[]
+  configured: boolean
+}
+
 export interface ComposioInitiateResponse {
   redirectUrl: string | null
   connectionId: string
@@ -1393,6 +1406,12 @@ export function listComposioApps(): Promise<ComposioAppsResponse> {
 export function listComposioAppTools(appSlug: string, limit = 4): Promise<ComposioAppToolsResponse> {
   return verxioFetch<ComposioAppToolsResponse>(
     `/api/composio/connections/apps/${encodeURIComponent(appSlug)}/tools?limit=${limit}`
+  )
+}
+
+export function listComposioTriggerTypes(appSlug: string): Promise<ComposioTriggerTypesResponse> {
+  return verxioFetch<ComposioTriggerTypesResponse>(
+    `/api/composio/connections/apps/${encodeURIComponent(appSlug)}/triggers`
   )
 }
 

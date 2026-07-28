@@ -69,10 +69,14 @@ from app.models import (
     new_id,
 )
 from app.composio_catalog import (
+    create_composio_trigger_instance,
+    delete_composio_trigger_instance,
+    ensure_composio_webhook_subscription,
     get_composio_catalog_error,
     is_composio_configured,
     list_composio_accounts,
     list_composio_apps,
+    set_composio_trigger_instance_enabled,
 )
 from app.runtime import HermesRuntimeAdapter
 from app.runtime_dashboard import list_toolsets_via_dashboard, run_agent_via_dashboard
@@ -497,9 +501,15 @@ def _validate_trigger_payload(trigger_type: str, event_name: str, config: dict[s
             raise HTTPException(status_code=422, detail="Schedule trigger cron expression is invalid.")
     if trigger_type == "app_event":
         app_slug = str(config.get("appSlug") or config.get("app_slug") or "").strip()
-        event = str(config.get("event") or event_name or "").strip()
-        if not app_slug or not event:
-            raise HTTPException(status_code=422, detail="App event triggers require config.appSlug and an event name.")
+        connected_account_id = str(
+            config.get("connectedAccountId") or config.get("connected_account_id") or ""
+        ).strip()
+        trigger_slug = str(config.get("triggerSlug") or config.get("trigger_slug") or "").strip()
+        if not app_slug or not connected_account_id or not trigger_slug:
+            raise HTTPException(
+                status_code=422,
+                detail="Connected app triggers require appSlug, connectedAccountId, and triggerSlug.",
+            )
 
 
 def _validate_delivery_payload(
@@ -1438,37 +1448,72 @@ def create_trigger(
 ) -> WorkflowTriggerRecord:
     get_agent(workspace, profile, agent_id)
     _validate_trigger_payload(payload.trigger_type, payload.event_name, payload.config)
+    config = dict(payload.config)
+    composio_trigger_id = ""
+    if payload.trigger_type == "app_event":
+        account_id = str(config.get("connectedAccountId") or config.get("connected_account_id") or "").strip()
+        app_slug = str(config.get("appSlug") or config.get("app_slug") or "").strip().lower()
+        account = next(
+            (
+                item
+                for item in list_composio_accounts(workspace.tenant_id)
+                if item.id == account_id
+                and item.appSlug.strip().lower() == app_slug
+                and item.status.strip().upper() == "ACTIVE"
+            ),
+            None,
+        )
+        if account is None:
+            raise HTTPException(status_code=422, detail="Select an active connected account owned by this workspace.")
+        ensure_composio_webhook_subscription(f"{_base_url(request)}/api/composio/webhooks")
+        trigger_slug = str(config.get("triggerSlug") or config.get("trigger_slug") or "").strip()
+        trigger_config = config.get("triggerConfig") or config.get("trigger_config") or {}
+        if not isinstance(trigger_config, dict):
+            raise HTTPException(status_code=422, detail="Connected app trigger configuration must be an object.")
+        composio_trigger_id = create_composio_trigger_instance(
+            trigger_slug,
+            connected_account_id=account_id,
+            trigger_config=trigger_config,
+            user_id=workspace.tenant_id,
+        )
+        config["composioTriggerId"] = composio_trigger_id
+
     created_at = now_iso()
     trigger_id = new_id("workflow_trigger")
     next_run_at = (
-        _next_schedule_at(payload.config)
+        _next_schedule_at(config)
         if payload.trigger_type == "schedule" and payload.enabled
         else None
     )
-    db.execute(
-        """
-        INSERT INTO workflow_triggers (
-            id, tenant_id, workspace_id, workflow_agent_id, trigger_type, event_name,
-            name, enabled, secret, config_json, next_run_at, created_at, updated_at
+    try:
+        db.execute(
+            """
+            INSERT INTO workflow_triggers (
+                id, tenant_id, workspace_id, workflow_agent_id, trigger_type, event_name,
+                name, enabled, secret, config_json, next_run_at, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                trigger_id,
+                workspace.tenant_id,
+                workspace.id,
+                agent_id,
+                payload.trigger_type,
+                payload.event_name.strip(),
+                payload.name.strip(),
+                1 if payload.enabled else 0,
+                _secret() if payload.trigger_type == "webhook" else "",
+                _json_dumps(config),
+                next_run_at,
+                created_at,
+                created_at,
+            ),
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            trigger_id,
-            workspace.tenant_id,
-            workspace.id,
-            agent_id,
-            payload.trigger_type,
-            payload.event_name.strip(),
-            payload.name.strip(),
-            1 if payload.enabled else 0,
-            _secret() if payload.trigger_type == "webhook" else "",
-            _json_dumps(payload.config),
-            next_run_at,
-            created_at,
-            created_at,
-        ),
-    )
+    except Exception:
+        if composio_trigger_id:
+            delete_composio_trigger_instance(composio_trigger_id)
+        raise
     return get_trigger(workspace, profile, agent_id, trigger_id, request)
 
 
@@ -1509,8 +1554,31 @@ def update_trigger(
         str(data.get("event_name") or ""),
         data.get("config") if isinstance(data.get("config"), dict) else {},
     )
+    if current.trigger_type == "app_event" and payload.config is not None and payload.config != current.config:
+        raise HTTPException(
+            status_code=422,
+            detail="Connected app bindings cannot be edited in place. Delete and recreate the trigger.",
+        )
     secret = _secret() if payload.rotate_secret and current.trigger_type == "webhook" else current.secret
     config = data.get("config") if isinstance(data.get("config"), dict) else {}
+    if current.trigger_type == "app_event" and payload.enabled is not None:
+        composio_trigger_id = str(config.get("composioTriggerId") or "")
+        should_enable = bool(data.get("enabled"))
+        if not should_enable:
+            other_rows = db.fetch_all(
+                """
+                SELECT config_json
+                FROM workflow_triggers
+                WHERE trigger_type = 'app_event' AND enabled = 1 AND id != ?
+                """,
+                (trigger_id,),
+            )
+            should_enable = any(
+                str(_json_loads(row.get("config_json"), {}).get("composioTriggerId") or "")
+                == composio_trigger_id
+                for row in other_rows
+            )
+        set_composio_trigger_instance_enabled(composio_trigger_id, should_enable)
     next_run_at = (
         _next_schedule_at(config)
         if current.trigger_type == "schedule" and data.get("enabled")
@@ -1540,7 +1608,20 @@ def update_trigger(
 
 
 def delete_trigger(workspace: Workspace, profile: AgentProfile, agent_id: str, trigger_id: str) -> dict[str, bool]:
-    get_trigger(workspace, profile, agent_id, trigger_id)
+    trigger = get_trigger(workspace, profile, agent_id, trigger_id)
+    if trigger.trigger_type == "app_event":
+        composio_trigger_id = str(trigger.config.get("composioTriggerId") or "")
+        other_rows = db.fetch_all(
+            "SELECT config_json FROM workflow_triggers WHERE trigger_type = 'app_event' AND id != ?",
+            (trigger_id,),
+        )
+        still_referenced = any(
+            str(_json_loads(row.get("config_json"), {}).get("composioTriggerId") or "")
+            == composio_trigger_id
+            for row in other_rows
+        )
+        if not still_referenced:
+            delete_composio_trigger_instance(composio_trigger_id)
     db.execute(
         "DELETE FROM workflow_triggers WHERE id = ? AND workspace_id = ? AND workflow_agent_id = ?",
         (trigger_id, workspace.id, agent_id),
@@ -2232,6 +2313,52 @@ async def run_trigger(
         trigger_id=trigger.id,
         trigger_type=trigger.trigger_type,
     )
+
+
+async def run_composio_trigger_event(payload: dict[str, Any]) -> WorkflowTriggerRunsResponse:
+    if str(payload.get("type") or "") != "composio.trigger.message":
+        return WorkflowTriggerRunsResponse(runs=[])
+    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    external_trigger_id = str(metadata.get("trigger_id") or "").strip()
+    connected_account_id = str(metadata.get("connected_account_id") or "").strip()
+    trigger_slug = str(metadata.get("trigger_slug") or "").strip()
+    if not external_trigger_id or not connected_account_id or not trigger_slug:
+        raise HTTPException(status_code=400, detail="Composio trigger metadata is incomplete.")
+
+    rows = db.fetch_all(
+        """
+        SELECT t.*, a.runtime_agent_id
+        FROM workflow_triggers t
+        JOIN workflow_agents a ON a.id = t.workflow_agent_id
+        WHERE t.trigger_type = 'app_event' AND t.enabled = 1
+        ORDER BY t.updated_at ASC
+        """
+    )
+    runs: list[WorkflowRunRecord] = []
+    for row in rows:
+        config = _json_loads(row.get("config_json"), {})
+        if str(config.get("composioTriggerId") or "") != external_trigger_id:
+            continue
+        if str(config.get("connectedAccountId") or config.get("connected_account_id") or "") != connected_account_id:
+            continue
+        workspace, profile = _trigger_owner_context(row)
+        runs.append(
+            await run_agent(
+                workspace,
+                profile,
+                str(row["workflow_agent_id"]),
+                WorkflowRunCreateRequest(
+                    input={
+                        "event": trigger_slug,
+                        "payload": payload.get("data") if isinstance(payload.get("data"), dict) else {},
+                        "source": {"composio": metadata},
+                    }
+                ),
+                trigger_id=str(row["id"]),
+                trigger_type="app_event",
+            )
+        )
+    return WorkflowTriggerRunsResponse(runs=runs)
 
 
 async def run_matching_triggers(

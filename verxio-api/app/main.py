@@ -37,6 +37,8 @@ from app.auth import (
     verify_login_code,
 )
 from app.composio_catalog import (
+    claim_composio_webhook,
+    complete_composio_webhook,
     complete_composio_connection,
     delete_composio_account,
     get_composio_catalog_error,
@@ -47,7 +49,10 @@ from app.composio_catalog import (
     list_composio_app_tools,
     list_composio_accounts,
     list_composio_apps,
+    list_composio_trigger_types,
+    release_composio_webhook,
     sync_composio_runtime_bridge,
+    verify_composio_webhook,
 )
 from app.postiz import (
     browser_session_for_workspace as postiz_browser_session_for_workspace,
@@ -96,6 +101,7 @@ from app.models import (
     ComposioConnectionsResponse,
     ComposioInitiateRequest,
     ComposioInitiateResponse,
+    ComposioTriggerTypesResponse,
     EmailRequest,
     HermesRuntimeMetadata,
     InferenceCatalogResponse,
@@ -279,6 +285,7 @@ from app.workflow_agents import (
     list_tool_capabilities as list_workflow_tool_capabilities,
     list_triggers as list_workflow_triggers,
     run_agent as run_workflow_agent,
+    run_composio_trigger_event as run_workflow_composio_trigger_event,
     run_matching_triggers as run_matching_workflow_triggers,
     run_messaging_gateway_triggers as run_workflow_messaging_gateway_triggers,
     run_public_embed_agent as run_workflow_public_embed_agent,
@@ -1642,6 +1649,39 @@ async def list_composio_app_tools_route(
         catalogReady=is_composio_catalog_ready(),
         catalogError=get_composio_catalog_error(),
     )
+
+
+@app.get(
+    "/api/composio/connections/apps/{app_slug}/triggers",
+    response_model=ComposioTriggerTypesResponse,
+)
+async def list_composio_trigger_types_route(
+    app_slug: str,
+    request: Request,
+) -> ComposioTriggerTypesResponse:
+    require_user(request)
+    return list_composio_trigger_types(app_slug)
+
+
+@app.post("/api/composio/webhooks", response_model=WorkflowTriggerRunsResponse)
+async def ingest_composio_webhook_route(request: Request) -> WorkflowTriggerRunsResponse:
+    body = await request.body()
+    webhook_id = request.headers.get("webhook-id", "")
+    payload = verify_composio_webhook(
+        body,
+        webhook_id=webhook_id,
+        webhook_timestamp=request.headers.get("webhook-timestamp", ""),
+        webhook_signature=request.headers.get("webhook-signature", ""),
+    )
+    if not claim_composio_webhook(webhook_id):
+        return WorkflowTriggerRunsResponse(runs=[])
+    try:
+        result = await run_workflow_composio_trigger_event(payload)
+    except Exception:
+        release_composio_webhook(webhook_id)
+        raise
+    complete_composio_webhook(webhook_id)
+    return result
 
 
 @app.get(
