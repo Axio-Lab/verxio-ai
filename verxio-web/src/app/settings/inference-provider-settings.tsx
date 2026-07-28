@@ -16,16 +16,7 @@ import {
 } from '@/lib/verxio-api'
 import { setCurrentModel, setCurrentProvider } from '@/store/session'
 
-import { CONTROL_TEXT } from './constants'
 import { ListRow, Pill, SectionHeading } from './primitives'
-
-function formatUsd(value: number): string {
-  return new Intl.NumberFormat(undefined, {
-    currency: 'USD',
-    maximumFractionDigits: value >= 10 ? 0 : 2,
-    style: 'currency'
-  }).format(value)
-}
 
 interface InferenceProviderSettingsProps {
   onInferenceApplied?: () => void
@@ -140,7 +131,12 @@ export function InferenceProviderSettings({
 
   const applyHostedModel = useCallback(
     async (modelId: string) => {
+      if (modelId === selectedModelId) {
+        return
+      }
+
       setApplying(true)
+      onSwitchingChange?.(true)
       setError('')
 
       try {
@@ -159,9 +155,10 @@ export function InferenceProviderSettings({
         setError(err instanceof Error ? err.message : String(err))
       } finally {
         setApplying(false)
+        onSwitchingChange?.(false)
       }
     },
-    [onInferenceApplied, onInferenceModeChange, queryClient]
+    [onInferenceApplied, onInferenceModeChange, onSwitchingChange, queryClient, selectedModelId]
   )
 
   if (!verxioApiEnabled()) {
@@ -176,8 +173,8 @@ export function InferenceProviderSettings({
       </div>
       <p className="mb-3 text-xs text-muted-foreground">
         {isHosted
-          ? 'Hosted calls use Verxio-managed Qwen or Gemini credentials and Verxio billing. Switch to BYOK to connect your own provider accounts or API keys.'
-          : 'BYOK calls use the provider account or API key you choose for the active model. Hosted credit stays available when you switch back to Verxio Hosted.'}
+          ? 'Hosted calls use Verxio-managed Qwen or Gemini credentials. Switch to BYOK to connect your own provider accounts or API keys.'
+          : 'BYOK calls use the provider account or API key you choose for the active model. Switch back to Verxio Hosted anytime to use managed Qwen or Gemini.'}
       </p>
 
       {error && (
@@ -213,7 +210,7 @@ export function InferenceProviderSettings({
                 </Button>
               </div>
             }
-            description="Choose whether model traffic uses Verxio-managed credits or your own provider credentials."
+            description="Choose whether model traffic uses Verxio-managed models or your own provider credentials."
             title="Billing mode"
           />
           {isHosted &&
@@ -253,20 +250,6 @@ export function InferenceProviderSettings({
                 />
               )
             })}
-          {isHosted && (
-            <ListRow
-              action={
-                <div className={`text-right text-xs ${CONTROL_TEXT}`}>
-                  <div className="font-medium text-foreground">{formatUsd(usage.usage.remainingUsd)} remaining</div>
-                  <div className="text-muted-foreground">
-                    {formatUsd(usage.usage.usedUsd)} used of {formatUsd(usage.usage.monthlyCreditUsd)}
-                  </div>
-                </div>
-              }
-              description="Hosted usage is tracked by Verxio. BYOK calls are paid directly to the provider."
-              title="Monthly hosted credit"
-            />
-          )}
           {isByok && (
             <ListRow
               action={
