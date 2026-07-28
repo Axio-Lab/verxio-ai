@@ -1236,6 +1236,7 @@ WorkflowMessagingChannel = Literal["whatsapp", "telegram", "slack", "discord", "
 
 class WorkflowMessagingTriggerRequest(BaseModel):
     channel: WorkflowMessagingChannel
+    connection_id: str = Field(default="default", max_length=180)
     message: str = Field(default="", max_length=50000)
     event_name: str = Field(default="message.received", max_length=180)
     sender_id: str = Field(default="", max_length=320)

@@ -1212,8 +1212,9 @@ async def run_workflow_messaging_gateway_triggers_route(
     payload: WorkflowMessagingTriggerRequest,
     request: Request,
 ) -> WorkflowTriggerRunsResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    from app.runtime_auth import get_context_for_request
+
+    workspace, profile, _runtime_instance = get_context_for_request(request)
     return await run_workflow_messaging_gateway_triggers(workspace, profile, payload)
 
 

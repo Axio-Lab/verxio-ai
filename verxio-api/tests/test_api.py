@@ -796,7 +796,7 @@ def test_workflow_messaging_gateway_triggers_match_channel_and_reply_context(cli
             "trigger_type": "chat",
             "event_name": "message.received",
             "name": "WhatsApp inbound",
-            "config": {"channel": "whatsapp", "keyword": "delivery"},
+            "config": {"channel": "whatsapp", "connectionId": "conn_support", "keyword": "delivery"},
         },
     )
     assert trigger.status_code == 200
@@ -809,11 +809,30 @@ def test_workflow_messaging_gateway_triggers_match_channel_and_reply_context(cli
     assert ignored.status_code == 200
     assert ignored.json()["runs"] == []
 
-    matched = client.post(
+    wrong_connection = client.post(
         "/api/workflow-agents/triggers/messaging",
         headers=headers,
         json={
             "channel": "whatsapp",
+            "connection_id": "default",
+            "message": "delivery status",
+            "sender_id": "wa_123",
+        },
+    )
+    assert wrong_connection.status_code == 200
+    assert wrong_connection.json()["runs"] == []
+
+    runtime_token = "workflow-runtime-token"
+    db.execute(
+        "UPDATE runtime_instances SET dashboard_token = ? WHERE agent_id = ?",
+        (runtime_token, agent["runtime_agent_id"]),
+    )
+    matched = client.post(
+        "/api/workflow-agents/triggers/messaging",
+        headers={"Authorization": f"Bearer {runtime_token}"},
+        json={
+            "channel": "whatsapp",
+            "connection_id": "conn_support",
             "message": "Need my delivery status",
             "sender_id": "wa_123",
             "sender_name": "Ada",
@@ -829,6 +848,7 @@ def test_workflow_messaging_gateway_triggers_match_channel_and_reply_context(cli
     assert body["runs"][0]["trigger_id"] == trigger.json()["id"]
     assert seen
     assert '"channel":"whatsapp"' in seen[0]["input"]
+    assert '"connection_id":"conn_support"' in seen[0]["input"]
     assert '"reply_to_source":{"channel":"whatsapp","conversation_id":"conv_1","sender_id":"wa_123","thread_id":"thread_1"}' in seen[0]["input"]
 
 

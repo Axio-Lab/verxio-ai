@@ -2255,6 +2255,11 @@ def _string_matches_filter(actual: str, expected: Any) -> bool:
 def _trigger_accepts_messaging_event(config: dict[str, Any], payload: WorkflowMessagingTriggerRequest) -> bool:
     if not _string_matches_filter(payload.channel, config.get("channel") or config.get("channels")):
         return False
+    if not _string_matches_filter(
+        payload.connection_id,
+        config.get("connectionId") or config.get("connection_id"),
+    ):
+        return False
     if not _string_matches_filter(payload.sender_id, config.get("senderId") or config.get("sender_id")):
         return False
     if not _string_matches_filter(payload.thread_id, config.get("threadId") or config.get("thread_id")):
@@ -2293,6 +2298,7 @@ async def run_messaging_gateway_triggers(
     event_payload = {
         **payload.input,
         "channel": payload.channel,
+        "connection_id": payload.connection_id,
         "conversation_id": payload.conversation_id,
         "message": payload.message,
         "message_id": payload.message_id,
