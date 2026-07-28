@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import os
+import sqlite3
 import time
 from pathlib import Path
 from subprocess import CompletedProcess
@@ -18,6 +19,41 @@ from app import composio_catalog, control_plane, db, emailer, inference, main, r
 from app.auth import SESSION_COOKIE
 from app.main import app
 from app.models import ComposioConnectedAccount, ComposioToolBridgeStatus, RuntimeInstance
+
+
+def test_migrations_upgrade_legacy_workflow_trigger_schedule_columns(monkeypatch, tmp_path):
+    database_path = tmp_path / "legacy-control.sqlite3"
+    with sqlite3.connect(database_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE workflow_triggers (
+                id TEXT PRIMARY KEY,
+                tenant_id TEXT NOT NULL,
+                workspace_id TEXT NOT NULL,
+                workflow_agent_id TEXT NOT NULL,
+                trigger_type TEXT NOT NULL,
+                event_name TEXT NOT NULL DEFAULT '',
+                name TEXT NOT NULL DEFAULT '',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                secret TEXT NOT NULL DEFAULT '',
+                config_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+
+    monkeypatch.setenv("VERXIO_DATABASE_MODE", "sqlite")
+    monkeypatch.setenv("VERXIO_DATABASE_PATH", str(database_path))
+
+    db.run_migrations()
+
+    with sqlite3.connect(database_path) as conn:
+        columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(workflow_triggers)")}
+        indexes = {str(row[1]) for row in conn.execute("PRAGMA index_list(workflow_triggers)")}
+
+    assert {"next_run_at", "last_run_at", "claim_token", "claimed_at"} <= columns
+    assert "idx_workflow_triggers_schedule_due" in indexes
 
 
 @pytest.fixture()

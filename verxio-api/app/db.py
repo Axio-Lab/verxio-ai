@@ -721,7 +721,6 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_workflow_agents_workspace ON workflow_agents(workspace_id, runtime_agent_id, updated_at)",
     "CREATE INDEX IF NOT EXISTS idx_workflow_custom_tools_workspace ON workflow_custom_tools(workspace_id, updated_at)",
     "CREATE INDEX IF NOT EXISTS idx_workflow_triggers_agent ON workflow_triggers(workspace_id, workflow_agent_id, enabled)",
-    "CREATE INDEX IF NOT EXISTS idx_workflow_triggers_schedule_due ON workflow_triggers(trigger_type, enabled, next_run_at)",
     "CREATE INDEX IF NOT EXISTS idx_workflow_deliveries_agent ON workflow_deliveries(workspace_id, workflow_agent_id, enabled)",
     "CREATE INDEX IF NOT EXISTS idx_workflow_runs_agent ON workflow_runs(workspace_id, workflow_agent_id, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_workflow_run_events_run ON workflow_run_events(workflow_run_id, created_at)",
@@ -869,6 +868,24 @@ def _ensure_legacy_columns(conn: Any) -> None:
 
     if "model_id" not in workflow_agent_columns:
         conn.execute("ALTER TABLE workflow_agents ADD COLUMN model_id TEXT NOT NULL DEFAULT ''")
+
+    workflow_trigger_columns = _table_columns(conn, "workflow_triggers")
+    workflow_trigger_additions = {
+        "next_run_at": "TEXT",
+        "last_run_at": "TEXT",
+        "claim_token": "TEXT NOT NULL DEFAULT ''",
+        "claimed_at": "TEXT",
+    }
+    for column, definition in workflow_trigger_additions.items():
+        if column not in workflow_trigger_columns:
+            conn.execute(f"ALTER TABLE workflow_triggers ADD COLUMN {column} {definition}")
+
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_workflow_triggers_schedule_due
+        ON workflow_triggers(trigger_type, enabled, next_run_at)
+        """
+    )
 
 
 def _split_sql_script(script: str) -> list[str]:
