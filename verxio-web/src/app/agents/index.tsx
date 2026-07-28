@@ -38,6 +38,7 @@ import {
 } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import {
+  type ComposioApp,
   type ComposioConnectedAccount,
   type ComposioTriggerType,
   createKnowledgeBase,
@@ -56,6 +57,7 @@ import {
   getPublicWorkflowAgent,
   getWorkflowAgentEmbedConfig,
   type KnowledgeBase,
+  listComposioApps,
   listComposioConnections,
   listComposioTriggerTypes,
   listKnowledgeBases,
@@ -189,6 +191,48 @@ const DELIVERY_TYPES: WorkflowDeliveryType[] = [
 const AGENT_PAGE_SIZE = 8
 const PANEL_PAGE_SIZE = 6
 const AGENT_DRAFT_ROUTE_SEGMENT = 'drafts'
+
+const COMPOSIO_APP_DISPLAY_NAMES: Record<string, string> = {
+  airtable: 'Airtable',
+  discord: 'Discord',
+  gmail: 'Gmail',
+  googledocs: 'Google Docs',
+  googledrive: 'Google Drive',
+  googleforms: 'Google Forms',
+  googlesheets: 'Google Sheets',
+  hubspot: 'HubSpot',
+  notion: 'Notion',
+  slack: 'Slack',
+  stripe: 'Stripe',
+  whatsapp: 'WhatsApp'
+}
+
+function normalizeComposioSlug(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[_\s-]+/g, '')
+}
+
+function connectedAppDisplayName(appSlug: string, apps: ComposioApp[]): string {
+  const normalized = normalizeComposioSlug(appSlug)
+  const catalogName = apps.find(app => normalizeComposioSlug(app.slug) === normalized)?.name.trim()
+
+  if (catalogName) {
+    return catalogName
+  }
+
+  if (COMPOSIO_APP_DISPLAY_NAMES[normalized]) {
+    return COMPOSIO_APP_DISPLAY_NAMES[normalized]
+  }
+
+  return appSlug
+    .replace(/[_-]+/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ')
+}
 
 interface DraftState {
   approval_policy: string
@@ -3354,6 +3398,7 @@ function TriggersPanel({
   const [scheduleMinutes, setScheduleMinutes] = useState('60')
   const [cronExpression, setCronExpression] = useState('0 9 * * 1-5')
   const [connectedAccounts, setConnectedAccounts] = useState<ComposioConnectedAccount[]>([])
+  const [composioApps, setComposioApps] = useState<ComposioApp[]>([])
   const [connectedAccountId, setConnectedAccountId] = useState('')
   const [appTriggerTypes, setAppTriggerTypes] = useState<ComposioTriggerType[]>([])
   const [appTriggerTypesLoading, setAppTriggerTypesLoading] = useState(false)
@@ -3418,8 +3463,8 @@ function TriggersPanel({
   useEffect(() => {
     let active = true
 
-    void Promise.allSettled([listComposioConnections(), getMessagingPlatforms()]).then(
-      ([accountsResult, gatewaysResult]) => {
+    void Promise.allSettled([listComposioConnections(), listComposioApps(), getMessagingPlatforms()]).then(
+      ([accountsResult, appsResult, gatewaysResult]) => {
         if (!active) {
           return
         }
@@ -3432,6 +3477,10 @@ function TriggersPanel({
           )
         } else {
           errors.push('connected apps')
+        }
+
+        if (appsResult.status === 'fulfilled') {
+          setComposioApps(appsResult.value.apps)
         }
 
         if (gatewaysResult.status === 'fulfilled') {
@@ -3794,10 +3843,10 @@ function TriggersPanel({
                 <SelectTrigger id="connected-app-account" size="sm">
                   <SelectValue placeholder={sourcesLoading ? 'Loading connections…' : 'Select an account'} />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent avoidCollisions={false} side="bottom">
                   {connectedAccounts.map(account => (
                     <SelectItem key={account.id} value={account.id}>
-                      {account.appSlug} · {account.id}
+                      {connectedAppDisplayName(account.appSlug, composioApps)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -3842,7 +3891,7 @@ function TriggersPanel({
                 <SelectTrigger id="connected-app-event" size="sm">
                   <SelectValue placeholder={appTriggerTypesLoading ? 'Loading events…' : 'Select an event'} />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent avoidCollisions={false} side="bottom">
                   {appTriggerTypes.map(trigger => (
                     <SelectItem key={trigger.slug} value={trigger.slug}>
                       {trigger.name}
