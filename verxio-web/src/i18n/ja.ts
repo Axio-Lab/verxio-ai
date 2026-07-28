@@ -697,6 +697,7 @@ export const ja = defineLocale({
       otherProviders: 'その他のプロバイダー',
       noProviderKeys: '利用可能なプロバイダー API キーがありません。',
       loading: 'プロバイダーを読み込み中...',
+      switching: 'プロバイダーモードを切り替え中...',
       accountLabel: 'アカウント',
       disconnect: '切断',
       reconnect: '再接続',

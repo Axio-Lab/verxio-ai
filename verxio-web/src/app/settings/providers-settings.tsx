@@ -200,6 +200,7 @@ export function ProvidersSettings({
   const [activeProviderId, setActiveProviderId] = useRouteStringParam('paccount')
   const [openProvider, setOpenProvider] = useState<null | string>(null)
   const [inferenceMode, setInferenceMode] = useState<VerxioInferenceMode | null>(null)
+  const [switchingMode, setSwitchingMode] = useState(false)
   // The onboarding overlay owns the OAuth flow. Watch its `manual` flag so we
   // re-read connection state when the user finishes (or dismisses) a sign-in
   // they launched from this page — otherwise the cards keep their stale status.
@@ -274,8 +275,8 @@ export function ProvidersSettings({
     }
   }, [activeProviderId, inferenceMode, onViewChange, setActiveProviderId, view])
 
-  if (!vars) {
-    return <LoadingState label={t.settings.providers.loading} />
+  if (!vars || switchingMode) {
+    return <LoadingState label={switchingMode ? t.settings.providers.switching : t.settings.providers.loading} />
   }
 
   if (showApiKeys) {
@@ -331,6 +332,7 @@ export function ProvidersSettings({
               onInferenceApplied={onInferenceApplied}
               onInferenceModeChange={handleInferenceModeChange}
               onOpenProviderKeys={() => onViewChange('keys')}
+              onSwitchingChange={setSwitchingMode}
             />
             {canConfigureOwnProviders && (
               <OAuthPicker

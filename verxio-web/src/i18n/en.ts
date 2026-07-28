@@ -667,6 +667,7 @@ export const en: Translations = {
       otherProviders: 'Other providers',
       noProviderKeys: 'No provider API keys available.',
       loading: 'Loading providers...',
+      switching: 'Switching provider mode...',
       accountLabel: 'Account',
       disconnect: 'Disconnect',
       reconnect: 'Reconnect',

@@ -31,12 +31,14 @@ interface InferenceProviderSettingsProps {
   onInferenceApplied?: () => void
   onInferenceModeChange?: (mode: VerxioInferenceMode) => void
   onOpenProviderKeys: () => void
+  onSwitchingChange?: (busy: boolean) => void
 }
 
 export function InferenceProviderSettings({
   onInferenceApplied,
   onInferenceModeChange,
-  onOpenProviderKeys
+  onOpenProviderKeys,
+  onSwitchingChange
 }: InferenceProviderSettingsProps) {
   const queryClient = useQueryClient()
   const [catalog, setCatalog] = useState<VerxioInferenceCatalogResponse | null>(null)
@@ -88,7 +90,12 @@ export function InferenceProviderSettings({
 
   const applyInferenceMode = useCallback(
     async (nextMode: VerxioInferenceMode) => {
+      if (nextMode === mode) {
+        return
+      }
+
       setApplying(true)
+      onSwitchingChange?.(true)
       setError('')
 
       try {
@@ -116,12 +123,15 @@ export function InferenceProviderSettings({
         setError(err instanceof Error ? err.message : String(err))
       } finally {
         setApplying(false)
+        onSwitchingChange?.(false)
       }
     },
     [
       catalog?.defaultModelId,
+      mode,
       onInferenceApplied,
       onInferenceModeChange,
+      onSwitchingChange,
       queryClient,
       selectedHostedModel?.id,
       settings?.defaultModelId

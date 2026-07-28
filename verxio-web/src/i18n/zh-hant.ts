@@ -675,6 +675,7 @@ export const zhHant = defineLocale({
       otherProviders: '其他提供方',
       noProviderKeys: '沒有可用的提供方 API 金鑰。',
       loading: '正在載入提供方...',
+      switching: '正在切換提供方模式...',
       accountLabel: '帳戶',
       disconnect: '中斷連線',
       reconnect: '重新連線',

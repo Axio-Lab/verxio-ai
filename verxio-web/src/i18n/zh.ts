@@ -818,6 +818,7 @@ export const zh: Translations = {
       otherProviders: '其他提供方',
       noProviderKeys: '没有可用的提供方 API 密钥。',
       loading: '正在加载提供方...',
+      switching: '正在切换提供方模式...',
       accountLabel: '账户',
       disconnect: '断开连接',
       reconnect: '重新连接',

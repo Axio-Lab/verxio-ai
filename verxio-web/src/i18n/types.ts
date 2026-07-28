@@ -542,6 +542,7 @@ export interface Translations {
       otherProviders: string
       noProviderKeys: string
       loading: string
+      switching: string
       accountLabel: string
       disconnect: string
       reconnect: string
