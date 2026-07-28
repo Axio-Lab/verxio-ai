@@ -322,17 +322,90 @@ def _contains_any(text: str, words: list[str]) -> bool:
     return any(word in text for word in words)
 
 
+def _is_lead_workflow(text: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(?:lead|leads|prospect|prospects)\b",
+            text,
+        )
+        and re.search(
+            r"\b(?:sales|research|qualif(?:y|ication)|scor(?:e|ing)|prospect|crm|form submission|strategy call)\b",
+            text,
+        )
+    )
+
+
+def _requested_agent_kind(prompt: str) -> str:
+    normalized = " ".join(prompt.split())
+    match = re.search(
+        r"\b(?:create|build|make|set up)\s+(?:an?\s+)?(?P<kind>[a-z0-9][a-z0-9 -]{0,80}?)\s+agent\b",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    kind = re.sub(r"\s+", " ", match.group("kind")).strip(" -")
+    return kind
+
+
+def _workflow_role(prompt: str, *, existing: WorkflowAgentRecord | None = None) -> str:
+    if existing and existing.role:
+        return existing.role
+
+    text = prompt.lower()
+    if "payment" in text:
+        return "Notify customers and teams after successful payment events"
+    if _is_lead_workflow(text):
+        return "Research, qualify, and prepare next actions for leads"
+    if "support" in text or "customer" in text:
+        return "Answer customer questions and escalate when needed"
+    if "cosmetic" in text or "youcam" in text:
+        return "Recommend cosmetic products with approved tools and knowledge"
+    if _contains_any(text, ["micro-manager", "micromanager", "follow up with team", "follow-up with team"]):
+        return "Follow up on team tasks, identify bottlenecks, and escalate them to the team lead"
+
+    requested_kind = _requested_agent_kind(prompt)
+    if requested_kind:
+        return f"Operate as a {requested_kind} agent using configured capabilities"
+    return "Complete the described workflow with configured capabilities"
+
+
+def _workflow_description(prompt: str, role: str, *, existing: WorkflowAgentRecord | None = None) -> str:
+    if existing and existing.description:
+        return existing.description
+
+    text = prompt.lower()
+    if _contains_any(text, ["micro-manager", "micromanager", "follow up with team", "follow-up with team"]):
+        return "Follows up with team members, tracks task bottlenecks, and alerts the team lead when work is blocked."
+
+    goal = re.split(r"\n\s*use only configured\b", prompt.strip(), maxsplit=1, flags=re.IGNORECASE)[0]
+    goal = " ".join(goal.split()).strip()
+    goal = re.sub(
+        r"^(?:please\s+)?(?:create|build|make|set up)\s+(?:an?\s+)?",
+        "",
+        goal,
+        flags=re.IGNORECASE,
+    )
+    if goal:
+        return goal[0].upper() + goal[1:1000]
+    return role[:1000]
+
+
 def _title_from_prompt(prompt: str) -> str:
     prompt = " ".join(prompt.split())
     lower = prompt.lower()
     if "payment" in lower:
         return "Payment Delivery Agent"
-    if "lead" in lower:
+    if _is_lead_workflow(lower):
         return "Lead Research Agent"
     if "support" in lower or "customer" in lower:
         return "Customer Support Agent"
     if "cosmetic" in lower or "makeup" in lower or "beauty" in lower:
         return "AI Cosmetic Consultant"
+    requested_kind = _requested_agent_kind(prompt)
+    if requested_kind:
+        title = requested_kind.title()
+        return title[:180] if title.lower().endswith("agent") else f"{title} Agent"[:180]
     words = [word.strip(".,:;!?()[]{}") for word in prompt.split() if word.strip(".,:;!?()[]{}")]
     title = " ".join(word.capitalize() for word in (words[:4] or ["Workflow"]))
     return title[:180] if "agent" in title.lower() else f"{title} Agent"[:180]
@@ -511,7 +584,7 @@ def _draft_from_prompt(prompt: str, *, existing: WorkflowAgentRecord | None = No
         if keyword in text:
             tools.append(tool)
 
-    if _contains_any(text, ["lead", "score", "qualify"]):
+    if _is_lead_workflow(text):
         skills.append("lead-scoring")
     if _contains_any(text, ["support", "customer", "faq", "policy"]):
         skills.append("support-triage")
@@ -592,18 +665,8 @@ def _draft_from_prompt(prompt: str, *, existing: WorkflowAgentRecord | None = No
             }
         )
 
-    if existing and existing.role:
-        role = existing.role
-    elif "payment" in text:
-        role = "Notify customers and teams after successful payment events"
-    elif "lead" in text:
-        role = "Research, qualify, and prepare next actions for leads"
-    elif "support" in text or "customer" in text:
-        role = "Answer customer questions and escalate when needed"
-    elif "cosmetic" in text or "youcam" in text:
-        role = "Recommend cosmetic products with approved tools and knowledge"
-    else:
-        role = "Complete the described workflow with configured capabilities"
+    role = _workflow_role(prompt, existing=existing)
+    description = _workflow_description(prompt, role, existing=existing)
 
     base_instructions = existing.instructions if existing else ""
     instructions = "\n".join(
@@ -621,7 +684,7 @@ def _draft_from_prompt(prompt: str, *, existing: WorkflowAgentRecord | None = No
     return WorkflowAgentSetupDraftData(
         agent=WorkflowAgentCreateRequest(
             approval_policy="ask_before_external_actions",
-            description=(existing.description if existing else "Generated from setup prompt.")[:1000],
+            description=description[:1000],
             enabled=False,
             instructions=instructions[:12000],
             integrations=_string_list(integrations),

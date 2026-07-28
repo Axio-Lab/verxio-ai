@@ -206,6 +206,32 @@ def test_workflow_agent_setup_draft_stages_risky_actions(client):
     assert approve.json()["approvals"][0]["status"] == "approved"
 
 
+def test_workflow_agent_setup_draft_does_not_treat_team_lead_as_sales_lead(client):
+    _payload, token = signup(client, "workflow-micro-manager-draft@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+    prompt = (
+        "Create a micro-manager agent that follows up with team members and ensures everyone does their task in Slack, "
+        "and notifies the team lead if there's any bottleneck\n"
+        "Use only configured skills, tools, integrations, and knowledge sources."
+    )
+
+    response = client.post(
+        "/api/workflow-agents/draft",
+        headers=headers,
+        json={"prompt": prompt, "source": "web"},
+    )
+
+    assert response.status_code == 200
+    agent = response.json()["draft"]["draft"]["agent"]
+    assert agent["name"] == "Micro-Manager Agent"
+    assert agent["role"] == "Follow up on team tasks, identify bottlenecks, and escalate them to the team lead"
+    assert agent["description"] == (
+        "Follows up with team members, tracks task bottlenecks, and alerts the team lead when work is blocked."
+    )
+    assert "lead-scoring" not in agent["skills"]
+    assert "slack" in agent["integrations"]
+
+
 def test_workflow_agent_list_includes_setup_drafts(client):
     _payload, token = signup(client, "workflow-setup-list-drafts@example.com")
     headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
