@@ -14,6 +14,7 @@ import {
   sessionTitle,
   SLASH_COMMAND_RE
 } from '@/lib/chat-runtime'
+import { fileDataUrlFromFile, imageBytesFromFile, isAbsoluteFilesystemPath } from '@/lib/composer-attach'
 import {
   type CommandsCatalogLike,
   desktopSlashUnavailableMessage,
@@ -61,6 +62,7 @@ import { clearSessionSubagents } from '@/store/subagents'
 
 import type {
   ClientSessionState,
+  FileAttachResponse,
   ImageAttachResponse,
   SessionSteerResponse,
   SessionTitleResponse,
@@ -234,37 +236,142 @@ export function usePromptActions({
       sessionId: string,
       attachments: ComposerAttachment[],
       options: { updateComposerAttachments?: boolean } = {}
-    ) => {
+    ): Promise<ComposerAttachment[]> => {
       const updateComposerAttachments = options.updateComposerAttachments ?? true
-      const images = attachments.filter(attachment => attachment.kind === 'image' && attachment.path)
 
-      for (const attachment of images) {
-        if (attachment.attachedSessionId === sessionId) {
-          continue
-        }
+      return Promise.all(
+        attachments.map(async attachment => {
+          if (attachment.kind !== 'image') {
+            return attachment
+          }
 
-        const result = await requestGateway<ImageAttachResponse>('image.attach', {
-          session_id: sessionId,
-          path: attachment.path
-        })
+          if (
+            attachment.attachedSessionId === sessionId &&
+            attachment.path &&
+            isAbsoluteFilesystemPath(attachment.path)
+          ) {
+            return attachment
+          }
 
-        if (!result.attached) {
           const label = attachment.label || (attachment.path ? pathLabel(attachment.path) : 'image')
-          throw new Error(result.message || `Could not attach ${label}`)
-        }
+          let result: ImageAttachResponse
 
-        const attachedPath = result.path || attachment.path
+          if (attachment.uploadFile) {
+            const payload = await imageBytesFromFile(attachment.uploadFile)
+            result = await requestGateway<ImageAttachResponse>('image.attach_bytes', {
+              session_id: sessionId,
+              content_base64: payload.contentBase64,
+              filename: payload.filename
+            })
+          } else if (attachment.path && isAbsoluteFilesystemPath(attachment.path)) {
+            // Prefer byte upload so remote gateways (web + desktop remote) work.
+            // Fall back to path attach for local desktop where the gateway shares disk.
+            try {
+              const dataUrl = await window.hermesDesktop?.readFileDataUrl(attachment.path)
+              const contentBase64 = dataUrl ? dataUrl.slice(dataUrl.indexOf(',') + 1) : ''
 
-        if (updateComposerAttachments) {
-          addComposerAttachment({
+              if (contentBase64) {
+                result = await requestGateway<ImageAttachResponse>('image.attach_bytes', {
+                  session_id: sessionId,
+                  content_base64: contentBase64,
+                  filename: pathLabel(attachment.path)
+                })
+              } else {
+                result = await requestGateway<ImageAttachResponse>('image.attach', {
+                  session_id: sessionId,
+                  path: attachment.path
+                })
+              }
+            } catch {
+              result = await requestGateway<ImageAttachResponse>('image.attach', {
+                session_id: sessionId,
+                path: attachment.path
+              })
+            }
+          } else {
+            throw new Error(`Could not attach ${label}. Re-add the image from the picker so Verxio can upload it.`)
+          }
+
+          if (!result.attached) {
+            throw new Error(result.message || `Could not attach ${label}`)
+          }
+
+          const attachedPath = result.path || attachment.path
+
+          const synced: ComposerAttachment = {
             ...attachment,
-            id: attachment.id,
+            attachedSessionId: sessionId,
             label: attachedPath ? pathLabel(attachedPath) : attachment.label,
             path: attachedPath,
-            attachedSessionId: sessionId
+            uploadFile: undefined
+          }
+
+          if (updateComposerAttachments) {
+            addComposerAttachment(synced)
+          }
+
+          return synced
+        })
+      )
+    },
+    [requestGateway]
+  )
+
+  const syncFileAttachmentsForSubmit = useCallback(
+    async (
+      sessionId: string,
+      attachments: ComposerAttachment[],
+      options: { updateComposerAttachments?: boolean } = {}
+    ): Promise<ComposerAttachment[]> => {
+      const updateComposerAttachments = options.updateComposerAttachments ?? true
+
+      return Promise.all(
+        attachments.map(async attachment => {
+          if (attachment.kind !== 'file') {
+            return attachment
+          }
+
+          if (attachment.attachedSessionId === sessionId && attachment.refText?.startsWith('@file:')) {
+            // Already staged on the gateway (has a real upload). Skip name-only refs.
+            if (!attachment.uploadFile) {
+              return attachment
+            }
+          }
+
+          if (!attachment.uploadFile) {
+            // Path-only context refs (project tree) stay as @file: text — no upload.
+            return attachment
+          }
+
+          const label = attachment.label || attachment.uploadFile.name || 'file'
+          const payload = await fileDataUrlFromFile(attachment.uploadFile)
+
+          const result = await requestGateway<FileAttachResponse>('file.attach', {
+            data_url: payload.dataUrl,
+            name: payload.filename,
+            session_id: sessionId
           })
-        }
-      }
+
+          if (!result.attached || !result.ref_text) {
+            throw new Error(result.message || `Could not attach ${label}`)
+          }
+
+          const synced: ComposerAttachment = {
+            ...attachment,
+            attachedSessionId: sessionId,
+            label: result.name || label,
+            path: result.path || attachment.path,
+            refText: result.ref_text,
+            uploadFile: undefined
+          }
+
+          if (updateComposerAttachments) {
+            addComposerAttachment(synced)
+          }
+
+          return synced
+        })
+      )
     },
     [requestGateway]
   )
@@ -445,15 +552,24 @@ export function usePromptActions({
       }
 
       try {
-        const syncedAttachments = await syncAudioAttachmentsForSubmit(sessionId, attachments, {
+        let syncedAttachments = await syncAudioAttachmentsForSubmit(sessionId, attachments, {
           updateComposerAttachments: usingComposerAttachments
         })
 
-        await syncImageAttachmentsForSubmit(sessionId, attachments, {
+        syncedAttachments = await syncImageAttachmentsForSubmit(sessionId, syncedAttachments, {
           updateComposerAttachments: usingComposerAttachments
         })
 
-        const syncedRefs = syncedAttachments.map(attachmentDisplayText).filter((ref): ref is string => Boolean(ref))
+        syncedAttachments = await syncFileAttachmentsForSubmit(sessionId, syncedAttachments, {
+          updateComposerAttachments: usingComposerAttachments
+        })
+
+        // Image attachments are drained by prompt.submit from session.attached_images.
+        // Only include text refs for non-image chips (files/audio/folders/urls).
+        const syncedRefs = syncedAttachments
+          .filter(attachment => attachment.kind !== 'image')
+          .map(attachmentDisplayText)
+          .filter((ref): ref is string => Boolean(ref))
 
         let submitText =
           [syncedRefs.join('\n'), terminalContextBlocks, visibleText].filter(Boolean).join('\n\n') ||
@@ -538,6 +654,7 @@ export function usePromptActions({
       selectedStoredSessionIdRef,
       statusbarCopy.switchModel,
       syncImageAttachmentsForSubmit,
+      syncFileAttachmentsForSubmit,
       syncAudioAttachmentsForSubmit,
       updateSessionState
     ]

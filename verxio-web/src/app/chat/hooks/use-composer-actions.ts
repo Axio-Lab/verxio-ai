@@ -4,7 +4,9 @@ import { requestComposerFocus, requestComposerInsert } from '@/app/chat/composer
 import { formatRefValue } from '@/components/assistant-ui/directive-text'
 import { useI18n } from '@/i18n'
 import { attachmentId, contextPath, pathLabel } from '@/lib/chat-runtime'
+import { isAbsoluteFilesystemPath, pickBrowserFiles, readBlobAsDataUrl } from '@/lib/composer-attach'
 import { fishAudioAttachmentRef, uploadFishAudioAttachment } from '@/lib/fishaudio-session'
+import { isVerxioWeb } from '@/lib/platform'
 import {
   addComposerAttachment,
   type ComposerAttachment,
@@ -240,34 +242,6 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
     })
   }, [])
 
-  const pickContextPaths = useCallback(
-    async (kind: 'file' | 'folder') => {
-      const paths = await window.hermesDesktop?.selectPaths({
-        title: kind === 'file' ? 'Add files as context' : 'Add folders as context',
-        defaultPath: currentCwd || undefined,
-        directories: kind === 'folder'
-      })
-
-      if (!paths?.length) {
-        return
-      }
-
-      for (const path of paths) {
-        const rel = contextPath(path, currentCwd)
-
-        attachToMain({
-          id: attachmentId(kind, rel),
-          kind,
-          label: pathLabel(path),
-          detail: rel,
-          refText: `@${kind}:${formatRefValue(rel)}`,
-          path
-        })
-      }
-    },
-    [currentCwd]
-  )
-
   const attachContextFilePath = useCallback(
     (filePath: string) => {
       if (!filePath) {
@@ -293,6 +267,12 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
   const attachImagePath = useCallback(
     async (filePath: string) => {
       if (!filePath) {
+        return false
+      }
+
+      // Bare browser filenames are not gateway-visible. Require a real path or
+      // a File blob (attachImageFile) so submit can call image.attach_bytes.
+      if (!isAbsoluteFilesystemPath(filePath)) {
         return false
       }
 
@@ -323,6 +303,36 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
     [copy.imagePreviewFailed]
   )
 
+  const attachImageFile = useCallback(async (file: File) => {
+    if (!file.size || !(file.type.startsWith('image/') || isImagePath(file.name))) {
+      return false
+    }
+
+    const safeName = file.name.split(/[\\/]/).filter(Boolean).pop() || 'image.png'
+    const id = attachmentId('image', `${safeName}:${file.size}:${file.lastModified}`)
+
+    let previewUrl: string | undefined
+
+    try {
+      previewUrl = await readBlobAsDataUrl(file)
+    } catch {
+      previewUrl = undefined
+    }
+
+    attachToMain({
+      id,
+      kind: 'image',
+      label: safeName,
+      detail: safeName,
+      path: safeName,
+      previewUrl,
+      // Keep the browser File until prompt submit uploads via image.attach_bytes.
+      uploadFile: file
+    })
+
+    return true
+  }, [])
+
   const attachImageBlob = useCallback(
     async (blob: Blob) => {
       if (blob.size === 0) {
@@ -333,15 +343,30 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
         return false
       }
 
+      // Web (and remote) can't write a temp file the gateway can see. Stage the
+      // blob as a File and upload bytes on submit.
+      if (isVerxioWeb() || blob instanceof File) {
+        const file =
+          blob instanceof File
+            ? blob
+            : new File([blob], `paste${blobExtension(blob)}`, {
+                type: blob.type || 'image/png'
+              })
+
+        return attachImageFile(file)
+      }
+
       try {
         const buffer = await blob.arrayBuffer()
         const data = new Uint8Array(buffer)
         const savedPath = await window.hermesDesktop?.saveImageBuffer(data, blobExtension(blob))
 
         if (!savedPath) {
-          notify({ kind: 'error', title: copy.imageAttach, message: copy.imageWriteFailed })
+          const file = new File([blob], `paste${blobExtension(blob)}`, {
+            type: blob.type || 'image/png'
+          })
 
-          return false
+          return attachImageFile(file)
         }
 
         return attachImagePath(savedPath)
@@ -351,7 +376,7 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
         return false
       }
     },
-    [attachImagePath, copy.imageAttach, copy.imageAttachFailed, copy.imageWriteFailed]
+    [attachImageFile, attachImagePath, copy.imageAttachFailed]
   )
 
   const attachAudioFile = useCallback(
@@ -398,6 +423,82 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
     [activeSessionId, requestGateway, t.composer.audio, t.composer.audioAttachFailed]
   )
 
+  const attachBrowserFile = useCallback(
+    async (file: File) => {
+      if (!file.size) {
+        return false
+      }
+
+      if (file.type.startsWith('image/') || isImagePath(file.name)) {
+        return attachImageFile(file)
+      }
+
+      if (isAudioFile(file)) {
+        return attachAudioFile(file)
+      }
+
+      const safeName = file.name.split(/[\\/]/).filter(Boolean).pop() || 'file'
+      const id = attachmentId('file', `${safeName}:${file.size}:${file.lastModified}`)
+
+      attachToMain({
+        id,
+        kind: 'file',
+        label: safeName,
+        detail: safeName,
+        path: safeName,
+        refText: `@file:${formatRefValue(safeName)}`,
+        uploadFile: file
+      })
+
+      return true
+    },
+    [attachAudioFile, attachImageFile]
+  )
+
+  const pickContextPaths = useCallback(
+    async (kind: 'file' | 'folder') => {
+      // Web file pickers only give File blobs (no gateway-visible path). Keep
+      // the File so submit can upload via file.attach / image.attach_bytes.
+      if (kind === 'file' && isVerxioWeb()) {
+        const files = await pickBrowserFiles({ multiple: true })
+
+        for (const file of files) {
+          await attachBrowserFile(file)
+        }
+
+        return
+      }
+
+      const paths = await window.hermesDesktop?.selectPaths({
+        title: kind === 'file' ? 'Add files as context' : 'Add folders as context',
+        defaultPath: currentCwd || undefined,
+        directories: kind === 'folder'
+      })
+
+      if (!paths?.length) {
+        return
+      }
+
+      for (const path of paths) {
+        if (kind === 'file' && !isAbsoluteFilesystemPath(path) && isVerxioWeb()) {
+          continue
+        }
+
+        const rel = contextPath(path, currentCwd)
+
+        attachToMain({
+          id: attachmentId(kind, rel),
+          kind,
+          label: pathLabel(path),
+          detail: rel,
+          refText: `@${kind}:${formatRefValue(rel)}`,
+          path
+        })
+      }
+    },
+    [attachBrowserFile, currentCwd]
+  )
+
   const pickAudio = useCallback(() => {
     const input = document.createElement('input')
     input.accept = 'audio/*,.m4a,.mp3,.wav,.ogg,.opus,.flac,.aac,.webm'
@@ -416,6 +517,19 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
   }, [attachAudioFile])
 
   const pickImages = useCallback(async () => {
+    if (isVerxioWeb()) {
+      const files = await pickBrowserFiles({
+        accept: 'image/*,.png,.jpg,.jpeg,.gif,.webp,.bmp,.tiff',
+        multiple: true
+      })
+
+      for (const file of files) {
+        await attachImageFile(file)
+      }
+
+      return
+    }
+
     const paths = await window.hermesDesktop?.selectPaths({
       title: copy.attachImages,
       defaultPath: currentCwd || undefined,
@@ -434,7 +548,7 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
     for (const path of paths) {
       await attachImagePath(path)
     }
-  }, [attachImagePath, copy.attachImages, currentCwd, t.composer.images])
+  }, [attachImageFile, attachImagePath, copy.attachImages, currentCwd, t.composer.images])
 
   const pasteClipboardImage = useCallback(async () => {
     try {
@@ -536,7 +650,12 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
         const fallbackPath =
           !knownPath && window.hermesDesktop?.getPathForFile ? window.hermesDesktop.getPathForFile(file) : ''
 
-        const filePath = knownPath || fallbackPath || ''
+        // Ignore name-only "paths" from the web bridge — they aren't gateway-visible.
+        const filePath =
+          (knownPath && isAbsoluteFilesystemPath(knownPath) && knownPath) ||
+          (fallbackPath && isAbsoluteFilesystemPath(fallbackPath) && fallbackPath) ||
+          ''
+
         const isImage = file.type.startsWith('image/') || isImagePath(file.name) || (filePath && isImagePath(filePath))
 
         if (isAudioFile(file)) {
@@ -552,13 +671,21 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
         }
 
         if (isImage) {
-          if ((filePath && (await attachImagePath(filePath))) || (await attachImageBlob(file))) {
+          // Prefer the browser File so submit can image.attach_bytes. Only use
+          // path-based attach when we have a real absolute filesystem path.
+          if ((await attachImageFile(file)) || (filePath && (await attachImagePath(filePath)))) {
             attached = true
 
             continue
           }
 
           lastFailure = `Could not attach ${file.name || 'image'}`
+
+          continue
+        }
+
+        if (await attachBrowserFile(file)) {
+          attached = true
 
           continue
         }
@@ -580,9 +707,10 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
     },
     [
       attachAudioFile,
+      attachBrowserFile,
       attachContextFilePath,
       attachContextFolderPath,
-      attachImageBlob,
+      attachImageFile,
       attachImagePath,
       copy.dropFiles,
       t.composer.audioNeedsUpload
@@ -617,7 +745,9 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
     attachContextFilePath,
     attachContextFolderPath,
     attachDroppedItems,
+    attachBrowserFile,
     attachImageBlob,
+    attachImageFile,
     attachImagePath,
     pasteClipboardImage,
     pickAudio,

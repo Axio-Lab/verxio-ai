@@ -723,7 +723,10 @@ export function installWebBridge(): void {
     saveImageFromUrl: async () => false,
     saveImageBuffer: async () => '',
     saveClipboardImage: async () => '',
-    getPathForFile: (file: File) => file.name,
+    // Never invent a filesystem path from a browser File.name — the gateway
+    // cannot resolve it and image.attach fails with "image not found: …".
+    // Callers should keep the File and upload bytes via image.attach_bytes.
+    getPathForFile: () => '',
     normalizePreviewTarget: async () => null,
     watchPreviewFile: async (url: string) => {
       const id = crypto.randomUUID()
