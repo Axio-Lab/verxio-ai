@@ -27,6 +27,7 @@
     "ci:api": "npm run api:test",
     "ci:desktop": "npm run ci --prefix verxio-desktop",
     "ci:web": "npm run ci --prefix verxio-web",
+    "ci:hermes-fish": "cd hermes-agent && ./scripts/run_tests.sh tests/plugins/tts/test_fishaudio_provider.py tests/plugins/tts/test_fishaudio_tools.py tests/plugins/tts/test_fishaudio_transcription.py tests/plugins/tts/test_fishaudio_stream.py tests/plugins/tts/test_fishaudio_usage.py tests/plugins/tts/test_fishaudio_audit.py tests/plugins/tts/test_fishaudio_common_security.py tests/plugins/tts/test_fishaudio_gc.py",
     "ci": "npm run fmt && npm run format:check && npm run ci:api && npm run ci:web && npm run ci:desktop",
     "prepare": "node scripts/install-git-hooks.mjs"
   },

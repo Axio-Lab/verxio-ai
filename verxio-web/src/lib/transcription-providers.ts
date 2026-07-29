@@ -82,7 +82,7 @@ export const FALLBACK_CLOUD_TRANSCRIPTION_PROVIDERS: CloudTranscriptionProvider[
     recommendedModel: 'fish-audio-asr-beta',
     models: ['fish-audio-asr-beta'],
     docsUrl: 'https://fish.audio/app/api-keys',
-    description: 'Fish Audio beta speech recognition through the /v1/asr endpoint.'
+    description: 'Fish Audio whole-file ASR (not live streaming). Uses Fish credits; fall back to Local STT if needed.'
   },
   {
     id: 'xai',

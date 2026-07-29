@@ -27,3 +27,22 @@ jobs:
 
       - name: Run CI checks
         run: npm run format:check && npm run ci:web
+
+  hermes-fish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hermes-agent
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Sync Hermes (dev)
+        run: uv sync --extra dev
+
+      - name: Fish Audio plugin tests
+        run: ./scripts/run_tests.sh tests/plugins/tts/test_fishaudio_provider.py tests/plugins/tts/test_fishaudio_tools.py tests/plugins/tts/test_fishaudio_transcription.py tests/plugins/tts/test_fishaudio_stream.py tests/plugins/tts/test_fishaudio_usage.py tests/plugins/tts/test_fishaudio_audit.py tests/plugins/tts/test_fishaudio_common_security.py tests/plugins/tts/test_fishaudio_gc.py

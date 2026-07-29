@@ -465,13 +465,22 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = defineFieldCopy({
   voice: {
     autoTts: 'Automatically speak assistant responses.'
   },
+  tts: {
+    fishaudio: {
+      model:
+        'Fish Audio TTS model. Interactive voice may stream over WebSocket; gateways use buffered HTTP. Uses Fish credits with local quotas.',
+      referenceId: 'Owned or cloned Fish voice used for synthesis.',
+      format: 'Buffered TTS output format (mp3 recommended for browser playback).'
+    }
+  },
   stt: {
     enabled: 'Enable local or provider-backed speech transcription.',
     groq: {
       model: 'Groq Whisper model used for Notepad transcription.'
     },
     fishaudio: {
-      model: 'Static label for Fish Audio beta transcription through /v1/asr.'
+      model:
+        'Fish Audio whole-file ASR label (API has no model param). Not live streaming; switch provider to Local for offline fallback.'
     },
     elevenlabs: {
       languageCode: 'Optional ISO-639-3 language code. Blank lets ElevenLabs auto-detect.'
