@@ -91,6 +91,13 @@ export const PROVIDER_GROUPS: ProviderPrefix[] = [
   },
   { prefix: 'HERMES_QWEN_', name: 'DashScope (Qwen)', priority: 6 },
   {
+    prefix: 'FISH_AUDIO_',
+    name: 'Fish Audio',
+    description: 'Multilingual speech, private voices, and transcription',
+    docsUrl: 'https://fish.audio/app/api-keys/',
+    priority: 7
+  },
+  {
     prefix: 'GLM_',
     name: 'GLM / Z.AI',
     description: 'Zhipu GLM-4.6 and Z.AI hosted endpoints',
@@ -244,7 +251,7 @@ export const ENUM_OPTIONS: Record<string, string[]> = {
   'stt.groq.model': ['whisper-large-v3-turbo', 'whisper-large-v3'],
   'stt.local.model': ['tiny', 'base', 'small', 'medium', 'large-v3'],
   'tts.openai.voice': ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'],
-  'tts.provider': ['edge', 'elevenlabs', 'openai', 'neutts', 'dashscope'],
+  'tts.provider': ['edge', 'elevenlabs', 'openai', 'neutts', 'dashscope', 'fishaudio'],
   'tts.dashscope.model': [
     'qwen3-tts-flash',
     'qwen3-tts-instruct-flash',
@@ -253,6 +260,8 @@ export const ENUM_OPTIONS: Record<string, string[]> = {
     'cosyvoice-v3.5-plus'
   ],
   'tts.dashscope.voice': ['Cherry', 'Serena', 'Ethan', 'Chelsie'],
+  'tts.fishaudio.model': ['s2.1-pro-free', 's2.1-pro', 's2-pro'],
+  'tts.fishaudio.format': ['mp3', 'wav', 'opus'],
   'image_gen.provider': ['fal', 'openai', 'openai-codex', 'xai', 'krea', 'dashscope', 'google'],
   'image_gen.model': [
     'qwen-image-2.0-pro',
@@ -362,6 +371,11 @@ export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
     dashscope: {
       model: 'DashScope TTS Model',
       voice: 'DashScope Voice'
+    },
+    fishaudio: {
+      model: 'Fish Audio TTS Model',
+      referenceId: 'Fish Audio Voice',
+      format: 'Fish Audio Format'
     }
   },
   image_gen: {
@@ -534,6 +548,9 @@ export const SECTIONS: DesktopConfigSection[] = [
       'tts.provider',
       'tts.dashscope.model',
       'tts.dashscope.voice',
+      'tts.fishaudio.model',
+      'tts.fishaudio.reference_id',
+      'tts.fishaudio.format',
       'stt.enabled',
       'stt.provider',
       'stt.groq.model',

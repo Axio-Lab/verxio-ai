@@ -383,6 +383,11 @@ export const zhHant = defineLocale({
         elevenlabs: {
           voiceId: 'ElevenLabs 語音',
           modelId: 'ElevenLabs 模型'
+        },
+        fishaudio: {
+          model: 'Fish Audio TTS 模型',
+          referenceId: 'Fish Audio 語音',
+          format: 'Fish Audio 格式'
         }
       },
       memory: {

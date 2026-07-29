@@ -15,6 +15,7 @@ import type {
   CronJobUpdates,
   ElevenLabsVoicesResponse,
   EnvVarInfo,
+  FishAudioVoicesResponse,
   HermesConfig,
   HermesConfigRecord,
   LogsResponse,
@@ -79,6 +80,7 @@ export type {
   ElevenLabsVoice,
   ElevenLabsVoicesResponse,
   EnvVarInfo,
+  FishAudioVoicesResponse,
   GatewayReadyPayload,
   HermesConfig,
   HermesConfigRecord,
@@ -951,5 +953,11 @@ export function speakText(text: string): Promise<AudioSpeakResponse> {
 export function getElevenLabsVoices(): Promise<ElevenLabsVoicesResponse> {
   return window.hermesDesktop.api<ElevenLabsVoicesResponse>({
     path: '/api/audio/elevenlabs/voices'
+  })
+}
+
+export function getFishAudioVoices(): Promise<FishAudioVoicesResponse> {
+  return window.hermesDesktop.api<FishAudioVoicesResponse>({
+    path: '/api/audio/fishaudio/voices'
   })
 }

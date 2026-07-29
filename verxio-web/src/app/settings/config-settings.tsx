@@ -8,6 +8,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import {
   getElevenLabsVoices,
+  getFishAudioVoices,
   getHermesConfigDefaults,
   getHermesConfigRecord,
   getHermesConfigSchema,
@@ -218,8 +219,12 @@ export function ConfigSettings({
   const [schema, setSchema] = useState<Record<string, ConfigFieldSchema> | null>(null)
   const [elevenLabsVoiceOptions, setElevenLabsVoiceOptions] = useState<string[] | null>(null)
   const [elevenLabsVoiceLabels, setElevenLabsVoiceLabels] = useState<Record<string, string>>({})
+  const [fishAudioVoiceOptions, setFishAudioVoiceOptions] = useState<string[] | null>(null)
+  const [fishAudioVoiceLabels, setFishAudioVoiceLabels] = useState<Record<string, string>>({})
+  const [fishAudioVoicesLoading, setFishAudioVoicesLoading] = useState(false)
   const saveVersionRef = useRef(0)
   const [saveVersion, setSaveVersion] = useState(0)
+  const selectedTtsProvider = config ? getNested(config, 'tts.provider') : null
 
   useEffect(() => {
     let cancelled = false
@@ -263,6 +268,39 @@ export function ConfigSettings({
 
     return () => void (cancelled = true)
   }, [])
+
+  useEffect(() => {
+    if (selectedTtsProvider !== 'fishaudio') {
+      return
+    }
+
+    let cancelled = false
+    setFishAudioVoicesLoading(true)
+
+    getFishAudioVoices()
+      .then(result => {
+        if (cancelled) {
+          return
+        }
+
+        const voices = result.available ? result.voices : []
+        setFishAudioVoiceOptions(voices.map(voice => voice.voice_id))
+        setFishAudioVoiceLabels(Object.fromEntries(voices.map(voice => [voice.voice_id, voice.label])))
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFishAudioVoiceOptions([])
+          setFishAudioVoiceLabels({})
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setFishAudioVoicesLoading(false)
+        }
+      })
+
+    return () => void (cancelled = true)
+  }, [selectedTtsProvider])
 
   useEffect(() => {
     if (!config || saveVersion === 0) {
@@ -368,6 +406,10 @@ export function ConfigSettings({
     return <LoadingState label={c.loading} />
   }
 
+  if (activeSectionId === 'voice' && selectedTtsProvider === 'fishaudio' && fishAudioVoicesLoading) {
+    return <LoadingState label="Loading Fish Audio voices..." />
+  }
+
   return (
     <SettingsContent>
       {activeSectionId === 'model' && (
@@ -390,10 +432,18 @@ export function ConfigSettings({
                 enumOptions={
                   key === 'tts.elevenlabs.voice_id'
                     ? enumOptionsFor(key, getNested(config, key), config, elevenLabsVoiceOptions ?? undefined)
-                    : enumOptionsFor(key, getNested(config, key), config)
+                    : key === 'tts.fishaudio.reference_id'
+                      ? enumOptionsFor(key, getNested(config, key), config, fishAudioVoiceOptions ?? undefined)
+                      : enumOptionsFor(key, getNested(config, key), config)
                 }
                 onChange={value => updateConfig(setNested(config, key, value))}
-                optionLabels={key === 'tts.elevenlabs.voice_id' ? elevenLabsVoiceLabels : undefined}
+                optionLabels={
+                  key === 'tts.elevenlabs.voice_id'
+                    ? elevenLabsVoiceLabels
+                    : key === 'tts.fishaudio.reference_id'
+                      ? fishAudioVoiceLabels
+                      : undefined
+                }
                 schema={field}
                 schemaKey={key}
                 value={getNested(config, key)}

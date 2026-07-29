@@ -392,6 +392,11 @@ export const ja = defineLocale({
         elevenlabs: {
           voiceId: 'ElevenLabs 音声',
           modelId: 'ElevenLabs モデル'
+        },
+        fishaudio: {
+          model: 'Fish Audio TTS モデル',
+          referenceId: 'Fish Audio 音声',
+          format: 'Fish Audio 形式'
         }
       },
       memory: {

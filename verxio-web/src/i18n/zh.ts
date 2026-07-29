@@ -526,6 +526,11 @@ export const zh: Translations = {
         elevenlabs: {
           voiceId: 'ElevenLabs 语音',
           modelId: 'ElevenLabs 模型'
+        },
+        fishaudio: {
+          model: 'Fish Audio TTS 模型',
+          referenceId: 'Fish Audio 语音',
+          format: 'Fish Audio 格式'
         }
       },
       memory: {

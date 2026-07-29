@@ -34,6 +34,19 @@ export interface ElevenLabsVoicesResponse {
   voices: ElevenLabsVoice[]
 }
 
+export interface FishAudioVoice {
+  label: string
+  name: string
+  state: string
+  visibility: string
+  voice_id: string
+}
+
+export interface FishAudioVoicesResponse {
+  available: boolean
+  voices: FishAudioVoice[]
+}
+
 export interface OAuthProviderStatus {
   error?: string
   expires_at?: null | string
