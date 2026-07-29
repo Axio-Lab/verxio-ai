@@ -182,9 +182,11 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
 
       try {
         if (activeSessionId) {
+          // Hermes defaults /model to persist unless --session is explicit.
+          const scopeFlag = selection.persistGlobal ? ' --global' : ' --session'
           await requestGateway('slash.exec', {
             session_id: activeSessionId,
-            command: `/model ${selection.model} --provider ${selection.provider}${selection.persistGlobal ? ' --global' : ''}`
+            command: `/model ${selection.model} --provider ${selection.provider}${scopeFlag}`
           })
 
           // Do not refreshCurrentModel while a session is live — session.info

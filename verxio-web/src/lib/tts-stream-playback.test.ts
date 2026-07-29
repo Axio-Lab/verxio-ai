@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { GatewayTtsStreamPlayer, canUseMpegMediaSource } from './tts-stream-playback'
+import { canUseMpegMediaSource, GatewayTtsStreamPlayer } from './tts-stream-playback'
 
 const request = vi.fn()
 const onEvent = vi.fn()
+
 let eventHandler: ((event: { type: string; session_id?: string; payload?: Record<string, unknown> }) => void) | null =
   null
 
@@ -54,6 +55,7 @@ describe('GatewayTtsStreamPlayer', () => {
       addSourceBuffer = vi.fn(() => {
         const sb = new FakeSourceBuffer()
         this.sourceBuffers.push(sb)
+
         return sb
       })
       endOfStream = vi.fn()

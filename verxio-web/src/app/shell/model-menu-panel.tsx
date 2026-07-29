@@ -127,10 +127,9 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
   )
 
   const switchTo = (model: string, provider: string) =>
-    // Statusbar is the main-model control — always write config.yaml so BYOK /
-    // ChatGPT selections survive refresh (session-only switches looked selected
-    // then reset to "no model" on reload).
-    onSelectModel({ model, persistGlobal: true, provider })
+    // Live session: pin this chat only so lead/default (Settings) can stay on
+    // another model. No session yet: write the profile default for the next chat.
+    onSelectModel({ model, persistGlobal: !activeSessionId, provider })
 
   const selectFamily = async (family: ModelFamily, provider: ModelOptionProvider) => {
     const caps = provider.capabilities?.[family.id]

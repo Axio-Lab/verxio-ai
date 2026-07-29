@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { useI18n } from '@/i18n'
+import type { GatewayTtsStreamPlayer } from '@/lib/tts-stream-playback'
 import {
   appendStreamedSpeech,
   beginStreamedSpeech,
@@ -8,7 +9,6 @@ import {
   playSpeechText,
   stopVoicePlayback
 } from '@/lib/voice-playback'
-import type { GatewayTtsStreamPlayer } from '@/lib/tts-stream-playback'
 import { notify, notifyError } from '@/store/notifications'
 
 import { useMicRecorder } from './use-mic-recorder'

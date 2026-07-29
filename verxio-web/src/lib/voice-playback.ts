@@ -7,7 +7,8 @@ import {
 } from '@/store/voice-playback'
 
 import { sanitizeTextForSpeech } from './speech-text'
-import { GatewayTtsStreamPlayer, openGatewayTtsStream, type TtsStreamEndReason } from './tts-stream-playback'
+import type { GatewayTtsStreamPlayer } from './tts-stream-playback'
+import { openGatewayTtsStream, type TtsStreamEndReason } from './tts-stream-playback'
 
 let currentAudio: HTMLAudioElement | null = null
 let currentStop: (() => void) | null = null
@@ -93,9 +94,11 @@ export async function beginStreamedSpeech(options: VoicePlaybackOptions): Promis
 
   currentStream = player
   currentAudio = player.audioElement
+
   currentStop = () => {
     void player.close(true)
   }
+
   setVoicePlaybackState(currentState('speaking', options, player.audioElement))
 
   return player
