@@ -119,7 +119,7 @@ describe('hostedModelOptionsFromInference', () => {
 })
 
 describe('mergeHostedAndRuntimeModelOptions', () => {
-  it('keeps the hosted default selected while appending configured runtime providers', () => {
+  it('keeps the runtime selection when present and appends configured runtime providers', () => {
     const settings: VerxioInferenceSettings = {
       defaultModelId: 'verxio-qwen',
       mode: 'hosted',
@@ -151,14 +151,39 @@ describe('mergeHostedAndRuntimeModelOptions', () => {
 
     const result = mergeHostedAndRuntimeModelOptions(hosted!, runtime)
 
-    expect(result.provider).toBe('alibaba')
-    expect(result.model).toBe('qwen3.6-plus')
+    expect(result.provider).toBe('openai')
+    expect(result.model).toBe('gpt-5-mini')
     expect(result.providers?.map(provider => provider.slug)).toEqual(['alibaba', 'openai'])
     expect(result.providers?.flatMap(provider => provider.models ?? [])).toEqual([
       'qwen3.6-plus',
       'qwen3.6-coder',
       'gpt-5-mini'
     ])
+  })
+
+  it('falls back to the hosted default when runtime has no selection', () => {
+    const settings: VerxioInferenceSettings = {
+      defaultModelId: 'verxio-qwen',
+      mode: 'hosted',
+      monthlyCreditUsd: 0,
+      overageEnabled: false,
+      spendingLimitUsd: null
+    }
+
+    const hosted = hostedModelOptionsFromInference(settings, catalog)
+    const result = mergeHostedAndRuntimeModelOptions(hosted!, {
+      providers: [
+        {
+          authenticated: true,
+          models: ['gpt-5-mini'],
+          name: 'OpenAI',
+          slug: 'openai'
+        }
+      ]
+    })
+
+    expect(result.provider).toBe('alibaba')
+    expect(result.model).toBe('qwen3.6-plus')
   })
 
   it('dedupes runtime models that already exist in the hosted catalog', () => {

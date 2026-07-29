@@ -112,6 +112,22 @@ describe('shouldClearStaleStatusbarModel', () => {
       })
     ).toBe(false)
   })
+
+  it('keeps Verxio Hosted picker models (does not snap back to flash lite)', () => {
+    expect(
+      shouldClearStaleStatusbarModel('gemini-3.1-pro-preview', 'gemini', {
+        providers: [
+          {
+            authenticated: true,
+            is_verxio_hosted: true,
+            models: ['gemini-flash-lite-latest', 'gemini-3.1-pro-preview'],
+            name: 'Verxio Gemini',
+            slug: 'gemini'
+          }
+        ]
+      })
+    ).toBe(false)
+  })
 })
 
 describe('isVerxioHostedDefaultSelection', () => {

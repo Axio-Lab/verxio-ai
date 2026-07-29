@@ -6,7 +6,7 @@ export interface HostedDefaultModelSelection {
   provider: string
 }
 
-/** True when the model still appears under an authenticated picker provider. */
+/** True when the model still appears under an authenticated BYOK picker provider. */
 export function isSelectableModel(
   model: string,
   provider: string,
@@ -46,12 +46,54 @@ export function isSelectableModel(
 }
 
 /**
+ * True when the model appears under any authenticated picker provider,
+ * including Verxio Hosted rows. Used for statusbar "stale" detection so a
+ * hosted Gemini/Qwen pick is not wiped back to the hosted default.
+ */
+export function isKnownPickerModel(
+  model: string,
+  provider: string,
+  options: Pick<ModelOptionsResponse, 'providers'> | null | undefined
+): boolean {
+  const targetModel = model.trim()
+
+  if (!targetModel) {
+    return false
+  }
+
+  const targetProvider = provider.trim().toLowerCase()
+
+  return (options?.providers ?? []).some(entry => {
+    if (entry.authenticated === false) {
+      return false
+    }
+
+    if (!(entry.models ?? []).includes(targetModel)) {
+      return false
+    }
+
+    if (!targetProvider) {
+      return true
+    }
+
+    return (
+      String(entry.slug || '')
+        .trim()
+        .toLowerCase() === targetProvider
+    )
+  })
+}
+
+/**
  * Whether the statusbar should drop a Hermes-reported model as stale.
  *
  * Only clear after the picker catalog has loaded with at least one provider.
  * An empty providers list usually means "still loading / cache cleared / BYOK
  * auth not ready yet" — wiping the pill then is what made ChatGPT/BYOK show
  * "no model" after refresh even when config.yaml still had gpt-5.6.
+ *
+ * Hosted Verxio models count as known (via {@link isKnownPickerModel}); only
+ * truly missing models fall back to the hosted default.
  */
 export function shouldClearStaleStatusbarModel(
   model: string,
@@ -62,7 +104,7 @@ export function shouldClearStaleStatusbarModel(
     return false
   }
 
-  return !isSelectableModel(model, provider, options)
+  return !isKnownPickerModel(model, provider, options)
 }
 
 /** True when model/provider matches a Verxio Hosted catalog entry (Qwen/Gemini). */

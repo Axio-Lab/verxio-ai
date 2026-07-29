@@ -485,6 +485,15 @@ export function updateSkillContent(name: string, content: string, profile?: stri
   })
 }
 
+export function deleteSkill(name: string, profile?: string | null): Promise<{ success: boolean; message?: string }> {
+  return window.hermesDesktop.api<{ success: boolean; message?: string }>({
+    ...(profile ? { profile } : profileScoped()),
+    path: '/api/skills',
+    method: 'DELETE',
+    body: { name, profile: profile || undefined }
+  })
+}
+
 export function getToolsets(): Promise<ToolsetInfo[]> {
   return window.hermesDesktop.api<ToolsetInfo[]>({
     ...profileScoped(),

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { createCustomSkill, getSkillContent, updateSkillContent, writeSkillFiles } from '@/hermes'
+import { createCustomSkill, deleteSkill, getSkillContent, updateSkillContent, writeSkillFiles } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { Loader2 } from '@/lib/icons'
 import { type ExtractedSkillFile, extractSkillPackage } from '@/lib/skill-package'
@@ -29,17 +30,20 @@ export interface SkillEditorDialogProps {
   onClose: () => void
   /** Called after a successful save so the page can refresh its list. */
   onSaved: (name: string) => void
+  /** Called after a successful delete so the page can refresh its list. */
+  onDeleted?: (name: string) => void
 }
 
-export function SkillEditorDialog({ open, editName, profile, onClose, onSaved }: SkillEditorDialogProps) {
+export function SkillEditorDialog({ open, editName, profile, onClose, onSaved, onDeleted }: SkillEditorDialogProps) {
   return (
     <Dialog onOpenChange={next => !next && onClose()} open={open}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-3xl" showCloseButton={false}>
         {open && (
           <EditorBody
             editName={editName}
             key={editName ?? '__create__'}
             onClose={onClose}
+            onDeleted={onDeleted}
             onSaved={onSaved}
             profile={profile}
           />
@@ -49,7 +53,7 @@ export function SkillEditorDialog({ open, editName, profile, onClose, onSaved }:
   )
 }
 
-function EditorBody({ editName, profile, onClose, onSaved }: Omit<SkillEditorDialogProps, 'open'>) {
+function EditorBody({ editName, profile, onClose, onSaved, onDeleted }: Omit<SkillEditorDialogProps, 'open'>) {
   const { t } = useI18n()
   const e = t.skills.editor
   const isEdit = editName !== null
@@ -63,6 +67,7 @@ function EditorBody({ editName, profile, onClose, onSaved }: Omit<SkillEditorDia
   const [loading, setLoading] = useState(isEdit)
   const [importing, setImporting] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -248,16 +253,50 @@ function EditorBody({ editName, profile, onClose, onSaved }: Omit<SkillEditorDia
 
         {error && <p className="whitespace-pre-wrap text-xs text-destructive">{error}</p>}
 
-        <div className="flex items-center justify-end gap-2">
-          <Button disabled={saving} onClick={onClose} size="sm" variant="ghost">
-            {t.common.cancel}
-          </Button>
-          <Button disabled={saving || loading || importing} onClick={() => void handleSave()} size="sm">
-            {saving && <Loader2 className="size-3.5 animate-spin" />}
-            {saving ? e.saving : isEdit ? e.saveChanges : e.createSkill}
-          </Button>
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            {isEdit && (
+              <Button
+                disabled={saving || loading}
+                onClick={() => setConfirmDeleteOpen(true)}
+                size="sm"
+                type="button"
+                variant="destructive"
+              >
+                {e.deleteSkill}
+              </Button>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button disabled={saving} onClick={onClose} size="sm" variant="ghost">
+              {t.common.cancel}
+            </Button>
+            <Button disabled={saving || loading || importing} onClick={() => void handleSave()} size="sm">
+              {saving && <Loader2 className="size-3.5 animate-spin" />}
+              {saving ? e.saving : isEdit ? e.saveChanges : e.createSkill}
+            </Button>
+          </div>
         </div>
       </div>
+
+      {isEdit && (
+        <ConfirmDialog
+          busyLabel={e.deleting}
+          confirmLabel={e.deleteConfirm}
+          description={e.deleteDesc(editName)}
+          destructive
+          doneLabel={e.deleted}
+          onClose={() => setConfirmDeleteOpen(false)}
+          onConfirm={async () => {
+            await deleteSkill(editName, profile || undefined)
+            onDeleted?.(editName)
+            onSaved(editName)
+            onClose()
+          }}
+          open={confirmDeleteOpen}
+          title={e.deleteTitle(editName)}
+        />
+      )}
     </>
   )
 }

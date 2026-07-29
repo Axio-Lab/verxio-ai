@@ -281,8 +281,11 @@ export function mergeHostedAndRuntimeModelOptions(
 
   return {
     ...runtime,
-    model: hosted.model,
-    provider: hosted.provider,
+    // Keep the runtime/session selection when present. Forcing hosted.model here
+    // made every picker refresh show the hosted default (flash lite) as current
+    // even after the user switched to another hosted Gemini/Qwen model.
+    model: String(runtime.model || '').trim() || hosted.model,
+    provider: String(runtime.provider || '').trim() || hosted.provider,
     providers
   }
 }

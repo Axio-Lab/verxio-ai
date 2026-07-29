@@ -85,6 +85,13 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
   )
 
   const refreshCurrentModel = useCallback(async () => {
+    // Live sessions are owned by slash /model + session.info. Refreshing from
+    // global /api/model/info + hosted-default stale logic races the session and
+    // used to snap the footer back to flash lite after every statusbar pick.
+    if (activeSessionId) {
+      return
+    }
+
     try {
       const [result, options] = await Promise.all([getGlobalModelInfo(), getScopedModelOptions()])
       const hermesModel = typeof result.model === 'string' ? result.model.trim() : ''
@@ -155,7 +162,7 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
         }
       }
     }
-  }, [])
+  }, [activeSessionId])
 
   // Returns whether the switch succeeded so callers can await it before
   // applying follow-up changes (e.g. editing a model's reasoning/fast must land
@@ -180,10 +187,8 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
             command: `/model ${selection.model} --provider ${selection.provider}${selection.persistGlobal ? ' --global' : ''}`
           })
 
-          if (selection.persistGlobal) {
-            void refreshCurrentModel()
-          }
-
+          // Do not refreshCurrentModel while a session is live — session.info
+          // and the optimistic store update already own the statusbar.
           void queryClient.invalidateQueries({
             queryKey: selection.persistGlobal ? ['model-options'] : ['model-options', activeSessionId]
           })

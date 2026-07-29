@@ -630,6 +630,12 @@ export interface Translations {
       saving: string
       saveChanges: string
       createSkill: string
+      deleteSkill: string
+      deleteTitle: (name: string) => string
+      deleteDesc: (name: string) => string
+      deleteConfirm: string
+      deleting: string
+      deleted: string
       importPackage: string
       importing: string
       importHint: string
