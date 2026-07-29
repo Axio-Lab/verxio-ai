@@ -982,7 +982,10 @@ export function useMessageStream({
         const requestId = typeof payload?.request_id === 'string' ? payload.request_id : ''
 
         const action =
-          payload?.action === 'create' || payload?.action === 'delete' || payload?.action === 'set_default'
+          payload?.action === 'create' ||
+          payload?.action === 'delete' ||
+          payload?.action === 'persist' ||
+          payload?.action === 'set_default'
             ? payload.action
             : null
 

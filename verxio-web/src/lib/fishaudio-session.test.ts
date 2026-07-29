@@ -72,6 +72,21 @@ describe('Fish Audio session contracts', () => {
       expiresAt: new Date(121_000).toISOString(),
       sessionId: 'session-1'
     })
+    expect(
+      fishAudioToolConfirmation(
+        'fishaudio_voice_design_persist',
+        {
+          confirmation_required: true,
+          confirmation_phrase: 'CONFIRM FISH VOICE PERSIST ABCD1234',
+          expires_in: 120
+        },
+        'session-1',
+        1_000
+      )
+    ).toMatchObject({
+      action: 'persist',
+      confirmation: 'CONFIRM FISH VOICE PERSIST ABCD1234'
+    })
     expect(fishAudioToolConfirmation('other_tool', '{}', 'session-1')).toBeNull()
   })
 
@@ -89,6 +104,12 @@ describe('Fish Audio session contracts', () => {
         success: false
       })
     ).toBeNull()
+    expect(
+      fishAudioToolChangedVoices('fishaudio_voice_design_persist', {
+        refresh_voices: true,
+        success: true
+      })
+    ).toBe('create')
     expect(
       fishAudioToolError('fishaudio_voice_delete', {
         error: 'Fish Audio rejected the request',

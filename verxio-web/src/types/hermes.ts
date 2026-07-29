@@ -47,7 +47,7 @@ export interface FishAudioVoicesResponse {
   voices: FishAudioVoice[]
 }
 
-export type FishAudioVoiceAction = 'create' | 'delete' | 'set_default'
+export type FishAudioVoiceAction = 'create' | 'delete' | 'persist' | 'set_default'
 
 /** Opaque, signed server data. The web client must return it unchanged. */
 export type FishAudioConfirmationData = string | Record<string, unknown>

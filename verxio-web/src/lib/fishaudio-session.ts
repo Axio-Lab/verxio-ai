@@ -108,7 +108,13 @@ export function fishAudioToolConfirmation(
   now = Date.now()
 ): FishAudioConfirmationRequest | null {
   const action: FishAudioVoiceAction | null =
-    toolName === 'fishaudio_voice_create' ? 'create' : toolName === 'fishaudio_voice_delete' ? 'delete' : null
+    toolName === 'fishaudio_voice_create'
+      ? 'create'
+      : toolName === 'fishaudio_voice_design_persist'
+        ? 'persist'
+        : toolName === 'fishaudio_voice_delete'
+          ? 'delete'
+          : null
 
   if (!action) {
     return null
@@ -135,7 +141,7 @@ export function fishAudioToolConfirmation(
     actionLabel:
       typeof payload.action_label === 'string'
         ? payload.action_label
-        : action === 'create'
+        : action === 'create' || action === 'persist'
           ? 'Create a private Fish Audio voice'
           : 'Delete the selected Fish Audio voice',
     attachmentDigest: typeof payload.attachment_digest === 'string' ? payload.attachment_digest : undefined,
@@ -156,16 +162,19 @@ export function fishAudioToolChangedVoices(toolName: string, result: unknown): F
 
   return toolName === 'fishaudio_voice_create'
     ? 'create'
-    : toolName === 'fishaudio_voice_delete'
-      ? 'delete'
-      : toolName === 'fishaudio_voice_set_default'
-        ? 'set_default'
-        : null
+    : toolName === 'fishaudio_voice_design_persist'
+      ? 'create'
+      : toolName === 'fishaudio_voice_delete'
+        ? 'delete'
+        : toolName === 'fishaudio_voice_set_default'
+          ? 'set_default'
+          : null
 }
 
 export function fishAudioToolError(toolName: string, result: unknown): string | null {
   if (
     toolName !== 'fishaudio_voice_create' &&
+    toolName !== 'fishaudio_voice_design_persist' &&
     toolName !== 'fishaudio_voice_delete' &&
     toolName !== 'fishaudio_voice_set_default'
   ) {
