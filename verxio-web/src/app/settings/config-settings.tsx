@@ -15,6 +15,7 @@ import {
   saveHermesConfig
 } from '@/hermes'
 import { useI18n } from '@/i18n'
+import { FISH_AUDIO_VOICES_CHANGED_EVENT, notifyFishAudioVoicesChanged } from '@/lib/fishaudio-session'
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
 import type { ConfigFieldSchema, HermesConfigRecord } from '@/types/hermes'
@@ -222,6 +223,8 @@ export function ConfigSettings({
   const [fishAudioVoiceOptions, setFishAudioVoiceOptions] = useState<string[] | null>(null)
   const [fishAudioVoiceLabels, setFishAudioVoiceLabels] = useState<Record<string, string>>({})
   const [fishAudioVoicesLoading, setFishAudioVoicesLoading] = useState(false)
+  const [fishAudioVoicesVersion, setFishAudioVoicesVersion] = useState(0)
+  const fishAudioDefaultChangedRef = useRef(false)
   const saveVersionRef = useRef(0)
   const [saveVersion, setSaveVersion] = useState(0)
   const selectedTtsProvider = config ? getNested(config, 'tts.provider') : null
@@ -300,7 +303,14 @@ export function ConfigSettings({
       })
 
     return () => void (cancelled = true)
-  }, [selectedTtsProvider])
+  }, [fishAudioVoicesVersion, selectedTtsProvider])
+
+  useEffect(() => {
+    const refresh = () => setFishAudioVoicesVersion(version => version + 1)
+    window.addEventListener(FISH_AUDIO_VOICES_CHANGED_EVENT, refresh)
+
+    return () => window.removeEventListener(FISH_AUDIO_VOICES_CHANGED_EVENT, refresh)
+  }, [])
 
   useEffect(() => {
     if (!config || saveVersion === 0) {
@@ -315,6 +325,11 @@ export function ConfigSettings({
           await saveHermesConfig(config)
 
           if (saveVersionRef.current === v) {
+            if (fishAudioDefaultChangedRef.current) {
+              fishAudioDefaultChangedRef.current = false
+              notifyFishAudioVoicesChanged('set_default')
+            }
+
             onConfigSaved?.()
           }
         } catch (err) {
@@ -436,7 +451,13 @@ export function ConfigSettings({
                       ? enumOptionsFor(key, getNested(config, key), config, fishAudioVoiceOptions ?? undefined)
                       : enumOptionsFor(key, getNested(config, key), config)
                 }
-                onChange={value => updateConfig(setNested(config, key, value))}
+                onChange={value => {
+                  if (key === 'tts.fishaudio.reference_id') {
+                    fishAudioDefaultChangedRef.current = true
+                  }
+
+                  updateConfig(setNested(config, key, value))
+                }}
                 optionLabels={
                   key === 'tts.elevenlabs.voice_id'
                     ? elevenLabsVoiceLabels

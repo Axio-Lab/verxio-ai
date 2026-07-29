@@ -1489,6 +1489,9 @@ export const zhHant = defineLocale({
     themeTryPre: '試試 ',
     themeTryPost: '。',
     attachLabel: '附加',
+    audio: '音訊樣本…',
+    audioAttachFailed: '無法附加音訊樣本',
+    audioNeedsUpload: '請從「音訊樣本」選擇檔案，讓 Verxio 安全上傳。',
     files: '檔案…',
     folder: '資料夾…',
     images: '圖片…',
@@ -1990,11 +1993,19 @@ export const zhHant = defineLocale({
     sudoPlaceholder: 'sudo 密碼',
     secretTitle: '需要密鑰',
     secretDesc: 'Verxio 需要一個憑證才能繼續。',
-    secretPlaceholder: '密鑰值'
+    secretPlaceholder: '密鑰值',
+    fishAudioTitle: '確認 Fish Audio 操作',
+    fishAudioDescription: '繼續前請檢查伺服器授權的語音操作。',
+    fishAudioAction: '操作',
+    fishAudioExpires: '授權到期時間',
+    fishAudioWorking: '正在套用 Fish Audio 語音操作',
+    fishAudioConfirmationFailed: '無法提交 Fish Audio 確認'
   },
 
   desktop: {
     audioReadFailed: '無法讀取錄製的音訊',
+    audioAttachmentExpired: '此音訊附件已不可用。請重新附加後再試。',
+    useAttachedAudio: '使用附加的音訊樣本。',
     sessionUnavailable: '工作階段不可用',
     createSessionFailed: '無法建立新工作階段',
     promptFailed: '提示詞傳送失敗',

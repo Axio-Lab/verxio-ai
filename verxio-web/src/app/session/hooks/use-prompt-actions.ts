@@ -21,6 +21,7 @@ import {
   isDesktopSlashCommand,
   isModelPickerCommand
 } from '@/lib/desktop-slash-commands'
+import { fishAudioAttachmentRef, uploadFishAudioAttachment } from '@/lib/fishaudio-session'
 import { triggerHaptic } from '@/lib/haptics'
 import { setMutableRef } from '@/lib/mutable-ref'
 import { isVerxioWeb } from '@/lib/platform'
@@ -268,6 +269,50 @@ export function usePromptActions({
     [requestGateway]
   )
 
+  const syncAudioAttachmentsForSubmit = useCallback(
+    async (
+      sessionId: string,
+      attachments: ComposerAttachment[],
+      options: { updateComposerAttachments?: boolean } = {}
+    ): Promise<ComposerAttachment[]> => {
+      const updateComposerAttachments = options.updateComposerAttachments ?? true
+
+      return Promise.all(
+        attachments.map(async attachment => {
+          if (attachment.kind !== 'audio') {
+            return attachment
+          }
+
+          if (attachment.attachedSessionId === sessionId && attachment.refText) {
+            return attachment
+          }
+
+          if (!attachment.uploadFile) {
+            throw new Error(copy.audioAttachmentExpired)
+          }
+
+          const uploaded = await uploadFishAudioAttachment(attachment.uploadFile, sessionId, requestGateway)
+
+          const synced: ComposerAttachment = {
+            ...attachment,
+            attachedSessionId: sessionId,
+            digest: uploaded.digest,
+            expiresAt: uploaded.expires_at,
+            refText: fishAudioAttachmentRef(uploaded.handle),
+            uploadFile: undefined
+          }
+
+          if (updateComposerAttachments) {
+            addComposerAttachment(synced)
+          }
+
+          return synced
+        })
+      )
+    },
+    [copy.audioAttachmentExpired, requestGateway]
+  )
+
   const submitPromptText = useCallback(
     async (rawText: string, options?: SubmitTextOptions) => {
       const visibleText = rawText.trim()
@@ -281,11 +326,12 @@ export function usePromptActions({
 
       const terminalContextBlocks = terminalContextBlocksFromDraft(rawText).join('\n\n')
       const hasImage = attachments.some(a => a.kind === 'image')
+      const hasAudio = attachments.some(a => a.kind === 'audio')
       const attachmentRefs = attachments.map(attachmentDisplayText).filter((r): r is string => Boolean(r))
 
       const text =
         [contextRefs, terminalContextBlocks, visibleText].filter(Boolean).join('\n\n') ||
-        (hasImage ? 'What do you see in this image?' : '')
+        (hasImage ? 'What do you see in this image?' : hasAudio ? copy.useAttachedAudio : '')
 
       // Queue drains fire on the busy→false settle edge, where busyRef (synced
       // from $busy by a separate effect) may still read true — honoring it would
@@ -399,11 +445,19 @@ export function usePromptActions({
       }
 
       try {
+        const syncedAttachments = await syncAudioAttachmentsForSubmit(sessionId, attachments, {
+          updateComposerAttachments: usingComposerAttachments
+        })
+
         await syncImageAttachmentsForSubmit(sessionId, attachments, {
           updateComposerAttachments: usingComposerAttachments
         })
 
-        let submitText = text
+        const syncedRefs = syncedAttachments.map(attachmentDisplayText).filter((ref): ref is string => Boolean(ref))
+
+        let submitText =
+          [syncedRefs.join('\n'), terminalContextBlocks, visibleText].filter(Boolean).join('\n\n') ||
+          (hasImage ? 'What do you see in this image?' : hasAudio ? copy.useAttachedAudio : text)
 
         if (isVerxioWeb()) {
           const webLocalCwd = resolveWebLocalWorkspaceCwd($currentCwd.get())
@@ -484,6 +538,7 @@ export function usePromptActions({
       selectedStoredSessionIdRef,
       statusbarCopy.switchModel,
       syncImageAttachmentsForSubmit,
+      syncAudioAttachmentsForSubmit,
       updateSessionState
     ]
   )

@@ -1764,6 +1764,9 @@ export const zh: Translations = {
     themeTryPre: '试试 ',
     themeTryPost: '。',
     attachLabel: '附加',
+    audio: '音频样本…',
+    audioAttachFailed: '无法附加音频样本',
+    audioNeedsUpload: '请从“音频样本”中选择文件，以便 Verxio 安全上传。',
     files: '文件…',
     folder: '文件夹…',
     images: '图片…',
@@ -2266,11 +2269,19 @@ export const zh: Translations = {
     sudoPlaceholder: 'sudo 密码',
     secretTitle: '需要密钥',
     secretDesc: 'Verxio 需要一个凭据才能继续。',
-    secretPlaceholder: '密钥值'
+    secretPlaceholder: '密钥值',
+    fishAudioTitle: '确认 Fish Audio 操作',
+    fishAudioDescription: '继续前请检查服务器授权的语音操作。',
+    fishAudioAction: '操作',
+    fishAudioExpires: '授权到期时间',
+    fishAudioWorking: '正在应用 Fish Audio 语音操作',
+    fishAudioConfirmationFailed: '无法提交 Fish Audio 确认'
   },
 
   desktop: {
     audioReadFailed: '无法读取录制的音频',
+    audioAttachmentExpired: '此音频附件已不可用。请重新附加后重试。',
+    useAttachedAudio: '使用附加的音频样本。',
     sessionUnavailable: '会话不可用',
     createSessionFailed: '无法创建新会话',
     promptFailed: '提示词发送失败',

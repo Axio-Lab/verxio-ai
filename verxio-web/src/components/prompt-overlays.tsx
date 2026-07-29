@@ -14,11 +14,19 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { useI18n } from '@/i18n'
+import { fishAudioConfirmationParams } from '@/lib/fishaudio-session'
 import { triggerHaptic } from '@/lib/haptics'
-import { KeyRound, Loader2, Lock } from '@/lib/icons'
+import { AlertTriangle, KeyRound, Loader2, Lock } from '@/lib/icons'
 import { $gateway } from '@/store/gateway'
 import { notifyError } from '@/store/notifications'
-import { $secretRequest, $sudoRequest, clearSecretRequest, clearSudoRequest } from '@/store/prompts'
+import {
+  $fishAudioConfirmationRequest,
+  $secretRequest,
+  $sudoRequest,
+  clearFishAudioConfirmationRequest,
+  clearSecretRequest,
+  clearSudoRequest
+} from '@/store/prompts'
 
 // Renders the modal mid-turn prompts the gateway raises and waits on: sudo
 // password and skill secret capture. (Dangerous-command / execute_code approval
@@ -224,9 +232,147 @@ function SecretDialog() {
   )
 }
 
+export function FishAudioConfirmationDialog() {
+  const { t } = useI18n()
+  const copy = t.prompts
+  const request = useStore($fishAudioConfirmationRequest)
+  const gateway = useStore($gateway)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setSubmitting(false)
+    setError(request?.error ?? null)
+  }, [request?.error, request?.requestId])
+
+  const respond = useCallback(
+    async (approved: boolean) => {
+      if (!request || submitting) {
+        return
+      }
+
+      if (!approved) {
+        if (gateway && typeof request.confirmation !== 'string') {
+          setSubmitting(true)
+          try {
+            await gateway.request(
+              'fishaudio.confirmation.respond',
+              fishAudioConfirmationParams({
+                approved: false,
+                confirmation: request.confirmation,
+                requestId: request.requestId,
+                sessionId: request.sessionId
+              })
+            )
+          } catch {
+            // A failed refusal still fails closed when the backend prompt expires.
+          }
+        }
+
+        triggerHaptic('selection')
+        clearFishAudioConfirmationRequest(request.sessionId, request.requestId)
+        return
+      }
+
+      if (!gateway) {
+        setError(copy.gatewayDisconnected)
+
+        return
+      }
+
+      setSubmitting(true)
+      setError(null)
+
+      try {
+        if (typeof request.confirmation === 'string') {
+          await gateway.request('prompt.submit', {
+            session_id: request.sessionId ?? undefined,
+            text: request.confirmation
+          })
+        } else {
+          await gateway.request(
+            'fishaudio.confirmation.respond',
+            fishAudioConfirmationParams({
+              approved: true,
+              confirmation: request.confirmation,
+              requestId: request.requestId,
+              sessionId: request.sessionId
+            })
+          )
+        }
+
+        triggerHaptic('submit')
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : copy.fishAudioConfirmationFailed)
+        setSubmitting(false)
+      }
+    },
+    [copy.fishAudioConfirmationFailed, copy.gatewayDisconnected, gateway, request, submitting]
+  )
+
+  if (!request) {
+    return null
+  }
+
+  const expiry = new Date(request.expiresAt)
+
+  const expiryLabel = Number.isNaN(expiry.getTime())
+    ? request.expiresAt
+    : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(expiry)
+
+  return (
+    <Dialog onOpenChange={open => !open && !submitting && void respond(false)} open>
+      <DialogContent className="max-w-md" showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>{copy.fishAudioTitle}</DialogTitle>
+          <DialogDescription>{request.description || copy.fishAudioDescription}</DialogDescription>
+        </DialogHeader>
+
+        <dl className="grid gap-2 rounded-md border border-(--stroke-nous) bg-muted/20 px-3 py-2 text-sm">
+          <div className="grid gap-0.5">
+            <dt className="text-xs text-muted-foreground">{copy.fishAudioAction}</dt>
+            <dd className="font-medium text-foreground">{request.actionLabel}</dd>
+          </div>
+          <div className="grid gap-0.5">
+            <dt className="text-xs text-muted-foreground">{copy.fishAudioExpires}</dt>
+            <dd className="text-foreground">{expiryLabel}</dd>
+          </div>
+        </dl>
+
+        {submitting ? (
+          <div aria-label={copy.fishAudioWorking} className="flex min-h-24 items-center justify-center" role="status">
+            <Loader2 className="size-5 animate-spin text-primary" />
+          </div>
+        ) : null}
+
+        {error ? (
+          <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+            <span>{error}</span>
+          </div>
+        ) : null}
+
+        <DialogFooter>
+          <Button disabled={submitting} onClick={() => void respond(false)} type="button" variant="ghost">
+            {t.common.cancel}
+          </Button>
+          <Button
+            disabled={submitting}
+            onClick={() => void respond(true)}
+            variant={request.action === 'delete' ? 'destructive' : 'default'}
+          >
+            {request.action === 'delete' ? t.common.delete : t.common.confirm}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function PromptOverlays() {
   return (
     <>
+      <FishAudioConfirmationDialog />
       <SudoDialog />
       <SecretDialog />
     </>

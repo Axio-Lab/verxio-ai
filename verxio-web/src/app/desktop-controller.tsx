@@ -934,6 +934,7 @@ export function DesktopController() {
       }}
       onEdit={editMessage}
       onPasteClipboardImage={() => void composer.pasteClipboardImage()}
+      onPickAudio={composer.pickAudio}
       onPickFiles={() => void composer.pickContextPaths('file')}
       onPickFolders={() => void composer.pickContextPaths('folder')}
       onPickImages={() => void composer.pickImages()}

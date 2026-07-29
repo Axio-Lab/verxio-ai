@@ -47,6 +47,23 @@ export interface FishAudioVoicesResponse {
   voices: FishAudioVoice[]
 }
 
+export type FishAudioVoiceAction = 'create' | 'delete' | 'set_default'
+
+/** Opaque, signed server data. The web client must return it unchanged. */
+export type FishAudioConfirmationData = string | Record<string, unknown>
+
+export interface FishAudioAttachmentUploadResponse {
+  attached: boolean
+  digest?: string
+  expires_at?: string
+  expires_in?: number
+  file_name?: string
+  handle: string
+  mime_type?: string
+  session_id?: string
+  size_bytes?: number
+}
+
 export interface OAuthProviderStatus {
   error?: string
   expires_at?: null | string

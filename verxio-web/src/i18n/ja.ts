@@ -1543,6 +1543,9 @@ export const ja = defineLocale({
     themeTryPre: '試してみる: ',
     themeTryPost: '。',
     attachLabel: '添付',
+    audio: '音声サンプル…',
+    audioAttachFailed: '音声サンプルを添付できませんでした',
+    audioNeedsUpload: '「音声サンプル」からファイルを選択し、安全にアップロードしてください。',
     files: 'ファイル…',
     folder: 'フォルダー…',
     images: '画像…',
@@ -2057,11 +2060,19 @@ export const ja = defineLocale({
     sudoPlaceholder: 'sudo パスワード',
     secretTitle: 'シークレットが必要です',
     secretDesc: 'Verxio は続行するための認証情報が必要です。',
-    secretPlaceholder: 'シークレット値'
+    secretPlaceholder: 'シークレット値',
+    fishAudioTitle: 'Fish Audio 操作の確認',
+    fishAudioDescription: '続行する前に、サーバーが許可した音声操作を確認してください。',
+    fishAudioAction: '操作',
+    fishAudioExpires: '認可の有効期限',
+    fishAudioWorking: 'Fish Audio の音声操作を適用しています',
+    fishAudioConfirmationFailed: 'Fish Audio の確認を送信できませんでした'
   },
 
   desktop: {
     audioReadFailed: '録音した音声を読み取れませんでした',
+    audioAttachmentExpired: 'この音声添付は利用できません。再度添付してやり直してください。',
+    useAttachedAudio: '添付された音声サンプルを使用してください。',
     sessionUnavailable: 'セッションが利用できません',
     createSessionFailed: '新しいセッションを作成できませんでした',
     promptFailed: 'プロンプトに失敗しました',

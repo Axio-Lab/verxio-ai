@@ -4,13 +4,17 @@ import { triggerHaptic } from '@/lib/haptics'
 
 export interface ComposerAttachment {
   id: string
-  kind: 'image' | 'file' | 'folder' | 'terminal' | 'url'
+  kind: 'audio' | 'image' | 'file' | 'folder' | 'terminal' | 'url'
   label: string
   detail?: string
   refText?: string
   previewUrl?: string
   path?: string
   attachedSessionId?: string
+  /** Browser-only source retained until the session-bound upload succeeds. */
+  uploadFile?: File
+  digest?: string
+  expiresAt?: string
 }
 
 export const $composerDraft = atom('')

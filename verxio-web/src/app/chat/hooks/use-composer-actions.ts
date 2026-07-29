@@ -4,6 +4,7 @@ import { requestComposerFocus, requestComposerInsert } from '@/app/chat/composer
 import { formatRefValue } from '@/components/assistant-ui/directive-text'
 import { useI18n } from '@/i18n'
 import { attachmentId, contextPath, pathLabel } from '@/lib/chat-runtime'
+import { fishAudioAttachmentRef, uploadFishAudioAttachment } from '@/lib/fishaudio-session'
 import {
   addComposerAttachment,
   type ComposerAttachment,
@@ -15,6 +16,7 @@ import { notify, notifyError } from '@/store/notifications'
 import type { ImageDetachResponse } from '../../types'
 
 const IMAGE_EXTENSION_PATTERN = /\.(png|jpe?g|gif|webp|bmp|tiff?|svg|ico)$/i
+const AUDIO_EXTENSION_PATTERN = /\.(aac|flac|m4a|mp3|mp4|ogg|opus|wav|webm)$/i
 
 const BLOB_MIME_EXTENSION: Record<string, string> = {
   'image/bmp': '.bmp',
@@ -35,6 +37,14 @@ function blobExtension(blob: Blob): string {
 
 function isImagePath(filePath: string): boolean {
   return IMAGE_EXTENSION_PATTERN.test(filePath)
+}
+
+function isAudioPath(filePath: string): boolean {
+  return AUDIO_EXTENSION_PATTERN.test(filePath)
+}
+
+function isAudioFile(file: File): boolean {
+  return file.type.startsWith('audio/') || isAudioPath(file.name)
 }
 
 export interface DroppedFile {
@@ -344,6 +354,67 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
     [attachImagePath, copy.imageAttach, copy.imageAttachFailed, copy.imageWriteFailed]
   )
 
+  const attachAudioFile = useCallback(
+    async (file: File) => {
+      if (!file.size || !isAudioFile(file)) {
+        return false
+      }
+
+      const safeName = file.name.split(/[\\/]/).filter(Boolean).pop() || t.composer.audio
+      const id = attachmentId('audio', `${safeName}:${file.size}:${file.lastModified}`)
+
+      const pending: ComposerAttachment = {
+        id,
+        kind: 'audio',
+        label: safeName,
+        uploadFile: file
+      }
+
+      attachToMain(pending)
+
+      if (!activeSessionId) {
+        return true
+      }
+
+      try {
+        const uploaded = await uploadFishAudioAttachment(file, activeSessionId, requestGateway)
+        addComposerAttachment({
+          ...pending,
+          attachedSessionId: activeSessionId,
+          digest: uploaded.digest,
+          expiresAt: uploaded.expires_at,
+          refText: fishAudioAttachmentRef(uploaded.handle),
+          uploadFile: undefined
+        })
+
+        return true
+      } catch (err) {
+        removeComposerAttachment(id)
+        notifyError(err, t.composer.audioAttachFailed)
+
+        return false
+      }
+    },
+    [activeSessionId, requestGateway, t.composer.audio, t.composer.audioAttachFailed]
+  )
+
+  const pickAudio = useCallback(() => {
+    const input = document.createElement('input')
+    input.accept = 'audio/*,.m4a,.mp3,.wav,.ogg,.opus,.flac,.aac,.webm'
+    input.multiple = true
+    input.type = 'file'
+
+    input.onchange = () => {
+      const files = Array.from(input.files ?? [])
+
+      for (const file of files) {
+        void attachAudioFile(file)
+      }
+    }
+
+    input.click()
+  }, [attachAudioFile])
+
   const pickImages = useCallback(async () => {
     const paths = await window.hermesDesktop?.selectPaths({
       title: copy.attachImages,
@@ -445,6 +516,12 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
             continue
           }
 
+          if (knownPath && isAudioPath(knownPath)) {
+            lastFailure = t.composer.audioNeedsUpload
+
+            continue
+          }
+
           if (knownPath && attachContextFilePath(knownPath)) {
             attached = true
 
@@ -461,6 +538,18 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
 
         const filePath = knownPath || fallbackPath || ''
         const isImage = file.type.startsWith('image/') || isImagePath(file.name) || (filePath && isImagePath(filePath))
+
+        if (isAudioFile(file)) {
+          if (await attachAudioFile(file)) {
+            attached = true
+
+            continue
+          }
+
+          lastFailure = `Could not attach ${file.name || 'audio'}`
+
+          continue
+        }
 
         if (isImage) {
           if ((filePath && (await attachImagePath(filePath))) || (await attachImageBlob(file))) {
@@ -489,7 +578,15 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
 
       return attached
     },
-    [attachContextFilePath, attachContextFolderPath, attachImageBlob, attachImagePath, copy.dropFiles]
+    [
+      attachAudioFile,
+      attachContextFilePath,
+      attachContextFolderPath,
+      attachImageBlob,
+      attachImagePath,
+      copy.dropFiles,
+      t.composer.audioNeedsUpload
+    ]
   )
 
   const removeAttachment = useCallback(
@@ -516,12 +613,14 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
     addContextRefAttachment,
     addTerminalSelectionAttachment,
     addTextToDraft,
+    attachAudioFile,
     attachContextFilePath,
     attachContextFolderPath,
     attachDroppedItems,
     attachImageBlob,
     attachImagePath,
     pasteClipboardImage,
+    pickAudio,
     pickContextPaths,
     pickImages,
     removeAttachment

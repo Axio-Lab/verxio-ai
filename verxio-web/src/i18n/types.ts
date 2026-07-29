@@ -1239,6 +1239,9 @@ export interface Translations {
     themeTryPre: string
     themeTryPost: string
     attachLabel: string
+    audio: string
+    audioAttachFailed: string
+    audioNeedsUpload: string
     files: string
     folder: string
     images: string
@@ -1693,10 +1696,18 @@ export interface Translations {
     secretTitle: string
     secretDesc: string
     secretPlaceholder: string
+    fishAudioTitle: string
+    fishAudioDescription: string
+    fishAudioAction: string
+    fishAudioExpires: string
+    fishAudioWorking: string
+    fishAudioConfirmationFailed: string
   }
 
   desktop: {
     audioReadFailed: string
+    audioAttachmentExpired: string
+    useAttachedAudio: string
     sessionUnavailable: string
     createSessionFailed: string
     promptFailed: string

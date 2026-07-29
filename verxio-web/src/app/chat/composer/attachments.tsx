@@ -3,7 +3,7 @@ import { useStore } from '@nanostores/react'
 import { Codicon } from '@/components/ui/codicon'
 import { Tip } from '@/components/ui/tooltip'
 import { useI18n } from '@/i18n'
-import { FileText, FolderOpen, ImageIcon, Link, Terminal } from '@/lib/icons'
+import { AudioLines, FileText, FolderOpen, ImageIcon, Link, Terminal } from '@/lib/icons'
 import { normalizeOrLocalPreviewTarget } from '@/lib/local-preview'
 import type { ComposerAttachment } from '@/store/composer'
 import { notifyError } from '@/store/notifications'
@@ -29,9 +29,18 @@ export function AttachmentList({
 function AttachmentPill({ attachment, onRemove }: { attachment: ComposerAttachment; onRemove?: (id: string) => void }) {
   const { t } = useI18n()
   const c = t.composer
-  const Icon = { folder: FolderOpen, url: Link, image: ImageIcon, file: FileText, terminal: Terminal }[attachment.kind]
+
+  const Icon = {
+    audio: AudioLines,
+    folder: FolderOpen,
+    url: Link,
+    image: ImageIcon,
+    file: FileText,
+    terminal: Terminal
+  }[attachment.kind]
+
   const cwd = useStore($currentCwd)
-  const canPreview = attachment.kind !== 'folder' && attachment.kind !== 'terminal'
+  const canPreview = attachment.kind !== 'audio' && attachment.kind !== 'folder' && attachment.kind !== 'terminal'
   const detail = attachment.detail && attachment.detail !== attachment.label ? attachment.detail : undefined
 
   async function openPreview() {

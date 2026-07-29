@@ -16,6 +16,12 @@ import {
 } from '@/lib/chat-messages'
 import { coerceGatewayText, coerceThinkingText, normalizePersonalityValue } from '@/lib/chat-runtime'
 import { playCompletionSound } from '@/lib/completion-sound'
+import {
+  fishAudioToolChangedVoices,
+  fishAudioToolConfirmation,
+  fishAudioToolError,
+  notifyFishAudioVoicesChanged
+} from '@/lib/fishaudio-session'
 import { gatewayEventRequiresSessionId } from '@/lib/gateway-events'
 import { dedupeGeneratedImageEchoesInParts } from '@/lib/generated-images'
 import { triggerHaptic } from '@/lib/haptics'
@@ -29,7 +35,15 @@ import { refreshBackgroundProcesses } from '@/store/composer-status'
 import { dispatchNativeNotification } from '@/store/native-notifications'
 import { notify } from '@/store/notifications'
 import { requestDesktopOnboarding } from '@/store/onboarding'
-import { clearAllPrompts, setApprovalRequest, setSecretRequest, setSudoRequest } from '@/store/prompts'
+import {
+  clearAllPrompts,
+  clearFishAudioConfirmationRequest,
+  setApprovalRequest,
+  setFishAudioConfirmationError,
+  setFishAudioConfirmationRequest,
+  setSecretRequest,
+  setSudoRequest
+} from '@/store/prompts'
 import {
   $currentProvider,
   setCurrentBranch,
@@ -876,6 +890,26 @@ export function useMessageStream({
         if (sessionId) {
           flushQueuedDeltas(sessionId)
           upsertToolCall(sessionId, toTodoPayload(payload) ?? payload, 'complete', event.type)
+          const fishConfirmation = fishAudioToolConfirmation(payload?.name || '', payload?.result, sessionId)
+
+          if (fishConfirmation) {
+            setFishAudioConfirmationRequest(fishConfirmation)
+            updateSessionState(sessionId, state => ({ ...state, needsInput: true }))
+          }
+
+          const changedFishAction = fishAudioToolChangedVoices(payload?.name || '', payload?.result)
+
+          if (changedFishAction) {
+            clearFishAudioConfirmationRequest(sessionId)
+            notifyFishAudioVoicesChanged(changedFishAction)
+          } else {
+            const fishError = fishAudioToolError(payload?.name || '', payload?.result)
+
+            if (fishError && !fishConfirmation) {
+              setFishAudioConfirmationError(sessionId, fishError)
+            }
+          }
+
           // A pending clarify blocks the turn, so the first tool.complete after
           // one is the clarify resolving — drop the "needs input" flag here so
           // the sidebar indicator clears as soon as it's answered, not only at
@@ -944,6 +978,49 @@ export function useMessageStream({
             title: translateNow('notifications.native.inputTitle')
           })
         }
+      } else if (event.type === 'fishaudio.confirmation.request') {
+        const requestId = typeof payload?.request_id === 'string' ? payload.request_id : ''
+
+        const action =
+          payload?.action === 'create' || payload?.action === 'delete' || payload?.action === 'set_default'
+            ? payload.action
+            : null
+
+        const expiresAt = typeof payload?.expires_at === 'string' ? payload.expires_at : ''
+        const confirmation = payload?.confirmation
+
+        if (
+          requestId &&
+          action &&
+          expiresAt &&
+          (typeof confirmation === 'string' ||
+            (confirmation !== null && typeof confirmation === 'object' && !Array.isArray(confirmation)))
+        ) {
+          setFishAudioConfirmationRequest({
+            action,
+            actionLabel:
+              typeof payload?.action_label === 'string' && payload.action_label.trim()
+                ? payload.action_label
+                : action.replace('_', ' '),
+            attachmentDigest: typeof payload?.attachment_digest === 'string' ? payload.attachment_digest : undefined,
+            confirmation: confirmation as string | Record<string, unknown>,
+            description: typeof payload?.description === 'string' ? payload.description : undefined,
+            expiresAt,
+            requestId,
+            sessionId: sessionId ?? null
+          })
+
+          if (sessionId) {
+            updateSessionState(sessionId, state => ({ ...state, needsInput: true }))
+          }
+        }
+      } else if (event.type === 'fishaudio.voices.changed') {
+        const action =
+          payload?.action === 'create' || payload?.action === 'delete' || payload?.action === 'set_default'
+            ? payload.action
+            : 'set_default'
+
+        notifyFishAudioVoicesChanged(action)
       } else if (event.type === 'approval.request') {
         // Dangerous-command / execute_code approval. The Python side is blocked
         // in _await_gateway_decision() until approval.respond lands; without

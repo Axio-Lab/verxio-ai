@@ -65,6 +65,12 @@ export type GatewayEventPayload = {
   // secret.request (skill credential capture)
   env_var?: string
   prompt?: string
+  // fishaudio.confirmation.request / fishaudio.voices.changed
+  action?: string
+  action_label?: string
+  attachment_digest?: string
+  confirmation?: unknown
+  expires_at?: string
   // status.update (kind=process → background process completion/watch-match)
   kind?: string
 }

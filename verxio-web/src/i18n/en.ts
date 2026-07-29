@@ -1684,6 +1684,9 @@ export const en: Translations = {
     themeTryPre: 'Try ',
     themeTryPost: '.',
     attachLabel: 'Attach',
+    audio: 'Audio sample…',
+    audioAttachFailed: 'Could not attach audio sample',
+    audioNeedsUpload: 'Choose the audio file from Audio sample so Verxio can upload it safely.',
     files: 'Files…',
     folder: 'Folder…',
     images: 'Images…',
@@ -2195,11 +2198,19 @@ export const en: Translations = {
     sudoPlaceholder: 'sudo password',
     secretTitle: 'Secret required',
     secretDesc: 'Verxio needs a credential to continue.',
-    secretPlaceholder: 'secret value'
+    secretPlaceholder: 'secret value',
+    fishAudioTitle: 'Confirm Fish Audio action',
+    fishAudioDescription: 'Review this server-authorized voice action before continuing.',
+    fishAudioAction: 'Action',
+    fishAudioExpires: 'Authorization expires',
+    fishAudioWorking: 'Applying Fish Audio voice action',
+    fishAudioConfirmationFailed: 'Could not submit Fish Audio confirmation'
   },
 
   desktop: {
     audioReadFailed: 'Could not read recorded audio',
+    audioAttachmentExpired: 'This audio attachment is no longer available. Attach it again and retry.',
+    useAttachedAudio: 'Use the attached audio sample.',
     sessionUnavailable: 'Session unavailable',
     createSessionFailed: 'Could not create a new session',
     promptFailed: 'Prompt failed',
