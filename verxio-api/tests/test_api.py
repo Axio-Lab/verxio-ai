@@ -1651,6 +1651,40 @@ def test_transcription_catalog_uses_fallback_without_keys(client):
     assert groq["source"] == "fallback"
     assert groq["recommendedModel"] == "whisper-large-v3-turbo"
     assert [model["id"] for model in groq["models"]][:2] == ["whisper-large-v3-turbo", "whisper-large-v3"]
+    fishaudio = next(provider for provider in body["providers"] if provider["id"] == "fishaudio")
+    assert fishaudio["configured"] is False
+    assert fishaudio["envKey"] == "FISH_AUDIO_API_KEY"
+    assert fishaudio["docsUrl"] == "https://fish.audio/app/api-keys"
+    assert fishaudio["recommendedModel"] == "fish-audio-asr-beta"
+    assert [model["id"] for model in fishaudio["models"]] == ["fish-audio-asr-beta"]
+
+
+def test_transcription_catalog_keeps_fishaudio_models_static(client, monkeypatch):
+    payload, token = signup(client, "transcription-fishaudio@example.com")
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    env_path = Path(str(runtime_row["hermes_home_path"])) / ".env"
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    env_path.write_text("FISH_AUDIO_API_KEY=fish-secret\n", encoding="utf-8")
+
+    async def fail_for_fishaudio(_client, spec, _api_key, _env):
+        if spec.id == "fishaudio":
+            raise AssertionError("Fish Audio does not expose a models API")
+        return []
+
+    monkeypatch.setattr(transcription_catalog, "_fetch_provider_models", fail_for_fishaudio)
+
+    response = client.get("/api/transcription/catalog?refresh=true", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+
+    assert response.status_code == 200
+    fishaudio = next(provider for provider in response.json()["providers"] if provider["id"] == "fishaudio")
+    assert fishaudio["configured"] is True
+    assert fishaudio["source"] == "fallback"
+    assert fishaudio["error"] is None
+    assert "fish-secret" not in response.text
 
 
 def test_transcription_catalog_fetches_live_models_with_runtime_key(client, monkeypatch):

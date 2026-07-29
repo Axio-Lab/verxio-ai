@@ -192,7 +192,7 @@ class InferenceUsageResponse(BaseModel):
     usage: InferenceUsageSummary
 
 
-TranscriptionProviderId = Literal["elevenlabs", "groq", "mistral", "openai", "xai"]
+TranscriptionProviderId = Literal["elevenlabs", "fishaudio", "groq", "mistral", "openai", "xai"]
 TranscriptionCatalogSource = Literal["fallback", "provider"]
 
 

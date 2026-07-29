@@ -94,7 +94,7 @@ export const PROVIDER_GROUPS: ProviderPrefix[] = [
     prefix: 'FISH_AUDIO_',
     name: 'Fish Audio',
     description: 'Multilingual speech, private voices, and transcription',
-    docsUrl: 'https://fish.audio/app/api-keys/',
+    docsUrl: 'https://fish.audio/app/api-keys',
     priority: 7
   },
   {
@@ -248,8 +248,10 @@ export const ENUM_OPTIONS: Record<string, string[]> = {
   'delegation.reasoning_effort': ['', 'minimal', 'low', 'medium', 'high', 'xhigh'],
   'memory.provider': ['', 'builtin', 'hindsight', 'honcho'],
   'stt.elevenlabs.model_id': ['scribe_v2', 'scribe_v1'],
+  'stt.fishaudio.model': ['fish-audio-asr-beta'],
   'stt.groq.model': ['whisper-large-v3-turbo', 'whisper-large-v3'],
   'stt.local.model': ['tiny', 'base', 'small', 'medium', 'large-v3'],
+  'stt.provider': ['local', 'groq', 'openai', 'mistral', 'elevenlabs', 'xai', 'fishaudio'],
   'tts.openai.voice': ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'],
   'tts.provider': ['edge', 'elevenlabs', 'openai', 'neutts', 'dashscope', 'fishaudio'],
   'tts.dashscope.model': [
@@ -343,6 +345,9 @@ export const FIELD_LABELS: Record<string, string> = defineFieldCopy({
     provider: 'Speech-To-Text Provider',
     groq: {
       model: 'Groq STT Model'
+    },
+    fishaudio: {
+      model: 'Fish Audio ASR'
     },
     local: {
       model: 'Local Transcription Model',
@@ -465,6 +470,9 @@ export const FIELD_DESCRIPTIONS: Record<string, string> = defineFieldCopy({
     groq: {
       model: 'Groq Whisper model used for Notepad transcription.'
     },
+    fishaudio: {
+      model: 'Static label for Fish Audio beta transcription through /v1/asr.'
+    },
     elevenlabs: {
       languageCode: 'Optional ISO-639-3 language code. Blank lets ElevenLabs auto-detect.'
     }
@@ -554,6 +562,7 @@ export const SECTIONS: DesktopConfigSection[] = [
       'stt.enabled',
       'stt.provider',
       'stt.groq.model',
+      'stt.fishaudio.model',
       'voice.auto_tts',
       'tts.edge.voice',
       'tts.openai.model',

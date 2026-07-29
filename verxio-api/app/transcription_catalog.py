@@ -21,7 +21,7 @@ from app.models import (
 CACHE_TTL_SECONDS = 24 * 60 * 60
 HTTP_TIMEOUT_SECONDS = 8.0
 
-ProviderId = Literal["elevenlabs", "groq", "mistral", "openai", "xai"]
+ProviderId = Literal["elevenlabs", "fishaudio", "groq", "mistral", "openai", "xai"]
 
 
 @dataclass(frozen=True)
@@ -36,6 +36,7 @@ class ProviderSpec:
     description: str
     fallback_models: tuple[str, ...]
     preferred_models: tuple[str, ...]
+    supports_model_catalog: bool = True
 
 
 PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
@@ -86,6 +87,19 @@ PROVIDER_SPECS: tuple[ProviderSpec, ...] = (
         description="Scribe transcription and premium voice features. Create an API key in ElevenLabs settings.",
         fallback_models=("scribe_v2", "scribe_v1"),
         preferred_models=("scribe_v2", "scribe_v1"),
+    ),
+    ProviderSpec(
+        id="fishaudio",
+        label="Fish Audio",
+        env_key="FISH_AUDIO_API_KEY",
+        key_envs=("FISH_AUDIO_API_KEY",),
+        base_url="https://api.fish.audio/v1",
+        base_url_envs=(),
+        docs_url="https://fish.audio/app/api-keys",
+        description="Fish Audio beta speech recognition through the /v1/asr endpoint.",
+        fallback_models=("fish-audio-asr-beta",),
+        preferred_models=("fish-audio-asr-beta",),
+        supports_model_catalog=False,
     ),
     ProviderSpec(
         id="xai",
@@ -273,14 +287,14 @@ async def _catalog_item_for_provider(
     recommended = spec.preferred_models[0]
     fetched_at: str | None = None
 
-    if not configured:
+    if not configured or not spec.supports_model_catalog:
         return TranscriptionProviderCatalogItem(
             id=spec.id,
             label=spec.label,
             envKey=spec.env_key,
             docsUrl=spec.docs_url,
             description=spec.description,
-            configured=False,
+            configured=configured,
             recommendedModel=recommended,
             models=_fallback_models(spec),
             source="fallback",

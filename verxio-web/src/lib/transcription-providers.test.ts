@@ -46,4 +46,16 @@ describe('transcription provider catalog', () => {
     expect(groq?.envKey).toBe('GROQ_API_KEY')
     expect(transcriptionModelOptions(groq!, 'whisper-future')).toContain('whisper-future')
   })
+
+  it('exposes Fish Audio as a static beta ASR provider', () => {
+    const providers = cloudTranscriptionProvidersFromCatalog(null)
+    const fishaudio = cloudTranscriptionProviderById('fishaudio', providers)
+
+    expect(fishaudio).toMatchObject({
+      docsUrl: 'https://fish.audio/app/api-keys',
+      envKey: 'FISH_AUDIO_API_KEY',
+      models: ['fish-audio-asr-beta'],
+      recommendedModel: 'fish-audio-asr-beta'
+    })
+  })
 })
