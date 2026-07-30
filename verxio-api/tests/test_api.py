@@ -2557,7 +2557,10 @@ def test_notepad_summarize_uses_runtime_dashboard(client, monkeypatch):
 
     async def fake_run_agent_via_dashboard(workspace, profile, user_input, *, instructions=None):
         assert "Acme discovery call" in user_input
-        return "Summary\n\nDecisions\n- Follow up on SOC2."
+        assert "in-depth summary" in user_input.lower()
+        assert "concise" not in user_input.lower()
+        assert "Detailed walkthrough" in user_input
+        return "## Overview\n\nBuyer needs SOC2.\n\n## Decisions\n- Follow up on SOC2."
 
     monkeypatch.setattr("app.notepad.run_agent_via_dashboard", fake_run_agent_via_dashboard)
 
