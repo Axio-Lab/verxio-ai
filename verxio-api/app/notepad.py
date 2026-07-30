@@ -243,11 +243,22 @@ def update_note(
     note_id: str,
     payload: NotepadNoteUpdateRequest,
 ) -> NotepadNoteRecord:
-    _ensure_note(workspace, profile, note_id)
+    existing = _ensure_note(workspace, profile, note_id)
     updates = payload.model_dump(exclude_unset=True)
 
     if "folder_id" in updates:
         _ensure_folder(workspace, profile, updates["folder_id"])
+
+    # Notes expose content and summary as separate panes / share surfaces.
+    # Agents often PATCH only ``content`` after create (where summary was
+    # mirrored from content). Keep the summary pane in sync when it was still
+    # that mirror or empty — do not clobber an independently authored summary
+    # (e.g. hermes-summary) unless the caller explicitly sends ``summary``.
+    if "content" in updates and "summary" not in updates:
+        old_content = str(existing.get("content") or "").strip()
+        old_summary = str(existing.get("summary") or "").strip()
+        if not old_summary or old_summary == old_content:
+            updates["summary"] = updates.get("content") or ""
 
     fields: list[str] = []
     params: list[Any] = []

@@ -334,8 +334,12 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   const pendingDeleteNoteTitle =
     pendingDelete?.kind === 'note' ? pendingDelete.note.title.trim() || 'this note' : 'this note'
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  const load = useCallback(async (options?: { quiet?: boolean }) => {
+    const quiet = Boolean(options?.quiet)
+
+    if (!quiet) {
+      setLoading(true)
+    }
 
     try {
       const response = await listNotepad()
@@ -343,14 +347,39 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       setNotes(response.notes)
       setSelectedNoteId(current => current ?? response.notes[0]?.id ?? null)
     } catch (error) {
-      notifyError(error, 'Could not load notes')
+      if (!quiet) {
+        notifyError(error, 'Could not load notes')
+      }
     } finally {
-      setLoading(false)
+      if (!quiet) {
+        setLoading(false)
+      }
     }
   }, [])
 
   useEffect(() => {
     void load()
+  }, [load])
+
+  // Agent/tool updates write through the API without touching this page's
+  // local draft. Soft-refresh when the tab regains focus so content/summary
+  // catch up without a full navigation.
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === 'hidden') {
+        return
+      }
+
+      void load({ quiet: true })
+    }
+
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
   }, [load])
 
   useEffect(() => {
@@ -470,21 +499,48 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     []
   )
 
-  const selectedNoteIdentity = selectedNote?.id ?? null
+  const selectedNoteSnapshotRef = useRef<VerxioNotepadNote | null>(null)
 
   useEffect(() => {
     if (!selectedNote) {
+      selectedNoteSnapshotRef.current = null
       setDraft(null)
 
       return
     }
 
-    // Only remount the editor when switching notes. In-place updates (move /
-    // save) must not wipe unsaved title/content/summary edits.
-    setDraft(draftFromNote(selectedNote))
-    setSummaryEditing(false)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- identity-only remount
-  }, [selectedNoteIdentity])
+    const previous = selectedNoteSnapshotRef.current
+    selectedNoteSnapshotRef.current = selectedNote
+
+    // Switching notes always remounts the editor from server state.
+    if (!previous || previous.id !== selectedNote.id) {
+      setDraft(draftFromNote(selectedNote))
+      setSummaryEditing(false)
+
+      return
+    }
+
+    // Same note, unchanged server revision — keep the current draft.
+    if (previous.updated_at === selectedNote.updated_at) {
+      return
+    }
+
+    // Server revision changed (e.g. agent update). Adopt it unless the user
+    // still has unsaved edits relative to the previous snapshot.
+    let adoptedServerRevision = false
+    setDraft(current => {
+      if (current && draftChanged(previous, current)) {
+        return current
+      }
+
+      adoptedServerRevision = true
+
+      return draftFromNote(selectedNote)
+    })
+    if (adoptedServerRevision) {
+      setSummaryEditing(false)
+    }
+  }, [selectedNote])
 
   useEffect(() => {
     setStatusbarItemGroup?.('notepad', [
@@ -1304,7 +1360,15 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                 >
                   <button
                     className="min-w-0 flex-1 px-3 py-3 text-left"
-                    onClick={() => setSelectedNoteId(note.id)}
+                    onClick={() => {
+                      if (selectedNoteId === note.id) {
+                        void load({ quiet: true })
+
+                        return
+                      }
+
+                      setSelectedNoteId(note.id)
+                    }}
                     type="button"
                   >
                     <div className="flex items-center gap-2">
@@ -1562,6 +1626,22 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                         <Codicon name="link" />
                       </Button>
                     </Tip>
+                    <Tip label="Open public URL">
+                      <Button
+                        aria-label="Open public URL"
+                        onClick={() => {
+                          const url = shareUrlFromToken(selectedNote.share_token)
+                          if (url) {
+                            window.open(url, '_blank', 'noopener,noreferrer')
+                          }
+                        }}
+                        size="icon-sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <Codicon name="link-external" />
+                      </Button>
+                    </Tip>
                     <Tip label="Revoke public URL">
                       <Button
                         aria-label="Revoke public URL"
@@ -1571,7 +1651,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                         type="button"
                         variant="ghost"
                       >
-                        <Codicon name="link-external" />
+                        <Codicon name="debug-disconnect" />
                       </Button>
                     </Tip>
                   </>

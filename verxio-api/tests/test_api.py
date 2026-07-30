@@ -2485,6 +2485,49 @@ def test_notepad_notes_folders_and_public_shares(client):
     assert client.get(f"/api/public/notepad/{share_payload['token']}").status_code == 404
 
 
+def test_notepad_content_update_mirrors_summary_when_summary_was_content(client):
+    """Agent-style content-only PATCH should refresh a mirrored summary pane."""
+    _payload, token = signup(client, "notes-mirror@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    note = client.post(
+        "/api/notepad/notes",
+        json={
+            "title": "Playbook",
+            "content": "Version one body.",
+            "summary": "Version one body.",
+        },
+        headers=headers,
+    )
+    assert note.status_code == 200
+    note_id = note.json()["id"]
+
+    updated = client.patch(
+        f"/api/notepad/notes/{note_id}",
+        json={"content": "Version two body with edits."},
+        headers=headers,
+    )
+    assert updated.status_code == 200
+    assert updated.json()["content"] == "Version two body with edits."
+    assert updated.json()["summary"] == "Version two body with edits."
+
+    # Independently authored summaries must not be clobbered by content-only PATCH.
+    authored = client.patch(
+        f"/api/notepad/notes/{note_id}",
+        json={"summary": "Deep authored summary about version two."},
+        headers=headers,
+    )
+    assert authored.status_code == 200
+    preserved = client.patch(
+        f"/api/notepad/notes/{note_id}",
+        json={"content": "Version three body."},
+        headers=headers,
+    )
+    assert preserved.status_code == 200
+    assert preserved.json()["content"] == "Version three body."
+    assert preserved.json()["summary"] == "Deep authored summary about version two."
+
+
 def test_notepad_share_promotes_content_into_empty_summary(client):
     _payload, token = signup(client, "share-fallback@example.com")
     headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
