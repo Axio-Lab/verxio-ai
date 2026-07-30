@@ -1630,12 +1630,90 @@ def test_transcription_catalog_rejects_anonymous_users(client):
     assert response.status_code == 401
 
 
-def test_dashboard_env_mutations_reassert_hosted_inference_env():
+def test_dashboard_env_mutations_mark_hosted_inference_reassert_paths():
+    """Env writes are flagged, but the proxy must not docker-restart on them."""
     assert main._dashboard_path_needs_inference_env_reassert("api/env/reload", "POST")
     assert main._dashboard_path_needs_inference_env_reassert("api/env", "PUT")
     assert main._dashboard_path_needs_inference_env_reassert("api/tools/toolsets/tts/env", "PUT")
     assert not main._dashboard_path_needs_inference_env_reassert("api/model/options", "GET")
     assert not main._dashboard_path_needs_inference_env_reassert("api/status", "GET")
+
+
+def test_dashboard_env_put_does_not_restart_runtime(client, monkeypatch):
+    payload, token = signup(client, "env-save-no-restart@example.com")
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    db.execute(
+        """
+        UPDATE runtime_instances
+        SET status = 'running',
+            container_name = ?,
+            dashboard_url = 'http://127.0.0.1:19119',
+            dashboard_token = 'token'
+        WHERE id = ?
+        """,
+        ("verxio-test-runtime", runtime_row["id"]),
+    )
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE id = ?",
+        (runtime_row["id"],),
+    )
+    runtime = control_plane.runtime_from_row(runtime_row)
+
+    restarted: list[str] = []
+
+    async def fake_restart(rt, extra_env=None):
+        restarted.append(rt.id)
+        return rt
+
+    async def fake_start(rt, extra_env=None, wait_ready=True):
+        return rt
+
+    async def fake_token(*_a, **_k):
+        return "token"
+
+    async def fake_bridge(*_a, **_k):
+        return None
+
+    class _FakeUpstream:
+        status_code = 200
+        content = b'{"ok":true}'
+        headers = {"content-type": "application/json"}
+
+    class _FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def request(self, *args, **kwargs):
+            return _FakeUpstream()
+
+    monkeypatch.setattr(main, "restart_runtime", fake_restart)
+    monkeypatch.setattr(main, "start_runtime", fake_start)
+    monkeypatch.setattr(main, "get_runtime_for_user", lambda _user, fresh=False: runtime)
+    monkeypatch.setattr(main, "runtime_env_for_user", lambda _user_id: {"GEMINI_API_KEY": "hosted"})
+    monkeypatch.setattr(main, "runtime_dashboard_base_url", lambda _runtime, ensure_network=False: "http://127.0.0.1:19119")
+    monkeypatch.setattr(main, "_runtime_dashboard_token_async", fake_token)
+    monkeypatch.setattr(main, "_sync_composio_bridge_for_user", fake_bridge)
+    monkeypatch.setattr(main, "_sync_inference_bridge_for_user", fake_bridge)
+    monkeypatch.setattr(main.httpx, "AsyncClient", _FakeClient)
+
+    response = client.put(
+        "/api/runtime/dashboard/api/env",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"key": "DASHSCOPE_API_KEY", "value": "user-dashscope"},
+    )
+
+    assert response.status_code == 200
+    assert restarted == []
 
 
 def test_transcription_catalog_uses_fallback_without_keys(client):

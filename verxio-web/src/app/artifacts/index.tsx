@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { ZoomableImage } from '@/components/chat/zoomable-image'
 import { PageLoader } from '@/components/page-loader'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Codicon } from '@/components/ui/codicon'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { CopyButton } from '@/components/ui/copy-button'
@@ -19,6 +20,7 @@ import { FileImage, FileText, FolderOpen, Link2 } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import {
   deleteVerxioArtifact,
+  deleteVerxioArtifacts,
   listVerxioArtifacts,
   verxioApiEnabled,
   verxioApiUrl,
@@ -33,6 +35,8 @@ import { PAGE_INSET_NEG_X, PAGE_INSET_X } from '../layout-constants'
 import { PageSearchShell } from '../page-search-shell'
 import { sessionRoute } from '../routes'
 import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
+
+import { ArtifactTextPreviewDialog } from './artifact-text-preview-dialog'
 
 type ArtifactKind = 'image' | 'file' | 'link'
 type ArtifactFilter = 'all' | ArtifactKind
@@ -50,12 +54,28 @@ interface ArtifactRecord {
   timestamp: number
 }
 
+function isTextPreviewable(artifact: ArtifactRecord): boolean {
+  return artifact.kind === 'file' && TEXT_PREVIEW_EXT_RE.test(artifact.label || artifact.value)
+}
+
+function artifactIdFromPreviewHref(href: string): string | null {
+  try {
+    const match = new URL(href, window.location.origin).pathname.match(/\/api\/artifacts\/([^/]+)\/preview\/?$/)
+
+    return match?.[1] ? decodeURIComponent(match[1]) : null
+  } catch {
+    return null
+  }
+}
+
 const MARKDOWN_IMAGE_RE = /!\[([^\]]*)\]\(([^)\s]+)\)/g
 const MARKDOWN_LINK_RE = /\[([^\]]+)\]\(([^)\s]+)\)/g
 const URL_RE = /https?:\/\/[^\s<>"')]+/g
 const PATH_RE = /(^|[\s("'`])((?:\/|~\/|\.\.?\/)[^\s"'`<>]+(?:\.[a-z0-9]{1,8})?)/gi
 const IMAGE_EXT_RE = /\.(?:png|jpe?g|gif|webp|svg|bmp)(?:\?.*)?$/i
 const FILE_EXT_RE = /\.(?:png|jpe?g|gif|webp|svg|bmp|pdf|txt|json|md|csv|zip|tar|gz|mp3|wav|mp4|mov)(?:\?.*)?$/i
+const TEXT_PREVIEW_EXT_RE =
+  /\.(?:md|markdown|txt|json|csv|ya?ml|toml|xml|html?|css|js|jsx|mjs|ts|tsx|py|rs|sh|sql|log)$/i
 const KEY_HINT_RE = /(path|file|url|image|artifact|output|download|result|target)/i
 
 const ARTIFACT_TIME_FMT = new Intl.DateTimeFormat(undefined, {
@@ -349,8 +369,10 @@ function formatArtifactTime(timestamp: number): string {
 
 type CellCtx = {
   onDelete: (artifact: ArtifactRecord) => void
-  onOpen: (href: string) => void | Promise<void>
+  onOpen: (artifact: ArtifactRecord) => void | Promise<void>
   onOpenChat: (sessionId: string) => void
+  onToggleSelected: (artifact: ArtifactRecord, selected: boolean) => void
+  selectedIds: ReadonlySet<string>
 }
 
 interface ArtifactColumn {
@@ -376,6 +398,9 @@ export function ArtifactsView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
   const [query, setQuery] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<ArtifactRecord | null>(null)
+  const [pendingBatchDelete, setPendingBatchDelete] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const [textPreview, setTextPreview] = useState<{ id: string; label: string } | null>(null)
 
   const [kindFilter, setKindFilter] = useRouteEnumParam('tab', ARTIFACT_FILTERS, 'all')
 
@@ -425,6 +450,7 @@ export function ArtifactsView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
   useEffect(() => {
     setImagePage(1)
     setFilePage(1)
+    setSelectedIds(new Set())
   }, [artifacts, kindFilter, query])
 
   const visibleArtifacts = useMemo(() => {
@@ -488,12 +514,22 @@ export function ArtifactsView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
   }, [artifacts])
 
   const openArtifact = useCallback(
-    async (href: string) => {
+    async (artifact: ArtifactRecord) => {
+      if (isTextPreviewable(artifact)) {
+        const previewId = artifactIdFromPreviewHref(artifact.href) || (artifact.deletable ? artifact.id : null)
+
+        if (previewId) {
+          setTextPreview({ id: previewId, label: artifact.label })
+
+          return
+        }
+      }
+
       try {
         if (window.hermesDesktop?.openExternal) {
-          await window.hermesDesktop.openExternal(href)
+          await window.hermesDesktop.openExternal(artifact.href)
         } else {
-          window.open(href, '_blank', 'noopener,noreferrer')
+          window.open(artifact.href, '_blank', 'noopener,noreferrer')
         }
       } catch (err) {
         notifyError(err, a.openFailed)
@@ -512,6 +548,32 @@ export function ArtifactsView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
     })
   }, [])
 
+  const toggleSelected = useCallback((artifact: ArtifactRecord, selected: boolean) => {
+    if (!artifact.deletable) {
+      return
+    }
+
+    setSelectedIds(current => {
+      const next = new Set(current)
+
+      if (selected) {
+        next.add(artifact.id)
+      } else {
+        next.delete(artifact.id)
+      }
+
+      return next
+    })
+  }, [])
+
+  const deletableVisibleIds = useMemo(
+    () => visibleArtifacts.filter(artifact => artifact.deletable).map(artifact => artifact.id),
+    [visibleArtifacts]
+  )
+
+  const selectedCount = selectedIds.size
+  const allVisibleSelected = deletableVisibleIds.length > 0 && deletableVisibleIds.every(id => selectedIds.has(id))
+
   async function handleConfirmDelete() {
     if (!pendingDelete) {
       return
@@ -519,13 +581,43 @@ export function ArtifactsView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
 
     await deleteVerxioArtifact(pendingDelete.id)
     setArtifacts(current => (current ? current.filter(artifact => artifact.id !== pendingDelete.id) : current))
+    setSelectedIds(current => {
+      const next = new Set(current)
+      next.delete(pendingDelete.id)
+
+      return next
+    })
     notify({ kind: 'success', message: a.deleted })
+  }
+
+  async function handleConfirmBatchDelete() {
+    const ids = Array.from(selectedIds)
+
+    if (ids.length === 0) {
+      return
+    }
+
+    const result = await deleteVerxioArtifacts(ids)
+    const deleted = new Set(result.deleted)
+
+    setArtifacts(current => (current ? current.filter(artifact => !deleted.has(artifact.id)) : current))
+    setSelectedIds(new Set(result.failed))
+
+    if (result.failed.length === 0) {
+      notify({ kind: 'success', message: a.batchDeleted(result.deleted.length) })
+
+      return
+    }
+
+    notifyError(new Error(a.batchDeletePartial(result.deleted.length, result.failed.length)), a.batchDeleteFailed)
   }
 
   const cellCtx: CellCtx = {
     onDelete: setPendingDelete,
     onOpen: openArtifact,
-    onOpenChat: sessionId => navigate(sessionRoute(sessionId))
+    onOpenChat: sessionId => navigate(sessionRoute(sessionId)),
+    onToggleSelected: toggleSelected,
+    selectedIds
   }
 
   return (
@@ -579,6 +671,33 @@ export function ArtifactsView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
         ) : (
           <div className="h-full overflow-y-auto">
             <div className={cn('flex flex-col gap-3 pb-2', PAGE_INSET_X)}>
+              {deletableVisibleIds.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <Checkbox
+                    aria-label={a.selectAll}
+                    checked={allVisibleSelected}
+                    onCheckedChange={checked => {
+                      setSelectedIds(checked ? new Set(deletableVisibleIds) : new Set())
+                    }}
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {selectedCount > 0 ? a.selectedCount(selectedCount) : a.selectHint}
+                  </span>
+                  {selectedCount > 0 && (
+                    <Button
+                      className="ml-auto"
+                      onClick={() => setPendingBatchDelete(true)}
+                      size="xs"
+                      type="button"
+                      variant="destructive"
+                    >
+                      <Codicon name="trash" />
+                      {a.deleteSelected(selectedCount)}
+                    </Button>
+                  )}
+                </div>
+              )}
+
               {visibleImageArtifacts.length > 0 && (
                 <section className="flex flex-col">
                   <div
@@ -606,6 +725,8 @@ export function ArtifactsView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
                         onDelete={setPendingDelete}
                         onImageError={markImageFailed}
                         onOpenChat={sessionId => navigate(sessionRoute(sessionId))}
+                        onToggleSelected={toggleSelected}
+                        selected={selectedIds.has(artifact.id)}
                       />
                     ))}
                   </div>
@@ -651,6 +772,29 @@ export function ArtifactsView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
         open={Boolean(pendingDelete)}
         title={pendingDelete ? a.deleteTitle(pendingDelete.label) : a.deleteTitle('')}
       />
+
+      <ConfirmDialog
+        busyLabel={a.deleting}
+        confirmLabel={a.deleteSelected(selectedCount)}
+        description={a.batchDeleteDescription(selectedCount)}
+        destructive
+        doneLabel={a.batchDeleted(selectedCount)}
+        onClose={() => setPendingBatchDelete(false)}
+        onConfirm={handleConfirmBatchDelete}
+        open={pendingBatchDelete}
+        title={a.batchDeleteTitle(selectedCount)}
+      />
+
+      <ArtifactTextPreviewDialog
+        artifactId={textPreview?.id || ''}
+        label={textPreview?.label || ''}
+        onOpenChange={open => {
+          if (!open) {
+            setTextPreview(null)
+          }
+        }}
+        open={Boolean(textPreview)}
+      />
     </>
   )
 }
@@ -683,9 +827,19 @@ interface ArtifactImageCardProps {
   onDelete: (artifact: ArtifactRecord) => void
   onImageError: (id: string) => void
   onOpenChat: (sessionId: string) => void
+  onToggleSelected: (artifact: ArtifactRecord, selected: boolean) => void
+  selected: boolean
 }
 
-function ArtifactImageCard({ artifact, failedImage, onDelete, onImageError, onOpenChat }: ArtifactImageCardProps) {
+function ArtifactImageCard({
+  artifact,
+  failedImage,
+  onDelete,
+  onImageError,
+  onOpenChat,
+  onToggleSelected,
+  selected
+}: ArtifactImageCardProps) {
   const { t } = useI18n()
   const a = t.artifacts
   const kindLabel = artifact.kind === 'image' ? a.kindImage : artifact.kind === 'file' ? a.kindFile : a.kindLink
@@ -698,6 +852,15 @@ function ArtifactImageCard({ artifact, failedImage, onDelete, onImageError, onOp
           failedImage && 'cursor-default'
         )}
       >
+        {artifact.deletable ? (
+          <div className="absolute left-2 top-2 z-10" onClick={event => event.stopPropagation()}>
+            <Checkbox
+              aria-label={a.selectItem(artifact.label)}
+              checked={selected}
+              onCheckedChange={checked => onToggleSelected(artifact, Boolean(checked))}
+            />
+          </div>
+        ) : null}
         {!failedImage && (
           <ZoomableImage
             alt={artifact.label}
@@ -796,25 +959,43 @@ function ArtifactCellAction({
 }
 
 function PrimaryCell({ artifact, ctx }: { artifact: ArtifactRecord; ctx: CellCtx }) {
+  const { t } = useI18n()
   const isLink = artifact.kind === 'link'
   const Icon = isLink ? Link2 : FileText
   const fetchedTitle = useLinkTitle(isLink ? artifact.href : null)
   const label = isLink ? fetchedTitle || urlSlugTitleLabel(artifact.href) : artifact.label
 
   return (
-    <ArtifactCellAction
-      href={isLink ? artifact.href : undefined}
-      onClick={isLink ? undefined : () => void ctx.onOpen(artifact.href)}
-      title={label}
-    >
-      <span className="mt-0.5 grid size-6 shrink-0 place-items-center self-start rounded-md bg-(--ui-bg-tertiary) text-(--ui-text-tertiary)">
-        <Icon className="size-3.5" />
-      </span>
-      <span className={cn('min-w-0 flex-1', isLink ? 'wrap-anywhere' : 'truncate')}>
-        {label}
-        {isLink && <ExternalLinkIcon />}
-      </span>
-    </ArtifactCellAction>
+    <div className="flex h-full min-w-0 items-stretch">
+      {artifact.deletable ? (
+        <div
+          className="flex items-center px-2"
+          onClick={event => event.stopPropagation()}
+          onKeyDown={event => event.stopPropagation()}
+        >
+          <Checkbox
+            aria-label={t.artifacts.selectItem(artifact.label)}
+            checked={ctx.selectedIds.has(artifact.id)}
+            onCheckedChange={checked => ctx.onToggleSelected(artifact, Boolean(checked))}
+          />
+        </div>
+      ) : null}
+      <div className="min-w-0 flex-1">
+        <ArtifactCellAction
+          href={isLink ? artifact.href : undefined}
+          onClick={isLink ? undefined : () => void ctx.onOpen(artifact)}
+          title={label}
+        >
+          <span className="mt-0.5 grid size-6 shrink-0 place-items-center self-start rounded-md bg-(--ui-bg-tertiary) text-(--ui-text-tertiary)">
+            <Icon className="size-3.5" />
+          </span>
+          <span className={cn('min-w-0 flex-1', isLink ? 'wrap-anywhere' : 'truncate')}>
+            {label}
+            {isLink && <ExternalLinkIcon />}
+          </span>
+        </ArtifactCellAction>
+      </div>
+    </div>
   )
 }
 

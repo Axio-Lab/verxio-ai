@@ -77,12 +77,53 @@ export async function verxioArtifactPreviewTarget(path: string): Promise<Preview
   return artifactTargetForRecord(record, path)
 }
 
+function languageForArtifact(record: VerxioArtifact): string | undefined {
+  const name = (record.file_name || record.relative_path || '').toLowerCase()
+
+  if (name.endsWith('.md') || name.endsWith('.markdown')) {
+    return 'markdown'
+  }
+
+  if (name.endsWith('.json')) {
+    return 'json'
+  }
+
+  if (name.endsWith('.ts') || name.endsWith('.tsx')) {
+    return 'typescript'
+  }
+
+  if (name.endsWith('.js') || name.endsWith('.jsx') || name.endsWith('.mjs')) {
+    return 'javascript'
+  }
+
+  if (name.endsWith('.py')) {
+    return 'python'
+  }
+
+  if (name.endsWith('.yml') || name.endsWith('.yaml')) {
+    return 'yaml'
+  }
+
+  if (name.endsWith('.sh')) {
+    return 'bash'
+  }
+
+  return undefined
+}
+
 export function artifactTargetForRecord(record: VerxioArtifact, path: string): PreviewTarget {
+  const previewKind = artifactPreviewKind(record)
+
   return {
+    // Text/markdown/images use LocalFilePreview via `path` + readFileText.
+    // Keep kind `url` so the preview chrome can still open the HTTP preview
+    // link, but PreviewPane routes text/image into the in-app renderer.
     kind: 'url',
     label: record.file_name || basename(path),
+    language: languageForArtifact(record),
     mimeType: record.content_type,
-    previewKind: artifactPreviewKind(record),
+    path,
+    previewKind,
     source: path,
     url: verxioApiUrl(`/api/artifacts/${encodeURIComponent(record.id)}/preview`)
   }

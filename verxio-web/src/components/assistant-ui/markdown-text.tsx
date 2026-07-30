@@ -376,13 +376,17 @@ function GeneratedArtifactCard({ artifact }: { artifact: ResolvedArtifact }) {
       return
     }
 
-    if (!isVerxioDesktop()) {
-      openExternalLink(artifact.previewUrl)
+    // Text/markdown/html: always open the in-session preview pane so reports
+    // are readable instead of auto-downloading in a new browser tab.
+    const previewKind = artifact.target.previewKind
+
+    if (previewKind === 'text' || previewKind === 'html' || isVerxioDesktop()) {
+      setCurrentSessionPreviewTarget(artifact.target, 'explicit-link', artifact.path)
 
       return
     }
 
-    setCurrentSessionPreviewTarget(artifact.target, 'explicit-link', artifact.path)
+    openExternalLink(artifact.previewUrl)
   }
 
   return (
@@ -463,13 +467,15 @@ function MarkdownPathLink({ children, className, href, ...props }: ComponentProp
             const verxioArtifactPreview = await verxioArtifactPreviewTarget(path)
 
             if (verxioArtifactPreview) {
-              if (!isVerxioDesktop()) {
-                openExternalLink(verxioArtifactPreview.url)
+              const previewKind = verxioArtifactPreview.previewKind
+
+              if (previewKind === 'text' || previewKind === 'html' || previewKind === 'image' || isVerxioDesktop()) {
+                setCurrentSessionPreviewTarget(verxioArtifactPreview, 'explicit-link', path)
 
                 return
               }
 
-              setCurrentSessionPreviewTarget(verxioArtifactPreview, 'explicit-link', path)
+              openExternalLink(verxioArtifactPreview.url)
 
               return
             }

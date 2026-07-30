@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { PaginationControl } from '@/components/ui/pagination'
 import { useI18n } from '@/i18n'
+import { MEDIA_PROVIDER_TOOL_ENV_KEYS } from '@/lib/tool-credentials'
 import { CLOUD_TRANSCRIPTION_ENV_KEYS } from '@/lib/transcription-providers'
 import type { EnvVarInfo } from '@/types/hermes'
 
@@ -13,6 +14,8 @@ import { useEnvCredentials } from './env-credentials'
 import { asText } from './helpers'
 import { LoadingState, SettingsContent } from './primitives'
 import { TranscriptionKeySettings } from './transcription-key-settings'
+
+const TOOLS_EXTRA_ENV_KEYS = new Set<string>(MEDIA_PROVIDER_TOOL_ENV_KEYS)
 
 // Sub-views surfaced as sidebar subnav under Tools & Keys (see settings/index.tsx).
 export const KEYS_VIEWS = ['tools', 'transcription', 'settings'] as const
@@ -52,10 +55,19 @@ export function KeysSettings({ view }: KeysSettingsProps) {
       const cats = VIEW_CATEGORIES[v]
 
       const entries = Object.entries(vars)
-        .filter(
-          ([key, info]) =>
-            !info.channel_managed && cats.includes(asText(info.category)) && !CLOUD_TRANSCRIPTION_ENV_KEYS.includes(key)
-        )
+        .filter(([key, info]) => {
+          if (info.channel_managed || CLOUD_TRANSCRIPTION_ENV_KEYS.includes(key)) {
+            return false
+          }
+
+          if (cats.includes(asText(info.category))) {
+            return true
+          }
+
+          // Hosted mode hides Providers → API keys; still expose DashScope here
+          // so AI video/image generation credentials can be saved.
+          return v === 'tools' && TOOLS_EXTRA_ENV_KEYS.has(key)
+        })
         .sort(([a], [b]) => a.localeCompare(b))
 
       return entries.length === 0 ? [] : [{ category: v, entries }]

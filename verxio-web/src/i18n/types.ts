@@ -1104,6 +1104,20 @@ export interface Translations {
     deleteConfirm: string
     deleting: string
     deleted: string
+    selectAll: string
+    selectHint: string
+    selectItem: (label: string) => string
+    selectedCount: (count: number) => string
+    deleteSelected: (count: number) => string
+    batchDeleteTitle: (count: number) => string
+    batchDeleteDescription: (count: number) => string
+    batchDeleted: (count: number) => string
+    batchDeleteFailed: string
+    batchDeletePartial: (deleted: number, failed: number) => string
+    previewDescription: string
+    downloadAction: string
+    downloadStarted: string
+    downloadFailed: string
     itemsImage: string
     itemsLink: string
     itemsFile: string

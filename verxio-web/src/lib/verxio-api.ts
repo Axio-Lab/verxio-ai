@@ -1040,9 +1040,27 @@ export function listVerxioArtifacts(options?: { refresh?: boolean }): Promise<Ve
 }
 
 export function deleteVerxioArtifact(artifactId: string): Promise<{ ok: boolean }> {
+  artifactsListCache = null
+
   return verxioFetch<{ ok: boolean }>(`/api/artifacts/${encodeURIComponent(artifactId)}`, {
     method: 'DELETE'
   })
+}
+
+export async function deleteVerxioArtifacts(artifactIds: string[]): Promise<{ failed: string[]; deleted: string[] }> {
+  const deleted: string[] = []
+  const failed: string[] = []
+
+  for (const artifactId of artifactIds) {
+    try {
+      await deleteVerxioArtifact(artifactId)
+      deleted.push(artifactId)
+    } catch {
+      failed.push(artifactId)
+    }
+  }
+
+  return { deleted, failed }
 }
 
 export function listNotepad(): Promise<VerxioNotepadListResponse> {

@@ -2063,13 +2063,14 @@ def _dashboard_path_needs_inference_sync(path: str) -> bool:
 
 
 def _dashboard_path_needs_inference_env_reassert(path: str, method: str) -> bool:
-    """Dashboard env writes can drop Verxio-injected hosted model env vars.
+    """Env/toolset writes that used to force a Docker runtime restart.
 
-    Hermes' `/api/env/reload` mirrors `.env` into `os.environ` and removes keys
-    absent from `.env`. Hosted inference secrets are intentionally injected as
-    container env, not persisted into `.env`, so a generic Tools & Keys reload
-    can make the running gateway process forget `DASHSCOPE_API_KEY` while
-    `config.yaml` still selects `provider: alibaba`.
+    Hermes' `/api/env/reload` mirrors `.env` into `os.environ` and, when
+    ``VERXIO_HOSTED=1``, preserves injected hosted model secrets
+    (``DASHSCOPE_API_KEY`` / ``GEMINI_API_KEY`` / ``GOOGLE_API_KEY``) that are
+    not persisted into `.env`. A full container restart on every Tools /
+    Toolsets key save blocked the HTTP response for 30–90s and surfaced false
+    "timed out while starting" errors — so the proxy no longer restarts here.
     """
     if _dashboard_request_is_read(method):
         return False
@@ -2139,8 +2140,11 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     # Exception: model info/options must seed Hermes with the user's hosted
     # default first, or the statusbar paints "No model" on a fresh runtime.
     if not _dashboard_request_is_read(request.method):
-        await _sync_composio_bridge_for_user(user, apply_live=True)
-        await _sync_inference_bridge_for_user(user)
+        # Model switches + Tools/Keys saves hit this path. Never Docker-restart
+        # or MCP-reload here — those made the runtime feel like it was crashing
+        # (30–90s "starting" toasts). Composio live reload stays on the
+        # Connections routes; inference env injection stays on start/restart.
+        await _sync_inference_bridge_for_user(user, allow_restart=False)
     elif _dashboard_path_needs_inference_sync(path):
         if lightweight:
             _schedule_inference_bridge_sync(user)
@@ -2193,11 +2197,15 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     elif lightweight and upstream.status_code >= 500:
         _schedule_runtime_ensure(user)
 
+    # Intentionally no docker restart on env/toolset writes. Hermes already
+    # preserves VERXIO_HOSTED inference env across `/api/env/reload`, and
+    # restarting here made key saves time out in the browser.
     if upstream.status_code < 400 and _dashboard_path_needs_inference_env_reassert(path, request.method):
-        runtime_env = runtime_env_for_user(str(user["id"]))
-        if runtime_env and runtime.status == "running":
-            runtime = await restart_runtime(get_runtime_for_user(user, fresh=True), extra_env=runtime_env)
-            mark_runtime_healthy(runtime)
+        logger.debug(
+            "Skipping runtime restart after %s %s (hosted env preserved in-process)",
+            request.method,
+            path,
+        )
 
     response_headers = {
         key: value

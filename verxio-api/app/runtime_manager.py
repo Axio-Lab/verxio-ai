@@ -26,6 +26,7 @@ _NETWORK_CACHE_LOADED = False
 _NETWORK_ATTACHED_CACHE: set[str] = set()
 _CONTAINER_IP_CACHE: dict[str, tuple[float, str]] = {}
 _LIVE_TOKEN_CACHE: dict[str, tuple[float, str]] = {}
+_CONTAINER_ENV_CACHE: dict[str, tuple[float, dict[str, str]]] = {}
 _HEALTHY_UNTIL: dict[str, float] = {}
 _START_LOCKS: dict[str, asyncio.Lock] = {}
 _CACHE_TTL_SECONDS = 60.0
@@ -344,7 +345,40 @@ def invalidate_runtime_caches(runtime: RuntimeInstance) -> None:
     name = _container_name(runtime)
     _CONTAINER_IP_CACHE.pop(name, None)
     _LIVE_TOKEN_CACHE.pop(name, None)
+    _CONTAINER_ENV_CACHE.pop(name, None)
     _HEALTHY_UNTIL.pop(name, None)
+
+
+def _runtime_container_env_map(runtime: RuntimeInstance) -> dict[str, str] | None:
+    """Read all container env vars once (cached) — avoids repeated docker inspect."""
+
+    name = _container_name(runtime)
+    cached = _CONTAINER_ENV_CACHE.get(name)
+    if cached:
+        expires_at, env_map = cached
+        if time.monotonic() < expires_at:
+            return env_map
+        _CONTAINER_ENV_CACHE.pop(name, None)
+
+    result = _run_docker(
+        [
+            "inspect",
+            "-f",
+            "{{range .Config.Env}}{{println .}}{{end}}",
+            name,
+        ]
+    )
+    if result.returncode != 0:
+        return None
+
+    env_map: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        env_map[key] = value
+    _CONTAINER_ENV_CACHE[name] = (time.monotonic() + _CACHE_TTL_SECONDS, env_map)
+    return env_map
 
 
 def runtime_container_env_value(runtime: RuntimeInstance, key: str) -> str | None:
@@ -353,22 +387,10 @@ def runtime_container_env_value(runtime: RuntimeInstance, key: str) -> str | Non
     if not key:
         return None
 
-    result = _run_docker(
-        [
-            "inspect",
-            "-f",
-            "{{range .Config.Env}}{{println .}}{{end}}",
-            _container_name(runtime),
-        ]
-    )
-    if result.returncode != 0:
+    env_map = _runtime_container_env_map(runtime)
+    if env_map is None:
         return None
-
-    prefix = f"{key}="
-    for line in result.stdout.splitlines():
-        if line.startswith(prefix):
-            return line[len(prefix) :]
-    return None
+    return env_map.get(key)
 
 
 def runtime_container_env_matches(runtime: RuntimeInstance, key: str, expected_value: str) -> bool:

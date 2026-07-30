@@ -144,7 +144,15 @@ export function PreviewPane({
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<PreviewLoadErrorState | null>(null)
   const [localReloadKey, setLocalReloadKey] = useState(0)
-  const isWebPreview = target.kind === 'url' || (target.previewKind === 'html' && target.renderMode !== 'source')
+  // Text/markdown/images should render in-app (LocalFilePreview), not as a
+  // browser tab / webview — otherwise .md reports auto-download on hosted web.
+  const isInAppFilePreview =
+    target.previewKind === 'text' ||
+    target.previewKind === 'image' ||
+    (target.previewKind === 'html' && target.renderMode === 'source') ||
+    (target.kind === 'file' && target.previewKind === 'binary')
+  const isWebPreview =
+    !isInAppFilePreview && (target.kind === 'url' || (target.previewKind === 'html' && target.renderMode !== 'source'))
   const currentLabel = compactUrl(currentUrl)
 
   const previewLabel =
