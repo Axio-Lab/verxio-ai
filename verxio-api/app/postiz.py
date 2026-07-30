@@ -15,7 +15,7 @@ from fastapi import HTTPException
 from app import db
 from app.control_plane import now_iso
 from app.models import AgentProfile, PostizToolBridgeStatus, PostizWorkspaceRecord, RuntimeInstance, Workspace, new_id
-from app.pulse import decrypt_credentials, encrypt_credentials
+from app.credentials_crypto import decrypt_credentials, encrypt_credentials
 
 logger = logging.getLogger(__name__)
 
