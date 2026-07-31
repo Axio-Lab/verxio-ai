@@ -10,13 +10,15 @@ import { Codicon } from '@/components/ui/codicon'
 import { PaginationControl } from '@/components/ui/pagination'
 import { Switch } from '@/components/ui/switch'
 import { TextTab, TextTabMeta } from '@/components/ui/text-tab'
-import { getSkills, getToolsets, toggleSkill, toggleToolset } from '@/hermes'
+import { getHermesConfigRecord, getSkills, getToolsets, toggleSkill, toggleToolset } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { readVerxioAuthScope } from '@/lib/auth-scope'
 import { Pencil } from '@/lib/icons'
+import { isMediaToolset } from '@/lib/media-tool-options'
+import { mediaToolsetActiveSummary } from '@/lib/media-toolset-summary'
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
-import type { SkillInfo, ToolsetInfo } from '@/types/hermes'
+import type { HermesConfigRecord, SkillInfo, ToolsetInfo } from '@/types/hermes'
 
 import { useRefreshHotkey } from '../hooks/use-refresh-hotkey'
 import { useRouteEnumParam } from '../hooks/use-route-enum-param'
@@ -171,6 +173,7 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
   const [query, setQuery] = useState('')
   const [skills, setSkills] = useState<SkillInfo[] | null>(() => readCachedList<SkillInfo>(SKILLS_CACHE_KEY))
   const [toolsets, setToolsets] = useState<ToolsetInfo[] | null>(() => readCachedList<ToolsetInfo>(TOOLSETS_CACHE_KEY))
+  const [hermesConfig, setHermesConfig] = useState<HermesConfigRecord | null>(null)
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [savingSkill, setSavingSkill] = useState<string | null>(null)
@@ -213,6 +216,12 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
         writeCachedList(TOOLSETS_CACHE_KEY, nextToolsets)
       })
       .catch(err => notifyError(err, t.skills.toolsetsRefreshFailed))
+
+    void getHermesConfigRecord()
+      .then(setHermesConfig)
+      .catch(() => {
+        // Active-provider summary is best-effort.
+      })
   }, [t])
 
   useRefreshHotkey(refreshCapabilities)
@@ -220,6 +229,18 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
   useEffect(() => {
     void refreshCapabilities()
   }, [refreshCapabilities])
+
+  useEffect(() => {
+    if (mode !== 'toolsets') {
+      return
+    }
+
+    void getHermesConfigRecord()
+      .then(setHermesConfig)
+      .catch(() => {
+        // Active-provider summary is best-effort.
+      })
+  }, [mode])
 
   const categories = useMemo(() => {
     if (!skills) {
@@ -525,6 +546,8 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
                     const tools = toolNames(toolset)
                     const label = toolsetDisplayLabel(toolset)
                     const expanded = expandedToolset === toolset.name
+                    const mediaActive =
+                      isMediaToolset(toolset.name) && mediaToolsetActiveSummary(toolset.name, hermesConfig)
 
                     return (
                       <div className="px-0 py-2.5" key={toolset.name}>
@@ -555,6 +578,11 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
                         <p className="mt-1 text-xs text-muted-foreground">
                           {asText(toolset.description) || t.skills.noDescription}
                         </p>
+                        {mediaActive && (
+                          <p className="mt-1 text-xs font-medium text-foreground">
+                            {t.settings.toolsets.usingProvider(mediaActive.provider, mediaActive.model)}
+                          </p>
+                        )}
                         {tools.length > 0 && (
                           <div className="mt-2 flex flex-wrap gap-1">
                             {tools.map(name => (

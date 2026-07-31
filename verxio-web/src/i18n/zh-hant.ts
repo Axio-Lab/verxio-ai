@@ -711,7 +711,12 @@ export const zhHant = defineLocale({
       failedLoad: '工具設定載入失敗',
       noProviderOptions: '此工具集沒有提供方選項；啟用後即可使用目前設定。',
       noProviders: '此工具集目前沒有可用提供方。',
-      ready: '就緒',
+      ready: '金鑰已設',
+      active: '使用中',
+      useProvider: '使用此提供方',
+      usingProvider: (provider, model) => (model ? `目前使用 ${provider} · ${model}` : `目前使用 ${provider}`),
+      usingProviderHint:
+        '聊天只會使用標記為「使用中」的提供方。點選一列可查看金鑰；按「使用此提供方」進行切換。「金鑰已設」表示憑證已儲存。',
       nousIncluded: '包含在 Verxio 訂閱中；登入 Subscription portal 即可啟用。',
       noApiKeyRequired: '不需要 API 金鑰。',
       postSetup: step => `此提供方需要額外設定步驟 (${step})。請在 Verxio 工具設定中完成。`,

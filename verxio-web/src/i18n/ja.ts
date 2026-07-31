@@ -737,7 +737,12 @@ export const ja = defineLocale({
       noProviderOptions:
         'このツールセットにはプロバイダーのオプションがありません。有効にすれば現在の設定で動作します。',
       noProviders: '現在このツールセットに利用可能なプロバイダーがありません。',
-      ready: '準備完了',
+      ready: 'キー設定済み',
+      active: '使用中',
+      useProvider: 'このプロバイダーを使う',
+      usingProvider: (provider, model) => (model ? `使用中: ${provider} · ${model}` : `使用中: ${provider}`),
+      usingProviderHint:
+        'チャットで使われるのは「使用中」のプロバイダーだけです。行をクリックするとキーを確認できます。「このプロバイダーを使う」で切り替えます。「キー設定済み」は認証情報が保存済みという意味です。',
       nousIncluded:
         'Verxio サブスクリプションに含まれています。有効にするには Subscription portal にサインインしてください。',
       noApiKeyRequired: 'API キーは不要です。',

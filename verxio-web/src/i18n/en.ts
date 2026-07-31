@@ -700,7 +700,12 @@ export const en: Translations = {
       failedLoad: 'Tool configuration failed to load',
       noProviderOptions: 'This toolset has no provider options — enable it and it works with your current setup.',
       noProviders: 'No providers are available for this toolset right now.',
-      ready: 'Ready',
+      ready: 'Keys set',
+      active: 'Active',
+      useProvider: 'Use this provider',
+      usingProvider: (provider, model) => (model ? `Using ${provider} · ${model}` : `Using ${provider}`),
+      usingProviderHint:
+        'Only the Active provider is used in chat. Click a row to view keys; press “Use this provider” to switch. Keys set means credentials are saved.',
       nousIncluded: 'Included with a Verxio subscription — sign in to Subscription portal to activate.',
       noApiKeyRequired: 'No API key required.',
       postSetup: step => `This provider needs an extra setup step (${step}). Complete it in Verxio tools setup.`,

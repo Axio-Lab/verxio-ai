@@ -574,6 +574,10 @@ export interface Translations {
       noProviderOptions: string
       noProviders: string
       ready: string
+      active: string
+      useProvider: string
+      usingProvider: (provider: string, model?: string | null) => string
+      usingProviderHint: string
       nousIncluded: string
       noApiKeyRequired: string
       postSetup: (step: string) => string

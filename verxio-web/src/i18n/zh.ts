@@ -854,7 +854,12 @@ export const zh: Translations = {
       failedLoad: '工具配置加载失败',
       noProviderOptions: '此工具集没有提供方选项；启用后即可使用当前配置。',
       noProviders: '此工具集当前没有可用提供方。',
-      ready: '就绪',
+      ready: '密钥已设',
+      active: '使用中',
+      useProvider: '使用此提供方',
+      usingProvider: (provider, model) => (model ? `当前使用 ${provider} · ${model}` : `当前使用 ${provider}`),
+      usingProviderHint:
+        '聊天只会使用标记为「使用中」的提供方。点击一行可查看密钥；点击「使用此提供方」进行切换。「密钥已设」表示凭据已保存。',
       nousIncluded: '包含在 Verxio 订阅中；登录 Subscription portal 即可激活。',
       noApiKeyRequired: '不需要 API 密钥。',
       postSetup: step => `此提供方需要额外设置步骤 (${step})。请在 Verxio 工具设置中完成。`,
