@@ -2093,20 +2093,23 @@ const VERXIO_WEBSITE_URL = 'https://www.verxio.xyz'
 function PoweredByVerxioFooter() {
   return (
     <footer className="fixed inset-x-0 bottom-0 z-10 border-t border-(--ui-stroke-secondary) bg-background py-3 text-center text-xs text-muted-foreground">
-      Powered by{' '}
-      <a
-        aria-label="Verxio"
-        className="inline-flex w-16 align-middle focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none"
-        href={VERXIO_WEBSITE_URL}
-        rel="noopener noreferrer"
-        target="_blank"
-      >
-        <VerxioWordmark
-          className="w-full"
-          style={{ '--fit-text-line-height': '0.9', '--fit-text-min': '0.78rem' } as React.CSSProperties}
-          variant="solid"
-        />
-      </a>
+      <span className="inline-flex items-center justify-center gap-1.5">
+        Powered by
+        <a
+          aria-label="Verxio"
+          className="inline-flex h-5 w-[4.75rem] align-middle focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none"
+          href={VERXIO_WEBSITE_URL}
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          {/* Same VerxioWordmark as session intro; brand = no mix-blend on white. */}
+          <VerxioWordmark
+            className="w-full"
+            style={{ '--fit-text-line-height': '0.9', '--fit-text-min': '1.05rem' } as React.CSSProperties}
+            variant="brand"
+          />
+        </a>
+      </span>
     </footer>
   )
 }
