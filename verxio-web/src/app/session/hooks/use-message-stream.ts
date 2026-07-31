@@ -25,7 +25,7 @@ import {
 import { gatewayEventRequiresSessionId } from '@/lib/gateway-events'
 import { dedupeGeneratedImageEchoesInParts } from '@/lib/generated-images'
 import { triggerHaptic } from '@/lib/haptics'
-import { isVerxioHostedDefaultSelection } from '@/lib/hosted-default-model'
+import { isVerxioHostedDefaultSelection, resolveHostedDefaultModel } from '@/lib/hosted-default-model'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
 import { parseTodos } from '@/lib/todos'
 import { getInferenceCatalog, getInferenceSettings, verxioApiEnabled } from '@/lib/verxio-api'
@@ -691,14 +691,29 @@ export function useMessageStream({
 
             setCurrentModel(nextModel)
 
-            // BYOK must never keep a Verxio Hosted default on the statusbar if
-            // session.info still echoes a leftover Qwen/Gemini assignment.
-            if (verxioApiEnabled() && nextModel) {
+            if (verxioApiEnabled()) {
               void Promise.all([getInferenceSettings(), getInferenceCatalog()])
                 .then(([settings, catalog]) => {
-                  if (settings.mode === 'byok' && isVerxioHostedDefaultSelection(nextModel, nextProvider, catalog)) {
-                    setCurrentModel('')
-                    setCurrentProvider('')
+                  // BYOK must never keep a Verxio Hosted default on the statusbar if
+                  // session.info still echoes a leftover Qwen/Gemini assignment.
+                  if (nextModel) {
+                    if (settings.mode === 'byok' && isVerxioHostedDefaultSelection(nextModel, nextProvider, catalog)) {
+                      setCurrentModel('')
+                      setCurrentProvider('')
+                    }
+
+                    return
+                  }
+
+                  // Empty session model while hosted: show Verxio default instead of "no model".
+                  const hostedDefault = resolveHostedDefaultModel(settings, catalog)
+
+                  if (hostedDefault) {
+                    setCurrentModel(hostedDefault.model)
+
+                    if (hostedDefault.provider) {
+                      setCurrentProvider(hostedDefault.provider)
+                    }
                   }
                 })
                 .catch(() => undefined)

@@ -88,18 +88,37 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
     // Live sessions are owned by slash /model + session.info. Refreshing from
     // global /api/model/info + hosted-default stale logic races the session and
     // used to snap the footer back to flash lite after every statusbar pick.
-    if (activeSessionId) {
+    // Exception: empty statusbar ("no model") while hosted — still fill the
+    // Verxio default so a hung session.info / empty model field is not sticky.
+    if (activeSessionId && $currentModel.get().trim()) {
       return
     }
 
     try {
-      const [result, options] = await Promise.all([getGlobalModelInfo(), getScopedModelOptions()])
+      // Hosted defaults come from the Verxio control plane and must paint even
+      // when Hermes /api/model/info is wedged (Docker/dashboard stalls).
+      const { catalog, hostedDefault, mode } = await loadInferenceModeAndHostedDefault()
+
+      if (mode === 'hosted' && hostedDefault && !$currentModel.get().trim()) {
+        applyModelSelection(hostedDefault)
+      }
+
+      if (activeSessionId && $currentModel.get().trim()) {
+        return
+      }
+
+      const optionsPromise = getScopedModelOptions()
+      const infoPromise = getGlobalModelInfo().catch(() => ({ model: '', provider: '' }))
+      const [result, options] = await Promise.all([infoPromise, optionsPromise])
       const hermesModel = typeof result.model === 'string' ? result.model.trim() : ''
       const hermesProvider = typeof result.provider === 'string' ? result.provider.trim() : ''
-      const { catalog, hostedDefault, mode } = await loadInferenceModeAndHostedDefault()
 
       // BYOK: never show Verxio Hosted defaults. Empty / leftover Qwen·Gemini → "no model".
       if (mode === 'byok') {
+        if (activeSessionId) {
+          return
+        }
+
         const byokModel = hermesModel || String(options.model || '').trim()
         const byokProvider = hermesProvider || String(options.provider || '').trim()
 
@@ -111,6 +130,16 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
 
         applyModelSelection({ model: byokModel, provider: byokProvider })
 
+        return
+      }
+
+      if (activeSessionId && !hermesModel && !$currentModel.get().trim() && hostedDefault) {
+        applyModelSelection(hostedDefault)
+
+        return
+      }
+
+      if (activeSessionId) {
         return
       }
 

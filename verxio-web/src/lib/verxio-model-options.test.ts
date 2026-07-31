@@ -3,9 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setModelAssignment } from '@/hermes'
 import type { ModelOptionsResponse } from '@/types/hermes'
 
+import type * as verxioApiModule from './verxio-api'
 import type { VerxioInferenceCatalogResponse, VerxioInferenceSettings } from './verxio-api'
 import {
   ensureByokDefaultModel,
+  getScopedModelOptions,
   hostedModelOptionsFromInference,
   mergeHostedAndRuntimeModelOptions,
   prioritizeLinkedProviders
@@ -15,6 +17,17 @@ vi.mock('@/hermes', () => ({
   getGlobalModelOptions: vi.fn(),
   setModelAssignment: vi.fn()
 }))
+
+vi.mock('./verxio-api', async importOriginal => {
+  const actual = (await importOriginal()) as typeof verxioApiModule
+
+  return {
+    ...actual,
+    getInferenceCatalog: vi.fn(),
+    getInferenceSettings: vi.fn(),
+    verxioApiEnabled: vi.fn(() => true)
+  }
+})
 
 const mockedSetModelAssignment = vi.mocked(setModelAssignment)
 
@@ -171,6 +184,7 @@ describe('mergeHostedAndRuntimeModelOptions', () => {
     }
 
     const hosted = hostedModelOptionsFromInference(settings, catalog)
+
     const result = mergeHostedAndRuntimeModelOptions(hosted!, {
       providers: [
         {
@@ -328,6 +342,31 @@ describe('prioritizeLinkedProviders', () => {
     })
 
     expect(result.providers?.map(provider => provider.slug)).toEqual(['alibaba', 'openai'])
+  })
+})
+
+describe('getScopedModelOptions', () => {
+  it('returns hosted Gemini/Qwen options without waiting forever on a hung runtime catalog', async () => {
+    const { getInferenceCatalog, getInferenceSettings } = await import('./verxio-api')
+    vi.mocked(getInferenceSettings).mockResolvedValue({
+      defaultModelId: 'verxio-gemini',
+      mode: 'hosted',
+      monthlyCreditUsd: 0,
+      overageEnabled: false,
+      spendingLimitUsd: null
+    })
+    vi.mocked(getInferenceCatalog).mockResolvedValue(catalog)
+
+    const never = new Promise<ModelOptionsResponse>(() => undefined)
+    const result = await getScopedModelOptions(() => never)
+
+    expect(result.model).toBe('gemini-flash-lite-latest')
+    expect(result.provider).toBe('gemini')
+    expect(result.providers?.[0]).toMatchObject({
+      is_verxio_hosted: true,
+      name: 'Verxio Gemini',
+      slug: 'gemini'
+    })
   })
 })
 

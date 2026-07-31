@@ -611,6 +611,40 @@ def _clear_hosted_inference_for_byok(runtime: RuntimeInstance) -> bool:
     return model_cleaned or auth_cleaned or state_cleaned
 
 
+def _clear_conflicting_auth_active_provider(auth_path: Path, hosted_provider_slug: str) -> bool:
+    """Clear auth.json active_provider when it would steal hosted model resolution.
+
+    Hosted mode pins ``config.yaml`` ``model.provider``. If that section is briefly
+    empty (dashboard PUT race, corrupt YAML recovery), Hermes ``resolve_provider('auto')``
+    falls through to ``auth.json`` ``active_provider``. A leftover ``openai-codex``
+    login then makes Telegram report Codex while Verxio Hosted is Gemini/Qwen.
+    Credential pool entries are kept — only the active pointer is cleared.
+    """
+    if not auth_path.is_file():
+        return False
+
+    try:
+        payload = json.loads(auth_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+
+    if not isinstance(payload, dict):
+        return False
+
+    active = str(payload.get("active_provider") or "").strip().lower()
+    if not active:
+        return False
+
+    hosted = str(hosted_provider_slug or "").strip().lower()
+    if hosted and active == hosted:
+        return False
+
+    payload["active_provider"] = ""
+    payload["updated_at"] = now_iso()
+    auth_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return True
+
+
 def sync_inference_runtime_bridge(runtime: RuntimeInstance, user_id: str) -> InferenceRuntimeBridgeStatus:
     ensure_runtime_directories(runtime)
     settings = ensure_inference_settings(user_id)
@@ -654,11 +688,17 @@ def sync_inference_runtime_bridge(runtime: RuntimeInstance, user_id: str) -> Inf
     model_invalid = (
         not isinstance(raw_model, dict)
         or not str(raw_model.get("default") or "").strip()
+        or str(raw_model.get("provider") or "").strip().lower() != model.provider_slug
+        or str(raw_model.get("default") or "").strip() != upstream_model_id
     )
     model_config = raw_model if isinstance(raw_model, dict) else {}
     model_config["provider"] = model.provider_slug
     model_config["default"] = upstream_model_id
     config["model"] = model_config
+
+    auth_active_cleared = _clear_conflicting_auth_active_provider(
+        _runtime_auth_path(runtime), model.provider_slug
+    )
 
     signature_payload = {
         "catalog_version": CATALOG_VERSION,
@@ -680,7 +720,12 @@ def sync_inference_runtime_bridge(runtime: RuntimeInstance, user_id: str) -> Inf
             previous_signature = ""
 
     config_changed = previous_signature != signature
-    changed = config_changed or legacy_credentials_cleaned or model_invalid
+    changed = (
+        config_changed
+        or legacy_credentials_cleaned
+        or model_invalid
+        or auth_active_cleared
+    )
     if config_changed or model_invalid:
         _write_runtime_config(runtime, config)
         state_path.parent.mkdir(parents=True, exist_ok=True)

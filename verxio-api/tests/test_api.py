@@ -1908,7 +1908,61 @@ def test_inference_bridge_preserves_openai_tool_credentials(client, monkeypatch)
     assert "DASHSCOPE_API_KEY=keep" in env_text
     auth = json.loads((hermes_home / "auth.json").read_text(encoding="utf-8"))
     assert "openai-api" in auth.get("credential_pool", {})
-    assert auth.get("active_provider") == "openai-api"
+    # Hosted sync must not leave a BYOK/OAuth active_provider pointer that
+    # steals resolve_provider('auto') when config.yaml model is briefly empty.
+    assert not str(auth.get("active_provider") or "").strip()
+    assert "openai-codex" in auth.get("credential_pool", {})
+
+
+def test_inference_bridge_clears_openai_codex_active_provider(client, monkeypatch):
+    monkeypatch.setenv("VERXIO_HOSTED_GEMINI_API_KEY", "verxio-gemini-key")
+    payload, token = signup(client, "inference-clear-codex@example.com")
+    response = client.put(
+        "/api/inference/settings",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"mode": "hosted", "defaultModelId": "verxio-gemini"},
+    )
+    assert response.status_code == 200
+
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    runtime = control_plane.runtime_from_row(runtime_row)
+    hermes_home = Path(runtime.hermes_home_path)
+    hermes_home.mkdir(parents=True, exist_ok=True)
+    (hermes_home / "auth.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "providers": {},
+                "active_provider": "openai-codex",
+                "credential_pool": {
+                    "openai-codex": [
+                        {
+                            "id": "keep",
+                            "label": "device_code",
+                            "auth_type": "oauth",
+                            "source": "device_code",
+                        }
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status = inference.sync_inference_runtime_bridge(runtime, payload["user"]["id"])
+
+    assert status.enabled is True
+    assert status.changed is True
+    assert status.defaultModelId == "verxio-gemini"
+    config = yaml.safe_load((hermes_home / "config.yaml").read_text(encoding="utf-8"))
+    assert config["model"]["provider"] == "gemini"
+    assert config["model"]["default"] == "gemini-flash-lite-latest"
+    auth = json.loads((hermes_home / "auth.json").read_text(encoding="utf-8"))
+    assert not str(auth.get("active_provider") or "").strip()
     assert "openai-codex" in auth.get("credential_pool", {})
 
 
@@ -2074,7 +2128,9 @@ def test_inference_bridge_preserves_user_env_credentials_for_gemini(client, monk
     auth = json.loads((hermes_home / "auth.json").read_text(encoding="utf-8"))
     assert "alibaba" in auth.get("credential_pool", {})
     assert "gemini" in auth.get("credential_pool", {})
-    assert auth.get("active_provider") == "alibaba"
+    # Hosted Gemini must not leave a non-gemini active_provider pointer that
+    # can steal resolve_provider('auto') when config.yaml model is briefly empty.
+    assert not str(auth.get("active_provider") or "").strip()
 
 
 def test_inference_bridge_byok_strips_hosted_model_assignment(client, monkeypatch):
