@@ -387,32 +387,6 @@ class ComposioCompleteConnectionResponse(BaseModel):
     connectionId: str
     status: str
 
-class PostizWorkspaceRecord(BaseModel):
-    id: str
-    workspaceId: str
-    agentId: str
-    postizOrgId: str = ""
-    postizUserId: str = ""
-    status: str = "disabled"
-    message: str = ""
-    createdAt: str
-    updatedAt: str
-
-class PostizToolBridgeStatus(BaseModel):
-    changed: bool = False
-    configured: bool = False
-    enabled: bool = False
-    message: str = ""
-    serverName: str = "postiz"
-
-class PostizStatusResponse(BaseModel):
-    configured: bool
-    publicUrl: str = ""
-    channelCount: int = 0
-    health: dict[str, Any] = Field(default_factory=dict)
-    binding: PostizWorkspaceRecord | None = None
-    toolBridge: PostizToolBridgeStatus | None = None
-
 class HermesRuntimeMetadata(BaseModel):
     capabilities: dict = Field(default_factory=dict)
     health: dict[str, Any] = Field(default_factory=dict)

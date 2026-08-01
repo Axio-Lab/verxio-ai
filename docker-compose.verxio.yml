@@ -48,12 +48,6 @@ services:
       COMPOSIO_API_BASE_URL: ${COMPOSIO_API_BASE_URL:-https://backend.composio.dev/api/v3}
       COMPOSIO_TOOLS_API_BASE_URL: ${COMPOSIO_TOOLS_API_BASE_URL:-https://backend.composio.dev/api/v3.1}
       VERXIO_HERMES_REPO: /opt/hermes-agent
-      # Self-hosted Postiz (see docker-compose.postiz.yml)
-      POSTIZ_INTERNAL_URL: ${POSTIZ_INTERNAL_URL:-http://postiz:5000}
-      POSTIZ_PUBLIC_URL: ${POSTIZ_PUBLIC_URL:-http://127.0.0.1:4007}
-      POSTIZ_PLATFORM_API_KEY: ${POSTIZ_PLATFORM_API_KEY:-}
-      POSTIZ_BOOTSTRAP_API_KEY: ${POSTIZ_BOOTSTRAP_API_KEY:-}
-      POSTIZ_DISABLED: ${POSTIZ_DISABLED:-}
     volumes:
       - ${VERXIO_STATE_DIR:-./.verxio}:/app/.verxio
       - ./hermes-agent:/opt/hermes-agent:ro

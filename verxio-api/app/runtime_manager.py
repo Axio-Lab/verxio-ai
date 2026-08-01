@@ -154,13 +154,6 @@ def _runtime_container_env(runtime: RuntimeInstance, extra_env: dict[str, str] |
         if key and value:
             env[str(key)] = str(value)
 
-    try:
-        from app.postiz import runtime_env_for_workspace
-
-        env.update(runtime_env_for_workspace(runtime.workspace_id))
-    except Exception:
-        pass
-
     # A stale config/.env can mark WhatsApp enabled before the QR/session exists.
     # In hosted runtimes that must not take Slack, web chat, cron, or tools down.
     if _env_truthy(env.get("WHATSAPP_ENABLED")) and not _runtime_whatsapp_paired(runtime):

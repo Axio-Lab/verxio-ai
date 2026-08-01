@@ -231,24 +231,6 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS postiz_workspaces (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        workspace_id TEXT NOT NULL,
-        agent_id TEXT NOT NULL,
-        postiz_org_id TEXT NOT NULL DEFAULT '',
-        postiz_user_id TEXT NOT NULL DEFAULT '',
-        status TEXT NOT NULL DEFAULT 'disabled',
-        credentials_encrypted TEXT NOT NULL DEFAULT '',
-        metadata_json TEXT NOT NULL DEFAULT '{}',
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        UNIQUE (workspace_id),
-        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
-        FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
-    )
-    """,
-    """
     CREATE TABLE IF NOT EXISTS user_inference_settings (
         user_id TEXT PRIMARY KEY,
         mode TEXT NOT NULL DEFAULT 'hosted',
@@ -544,7 +526,6 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_notepad_notes_folder ON notepad_notes(folder_id)",
     "CREATE INDEX IF NOT EXISTS idx_notepad_shares_token ON notepad_shares(token)",
     "CREATE INDEX IF NOT EXISTS idx_notepad_shares_note ON notepad_shares(note_id, revoked_at)",
-    "CREATE INDEX IF NOT EXISTS idx_postiz_workspaces_agent ON postiz_workspaces(workspace_id, agent_id)",
     "CREATE INDEX IF NOT EXISTS idx_usage_events_user_created ON usage_events(user_id, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_usage_events_runtime ON usage_events(runtime_id, session_id)",
     "CREATE INDEX IF NOT EXISTS idx_workflow_agents_workspace ON workflow_agents(workspace_id, runtime_agent_id, updated_at)",

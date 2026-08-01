@@ -219,60 +219,10 @@ export interface Translations {
       keysTranscription: string
       keysSettings: string
       mcp: string
-      socials: string
       archivedChats: string
       about: string
       notifications: string
       runtime: string
-    }
-    socials: {
-      title: string
-      intro: string
-      loading: string
-      failedLoad: string
-      ready: string
-      needsKey: string
-      disabled: string
-      unavailable: string
-      notConfigured: string
-      setupTitle: string
-      enabledDescription: string
-      disabledDescription: string
-      enable: string
-      disable: string
-      disableConfirm: string
-      enableFailed: string
-      disableFailed: string
-      enabledTitle: string
-      enabledMessage: string
-      disabledTitle: string
-      disabledMessage: string
-      openCalendar: string
-      calendarTitle: string
-      calendarDescription: string
-      calendarFailed: string
-      openInNewWindow: string
-      connectChannel: string
-      connectTitle: string
-      connectDescription: string
-      connectFailed: string
-      connectOpenedTitle: string
-      connectOpenedMessage: string
-      channelsTitle: string
-      noChannelsTitle: string
-      noChannels: string
-      disconnect: string
-      disconnectConfirm: string
-      disconnectFailed: string
-      disconnectedTitle: string
-      disconnectedMessage: string
-      channelActive: string
-      channelDisabled: string
-      postsTitle: string
-      noPostsTitle: string
-      noPosts: string
-      unscheduledPost: string
-      draftPost: string
     }
     runtime: {
       title: string
