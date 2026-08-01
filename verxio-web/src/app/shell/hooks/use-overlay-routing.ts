@@ -75,6 +75,7 @@ export function useOverlayRouting() {
     openActivity,
     openAgents,
     openCommandCenterSection,
+    overlayOpen,
     profilesOpen,
     settingsOpen,
     toggleCommandCenter

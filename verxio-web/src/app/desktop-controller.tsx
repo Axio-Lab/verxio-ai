@@ -11,6 +11,7 @@ import { Pane, PaneMain } from '@/components/pane-shell'
 import { RemoteDisplayBanner } from '@/components/remote-display-banner'
 import { readVerxioAuthScope } from '@/lib/auth-scope'
 import { clearModelOptionsQueries, refreshModelOptionsQueries } from '@/lib/model-options-cache'
+import { cn } from '@/lib/utils'
 import { useSkinCommand } from '@/themes/use-skin-command'
 
 import { formatRefValue } from '../components/assistant-ui/directive-text'
@@ -113,6 +114,7 @@ import { usePromptActions } from './session/hooks/use-prompt-actions'
 import { useRouteResume } from './session/hooks/use-route-resume'
 import { useSessionActions } from './session/hooks/use-session-actions'
 import { useSessionStateCache } from './session/hooks/use-session-state-cache'
+import { SettingsView } from './settings'
 import { AppShell } from './shell/app-shell'
 import { useOverlayRouting } from './shell/hooks/use-overlay-routing'
 import { useStatusbarItems } from './shell/hooks/use-statusbar-items'
@@ -130,7 +132,6 @@ const CronView = lazy(async () => ({ default: (await import('./cron')).CronView 
 const MessagingView = lazy(async () => ({ default: (await import('./messaging')).MessagingView }))
 const NotepadView = lazy(async () => ({ default: (await import('./notepad')).NotepadView }))
 const ProfilesView = lazy(async () => ({ default: (await import('./profiles')).ProfilesView }))
-const SettingsView = lazy(async () => ({ default: (await import('./settings')).SettingsView }))
 const SkillsView = lazy(async () => ({ default: (await import('./skills')).SkillsView }))
 const SESSIONS_CACHE_KEY = 'verxio.sessions.cache.v1'
 
@@ -227,12 +228,14 @@ export function DesktopController() {
     cronOpen,
     currentView,
     openActivity,
+    overlayOpen,
     profilesOpen,
     settingsOpen,
     toggleCommandCenter
   } = useOverlayRouting()
 
   const terminalTakeoverActive = chatOpen && terminalTakeover
+  const keepChatMounted = chatOpen || overlayOpen
 
   const titlebarToolGroups = useGroupRegistry<TitlebarTool>()
   const statusbarItemGroups = useGroupRegistry<StatusbarItem>()
@@ -863,25 +866,23 @@ export function DesktopController() {
       <FolderAccessDialog />
 
       {settingsOpen && (
-        <Suspense fallback={null}>
-          <SettingsView
-            gateway={gatewayRef.current}
-            onClose={closeOverlayToPreviousRoute}
-            onConfigSaved={() => {
-              void refreshHermesConfig()
-              clearModelOptionsQueries(queryClient)
-              void refreshModelOptionsQueries(queryClient).then(() => refreshCurrentModel())
-            }}
-            onMainModelChanged={(provider, model) => {
-              setCurrentProvider(provider)
-              setCurrentModel(model)
-              updateModelOptionsCache(provider, model, true)
-              void refreshCurrentModel()
-              void queryClient.invalidateQueries({ queryKey: ['model-options'] })
-            }}
-            requestGateway={requestGateway}
-          />
-        </Suspense>
+        <SettingsView
+          gateway={gatewayRef.current}
+          onClose={closeOverlayToPreviousRoute}
+          onConfigSaved={() => {
+            void refreshHermesConfig()
+            clearModelOptionsQueries(queryClient)
+            void refreshModelOptionsQueries(queryClient).then(() => refreshCurrentModel())
+          }}
+          onMainModelChanged={(provider, model) => {
+            setCurrentProvider(provider)
+            setCurrentModel(model)
+            updateModelOptionsCache(provider, model, true)
+            void refreshCurrentModel()
+            void queryClient.invalidateQueries({ queryKey: ['model-options'] })
+          }}
+          requestGateway={requestGateway}
+        />
       )}
 
       {commandCenterOpen && (
@@ -1016,10 +1017,25 @@ export function DesktopController() {
       >
         {sidebar}
       </Pane>
-      <PaneMain>
+      <PaneMain className="relative">
+        {/*
+          Keep chat mounted under modal overlays so /settings (etc.) never blanks
+          the main pane while the overlay card is open.
+        */}
+        {keepChatMounted ? (
+          <div
+            aria-hidden={overlayOpen || undefined}
+            className={cn(
+              'min-h-0',
+              overlayOpen ? 'pointer-events-none absolute inset-0 overflow-hidden' : 'flex h-full flex-col'
+            )}
+          >
+            {terminalTakeoverActive ? takeoverTerminalView : chatView}
+          </div>
+        ) : null}
         <Routes>
-          <Route element={terminalTakeoverActive ? takeoverTerminalView : chatView} index />
-          <Route element={terminalTakeoverActive ? takeoverTerminalView : chatView} path=":sessionId" />
+          <Route element={null} index />
+          <Route element={null} path=":sessionId" />
           <Route
             element={
               <Suspense fallback={null}>
