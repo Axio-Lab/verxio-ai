@@ -1649,6 +1649,25 @@ def test_dashboard_toolset_paths_use_fast_proxy_path():
     assert not main._dashboard_path_is_toolset_fast_path("api/model/info")
 
 
+def test_dashboard_session_mutations_use_fast_proxy_path():
+    """Session delete/rename must skip awaited bridge sync + start_runtime."""
+    assert main._dashboard_path_is_session_mutation_fast_path(
+        "api/sessions/20260803_112520_46b5fa", "DELETE"
+    )
+    assert main._dashboard_path_is_session_mutation_fast_path(
+        "api/sessions/20260803_112520_46b5fa", "PATCH"
+    )
+    assert main._dashboard_path_is_session_mutation_fast_path("api/sessions/bulk-delete", "POST")
+    assert main._dashboard_path_is_session_mutation_fast_path("api/sessions/empty", "DELETE")
+    assert not main._dashboard_path_is_session_mutation_fast_path("api/sessions", "GET")
+    assert not main._dashboard_path_is_session_mutation_fast_path(
+        "api/sessions/20260803_112520_46b5fa/messages", "GET"
+    )
+    assert not main._dashboard_path_is_session_mutation_fast_path(
+        "api/sessions/20260803_112520_46b5fa", "GET"
+    )
+
+
 def test_dashboard_model_options_uses_catalog_fast_path():
     """GET model/options must skip awaited bridge sync + start_runtime."""
     assert main._dashboard_path_is_model_options("api/model/options")

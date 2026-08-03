@@ -1457,6 +1457,27 @@ def _dashboard_path_is_toolset_fast_path(path: str) -> bool:
         or normalized.endswith("/env")
     )
 
+
+def _dashboard_path_is_session_mutation_fast_path(path: str, method: str = "") -> bool:
+    """Session delete/rename/archive must not await bridge sync + start_runtime.
+
+    Sidebar deletes are pure Hermes ``state.db`` writes. Queuing them behind
+    the shared docker start lock + inference-bridge sync made multi-delete
+    hit the browser's 90s abort ("Verxio backend timed out while starting"),
+    after which the UI restored the row — so refresh showed sessions again.
+    """
+    method_u = (method or "").upper()
+    normalized = path.strip("/")
+    if method_u == "POST" and normalized == "api/sessions/bulk-delete":
+        return True
+    if method_u == "DELETE" and normalized == "api/sessions/empty":
+        return True
+    if method_u in {"DELETE", "PATCH"}:
+        parts = normalized.split("/")
+        if len(parts) == 3 and parts[0] == "api" and parts[1] == "sessions" and parts[2]:
+            return True
+    return False
+
 def _dashboard_path_needs_inference_sync(path: str) -> bool:
     """Model info needs the hosted default written into Hermes config.yaml.
 
@@ -1537,7 +1558,8 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     lightweight = _dashboard_request_is_read(request.method) and _dashboard_path_is_lightweight(path)
     model_options = _dashboard_request_is_read(request.method) and _dashboard_path_is_model_options(path)
     toolset_fast = _dashboard_path_is_toolset_fast_path(path)
-    skip_start_lock = lightweight or model_options or toolset_fast
+    session_fast = _dashboard_path_is_session_mutation_fast_path(path, request.method)
+    skip_start_lock = lightweight or model_options or toolset_fast or session_fast
 
     # Reads must stay fast for boot polling. Bridge sync belongs on writes and
     # the websocket background task — never on every status/config/sessions GET.
@@ -1546,9 +1568,12 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     # GET model/options made the picker wait 15–20s and flash empty.
     # Toolset provider/env pins are Hermes config writes only — never block them
     # on docker inspect / bridge sync or OpenAI→DashScope switches time out.
+    # Session delete/rename is the same class of cheap Hermes DB write.
     if toolset_fast:
         if not _dashboard_request_is_read(request.method):
             _schedule_inference_bridge_sync(user)
+    elif session_fast:
+        pass
     elif not _dashboard_request_is_read(request.method):
         # Model switches + Tools/Keys saves hit this path. Never Docker-restart
         # or MCP-reload here — those made the runtime feel like it was crashing
@@ -1560,15 +1585,15 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
 
     # Lightweight GETs never call start_runtime. Refresh was paying a full
     # ensure/health tax on every status poll and felt like a cold start.
-    # Model-options + toolset fast-path also skip the shared start lock when
-    # already running.
+    # Model-options + toolset/session fast-path also skip the shared start lock
+    # when already running.
     if skip_start_lock:
         runtime = get_runtime_for_user(user)
         if runtime.status != "running":
             _schedule_runtime_ensure(user)
-            if toolset_fast and not lightweight and not model_options:
-                # Still try to bring the runtime up for a toolset write so the
-                # first-ever select after a cold boot isn't a hard 503.
+            if (toolset_fast or session_fast) and not lightweight and not model_options:
+                # Still try to bring the runtime up for a toolset/session write
+                # so the first-ever action after a cold boot isn't a hard 503.
                 runtime = await start_runtime(
                     runtime,
                     extra_env=runtime_env_for_user(str(user["id"])),
@@ -1590,12 +1615,14 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     # Status polls must stay cheap: DB token + short upstream timeout.
     # Model options needs longer than 2s (catalog build) but must not sit behind
     # the 300s write timeout while the UI already fell back to hosted defaults.
+    # Session delete/rename is a SQLite write — keep it well under the browser
+    # abort so multi-delete doesn't look like a cold start.
     token = await _runtime_dashboard_token_async(runtime.id, runtime, prefer_live=False)
     target = f"{base.rstrip('/')}/{path}"
     body = await request.body()
     if lightweight:
         timeout = httpx.Timeout(2.0)
-    elif model_options:
+    elif model_options or session_fast:
         timeout = httpx.Timeout(20.0)
     else:
         timeout = httpx.Timeout(300.0)

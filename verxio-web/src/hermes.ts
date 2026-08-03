@@ -235,7 +235,9 @@ export function deleteSession(id: string, profile?: string | null): Promise<{ ok
   return window.hermesDesktop.api<{ ok: boolean }>({
     ...(profile ? { profile } : {}),
     path: `/api/sessions/${encodeURIComponent(id)}`,
-    method: 'DELETE'
+    method: 'DELETE',
+    // Session delete is a cheap DB write; don't wait on the hosted 90s cold-start budget.
+    timeoutMs: 20_000
   })
 }
 
