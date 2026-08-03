@@ -62,6 +62,24 @@ function imageGenProviderId(providerName: string | null | undefined): string | n
   return null
 }
 
+function videoGenProviderId(providerName: string | null | undefined): string | null {
+  const name = (providerName || '').trim().toLowerCase()
+
+  if (isDashScopeProvider(providerName)) {
+    return 'dashscope'
+  }
+
+  if (name.includes('fal')) {
+    return 'fal'
+  }
+
+  if (name.includes('xai') || name.includes('grok')) {
+    return 'xai'
+  }
+
+  return null
+}
+
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
 import { runRuntimeEnvReload } from '@/store/system-actions'
@@ -369,7 +387,10 @@ function MediaModelFields({
       }
 
       if (toolset === 'video_gen' && path === 'video_gen.model') {
-        next = setConfigValue(next, 'video_gen.provider', 'dashscope')
+        const providerId = videoGenProviderId(providerName)
+        if (providerId) {
+          next = setConfigValue(next, 'video_gen.provider', providerId)
+        }
       }
 
       await saveHermesConfig(next)
