@@ -1415,7 +1415,8 @@ def _dashboard_path_is_lightweight(path: str) -> bool:
     # api/model/options builds a priced/capabilities catalog and routinely
     # exceeds the 2s lightweight proxy budget — treating it as lightweight
     # made BYOK connect look "green" (status) while the model selector stayed
-    # on "no model" until a later lucky refetch.
+    # on "no model" until a later lucky refetch. It uses the model-options
+    # catalog path below instead (skip sync/start lock, longer upstream budget).
     return normalized in {
         "api/status",
         "api/config",
@@ -1423,6 +1424,17 @@ def _dashboard_path_is_lightweight(path: str) -> bool:
         "api/models",
         "api/model/info",
     }
+
+def _dashboard_path_is_model_options(path: str) -> bool:
+    """GET model/options must not await bridge sync + start_runtime.
+
+    Those two steps alone were 15–20s on a healthy runtime (shared docker lock),
+    so the web picker hit its 2.5s hosted budget and flashed "No models found"
+    even though Hermes answered the catalog in ~1s on the compose network.
+    Seed the hosted default in the background like model/info; give the
+    upstream catalog a medium timeout (not the 2s status poll budget).
+    """
+    return path.strip("/") == "api/model/options"
 
 def _dashboard_path_is_toolset_fast_path(path: str) -> bool:
     """Toolset config/provider/env must not wait on start_runtime's lock.
@@ -1446,14 +1458,16 @@ def _dashboard_path_is_toolset_fast_path(path: str) -> bool:
     )
 
 def _dashboard_path_needs_inference_sync(path: str) -> bool:
-    """Model reads need the hosted default written into Hermes config.yaml.
+    """Model info needs the hosted default written into Hermes config.yaml.
 
     Fresh runtimes ship without a model section, so GET /api/model/info returns
     empty until sync_inference_runtime_bridge runs. Status/config polls stay
-    lightweight; only model endpoints pay for this seed.
+    lightweight. GET model/options is intentionally excluded — scheduling a
+    bridge sync on every catalog open saturated docker.sock and made inference
+    settings/catalog (and the picker) take tens of seconds.
     """
     normalized = path.strip("/")
-    return normalized in {"api/model/info", "api/model/options"}
+    return normalized == "api/model/info"
 
 def _dashboard_path_needs_inference_env_reassert(path: str, method: str) -> bool:
     """Env/toolset writes that used to force a Docker runtime restart.
@@ -1521,12 +1535,15 @@ logger = logging.getLogger(__name__)
 async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     user = require_user(request)
     lightweight = _dashboard_request_is_read(request.method) and _dashboard_path_is_lightweight(path)
+    model_options = _dashboard_request_is_read(request.method) and _dashboard_path_is_model_options(path)
     toolset_fast = _dashboard_path_is_toolset_fast_path(path)
+    skip_start_lock = lightweight or model_options or toolset_fast
 
     # Reads must stay fast for boot polling. Bridge sync belongs on writes and
     # the websocket background task — never on every status/config/sessions GET.
     # Exception: model info/options must seed Hermes with the user's hosted
-    # default first, or the statusbar paints "No model" on a fresh runtime.
+    # default — but only as a background task. Awaiting sync + start_runtime on
+    # GET model/options made the picker wait 15–20s and flash empty.
     # Toolset provider/env pins are Hermes config writes only — never block them
     # on docker inspect / bridge sync or OpenAI→DashScope switches time out.
     if toolset_fast:
@@ -1539,19 +1556,17 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
         # Connections routes; inference env injection stays on start/restart.
         await _sync_inference_bridge_for_user(user, allow_restart=False)
     elif _dashboard_path_needs_inference_sync(path):
-        if lightweight:
-            _schedule_inference_bridge_sync(user)
-        else:
-            await _sync_inference_bridge_for_user(user, allow_restart=False)
+        _schedule_inference_bridge_sync(user)
 
     # Lightweight GETs never call start_runtime. Refresh was paying a full
     # ensure/health tax on every status poll and felt like a cold start.
-    # Toolset fast-path also skips the shared start lock when already running.
-    if lightweight or toolset_fast:
+    # Model-options + toolset fast-path also skip the shared start lock when
+    # already running.
+    if skip_start_lock:
         runtime = get_runtime_for_user(user)
         if runtime.status != "running":
             _schedule_runtime_ensure(user)
-            if toolset_fast and not lightweight:
+            if toolset_fast and not lightweight and not model_options:
                 # Still try to bring the runtime up for a toolset write so the
                 # first-ever select after a cold boot isn't a hard 503.
                 runtime = await start_runtime(
@@ -1568,15 +1583,22 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
 
     base = runtime_dashboard_base_url(runtime, ensure_network=False)
     if not base:
-        if lightweight:
+        if skip_start_lock:
             _schedule_runtime_ensure(user)
         raise HTTPException(status_code=503, detail="Runtime dashboard is starting. Retry shortly.")
 
     # Status polls must stay cheap: DB token + short upstream timeout.
+    # Model options needs longer than 2s (catalog build) but must not sit behind
+    # the 300s write timeout while the UI already fell back to hosted defaults.
     token = await _runtime_dashboard_token_async(runtime.id, runtime, prefer_live=False)
     target = f"{base.rstrip('/')}/{path}"
     body = await request.body()
-    timeout = httpx.Timeout(2.0 if lightweight else 300.0)
+    if lightweight:
+        timeout = httpx.Timeout(2.0)
+    elif model_options:
+        timeout = httpx.Timeout(20.0)
+    else:
+        timeout = httpx.Timeout(300.0)
     try:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
             upstream = await client.request(
@@ -1587,7 +1609,7 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
                 headers=_proxy_headers(request, token),
             )
     except (httpx.ConnectError, httpx.ConnectTimeout, httpx.RemoteProtocolError, httpx.ReadError, httpx.TimeoutException) as exc:
-        if lightweight:
+        if skip_start_lock:
             _schedule_runtime_ensure(user)
         raise HTTPException(
             status_code=503,
@@ -1596,7 +1618,7 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
 
     if upstream.status_code < 500:
         mark_runtime_healthy(runtime)
-    elif lightweight and upstream.status_code >= 500:
+    elif skip_start_lock and upstream.status_code >= 500:
         _schedule_runtime_ensure(user)
 
     # Intentionally no docker restart on env/toolset writes. Hermes already

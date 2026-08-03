@@ -5,6 +5,7 @@ import { getGlobalModelInfo, setGlobalModel } from '@/hermes'
 import { useI18n } from '@/i18n'
 import {
   resolveHostedDefaultModel,
+  resolveHostedStatusbarCorrection,
   resolveStatusbarModel,
   shouldClearStaleStatusbarModel,
   shouldShowByokStatusbarModel
@@ -13,7 +14,8 @@ import {
   getInferenceCatalog,
   getInferenceSettings,
   verxioApiEnabled,
-  type VerxioInferenceCatalogResponse
+  type VerxioInferenceCatalogResponse,
+  type VerxioInferenceSettings
 } from '@/lib/verxio-api'
 import { getScopedModelOptions } from '@/lib/verxio-model-options'
 import { notifyError } from '@/store/notifications'
@@ -21,12 +23,13 @@ import { $currentModel, $currentProvider, setCurrentModel, setCurrentProvider } 
 import type { ModelOptionsResponse } from '@/types/hermes'
 
 async function loadInferenceModeAndHostedDefault(): Promise<{
-  catalog: Pick<VerxioInferenceCatalogResponse, 'models'> | null
+  catalog: Pick<VerxioInferenceCatalogResponse, 'defaultModelId' | 'models'> | null
   hostedDefault: Awaited<ReturnType<typeof resolveHostedDefaultModel>>
   mode: 'byok' | 'hosted' | null
+  settings: VerxioInferenceSettings | null
 }> {
   if (!verxioApiEnabled()) {
-    return { catalog: null, hostedDefault: null, mode: null }
+    return { catalog: null, hostedDefault: null, mode: null, settings: null }
   }
 
   try {
@@ -35,10 +38,11 @@ async function loadInferenceModeAndHostedDefault(): Promise<{
     return {
       catalog,
       hostedDefault: resolveHostedDefaultModel(settings, catalog),
-      mode: settings.mode
+      mode: settings.mode,
+      settings
     }
   } catch {
-    return { catalog: null, hostedDefault: null, mode: null }
+    return { catalog: null, hostedDefault: null, mode: null, settings: null }
   }
 }
 
@@ -85,19 +89,48 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
   )
 
   const refreshCurrentModel = useCallback(async () => {
-    // Live sessions are owned by slash /model + session.info. Refreshing from
-    // global /api/model/info + hosted-default stale logic races the session and
-    // used to snap the footer back to flash lite after every statusbar pick.
-    // Exception: empty statusbar ("no model") while hosted — still fill the
-    // Verxio default so a hung session.info / empty model field is not sticky.
-    if (activeSessionId && $currentModel.get().trim()) {
-      return
-    }
-
+    // Live sessions own in-family picks via slash /model + session.info.
+    // Always reconcile a leftover from another hosted family (statusbar still
+    // saying Qwen while Settings default + picker are Gemini).
     try {
       // Hosted defaults come from the Verxio control plane and must paint even
       // when Hermes /api/model/info is wedged (Docker/dashboard stalls).
-      const { catalog, hostedDefault, mode } = await loadInferenceModeAndHostedDefault()
+      const { catalog, hostedDefault, mode, settings } = await loadInferenceModeAndHostedDefault()
+      const storeModel = $currentModel.get().trim()
+      const storeProvider = $currentProvider.get().trim()
+
+      if (mode === 'hosted' && catalog && settings) {
+        const info = await getGlobalModelInfo().catch(() => ({ model: '', provider: '' }))
+
+        const correction = resolveHostedStatusbarCorrection(
+          { model: storeModel, provider: storeProvider },
+          info,
+          settings,
+          catalog,
+          hostedDefault
+        )
+
+        if (correction) {
+          applyModelSelection(correction)
+
+          return
+        }
+
+        if (hostedDefault && !storeModel) {
+          applyModelSelection(hostedDefault)
+
+          return
+        }
+
+        // Valid in-family pin on a live session — leave it (user may have
+        // picked another Gemini/Qwen id from the hosted list).
+        if (activeSessionId && storeModel) {
+          return
+        }
+      } else if (activeSessionId && storeModel) {
+        // BYOK / non-hosted live sessions: session.info owns the statusbar.
+        return
+      }
 
       if (mode === 'hosted' && hostedDefault && !$currentModel.get().trim()) {
         applyModelSelection(hostedDefault)

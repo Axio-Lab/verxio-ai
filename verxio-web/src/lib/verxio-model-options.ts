@@ -342,15 +342,19 @@ export async function getScopedModelOptions(
   try {
     const [settings, catalog] = await Promise.all([getInferenceSettings(), getInferenceCatalog()])
     const hosted = hostedModelOptionsFromInference(settings, catalog)
+    // hostedModelOptionsFromInference returns {providers:[]} when the catalog
+    // row is incomplete — treat that as a miss so we don't paint "No models
+    // found" while Hermes still has a usable BYOK/runtime inventory.
+    const hostedUsable = hosted && (hosted.providers?.length ?? 0) > 0 ? hosted : null
 
-    if (hosted) {
+    if (hostedUsable) {
       const runtime = await withBudget(runtimeOptionsPromise, HOSTED_RUNTIME_OPTIONS_BUDGET_MS)
 
       if (runtime) {
-        return prioritizeLinkedProviders(mergeHostedAndRuntimeModelOptions(hosted, runtime))
+        return prioritizeLinkedProviders(mergeHostedAndRuntimeModelOptions(hostedUsable, runtime))
       }
 
-      return prioritizeLinkedProviders(hosted)
+      return prioritizeLinkedProviders(hostedUsable)
     }
 
     // BYOK: only linked Hermes providers; never keep a stale Verxio-hosted row.

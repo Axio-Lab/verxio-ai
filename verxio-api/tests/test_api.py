@@ -1649,6 +1649,14 @@ def test_dashboard_toolset_paths_use_fast_proxy_path():
     assert not main._dashboard_path_is_toolset_fast_path("api/model/info")
 
 
+def test_dashboard_model_options_uses_catalog_fast_path():
+    """GET model/options must skip awaited bridge sync + start_runtime."""
+    assert main._dashboard_path_is_model_options("api/model/options")
+    assert main._dashboard_path_is_model_options("/api/model/options")
+    assert not main._dashboard_path_is_model_options("api/model/info")
+    assert not main._dashboard_path_is_lightweight("api/model/options")
+
+
 def test_dashboard_env_put_does_not_restart_runtime(client, monkeypatch):
     payload, token = signup(client, "env-save-no-restart@example.com")
     runtime_row = db.fetch_one(
@@ -1807,7 +1815,8 @@ def test_transcription_catalog_fetches_live_models_with_runtime_key(client, monk
 
 def test_dashboard_model_paths_need_inference_sync():
     assert main._dashboard_path_needs_inference_sync("api/model/info") is True
-    assert main._dashboard_path_needs_inference_sync("/api/model/options") is True
+    # Catalog reads must not trigger bridge sync (docker.sock thrash).
+    assert main._dashboard_path_needs_inference_sync("/api/model/options") is False
     assert main._dashboard_path_needs_inference_sync("api/status") is False
     assert main._dashboard_path_needs_inference_sync("api/config") is False
     assert main._dashboard_path_needs_inference_sync("api/sessions") is False

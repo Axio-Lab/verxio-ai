@@ -179,19 +179,87 @@ export function shouldShowByokStatusbarModel(
   return isSelectableModel(targetModel, provider, options)
 }
 
+function selectedHostedCatalogModel(
+  settings: Pick<VerxioInferenceSettings, 'defaultModelId' | 'mode'>,
+  catalog: Pick<VerxioInferenceCatalogResponse, 'defaultModelId' | 'models'>
+) {
+  if (settings.mode !== 'hosted') {
+    return undefined
+  }
+
+  return (
+    catalog.models.find(model => model.id === settings.defaultModelId) ??
+    catalog.models.find(model => model.id === catalog.defaultModelId) ??
+    catalog.models.find(model => model.default)
+  )
+}
+
+/** Upstream model ids offered by the user's selected Verxio Hosted family. */
+export function selectedHostedFamilyModelIds(
+  settings: Pick<VerxioInferenceSettings, 'defaultModelId' | 'mode'>,
+  catalog: Pick<VerxioInferenceCatalogResponse, 'defaultModelId' | 'models'>
+): Set<string> {
+  const selected = selectedHostedCatalogModel(settings, catalog)
+  const ids = new Set<string>()
+
+  if (!selected) {
+    return ids
+  }
+
+  for (const modelId of [selected.upstreamModelId, ...(selected.availableModelIds ?? [])]) {
+    if (modelId?.trim()) {
+      ids.add(modelId.trim())
+    }
+  }
+
+  return ids
+}
+
+/**
+ * True when model/provider belongs to the selected Verxio Hosted family
+ * (e.g. Verxio Gemini while Settings → default is verxio-gemini).
+ *
+ * Used to stop a leftover Qwen statusbar pin surviving after the user switched
+ * the hosted default to Gemini — the picker then only lists Gemini, but the
+ * store still held `qwen3.6-plus` because live-session refresh skipped updates.
+ */
+export function isSelectedHostedFamilyModel(
+  model: string,
+  provider: string,
+  settings: Pick<VerxioInferenceSettings, 'defaultModelId' | 'mode'>,
+  catalog: Pick<VerxioInferenceCatalogResponse, 'defaultModelId' | 'models'>
+): boolean {
+  const targetModel = model.trim()
+
+  if (!targetModel || settings.mode !== 'hosted') {
+    return false
+  }
+
+  const selected = selectedHostedCatalogModel(settings, catalog)
+
+  if (!selected) {
+    return false
+  }
+
+  if (!selectedHostedFamilyModelIds(settings, catalog).has(targetModel)) {
+    return false
+  }
+
+  const targetProvider = provider.trim().toLowerCase()
+
+  const hostedProvider = String(selected.providerSlug || '')
+    .trim()
+    .toLowerCase()
+
+  return !targetProvider || !hostedProvider || targetProvider === hostedProvider
+}
+
 /** Pick the upstream model/provider for the user's hosted Verxio default. */
 export function resolveHostedDefaultModel(
   settings: Pick<VerxioInferenceSettings, 'defaultModelId' | 'mode'>,
   catalog: Pick<VerxioInferenceCatalogResponse, 'defaultModelId' | 'models'>
 ): HostedDefaultModelSelection | null {
-  if (settings.mode !== 'hosted') {
-    return null
-  }
-
-  const selected =
-    catalog.models.find(model => model.id === settings.defaultModelId) ??
-    catalog.models.find(model => model.id === catalog.defaultModelId) ??
-    catalog.models.find(model => model.default)
+  const selected = selectedHostedCatalogModel(settings, catalog)
 
   if (!selected?.upstreamModelId) {
     return null
@@ -201,6 +269,38 @@ export function resolveHostedDefaultModel(
     model: selected.upstreamModelId,
     provider: selected.providerSlug || ''
   }
+}
+
+/**
+ * Correct a statusbar pin that no longer belongs to the hosted family.
+ *
+ * Prefer the live Hermes assignment when it is in-family; otherwise the
+ * Settings hosted default. Returns null when the current store pin is already
+ * valid (including a user pick of another Gemini/Qwen id in that family).
+ */
+export function resolveHostedStatusbarCorrection(
+  store: { model: string; provider: string },
+  hermes: { model?: string | null; provider?: string | null },
+  settings: Pick<VerxioInferenceSettings, 'defaultModelId' | 'mode'>,
+  catalog: Pick<VerxioInferenceCatalogResponse, 'defaultModelId' | 'models'>,
+  hostedDefault: HostedDefaultModelSelection | null
+): HostedDefaultModelSelection | null {
+  if (settings.mode !== 'hosted') {
+    return null
+  }
+
+  if (isSelectedHostedFamilyModel(store.model, store.provider, settings, catalog)) {
+    return null
+  }
+
+  const hermesModel = typeof hermes.model === 'string' ? hermes.model.trim() : ''
+  const hermesProvider = typeof hermes.provider === 'string' ? hermes.provider.trim() : ''
+
+  if (hermesModel && isSelectedHostedFamilyModel(hermesModel, hermesProvider, settings, catalog)) {
+    return { model: hermesModel, provider: hermesProvider || hostedDefault?.provider || '' }
+  }
+
+  return hostedDefault
 }
 
 /** Decide what the statusbar should show after a runtime /api/model/info read. */

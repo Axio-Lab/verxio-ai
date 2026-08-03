@@ -25,7 +25,11 @@ import {
 import { gatewayEventRequiresSessionId } from '@/lib/gateway-events'
 import { dedupeGeneratedImageEchoesInParts } from '@/lib/generated-images'
 import { triggerHaptic } from '@/lib/haptics'
-import { isVerxioHostedDefaultSelection, resolveHostedDefaultModel } from '@/lib/hosted-default-model'
+import {
+  isSelectedHostedFamilyModel,
+  isVerxioHostedDefaultSelection,
+  resolveHostedDefaultModel
+} from '@/lib/hosted-default-model'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
 import { parseTodos } from '@/lib/todos'
 import { getInferenceCatalog, getInferenceSettings, verxioApiEnabled } from '@/lib/verxio-api'
@@ -700,6 +704,27 @@ export function useMessageStream({
                     if (settings.mode === 'byok' && isVerxioHostedDefaultSelection(nextModel, nextProvider, catalog)) {
                       setCurrentModel('')
                       setCurrentProvider('')
+
+                      return
+                    }
+
+                    // Hosted: ignore a leftover from the other family (Qwen pin
+                    // while Settings default is Gemini) so the statusbar matches
+                    // the picker.
+                    if (
+                      settings.mode === 'hosted' &&
+                      isVerxioHostedDefaultSelection(nextModel, nextProvider, catalog) &&
+                      !isSelectedHostedFamilyModel(nextModel, nextProvider, settings, catalog)
+                    ) {
+                      const hostedDefault = resolveHostedDefaultModel(settings, catalog)
+
+                      if (hostedDefault) {
+                        setCurrentModel(hostedDefault.model)
+
+                        if (hostedDefault.provider) {
+                          setCurrentProvider(hostedDefault.provider)
+                        }
+                      }
                     }
 
                     return

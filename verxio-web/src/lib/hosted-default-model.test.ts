@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 
 import {
   isSelectableModel,
+  isSelectedHostedFamilyModel,
   isVerxioHostedDefaultSelection,
   resolveHostedDefaultModel,
+  resolveHostedStatusbarCorrection,
   resolveStatusbarModel,
   shouldClearStaleStatusbarModel,
   shouldShowByokStatusbarModel
@@ -217,5 +219,55 @@ describe('resolveStatusbarModel', () => {
         provider: 'alibaba'
       })
     ).toEqual({ model: 'qwen3.6-plus', provider: 'alibaba' })
+  })
+})
+
+describe('isSelectedHostedFamilyModel', () => {
+  it('accepts models from the Settings hosted family only', () => {
+    const geminiSettings = { defaultModelId: 'verxio-gemini', mode: 'hosted' as const }
+
+    expect(isSelectedHostedFamilyModel('gemini-flash-lite-latest', 'gemini', geminiSettings, catalog)).toBe(true)
+    expect(isSelectedHostedFamilyModel('qwen3.6-plus', 'alibaba', geminiSettings, catalog)).toBe(false)
+  })
+})
+
+describe('resolveHostedStatusbarCorrection', () => {
+  const geminiSettings = { defaultModelId: 'verxio-gemini', mode: 'hosted' as const }
+  const hostedDefault = { model: 'gemini-flash-lite-latest', provider: 'gemini' }
+
+  it('snaps a leftover Qwen pin to the live Gemini assignment', () => {
+    expect(
+      resolveHostedStatusbarCorrection(
+        { model: 'qwen3.6-plus', provider: 'alibaba' },
+        { model: 'gemini-flash-lite-latest', provider: 'gemini' },
+        geminiSettings,
+        catalog,
+        hostedDefault
+      )
+    ).toEqual({ model: 'gemini-flash-lite-latest', provider: 'gemini' })
+  })
+
+  it('keeps an in-family Gemini pick', () => {
+    expect(
+      resolveHostedStatusbarCorrection(
+        { model: 'gemini-flash-lite-latest', provider: 'gemini' },
+        { model: 'gemini-flash-lite-latest', provider: 'gemini' },
+        geminiSettings,
+        catalog,
+        hostedDefault
+      )
+    ).toBeNull()
+  })
+
+  it('falls back to the hosted default when Hermes is also wrong-family', () => {
+    expect(
+      resolveHostedStatusbarCorrection(
+        { model: 'qwen3.6-plus', provider: 'alibaba' },
+        { model: 'qwen3.6-plus', provider: 'alibaba' },
+        geminiSettings,
+        catalog,
+        hostedDefault
+      )
+    ).toEqual(hostedDefault)
   })
 })
