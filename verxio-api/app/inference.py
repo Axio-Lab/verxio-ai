@@ -5,6 +5,7 @@ import importlib
 import json
 import os
 import sys
+import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -368,8 +369,45 @@ def _read_runtime_config(runtime: RuntimeInstance) -> dict[str, Any]:
 
 
 def _write_runtime_config(runtime: RuntimeInstance, config: dict[str, Any]) -> None:
+    """Write Hermes config without dropping unrelated on-disk sections.
+
+    Bridge sync historically dumped the in-memory dict with ``write_text``. A
+    raced/empty read then persisted a model-only (or agent-only) stub and wiped
+    Skills → Toolsets ``image_gen`` / ``video_gen`` pins. Merge with a fresh
+    disk read and keep media provider sections when the incoming payload omits
+    them.
+    """
     path = _config_path(runtime)
-    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    disk = _read_runtime_config(runtime)
+    merged: dict[str, Any] = dict(disk)
+    merged.update(config)
+
+    for key in ("image_gen", "video_gen"):
+        disk_section = disk.get(key)
+        incoming = merged.get(key)
+        if not isinstance(disk_section, dict):
+            continue
+        disk_provider = str(disk_section.get("provider") or "").strip()
+        if not disk_provider:
+            continue
+        if incoming is None or not isinstance(incoming, dict) or not str(incoming.get("provider") or "").strip():
+            merged[key] = dict(disk_section)
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(yaml.safe_dump(merged, sort_keys=False))
+            handle.flush()
+            os.fsync(handle.fileno())
+        tmp_path.replace(path)
+    except Exception:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
 
 
 def _signature(payload: dict[str, Any]) -> str:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -130,25 +132,43 @@ def _strip_managed_verxio_prompt(prompt: str) -> str:
     return _join_prompt_parts(prompt[:start], prompt[next_managed_start:])
 
 
+def _mark_config_unreadable(config_path: Path) -> dict[str, Any]:
+    # Keep a backup for forensics, but do NOT treat this as an empty config
+    # that is safe to rewrite. A later write of only agent/whatsapp defaults
+    # would wipe messaging platforms.*.connections, image_gen/video_gen pins,
+    # and other user state.
+    backup = config_path.with_name(f"{config_path.name}.bak-{int(time.time())}")
+    try:
+        if config_path.exists() and not backup.exists():
+            config_path.replace(backup)
+    except OSError:
+        pass
+    return {"__verxio_config_unreadable__": True}
+
+
 def _load_config(config_path: Path) -> dict[str, Any]:
     if not config_path.exists():
         return {}
 
     try:
-        loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    except yaml.YAMLError:
-        # Keep a backup for forensics, but do NOT treat this as an empty config
-        # that is safe to rewrite. A later write of only agent/whatsapp defaults
-        # would wipe messaging platforms.*.connections and other user state.
-        backup = config_path.with_name(f"{config_path.name}.bak-{int(time.time())}")
-        try:
-            if not backup.exists():
-                config_path.replace(backup)
-        except OSError:
-            pass
+        raw = config_path.read_text(encoding="utf-8")
+    except OSError:
         return {"__verxio_config_unreadable__": True}
 
-    return loaded if isinstance(loaded, dict) else {}
+    # Empty/truncated mid-write files parse as None/{}. Rewriting agent+whatsapp
+    # defaults on top of that is what wiped toolset pins and platform connections.
+    if not raw.strip():
+        return _mark_config_unreadable(config_path) if config_path.exists() else {}
+
+    try:
+        loaded = yaml.safe_load(raw)
+    except yaml.YAMLError:
+        return _mark_config_unreadable(config_path)
+
+    if not isinstance(loaded, dict):
+        return _mark_config_unreadable(config_path)
+
+    return loaded
 
 
 def _dump_config(config: dict[str, Any]) -> str:
@@ -159,6 +179,24 @@ def _dump_config(config: dict[str, Any]) -> str:
     SafeDumper = yaml.SafeDumper
     SafeDumper.add_representer(str, _represent_str)
     return yaml.dump(config, Dumper=SafeDumper, sort_keys=False, allow_unicode=True)
+
+
+def _atomic_write_text(path: Path, body: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(body)
+            handle.flush()
+            os.fsync(handle.fileno())
+        tmp_path.replace(path)
+    except Exception:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
 
 
 def _whatsapp_session_paired(hermes_home: Path) -> bool:
@@ -203,8 +241,8 @@ def ensure_verxio_agent_defaults(hermes_home: Path) -> None:
     config_path = hermes_home / "config.yaml"
     config = _load_config(config_path)
     if config.get("__verxio_config_unreadable__"):
-        # Corrupt YAML was moved aside; refuse to clobber messaging / model state
-        # with a slim agent+whatsapp stub. Operator can restore from the .bak-*.
+        # Corrupt/empty YAML was moved aside; refuse to clobber messaging / model
+        # / toolset state with a slim agent+whatsapp stub. Restore from .bak-*.
         return
 
     agent = config.get("agent")
@@ -215,7 +253,6 @@ def ensure_verxio_agent_defaults(hermes_home: Path) -> None:
         _strip_managed_verxio_prompt(existing_prompt),
         VERXIO_SYSTEM_PROMPT,
     )
-    config["agent"] = agent
 
     whatsapp = config.get("whatsapp")
     if not isinstance(whatsapp, dict):
@@ -226,6 +263,15 @@ def ensure_verxio_agent_defaults(hermes_home: Path) -> None:
             whatsapp.pop("enabled", None)
     else:
         whatsapp["enabled"] = False
-    config["whatsapp"] = whatsapp
 
-    config_path.write_text(_dump_config(config), encoding="utf-8")
+    # Re-read immediately before write. A concurrent truncate/partial write used
+    # to make the first load look empty; writing only agent+whatsapp then wiped
+    # image_gen/video_gen pins and platforms.*.connections.
+    disk = _load_config(config_path)
+    if disk.get("__verxio_config_unreadable__"):
+        return
+    merged = dict(disk)
+    merged["agent"] = agent
+    merged["whatsapp"] = whatsapp
+
+    _atomic_write_text(config_path, _dump_config(merged))

@@ -152,6 +152,50 @@ def test_ensure_verxio_agent_defaults_does_not_clobber_corrupt_config(tmp_path: 
     assert not (hermes_home / "config.yaml").exists()
 
 
+def test_ensure_verxio_agent_defaults_does_not_clobber_empty_config(tmp_path: Path) -> None:
+    """Truncated/empty config.yaml must not become an agent+whatsapp-only stub."""
+    hermes_home = tmp_path / "hermes-home"
+    hermes_home.mkdir(parents=True)
+    (hermes_home / "config.yaml").write_text("", encoding="utf-8")
+
+    ensure_verxio_agent_defaults(hermes_home)
+
+    backups = list(hermes_home.glob("config.yaml.bak-*"))
+    assert len(backups) == 1
+    assert not (hermes_home / "config.yaml").exists()
+
+
+def test_ensure_verxio_agent_defaults_preserves_media_pins(tmp_path: Path) -> None:
+    hermes_home = tmp_path / "hermes-home"
+    hermes_home.mkdir(parents=True)
+    (hermes_home / "config.yaml").write_text(
+        "\n".join(
+            [
+                "image_gen:",
+                "  provider: openai",
+                "  model: gpt-image-2-medium",
+                "video_gen:",
+                "  provider: dashscope",
+                "  model: happyhorse-1.1",
+                "model:",
+                "  provider: gemini",
+                "  default: gemini-flash-lite-latest",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    ensure_verxio_agent_defaults(hermes_home)
+
+    loaded = yaml.safe_load((hermes_home / "config.yaml").read_text(encoding="utf-8"))
+    assert loaded["image_gen"]["provider"] == "openai"
+    assert loaded["image_gen"]["model"] == "gpt-image-2-medium"
+    assert loaded["video_gen"]["provider"] == "dashscope"
+    assert loaded["model"]["provider"] == "gemini"
+    assert "system_prompt" in loaded["agent"]
+
+
 def test_ensure_verxio_agent_defaults_does_not_disable_paired_whatsapp(tmp_path: Path) -> None:
     hermes_home = tmp_path / "hermes-home"
     session_dir = hermes_home / "platforms" / "whatsapp" / "session"
