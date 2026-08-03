@@ -1424,6 +1424,27 @@ def _dashboard_path_is_lightweight(path: str) -> bool:
         "api/model/info",
     }
 
+def _dashboard_path_is_toolset_fast_path(path: str) -> bool:
+    """Toolset config/provider/env must not wait on start_runtime's lock.
+
+    Skills → Toolsets provider switches used to hang 60–120s behind
+    ``start_runtime`` (shared asyncio lock + docker inspect) and the
+    synchronous inference-bridge sync. Hermes itself applies a provider
+    pin in well under a second; the Verxio proxy was the bottleneck, so
+    OpenAI/image selections never persisted and the agent kept answering
+    with the DashScope fallback.
+    """
+    normalized = path.strip("/")
+    if not normalized.startswith("api/tools/toolsets"):
+        return False
+    if normalized == "api/tools/toolsets":
+        return True
+    return (
+        normalized.endswith("/config")
+        or normalized.endswith("/provider")
+        or normalized.endswith("/env")
+    )
+
 def _dashboard_path_needs_inference_sync(path: str) -> bool:
     """Model reads need the hosted default written into Hermes config.yaml.
 
@@ -1500,12 +1521,18 @@ logger = logging.getLogger(__name__)
 async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     user = require_user(request)
     lightweight = _dashboard_request_is_read(request.method) and _dashboard_path_is_lightweight(path)
+    toolset_fast = _dashboard_path_is_toolset_fast_path(path)
 
     # Reads must stay fast for boot polling. Bridge sync belongs on writes and
     # the websocket background task — never on every status/config/sessions GET.
     # Exception: model info/options must seed Hermes with the user's hosted
     # default first, or the statusbar paints "No model" on a fresh runtime.
-    if not _dashboard_request_is_read(request.method):
+    # Toolset provider/env pins are Hermes config writes only — never block them
+    # on docker inspect / bridge sync or OpenAI→DashScope switches time out.
+    if toolset_fast:
+        if not _dashboard_request_is_read(request.method):
+            _schedule_inference_bridge_sync(user)
+    elif not _dashboard_request_is_read(request.method):
         # Model switches + Tools/Keys saves hit this path. Never Docker-restart
         # or MCP-reload here — those made the runtime feel like it was crashing
         # (30–90s "starting" toasts). Composio live reload stays on the
@@ -1519,10 +1546,19 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
 
     # Lightweight GETs never call start_runtime. Refresh was paying a full
     # ensure/health tax on every status poll and felt like a cold start.
-    if lightweight:
+    # Toolset fast-path also skips the shared start lock when already running.
+    if lightweight or toolset_fast:
         runtime = get_runtime_for_user(user)
         if runtime.status != "running":
             _schedule_runtime_ensure(user)
+            if toolset_fast and not lightweight:
+                # Still try to bring the runtime up for a toolset write so the
+                # first-ever select after a cold boot isn't a hard 503.
+                runtime = await start_runtime(
+                    runtime,
+                    extra_env=runtime_env_for_user(str(user["id"])),
+                    wait_ready=False,
+                )
     else:
         runtime = await start_runtime(
             get_runtime_for_user(user),

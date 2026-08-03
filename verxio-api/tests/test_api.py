@@ -1639,6 +1639,16 @@ def test_dashboard_env_mutations_mark_hosted_inference_reassert_paths():
     assert not main._dashboard_path_needs_inference_env_reassert("api/status", "GET")
 
 
+def test_dashboard_toolset_paths_use_fast_proxy_path():
+    """Provider/env/config toolset routes must skip the start_runtime lock."""
+    assert main._dashboard_path_is_toolset_fast_path("api/tools/toolsets")
+    assert main._dashboard_path_is_toolset_fast_path("api/tools/toolsets/image_gen/config")
+    assert main._dashboard_path_is_toolset_fast_path("api/tools/toolsets/image_gen/provider")
+    assert main._dashboard_path_is_toolset_fast_path("api/tools/toolsets/video_gen/env")
+    assert not main._dashboard_path_is_toolset_fast_path("api/config")
+    assert not main._dashboard_path_is_toolset_fast_path("api/model/info")
+
+
 def test_dashboard_env_put_does_not_restart_runtime(client, monkeypatch):
     payload, token = signup(client, "env-save-no-restart@example.com")
     runtime_row = db.fetch_one(
