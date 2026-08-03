@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy Verxio on ECS: pull DEPLOY_REF (default verxio/web), rebuild services +
+# Deploy Verxio on ECS: pull DEPLOY_REF (default main), rebuild services +
 # Hermes runtime image, recreate control plane, and wipe per-user runtimes so
 # they boot on the new image.
 set -euo pipefail
@@ -15,8 +15,8 @@ export COMPOSE_DOCKER_CLI_BUILD=1
 
 COMPOSE=(docker compose -f docker-compose.verxio.yml)
 HERMES_IMAGE="${VERXIO_HERMES_IMAGE:-verxio-hermes-runtime:local}"
-# Production ECS tracks verxio/web. Override with DEPLOY_REF=main when shipping via main.
-DEPLOY_REF="${DEPLOY_REF:-verxio/web}"
+# Default main. For current production branch: DEPLOY_REF=verxio/web bash scripts/deploy-ecs.sh
+DEPLOY_REF="${DEPLOY_REF:-main}"
 # Cold start after recreate can exceed 30s (migrations / Turso / workers).
 API_HEALTH_TIMEOUT_SECONDS="${API_HEALTH_TIMEOUT_SECONDS:-120}"
 
