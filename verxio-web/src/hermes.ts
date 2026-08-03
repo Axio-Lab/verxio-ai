@@ -236,8 +236,9 @@ export function deleteSession(id: string, profile?: string | null): Promise<{ ok
     ...(profile ? { profile } : {}),
     path: `/api/sessions/${encodeURIComponent(id)}`,
     method: 'DELETE',
-    // Session delete is a cheap DB write; don't wait on the hosted 90s cold-start budget.
-    timeoutMs: 20_000
+    // Cheap DB write on Hermes, but the Verxio proxy can queue behind runtime
+    // ensure work — keep well under the old 90s cold-start budget.
+    timeoutMs: 60_000
   })
 }
 

@@ -1591,9 +1591,17 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
         runtime = get_runtime_for_user(user)
         if runtime.status != "running":
             _schedule_runtime_ensure(user)
-            if (toolset_fast or session_fast) and not lightweight and not model_options:
-                # Still try to bring the runtime up for a toolset/session write
-                # so the first-ever action after a cold boot isn't a hard 503.
+            # Session delete/rename must never await the start lock — a stuck
+            # "starting" row was still making multi-delete take 30–40s and hit
+            # the browser abort. Proxy via container DNS when we can; else 503.
+            if (
+                toolset_fast
+                and not session_fast
+                and not lightweight
+                and not model_options
+            ):
+                # Still try to bring the runtime up for a toolset write so the
+                # first-ever select after a cold boot isn't a hard 503.
                 runtime = await start_runtime(
                     runtime,
                     extra_env=runtime_env_for_user(str(user["id"])),
