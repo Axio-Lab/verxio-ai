@@ -1595,7 +1595,10 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     target = f"{base.rstrip('/')}/{path}"
     body = await request.body()
     if lightweight:
-        timeout = httpx.Timeout(2.0)
+        # Hermes /api/status regularly takes 2–5s under concurrent boot polls
+        # (host Docker Desktop + compose). A 2s budget turned healthy runtimes
+        # into cascading 503s and left the web client stuck on CONNECTING.
+        timeout = httpx.Timeout(8.0)
     elif model_options or session_fast:
         timeout = httpx.Timeout(20.0)
     else:
