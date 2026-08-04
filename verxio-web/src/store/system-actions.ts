@@ -13,7 +13,6 @@ const RUNTIME_POLL_ATTEMPTS = 45
 const RUNTIME_POLL_INTERVAL_MS = 1000
 
 export const $gatewayRestarting = atom(false)
-export const $runtimeRestarting = atom(false)
 
 async function awaitAction(started: ActionResponse): Promise<void> {
   for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
@@ -83,8 +82,6 @@ export async function runRuntimeEnvReload(options: { notifySuccess?: boolean } =
 
 /** Reload .env and restart the Hermes gateway process (in-container soft restart). */
 export async function runAgentRuntimeRestart(): Promise<boolean> {
-  $runtimeRestarting.set(true)
-
   try {
     const started = await restartAgentRuntime()
     await awaitAction(started)
@@ -100,8 +97,6 @@ export async function runAgentRuntimeRestart(): Promise<boolean> {
     notifyError(err, translateNow('settings.runtime.agentRestartFailed'))
 
     return false
-  } finally {
-    $runtimeRestarting.set(false)
   }
 }
 
@@ -110,8 +105,6 @@ export async function runVerxioContainerRestart(): Promise<boolean> {
   if (!verxioApiEnabled()) {
     return runAgentRuntimeRestart()
   }
-
-  $runtimeRestarting.set(true)
 
   try {
     await restartVerxioRuntime()
@@ -128,7 +121,5 @@ export async function runVerxioContainerRestart(): Promise<boolean> {
     notifyError(err, translateNow('settings.runtime.containerRestartFailed'))
 
     return false
-  } finally {
-    $runtimeRestarting.set(false)
   }
 }
