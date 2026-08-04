@@ -1,6 +1,15 @@
 import { type MutableRefObject, useEffect, useRef } from 'react'
 
 import { isNewChatRoute } from '@/app/routes'
+import { clearComposerAttachments, clearComposerDraft } from '@/store/composer'
+import { clearNotifications } from '@/store/notifications'
+import {
+  setActiveSessionId,
+  setAwaitingResponse,
+  setFreshDraftReady,
+  setMessages,
+  setSelectedStoredSessionId
+} from '@/store/session'
 
 interface RouteResumeOptions {
   activeSessionId: string | null
@@ -66,11 +75,31 @@ export function useRouteResume({
     lastPathnameRef.current = locationPathname
     wasGatewayOpenRef.current = gatewayOpen
 
-    if (currentView !== 'chat' || !gatewayOpen) {
+    if (currentView !== 'chat') {
       return
     }
 
     if (routedSessionId) {
+      // Sidebar/nav updates the URL immediately, but resume waits for an open
+      // gateway. Clear the previous transcript as soon as the route changes so
+      // "Waking up…" never leaves the old chat painted under the new title.
+      if (pathnameChanged && routedSessionId !== selectedStoredSessionIdRef.current && !creatingSessionRef.current) {
+        setFreshDraftReady(false)
+        setSelectedStoredSessionId(routedSessionId)
+        selectedStoredSessionIdRef.current = routedSessionId
+        setActiveSessionId(null)
+        activeSessionIdRef.current = null
+        setMessages([])
+        setAwaitingResponse(false)
+        clearNotifications()
+        clearComposerDraft()
+        clearComposerAttachments()
+      }
+
+      if (!gatewayOpen) {
+        return
+      }
+
       const cachedRuntime = runtimeIdByStoredSessionIdRef.current.get(routedSessionId)
 
       const alreadyActive =
@@ -87,6 +116,10 @@ export function useRouteResume({
         void resumeSession(routedSessionId, true)
       }
 
+      return
+    }
+
+    if (!gatewayOpen) {
       return
     }
 

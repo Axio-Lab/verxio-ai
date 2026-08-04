@@ -429,17 +429,53 @@ function useThreadScrollAnchor({
   // freshly submitted message lands in view — but it does not chase the
   // stream afterward.
 
+  // After a session switch, re-pin once content for that session lands.
+  // Otherwise jumpToBottom can run against an empty thread (messages cleared
+  // on switch) and never re-fire when hydrate finishes with the same sessionKey.
+  const pendingSessionBottomRef = useRef<string | null>(null)
+
   // Jump to bottom on session change OR when an empty thread first gets
   // content. Both share the same intent and the same effect.
   useEffect(() => {
     const sessionChanged = prevSessionKeyRef.current !== sessionKey
     const becameNonEmpty = prevGroupCountRef.current === 0 && groupCount > 0
+    const groupCountChanged = prevGroupCountRef.current !== groupCount
+
+    if (sessionChanged && sessionKey) {
+      pendingSessionBottomRef.current = sessionKey
+    }
 
     prevSessionKeyRef.current = sessionKey
     prevGroupCountRef.current = groupCount
 
-    if (enabled && (sessionChanged || becameNonEmpty)) {
+    if (!enabled) {
+      return
+    }
+
+    const pendingForSession = pendingSessionBottomRef.current === sessionKey
+
+    if (sessionChanged || becameNonEmpty || (pendingForSession && groupCountChanged && groupCount > 0)) {
       jumpToBottom()
+    }
+
+    if (pendingForSession && groupCount > 0 && (becameNonEmpty || (groupCountChanged && !sessionChanged))) {
+      pendingSessionBottomRef.current = null
+    }
+
+    // Cache-hit path: new sessionKey + non-empty transcript in one paint.
+    // Re-pin next frame after the virtualizer measures the new height.
+    if (sessionChanged && groupCount > 0) {
+      const key = sessionKey
+      requestAnimationFrame(() => {
+        if (prevSessionKeyRef.current !== key) {
+          return
+        }
+
+        jumpToBottom()
+        if (pendingSessionBottomRef.current === key) {
+          pendingSessionBottomRef.current = null
+        }
+      })
     }
   }, [enabled, groupCount, jumpToBottom, sessionKey])
 

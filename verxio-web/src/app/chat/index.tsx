@@ -196,8 +196,8 @@ export function ChatView({
   // Session is still loading if the route references a session we haven't
   // resumed yet. Once `activeSessionId` is set (runtime has resumed), the
   // session exists — even if it has zero messages (a brand-new routed
-  // session). The flicker where `busy` flips true briefly during hydrate
-  // is handled by `threadLoadingState`'s last-visible-user gate.
+  // session). Cross-session switches clear `$messages` first so this gate
+  // shows the spinner instead of the previous transcript under a new title.
   const loadingSession = isRoutedSessionView && messages.length === 0 && !activeSessionId
   const threadLoading = threadLoadingState(loadingSession, busy, awaitingResponse, lastVisibleMessageIsUser(messages))
   const showChatBar = !loadingSession

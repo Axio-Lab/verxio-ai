@@ -44,8 +44,24 @@ import {
   setYoloActive
 } from '@/store/session'
 import { broadcastSessionsChanged } from '@/store/session-sync'
+import { requestScrollToBottom } from '@/store/thread-scroll'
 import { reportBackendContract } from '@/store/updates'
 import type { SessionCreateResponse, SessionInfo, SessionResumeResponse, UsageStats } from '@/types/hermes'
+
+/** Pin the transcript to the latest turn after a session hydrate/switch. */
+function scrollThreadToLatest() {
+  requestScrollToBottom()
+
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  // Virtualizer + markdown layout often grow after the first paint; re-pin.
+  requestAnimationFrame(() => {
+    requestScrollToBottom()
+    requestAnimationFrame(() => requestScrollToBottom())
+  })
+}
 
 import { NEW_CHAT_ROUTE, NOT_FOUND_ROUTE, sessionRoute, SETTINGS_ROUTE } from '../../routes'
 import type { ClientSessionState, SidebarNavItem } from '../../types'
@@ -481,6 +497,28 @@ export function useSessionActions({
       const requestId = resumeRequestRef.current + 1
       resumeRequestRef.current = requestId
 
+      const previousSelected = selectedStoredSessionIdRef.current
+      // Cross-session switch: drop the previous transcript *before* any await
+      // (profile resolve / gateway wake). Route changes update the URL first;
+      // clearing here prevents the old chat from sitting under the new title
+      // for the whole wake/resume window. Same-session rebind/ctrl+R keeps
+      // messages to avoid an empty-thread flash.
+      const switchingSessions = previousSelected !== storedSessionId
+
+      setFreshDraftReady(false)
+      setSelectedStoredSessionId(storedSessionId)
+      selectedStoredSessionIdRef.current = storedSessionId
+      clearNotifications()
+
+      if (switchingSessions) {
+        setActiveSessionId(null)
+        activeSessionIdRef.current = null
+        setMessages([])
+        setAwaitingResponse(false)
+        clearComposerDraft()
+        clearComposerAttachments()
+      }
+
       const isCurrentResume = () =>
         resumeRequestRef.current === requestId && selectedStoredSessionIdRef.current === storedSessionId
 
@@ -495,16 +533,19 @@ export function useSessionActions({
 
       await ensureGatewayProfile(sessionProfile)
 
+      if (!isCurrentResume()) {
+        return
+      }
+
       const cachedRuntimeId = runtimeIdByStoredSessionIdRef.current.get(storedSessionId)
       const cachedState = cachedRuntimeId && sessionStateByRuntimeIdRef.current.get(cachedRuntimeId)
 
       if (cachedRuntimeId && cachedState) {
-        setFreshDraftReady(false)
-        clearNotifications()
-        setSelectedStoredSessionId(storedSessionId)
-        selectedStoredSessionIdRef.current = storedSessionId
         setActiveSessionId(cachedRuntimeId)
         activeSessionIdRef.current = cachedRuntimeId
+        // Paint cached transcript immediately. A RAF-only sync left the previous
+        // session's messages on screen under the new title during switches.
+        setMessages(preserveLocalAssistantErrors(cachedState.messages, []))
         syncSessionStateToView(cachedRuntimeId, cachedState)
         setCurrentCwd(cachedState.cwd)
         setCurrentBranch(cachedState.branch)
@@ -512,6 +553,10 @@ export function useSessionActions({
         clearComposerDraft()
         clearComposerAttachments()
         void ensureSessionYoloEnabled(requestGateway, cachedRuntimeId)
+
+        if (switchingSessions || cachedState.messages.length > 0) {
+          scrollThreadToLatest()
+        }
 
         try {
           const usage = await requestGateway<UsageStats>('session.usage', { session_id: cachedRuntimeId })
@@ -540,16 +585,19 @@ export function useSessionActions({
         }
       }
 
-      setFreshDraftReady(false)
       setActiveSessionId(null)
       activeSessionIdRef.current = null
       busyRef.current = true
       setBusy(true)
       setAwaitingResponse(false)
-      clearNotifications()
-      setSelectedStoredSessionId(storedSessionId)
-      selectedStoredSessionIdRef.current = storedSessionId
       setSessionStartedAt(Date.now())
+
+      // Re-assert clear if a same-session path left messages, or a concurrent
+      // paint raced after the optimistic switch clear above.
+      if (switchingSessions && $messages.get().length > 0) {
+        setMessages([])
+      }
+
       const stored = $sessions.get().find(session => sessionMatchesStoredId(session, storedSessionId))
 
       if (stored) {
@@ -563,24 +611,29 @@ export function useSessionActions({
 
       try {
         // Load the local snapshot first, then ask the gateway to resume.
-        // Previously these raced:
-        //   1. clear messages to []
-        //   2. local getSessionMessages -> 45 msgs
-        //   3. a second resume path cleared [] again
-        //   4. gateway resume -> 43 msgs
-        // That is the ctrl+R flash chain. Avoid showing an empty thread
-        // while we already have a route-scoped session id, and don't race the
-        // local snapshot against gateway resume.
-        let localSnapshot = $messages.get()
+        // Never seed localSnapshot from `$messages` when switching sessions —
+        // that reused the previous transcript if getSessionMessages failed or
+        // raced, which is the "title updated, wrong chat still showing" bug.
+        // Route-level optimistic clear may already have set selection + emptied
+        // messages before this runs (`switchingSessions` then looks false).
+        const alreadyClearedForTarget =
+          !switchingSessions && $messages.get().length === 0 && !activeSessionIdRef.current
+        let localSnapshot: ChatMessage[] = switchingSessions || alreadyClearedForTarget ? [] : $messages.get()
+        let hydratedFromStore = false
 
         try {
           const storedMessages = await getSessionMessages(storedSessionId, sessionProfile)
 
           if (isCurrentResume()) {
-            localSnapshot = preserveLocalAssistantErrors(toChatMessages(storedMessages.messages), $messages.get())
+            localSnapshot = preserveLocalAssistantErrors(toChatMessages(storedMessages.messages), [])
+            hydratedFromStore = true
 
             if (!chatMessageArraysEquivalent($messages.get(), localSnapshot)) {
               setMessages(localSnapshot)
+            }
+
+            if (localSnapshot.length > 0) {
+              scrollThreadToLatest()
             }
           }
         } catch {
@@ -607,23 +660,24 @@ export function useSessionActions({
           reconcileResumeMessages(toChatMessages(resumed.messages), currentMessages),
           currentMessages
         )
-        // Avoid a second visible transcript rebuild on resume/switch.
-        // `getSessionMessages()` is the stable stored transcript snapshot and
-        // paints first; `session.resume` can return a slightly different
-        // runtime-shaped projection (e.g. tool/system coalescing), which was
-        // causing a second full message-list replacement a second later.
-        // Keep the already-painted local snapshot for the view/cache when it
-        // exists; use gateway messages only as a fallback when no local
-        // snapshot was available.
-
-        const preferredMessages =
-          localSnapshot.length > 0
+        // Prefer the stored snapshot when we successfully loaded it. Never fall
+        // back to a leftover previous-session `currentMessages` after a switch.
+        const preferredMessages = hydratedFromStore
+          ? localSnapshot
+          : localSnapshot.length > 0
             ? localSnapshot
             : chatMessageArraysEquivalent(currentMessages, resumedMessages)
               ? currentMessages
               : resumedMessages
 
-        const messagesForView = preserveLocalAssistantErrors(preferredMessages, currentMessages)
+        const messagesForView = preserveLocalAssistantErrors(
+          preferredMessages,
+          hydratedFromStore ? [] : currentMessages
+        )
+
+        if (!chatMessageArraysEquivalent(currentMessages, messagesForView)) {
+          setMessages(messagesForView)
+        }
 
         setActiveSessionId(resumed.session_id)
         activeSessionIdRef.current = resumed.session_id
@@ -645,6 +699,7 @@ export function useSessionActions({
         )
         clearComposerDraft()
         clearComposerAttachments()
+        scrollThreadToLatest()
       } catch (err) {
         if (!isCurrentResume()) {
           return
@@ -657,7 +712,8 @@ export function useSessionActions({
             return
           }
 
-          setMessages(preserveLocalAssistantErrors(toChatMessages(fallback.messages), $messages.get()))
+          setMessages(preserveLocalAssistantErrors(toChatMessages(fallback.messages), []))
+          scrollThreadToLatest()
           notifyError(err, copy.resumeFailed)
         } catch (fallbackErr) {
           if (!isCurrentResume()) {
