@@ -2142,7 +2142,10 @@ export function PublicNotepadShareView() {
   if (error) {
     return (
       <>
-        <main className="grid min-h-dvh place-items-center bg-background px-4 pb-14 text-foreground">
+        <main
+          className="grid min-h-dvh place-items-center bg-background px-4 pb-14 text-foreground"
+          data-selectable-text="true"
+        >
           <section className="w-full max-w-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-5">
             <h1 className="text-base font-semibold tracking-normal">Shared note unavailable</h1>
             <p className="mt-2 text-sm text-muted-foreground">{error}</p>
@@ -2172,7 +2175,7 @@ export function PublicNotepadShareView() {
 
   return (
     <>
-      <main className="h-dvh overflow-y-auto bg-background pb-14 text-foreground">
+      <main className="h-dvh overflow-y-auto bg-background pb-14 text-foreground" data-selectable-text="true">
         <article className="mx-auto max-w-4xl px-5 py-8">
           <div className="border-b border-(--ui-stroke-secondary) pb-5">
             <p className="text-xs font-medium text-muted-foreground">{payload.workspace_name}</p>
