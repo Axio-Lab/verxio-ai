@@ -34,9 +34,7 @@ machine:
 - On first launch, Verxio creates `Documents/Verxio` and uses it as the default
   project workspace. Docker runtime paths like `/workspace` are mapped to this
   local folder in the desktop shell and UI.
-- Leash identity is stored in Electron `userData` as `leash-agent.json`, using
-  Electron `safeStorage` encryption when the platform supports it and a
-  permission-restricted plaintext fallback otherwise.
+
 - File browser and preview access is backed by remembered folder grants. Picking
   a file or folder from the desktop picker grants that folder to Verxio, and the
   default project directory is granted automatically.

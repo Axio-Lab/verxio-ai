@@ -10,7 +10,6 @@ const {
   nativeImage,
   nativeTheme,
   powerMonitor,
-  safeStorage,
   session,
   shell,
   systemPreferences
@@ -181,7 +180,6 @@ let composioOAuthWindow = null
 const terminalSessions = new Map()
 const fileWatches = new Map()
 
-const LEASH_AGENT_FILE = 'leash-agent.json'
 const RUNTIME_WORKSPACE_ROOT = '/workspace'
 const DESKTOP_WORKSPACE_NAME = 'Verxio'
 
@@ -357,67 +355,6 @@ function assertPathAllowed(filePath) {
   }
 
   return resolved
-}
-
-function leashAgentPath() {
-  return path.join(app.getPath('userData'), LEASH_AGENT_FILE)
-}
-
-function readLeashAgent() {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(leashAgentPath(), 'utf8'))
-
-    if (parsed?.encoding === 'electron-safe-storage' && typeof parsed.ciphertext === 'string') {
-      const decrypted = safeStorage.decryptString(Buffer.from(parsed.ciphertext, 'base64'))
-
-      return JSON.parse(decrypted)
-    }
-
-    if (parsed?.encoding === 'plain' && parsed.config && typeof parsed.config === 'object') {
-      return parsed.config
-    }
-
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed
-    }
-  } catch {
-    // Missing or unreadable identity file.
-  }
-
-  return null
-}
-
-function writeLeashAgent(config) {
-  const filePath = leashAgentPath()
-
-  if (!config) {
-    try {
-      fs.rmSync(filePath, { force: true })
-    } catch {
-      // ignore
-    }
-
-    return true
-  }
-
-  const json = JSON.stringify(config)
-  const payload = safeStorage.isEncryptionAvailable()
-    ? {
-        version: 1,
-        encoding: 'electron-safe-storage',
-        ciphertext: safeStorage.encryptString(json).toString('base64')
-      }
-    : {
-        version: 1,
-        encoding: 'plain',
-        config
-      }
-
-  fs.mkdirSync(path.dirname(filePath), { recursive: true })
-  fs.writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`)
-  safeChmod(filePath)
-
-  return true
 }
 
 function nativeOverlayWidth() {
@@ -1316,24 +1253,6 @@ ipcMain.handle('verxio:fs:permissions:isAllowed', (_event, targetPath) => ({
   allowed: isPathAllowed(targetPath),
   path: resolvePath(targetPath)
 }))
-
-ipcMain.handle('verxio:leash:getAgent', () => readLeashAgent())
-ipcMain.handle('verxio:leash:setAgent', (_event, config) => writeLeashAgent(config || null))
-ipcMain.handle('verxio:leash:clearAgent', () => writeLeashAgent(null))
-ipcMain.handle('verxio:leash:getBannerNeverShow', () => readSettings().leashBannerNeverShow === true)
-ipcMain.handle('verxio:leash:setBannerNeverShow', (_event, value) => {
-  const settings = readSettings()
-
-  if (value) {
-    settings.leashBannerNeverShow = true
-  } else {
-    delete settings.leashBannerNeverShow
-  }
-
-  writeSettings(settings)
-
-  return true
-})
 
 ipcMain.handle('verxio:terminal:start', (event, options = {}) => {
   const id = crypto.randomUUID()

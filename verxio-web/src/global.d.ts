@@ -1,5 +1,3 @@
-import type { LeashAgentConfig } from './lib/leash/types'
-
 export {}
 
 declare global {
@@ -75,13 +73,6 @@ declare global {
         isAllowed: (path: string) => Promise<HermesPermissionCheckResult>
         list: () => Promise<HermesPermissionListResult>
         revokeFolder: (path: string) => Promise<HermesPermissionListResult>
-      }
-      leash?: {
-        clearAgent: () => Promise<boolean>
-        getAgent: () => Promise<LeashAgentConfig | null>
-        getBannerNeverShow: () => Promise<boolean>
-        setAgent: (config: LeashAgentConfig | null) => Promise<boolean>
-        setBannerNeverShow: (value: boolean) => Promise<boolean>
       }
       terminal: {
         dispose: (id: string) => Promise<boolean>

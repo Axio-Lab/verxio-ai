@@ -3490,32 +3490,6 @@ def test_runtime_health_waits_until_gateway_is_running(monkeypatch):
     assert "gateway is starting" in detail
 
 
-def test_leash_agent_config_is_runtime_local_not_db(client):
-    payload, token = signup(client, "leash@example.com")
-    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
-    config = {"version": 1, "agent_mint": "Agnt123", "executive_keypair": "secret"}
-
-    missing = client.get("/api/leash/agent-config", headers=headers)
-    assert missing.status_code == 404
-
-    saved = client.put("/api/leash/agent-config", headers=headers, json=config)
-    assert saved.status_code == 200
-    assert saved.json() == {"ok": True}
-
-    loaded = client.get("/api/leash/agent-config", headers=headers)
-    assert loaded.status_code == 200
-    assert loaded.json()["config"] == config
-
-    rows = db.fetch_all("SELECT * FROM runtime_instances WHERE workspace_id = ?", (payload["workspace"]["id"],))
-    assert rows
-    agent_path = Path(rows[0]["hermes_home_path"]) / ".config" / "leash" / "agent.json"
-    assert agent_path.is_file()
-
-    deleted = client.delete("/api/leash/agent-config", headers=headers)
-    assert deleted.status_code == 200
-    assert not agent_path.is_file()
-
-
 def test_slack_manifest_endpoint_returns_socket_mode_manifest(client):
     _, token = signup(client)
     response = client.get(

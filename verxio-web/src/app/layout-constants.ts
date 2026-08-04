@@ -30,9 +30,3 @@ export const OVERLAY_SIDEBAR_STACK =
   'max-xl:flex-row max-xl:flex-wrap max-xl:items-center max-xl:gap-1 max-xl:overflow-x-auto max-xl:overflow-y-hidden max-xl:shrink-0 max-xl:border-b max-xl:border-border/30 max-xl:px-3 max-xl:pb-2 max-xl:pt-[calc(var(--titlebar-height)+0.5rem)]' as const
 
 export const OVERLAY_NAV_ITEM_STACK = 'max-xl:h-auto max-xl:w-auto max-xl:shrink-0 max-xl:whitespace-nowrap' as const
-
-// Full-width banners (e.g. Leash identity) sit below the fixed titlebar — only
-// top margin is needed to clear the control strip; horizontal inset is modest
-// padding because titlebar icons are not beside the banner body.
-export const LEASH_BANNER_CLEARANCE_TOP = 'mt-[var(--titlebar-height)]'
-export const LEASH_BANNER_PADDING_X = 'px-3 sm:px-4'

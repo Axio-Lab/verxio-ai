@@ -63,7 +63,6 @@ from app.inference import (
     update_inference_settings,
     ensure_inference_settings,
 )
-from app.leash_agent import clear_leash_agent, read_leash_agent, write_leash_agent
 from app.knowledge_bases import (
     create_document as create_knowledge_document,
     create_knowledge_base,
@@ -1317,39 +1316,6 @@ async def delete_composio_connection_route(account_id: str, request: Request) ->
     result = delete_composio_account(account_id)
     await _sync_composio_bridge_for_user(user, apply_live=True)
     return result
-
-@app.get("/api/leash/agent-config")
-async def get_leash_agent_config(request: Request) -> dict:
-    """Read Leash agent.json from the runtime volume. Pass-through cache only — never stored in Turso."""
-    user = require_user(request)
-    runtime = get_runtime_for_user(user)
-    ensure_runtime_directories(runtime)
-    payload = read_leash_agent(runtime)
-    if payload is None:
-        raise HTTPException(status_code=404, detail="Leash agent config not found.")
-    return {"ok": True, "config": payload}
-
-@app.put("/api/leash/agent-config")
-async def put_leash_agent_config(request: Request) -> dict[str, bool]:
-    """Write Leash agent.json to the runtime volume from the browser. Body is not logged or persisted in Turso."""
-    user = require_user(request)
-    runtime = get_runtime_for_user(user)
-    ensure_runtime_directories(runtime)
-    try:
-        body = await request.json()
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="Invalid JSON body.") from exc
-    if not isinstance(body, dict):
-        raise HTTPException(status_code=400, detail="Leash agent config must be a JSON object.")
-    write_leash_agent(runtime, body)
-    return {"ok": True}
-
-@app.delete("/api/leash/agent-config")
-async def delete_leash_agent_config(request: Request) -> dict[str, bool]:
-    user = require_user(request)
-    runtime = get_runtime_for_user(user)
-    clear_leash_agent(runtime)
-    return {"ok": True}
 
 def _runtime_dashboard_token(runtime_id: str, runtime: RuntimeInstance | None = None, *, prefer_live: bool = False) -> str:
     row = db.fetch_one("SELECT dashboard_token FROM runtime_instances WHERE id = ?", (runtime_id,))
