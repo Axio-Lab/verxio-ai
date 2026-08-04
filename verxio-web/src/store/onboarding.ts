@@ -15,7 +15,7 @@ import {
 } from '@/hermes'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
 import { evaluateRuntimeReadiness, type RuntimeReadinessResult } from '@/lib/runtime-readiness'
-import { getInferenceSettings, verxioApiEnabled } from '@/lib/verxio-api'
+import { verxioApiEnabled } from '@/lib/verxio-api'
 import { notify, notifyError } from '@/store/notifications'
 import { setCurrentModel, setCurrentProvider } from '@/store/session'
 import type { ModelOptionProvider, OAuthProvider, OAuthStartResponse } from '@/types/hermes'
@@ -347,31 +347,18 @@ async function completeWithModelConfirm(
   }
 
   if (isManual) {
-    // Hosted mode keeps the Verxio main model. BYOK (and desktop without the
-    // control-plane API) should adopt the newly linked provider's default.
-    let shouldAssignModel = !verxioApiEnabled()
-
-    if (verxioApiEnabled()) {
-      try {
-        const settings = await getInferenceSettings()
-        shouldAssignModel = settings.mode === 'byok'
-      } catch {
-        shouldAssignModel = false
-      }
-    }
-
-    if (shouldAssignModel) {
-      try {
-        await setModelAssignment({
-          scope: 'main',
-          provider: defaults.providerSlug,
-          model: defaults.defaultModel
-        })
-        setCurrentModel(defaults.defaultModel)
-        setCurrentProvider(defaults.providerSlug)
-      } catch {
-        // Non-fatal for settings-driven connect flows.
-      }
+    // After connecting a provider account, adopt its default so the model
+    // selector immediately reflects the new credentials.
+    try {
+      await setModelAssignment({
+        scope: 'main',
+        provider: defaults.providerSlug,
+        model: defaults.defaultModel
+      })
+      setCurrentModel(defaults.defaultModel)
+      setCurrentProvider(defaults.providerSlug)
+    } catch {
+      // Non-fatal for settings-driven connect flows.
     }
 
     finishProviderConnection(ctx, providerLabel)

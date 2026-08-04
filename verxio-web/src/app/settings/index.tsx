@@ -1,5 +1,5 @@
 import { IconDownload, IconRefresh, IconUpload } from '@tabler/icons-react'
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -8,7 +8,6 @@ import { getHermesConfigDefaults, getHermesConfigRecord, saveHermesConfig } from
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
 import { Archive, Bell, Globe, Info, KeyRound, Mic, RefreshCw, Settings2, Sparkles, Wrench, Zap } from '@/lib/icons'
-import type { VerxioInferenceMode } from '@/lib/verxio-api'
 import { notifyError } from '@/store/notifications'
 
 import { useRouteEnumParam } from '../hooks/use-route-enum-param'
@@ -16,18 +15,24 @@ import { OverlayIconButton } from '../overlays/overlay-chrome'
 import { OverlayMain, OverlayNavItem, OverlaySidebar, OverlaySplitLayout } from '../overlays/overlay-split-layout'
 import { OverlayView } from '../overlays/overlay-view'
 
-import { AboutSettings } from './about-settings'
 import { AppearanceSettings } from './appearance-settings'
-import { ConfigSettings } from './config-settings'
 import { SECTIONS } from './constants'
-import { GatewaySettings } from './gateway-settings'
-import { KEYS_VIEWS, KeysSettings, type KeysView } from './keys-settings'
-import { McpSettings } from './mcp-settings'
-import { NotificationsSettings } from './notifications-settings'
-import { PROVIDER_VIEWS, ProvidersSettings, type ProviderView } from './providers-settings'
-import { RuntimeSettings } from './runtime-settings'
-import { SessionsSettings } from './sessions-settings'
+import { KEYS_VIEWS, type KeysView } from './keys-settings'
+import { LoadingState } from './primitives'
+import { PROVIDER_VIEWS, type ProviderView } from './providers-settings'
 import type { SettingsPageProps, SettingsView as SettingsViewId } from './types'
+
+const AboutSettings = lazy(async () => ({ default: (await import('./about-settings')).AboutSettings }))
+const ConfigSettings = lazy(async () => ({ default: (await import('./config-settings')).ConfigSettings }))
+const GatewaySettings = lazy(async () => ({ default: (await import('./gateway-settings')).GatewaySettings }))
+const KeysSettings = lazy(async () => ({ default: (await import('./keys-settings')).KeysSettings }))
+const McpSettings = lazy(async () => ({ default: (await import('./mcp-settings')).McpSettings }))
+const NotificationsSettings = lazy(async () => ({
+  default: (await import('./notifications-settings')).NotificationsSettings
+}))
+const ProvidersSettings = lazy(async () => ({ default: (await import('./providers-settings')).ProvidersSettings }))
+const RuntimeSettings = lazy(async () => ({ default: (await import('./runtime-settings')).RuntimeSettings }))
+const SessionsSettings = lazy(async () => ({ default: (await import('./sessions-settings')).SessionsSettings }))
 
 const SETTINGS_VIEWS: readonly SettingsViewId[] = [
   ...SECTIONS.map(s => `config:${s.id}` as SettingsViewId),
@@ -49,7 +54,6 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
   // Providers subnav (Accounts vs API keys) lives in its own param so each
   // sub-view is deep-linkable and survives a refresh.
   const [providerView, setProviderView] = useRouteEnumParam<ProviderView>('pview', PROVIDER_VIEWS, 'accounts')
-  const [providerMode, setProviderMode] = useState<VerxioInferenceMode | null>(null)
   const [keysView, setKeysView] = useRouteEnumParam<KeysView>('kview', KEYS_VIEWS, 'tools')
   const [confirmResetOpen, setConfirmResetOpen] = useState(false)
 
@@ -62,18 +66,10 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
     }
   }, [hash, navigate, pathname, search])
 
-  useEffect(() => {
-    if (activeView === 'providers' && providerMode === 'hosted' && providerView === 'keys') {
-      setProviderView('accounts')
-    }
-  }, [activeView, providerMode, providerView, setProviderView])
-
   const openProviderView = (view: ProviderView) => {
     setActiveView('providers')
     setProviderView(view)
   }
-
-  const showProviderApiKeys = providerMode === 'byok'
 
   const openKeysView = (view: KeysView) => {
     setActiveView('keys')
@@ -108,6 +104,8 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
     }
   }
 
+  const panelFallback = <LoadingState label={t.common.loading} />
+
   return (
     <OverlayView closeLabel={t.settings.closeSettings} onClose={onClose}>
       <OverlaySplitLayout>
@@ -141,15 +139,13 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
                 nested
                 onClick={() => openProviderView('accounts')}
               />
-              {showProviderApiKeys && (
-                <OverlayNavItem
-                  active={providerView === 'keys'}
-                  icon={KeyRound}
-                  label={t.settings.nav.providerApiKeys}
-                  nested
-                  onClick={() => openProviderView('keys')}
-                />
-              )}
+              <OverlayNavItem
+                active={providerView === 'keys'}
+                icon={KeyRound}
+                label={t.settings.nav.providerApiKeys}
+                nested
+                onClick={() => openProviderView('keys')}
+              />
             </div>
           )}
           <OverlayNavItem
@@ -251,37 +247,38 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
         </OverlaySidebar>
 
         <OverlayMain className="px-0 pb-0 pt-[calc(var(--titlebar-height)+1rem)]">
-          {activeView === 'config:appearance' ? (
-            <AppearanceSettings />
-          ) : activeView === 'about' ? (
-            <AboutSettings />
-          ) : activeView === 'gateway' ? (
-            <GatewaySettings />
-          ) : activeView === 'runtime' ? (
-            <RuntimeSettings />
-          ) : activeView.startsWith('config:') ? (
-            <ConfigSettings
-              activeSectionId={activeView.slice('config:'.length)}
-              importInputRef={importInputRef}
-              onConfigSaved={onConfigSaved}
-            />
-          ) : activeView === 'providers' ? (
-            <ProvidersSettings
-              onInferenceApplied={onConfigSaved}
-              onInferenceModeChange={setProviderMode}
-              onViewChange={setProviderView}
-              requestGateway={requestGateway}
-              view={providerView}
-            />
-          ) : activeView === 'keys' ? (
-            <KeysSettings view={keysView} />
-          ) : activeView === 'mcp' ? (
-            <McpSettings gateway={gateway} onConfigSaved={onConfigSaved} />
-          ) : activeView === 'notifications' ? (
-            <NotificationsSettings />
-          ) : (
-            <SessionsSettings />
-          )}
+          <Suspense fallback={panelFallback}>
+            {activeView === 'config:appearance' ? (
+              <AppearanceSettings />
+            ) : activeView === 'about' ? (
+              <AboutSettings />
+            ) : activeView === 'gateway' ? (
+              <GatewaySettings />
+            ) : activeView === 'runtime' ? (
+              <RuntimeSettings />
+            ) : activeView.startsWith('config:') ? (
+              <ConfigSettings
+                activeSectionId={activeView.slice('config:'.length)}
+                importInputRef={importInputRef}
+                onConfigSaved={onConfigSaved}
+              />
+            ) : activeView === 'providers' ? (
+              <ProvidersSettings
+                onInferenceApplied={onConfigSaved}
+                onViewChange={setProviderView}
+                requestGateway={requestGateway}
+                view={providerView}
+              />
+            ) : activeView === 'keys' ? (
+              <KeysSettings view={keysView} />
+            ) : activeView === 'mcp' ? (
+              <McpSettings gateway={gateway} onConfigSaved={onConfigSaved} />
+            ) : activeView === 'notifications' ? (
+              <NotificationsSettings />
+            ) : (
+              <SessionsSettings />
+            )}
+          </Suspense>
         </OverlayMain>
       </OverlaySplitLayout>
       <ConfirmDialog

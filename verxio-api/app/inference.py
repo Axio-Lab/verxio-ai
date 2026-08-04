@@ -340,16 +340,22 @@ def inference_usage(user_id: str) -> InferenceUsageResponse:
 
 
 def runtime_env_for_user(user_id: str) -> dict[str, str]:
-    settings = ensure_inference_settings(user_id)
-    if settings.mode != "hosted":
-        return {}
+    """Inject every available Verxio-hosted secret into the runtime.
 
-    model = _model_by_id(settings.defaultModelId)
-    _secret_name, secret_value = _hosted_secret(model)
-    if not secret_value:
-        return {}
-
-    return {model.runtime_env_var: secret_value}
+    Hybrid mode keeps hosted Qwen/Gemini usable alongside BYOK providers, so
+    we no longer gate on ``settings.mode`` or a single default family.
+    """
+    ensure_inference_settings(user_id)
+    env: dict[str, str] = {}
+    for model in MODEL_CATALOG:
+        _secret_name, secret_value = _hosted_secret(model)
+        if not secret_value:
+            continue
+        env[model.runtime_env_var] = secret_value
+        # Gemini tooling often reads GOOGLE_API_KEY as an alias.
+        if model.runtime_env_var == "GEMINI_API_KEY":
+            env.setdefault("GOOGLE_API_KEY", secret_value)
+    return env
 
 
 def _state_path(runtime: RuntimeInstance) -> Path:
@@ -683,6 +689,19 @@ def _clear_conflicting_auth_active_provider(auth_path: Path, hosted_provider_slu
     return True
 
 
+def _is_byok_model_selection(config: dict[str, Any]) -> bool:
+    """True when config.yaml already points at a non-Verxio-hosted provider."""
+    raw_model = config.get("model")
+    if not isinstance(raw_model, dict):
+        return False
+    provider = str(raw_model.get("provider") or "").strip().lower()
+    default = str(raw_model.get("default") or "").strip()
+    if not provider or not default:
+        return False
+    hosted = set(_hosted_provider_slugs()) | set(LEGACY_HOSTED_PROVIDER_SLUGS)
+    return provider not in hosted
+
+
 def sync_inference_runtime_bridge(runtime: RuntimeInstance, user_id: str) -> InferenceRuntimeBridgeStatus:
     ensure_runtime_directories(runtime)
     settings = ensure_inference_settings(user_id)
@@ -691,37 +710,43 @@ def sync_inference_runtime_bridge(runtime: RuntimeInstance, user_id: str) -> Inf
     missing = [] if secret_value else list(model.hosted_secret_env)
 
     upstream_model_id = _upstream_model_id(model)
+    legacy_credentials_cleaned = cleanup_legacy_hosted_credentials(runtime)
+    config = _read_runtime_config(runtime)
 
-    if settings.mode != "hosted":
-        cleared = _clear_hosted_inference_for_byok(runtime)
+    # Hybrid: never wipe a connected-provider selection. Hosted secrets stay
+    # available via runtime_env_for_user so the picker can switch back anytime.
+    if _is_byok_model_selection(config):
         return InferenceRuntimeBridgeStatus(
             configured=True,
-            enabled=False,
-            changed=cleared,
+            enabled=True,
+            changed=legacy_credentials_cleaned,
             mode=settings.mode,
             defaultModelId=settings.defaultModelId,
             providerSlug=model.provider_slug,
             upstreamModelId=upstream_model_id,
-            message="BYOK mode uses Hermes provider settings.",
+            message="Hybrid mode keeps the connected provider selection.",
         )
 
-    legacy_credentials_cleaned = cleanup_legacy_hosted_credentials(runtime)
-
     if not secret_value:
+        # Only clear a stale hosted pin for *this* family when its secret is gone.
         model_assignment_cleaned = _strip_hosted_model_assignment(runtime, model)
+        any_hosted_secret = any(_hosted_secret(item)[1] for item in MODEL_CATALOG)
         return InferenceRuntimeBridgeStatus(
-            configured=False,
-            enabled=False,
+            configured=any_hosted_secret,
+            enabled=any_hosted_secret,
             changed=legacy_credentials_cleaned or model_assignment_cleaned,
             mode=settings.mode,
             defaultModelId=model.id,
             providerSlug=model.provider_slug,
             upstreamModelId=upstream_model_id,
             missingEnvVars=missing,
-            message=f"{model.display_name} needs a hosted provider key.",
+            message=(
+                f"{model.display_name} needs a hosted provider key."
+                if not any_hosted_secret
+                else "Hosted default family unavailable; other hosted or BYOK models remain usable."
+            ),
         )
 
-    config = _read_runtime_config(runtime)
     raw_model = config.get("model")
     model_invalid = (
         not isinstance(raw_model, dict)

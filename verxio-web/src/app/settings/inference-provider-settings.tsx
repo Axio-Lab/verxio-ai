@@ -10,27 +10,18 @@ import {
   updateInferenceSettings,
   verxioApiEnabled,
   type VerxioInferenceCatalogResponse,
-  type VerxioInferenceMode,
   type VerxioInferenceModel,
   type VerxioInferenceUsageResponse
 } from '@/lib/verxio-api'
-import { setCurrentModel, setCurrentProvider } from '@/store/session'
 
 import { ListRow, Pill, SectionHeading } from './primitives'
 
 interface InferenceProviderSettingsProps {
   onInferenceApplied?: () => void
-  onInferenceModeChange?: (mode: VerxioInferenceMode) => void
   onOpenProviderKeys: () => void
-  onSwitchingChange?: (busy: boolean) => void
 }
 
-export function InferenceProviderSettings({
-  onInferenceApplied,
-  onInferenceModeChange,
-  onOpenProviderKeys,
-  onSwitchingChange
-}: InferenceProviderSettingsProps) {
+export function InferenceProviderSettings({ onInferenceApplied, onOpenProviderKeys }: InferenceProviderSettingsProps) {
   const queryClient = useQueryClient()
   const [catalog, setCatalog] = useState<VerxioInferenceCatalogResponse | null>(null)
   const [usage, setUsage] = useState<VerxioInferenceUsageResponse | null>(null)
@@ -65,69 +56,7 @@ export function InferenceProviderSettings({
 
   const hostedModels: VerxioInferenceModel[] = catalog?.models.filter(model => model.hostedAvailable) ?? []
   const settings = usage?.settings
-  const mode = settings?.mode ?? 'hosted'
-  const isHosted = mode === 'hosted'
-  const isByok = mode === 'byok'
   const selectedModelId = settings?.defaultModelId ?? catalog?.defaultModelId ?? null
-
-  const selectedHostedModel =
-    hostedModels.find(model => model.id === selectedModelId) ?? hostedModels.find(model => model.default) ?? null
-
-  useEffect(() => {
-    if (settings?.mode) {
-      onInferenceModeChange?.(settings.mode)
-    }
-  }, [onInferenceModeChange, settings?.mode])
-
-  const applyInferenceMode = useCallback(
-    async (nextMode: VerxioInferenceMode) => {
-      if (nextMode === mode) {
-        return
-      }
-
-      setApplying(true)
-      onSwitchingChange?.(true)
-      setError('')
-
-      try {
-        const nextSettings = await updateInferenceSettings({
-          defaultModelId:
-            nextMode === 'hosted'
-              ? (selectedHostedModel?.id ?? catalog?.defaultModelId)
-              : (settings?.defaultModelId ?? catalog?.defaultModelId),
-          mode: nextMode
-        })
-
-        // BYOK must never keep a Verxio Hosted default on the statusbar.
-        if (nextMode === 'byok') {
-          setCurrentModel('')
-          setCurrentProvider('')
-        }
-
-        const nextUsage = await getInferenceUsage()
-        setUsage({ ...nextUsage, settings: nextSettings })
-        clearCachedModelOptions()
-        await refreshModelOptionsQueries(queryClient)
-        onInferenceModeChange?.(nextSettings.mode)
-        onInferenceApplied?.()
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
-      } finally {
-        setApplying(false)
-        onSwitchingChange?.(false)
-      }
-    },
-    [
-      catalog?.defaultModelId,
-      mode,
-      onInferenceApplied,
-      onInferenceModeChange,
-      onSwitchingChange,
-      queryClient,
-      selectedHostedModel?.id,
-      settings?.defaultModelId
-    ]
-  )
 
   const applyHostedModel = useCallback(
     async (modelId: string) => {
@@ -136,7 +65,6 @@ export function InferenceProviderSettings({
       }
 
       setApplying(true)
-      onSwitchingChange?.(true)
       setError('')
 
       try {
@@ -149,16 +77,14 @@ export function InferenceProviderSettings({
         setUsage({ ...nextUsage, settings: nextSettings })
         clearCachedModelOptions()
         await refreshModelOptionsQueries(queryClient)
-        onInferenceModeChange?.(nextSettings.mode)
         onInferenceApplied?.()
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
       } finally {
         setApplying(false)
-        onSwitchingChange?.(false)
       }
     },
-    [onInferenceApplied, onInferenceModeChange, onSwitchingChange, queryClient, selectedModelId]
+    [onInferenceApplied, queryClient, selectedModelId]
   )
 
   if (!verxioApiEnabled()) {
@@ -168,13 +94,12 @@ export function InferenceProviderSettings({
   return (
     <section className="mb-5 rounded-xl border border-border/60 bg-muted/20 p-4">
       <div className="mb-2.5 flex items-center justify-between gap-3">
-        <SectionHeading icon={Sparkles} meta={isHosted ? 'Hosted' : 'BYOK'} title="Verxio provider" />
+        <SectionHeading icon={Sparkles} meta="Hosted + your keys" title="Models" />
         {loading && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
       </div>
       <p className="mb-3 text-xs text-muted-foreground">
-        {isHosted
-          ? 'Hosted calls use Verxio-managed Qwen or Gemini credentials. Switch to BYOK to connect your own provider accounts or API keys.'
-          : 'BYOK calls use the provider account or API key you choose for the active model. Switch back to Verxio Hosted anytime to use managed Qwen or Gemini.'}
+        Use Verxio-hosted Qwen or Gemini, or connect your own provider accounts and API keys below. The model selector
+        shows both — your pick decides which credentials are used.
       </p>
 
       {error && (
@@ -185,87 +110,56 @@ export function InferenceProviderSettings({
 
       {catalog && usage && (
         <div className="grid gap-1">
+          {hostedModels.map(model => {
+            const isSelected = model.id === selectedModelId
+
+            return (
+              <ListRow
+                action={
+                  isSelected ? (
+                    <span className="inline-flex items-center gap-1 text-xs font-medium text-primary">
+                      <Check className="size-3.5" />
+                      Default
+                    </span>
+                  ) : (
+                    <Button
+                      disabled={applying || !model.hostedAvailable}
+                      onClick={() => void applyHostedModel(model.id)}
+                      size="sm"
+                      type="button"
+                      variant="textStrong"
+                    >
+                      Set default
+                    </Button>
+                  )
+                }
+                description={model.description}
+                key={model.id}
+                title={
+                  <span className="flex flex-wrap items-baseline gap-2">
+                    {model.displayName}
+                    <Pill tone="primary">Verxio Hosted</Pill>
+                    <Pill>{model.tier}</Pill>
+                    {!model.hostedAvailable ? <Pill>Unavailable</Pill> : null}
+                  </span>
+                }
+              />
+            )
+          })}
           <ListRow
             action={
-              <div className="flex items-center gap-1 rounded-md border border-border/60 p-1">
-                <Button
-                  aria-pressed={isHosted}
-                  disabled={applying}
-                  onClick={() => void applyInferenceMode('hosted')}
-                  size="sm"
-                  type="button"
-                  variant={isHosted ? 'default' : 'ghost'}
-                >
-                  Verxio Hosted
-                </Button>
-                <Button
-                  aria-pressed={isByok}
-                  disabled={applying}
-                  onClick={() => void applyInferenceMode('byok')}
-                  size="sm"
-                  type="button"
-                  variant={isByok ? 'default' : 'ghost'}
-                >
-                  BYOK
-                </Button>
-              </div>
+              <Button onClick={onOpenProviderKeys} size="sm" type="button" variant="textStrong">
+                Open provider keys
+              </Button>
             }
-            description="Choose whether model traffic uses Verxio-managed models or your own provider credentials."
-            title="Billing mode"
+            description="Connect a provider account below or add keys for OpenAI, Anthropic, Gemini, and other models."
+            title={
+              <span className="flex items-center gap-2">
+                <KeyRound className="size-3.5" />
+                Your provider credentials
+              </span>
+            }
           />
-          {isHosted &&
-            hostedModels.map(model => {
-              const isSelected = model.id === selectedModelId
-
-              return (
-                <ListRow
-                  action={
-                    isSelected ? (
-                      <span className="inline-flex items-center gap-1 text-xs font-medium text-primary">
-                        <Check className="size-3.5" />
-                        Active
-                      </span>
-                    ) : (
-                      <Button
-                        disabled={applying || !model.hostedAvailable}
-                        onClick={() => void applyHostedModel(model.id)}
-                        size="sm"
-                        type="button"
-                        variant="textStrong"
-                      >
-                        Use
-                      </Button>
-                    )
-                  }
-                  description={model.description}
-                  key={model.id}
-                  title={
-                    <span className="flex flex-wrap items-baseline gap-2">
-                      {model.displayName}
-                      <Pill tone="primary">Verxio Hosted</Pill>
-                      <Pill>{model.tier}</Pill>
-                      {!model.hostedAvailable ? <Pill>Unavailable</Pill> : null}
-                    </span>
-                  }
-                />
-              )
-            })}
-          {isByok && (
-            <ListRow
-              action={
-                <Button onClick={onOpenProviderKeys} size="sm" type="button" variant="textStrong">
-                  Open provider keys
-                </Button>
-              }
-              description="Connect a provider account below or add keys for OpenAI, Anthropic, Gemini, and other BYOK models."
-              title={
-                <span className="flex items-center gap-2">
-                  <KeyRound className="size-3.5" />
-                  Provider credentials
-                </span>
-              }
-            />
-          )}
         </div>
       )}
     </section>

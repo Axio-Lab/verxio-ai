@@ -27,7 +27,7 @@ import { triggerHaptic } from '@/lib/haptics'
 import { setMutableRef } from '@/lib/mutable-ref'
 import { isVerxioWeb } from '@/lib/platform'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
-import { getInferenceSettings, verxioApiEnabled } from '@/lib/verxio-api'
+import { verxioApiEnabled } from '@/lib/verxio-api'
 import { preprocessWebLocalContextReferences } from '@/lib/web-local-context'
 import { resolveWebLocalWorkspaceCwd } from '@/lib/web-local-fs'
 import { setSessionYolo } from '@/lib/yolo-session'
@@ -76,17 +76,12 @@ function isProviderSetupError(error: unknown) {
 }
 
 async function isByokWithoutSelectedModel(): Promise<boolean> {
+  // Hybrid: prompt to pick a model whenever none is selected (hosted or BYOK).
   if (!verxioApiEnabled() || $currentModel.get().trim()) {
     return false
   }
 
-  try {
-    const settings = await getInferenceSettings()
-
-    return settings.mode === 'byok'
-  } catch {
-    return false
-  }
+  return true
 }
 
 function inlineErrorMessage(error: unknown, fallback: string): string {

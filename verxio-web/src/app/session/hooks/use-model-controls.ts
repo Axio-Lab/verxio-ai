@@ -7,8 +7,7 @@ import {
   resolveHostedDefaultModel,
   resolveHostedStatusbarCorrection,
   resolveStatusbarModel,
-  shouldClearStaleStatusbarModel,
-  shouldShowByokStatusbarModel
+  shouldClearStaleStatusbarModel
 } from '@/lib/hosted-default-model'
 import {
   getInferenceCatalog,
@@ -95,11 +94,11 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
     try {
       // Hosted defaults come from the Verxio control plane and must paint even
       // when Hermes /api/model/info is wedged (Docker/dashboard stalls).
-      const { catalog, hostedDefault, mode, settings } = await loadInferenceModeAndHostedDefault()
+      const { catalog, hostedDefault, settings } = await loadInferenceModeAndHostedDefault()
       const storeModel = $currentModel.get().trim()
       const storeProvider = $currentProvider.get().trim()
 
-      if (mode === 'hosted' && catalog && settings) {
+      if (catalog && settings) {
         const info = await getGlobalModelInfo().catch(() => ({ model: '', provider: '' }))
 
         const correction = resolveHostedStatusbarCorrection(
@@ -122,17 +121,15 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
           return
         }
 
-        // Valid in-family pin on a live session — leave it (user may have
-        // picked another Gemini/Qwen id from the hosted list).
+        // Valid pin on a live session — leave it (hosted family or BYOK).
         if (activeSessionId && storeModel) {
           return
         }
       } else if (activeSessionId && storeModel) {
-        // BYOK / non-hosted live sessions: session.info owns the statusbar.
         return
       }
 
-      if (mode === 'hosted' && hostedDefault && !$currentModel.get().trim()) {
+      if (hostedDefault && !$currentModel.get().trim()) {
         applyModelSelection(hostedDefault)
       }
 
@@ -145,26 +142,6 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
       const [result, options] = await Promise.all([infoPromise, optionsPromise])
       const hermesModel = typeof result.model === 'string' ? result.model.trim() : ''
       const hermesProvider = typeof result.provider === 'string' ? result.provider.trim() : ''
-
-      // BYOK: never show Verxio Hosted defaults. Empty / leftover Qwen·Gemini → "no model".
-      if (mode === 'byok') {
-        if (activeSessionId) {
-          return
-        }
-
-        const byokModel = hermesModel || String(options.model || '').trim()
-        const byokProvider = hermesProvider || String(options.provider || '').trim()
-
-        if (!shouldShowByokStatusbarModel(byokModel, byokProvider, options, catalog)) {
-          clearStatusbarModel()
-
-          return
-        }
-
-        applyModelSelection({ model: byokModel, provider: byokProvider })
-
-        return
-      }
 
       if (activeSessionId && !hermesModel && !$currentModel.get().trim() && hostedDefault) {
         applyModelSelection(hostedDefault)
@@ -211,13 +188,7 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
     } catch {
       // The delayed session.info event still updates this once the agent is ready.
       if (!$currentModel.get()) {
-        const { hostedDefault, mode } = await loadInferenceModeAndHostedDefault()
-
-        if (mode === 'byok') {
-          clearStatusbarModel()
-
-          return
-        }
+        const { hostedDefault } = await loadInferenceModeAndHostedDefault()
 
         if (hostedDefault) {
           applyModelSelection(hostedDefault)

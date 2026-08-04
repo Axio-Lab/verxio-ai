@@ -183,14 +183,11 @@ function selectedHostedCatalogModel(
   settings: Pick<VerxioInferenceSettings, 'defaultModelId' | 'mode'>,
   catalog: Pick<VerxioInferenceCatalogResponse, 'defaultModelId' | 'models'>
 ) {
-  if (settings.mode !== 'hosted') {
-    return undefined
-  }
-
   return (
-    catalog.models.find(model => model.id === settings.defaultModelId) ??
-    catalog.models.find(model => model.id === catalog.defaultModelId) ??
-    catalog.models.find(model => model.default)
+    catalog.models.find(model => model.id === settings.defaultModelId && model.hostedAvailable) ??
+    catalog.models.find(model => model.id === catalog.defaultModelId && model.hostedAvailable) ??
+    catalog.models.find(model => model.default && model.hostedAvailable) ??
+    catalog.models.find(model => model.hostedAvailable)
   )
 }
 
@@ -231,7 +228,7 @@ export function isSelectedHostedFamilyModel(
 ): boolean {
   const targetModel = model.trim()
 
-  if (!targetModel || settings.mode !== 'hosted') {
+  if (!targetModel) {
     return false
   }
 
@@ -285,7 +282,8 @@ export function resolveHostedStatusbarCorrection(
   catalog: Pick<VerxioInferenceCatalogResponse, 'defaultModelId' | 'models'>,
   hostedDefault: HostedDefaultModelSelection | null
 ): HostedDefaultModelSelection | null {
-  if (settings.mode !== 'hosted') {
+  // Don't overwrite a connected BYOK pin with the hosted default.
+  if (store.model.trim() && !isVerxioHostedDefaultSelection(store.model, store.provider, catalog)) {
     return null
   }
 

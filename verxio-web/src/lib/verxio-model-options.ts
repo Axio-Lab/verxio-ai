@@ -70,39 +70,36 @@ export function hostedModelOptionsFromInference(
   settings: VerxioInferenceSettings,
   catalog: VerxioInferenceCatalogResponse
 ): ModelOptionsResponse | null {
-  if (settings.mode !== 'hosted') {
-    return null
-  }
-
   const selected = selectedHostedModel(settings, catalog)
+  const hostedProviders = (catalog.models ?? [])
+    .filter(model => model.hostedAvailable && model.upstreamModelId)
+    .map(model => {
+      const hostedModelIds = selectedHostedModelIds(model)
+      const isCurrent = Boolean(selected && model.id === selected.id)
 
-  const hostedModelIds = selected ? selectedHostedModelIds(selected) : []
+      return {
+        authenticated: true,
+        capabilities: Object.fromEntries(hostedModelIds.map(id => [id, capabilitiesFor(model)])),
+        is_current: isCurrent,
+        is_verxio_hosted: true,
+        models: hostedModelIds,
+        name: model.displayName,
+        pricing: Object.fromEntries(hostedModelIds.map(id => [id, pricingFor(model)])),
+        slug: model.providerSlug,
+        total_models: hostedModelIds.length,
+        warning: model.hostedAvailable ? undefined : `${model.displayName} is not configured for hosted inference.`
+      } satisfies ModelOptionProvider
+    })
+    .filter(provider => (provider.models ?? []).length > 0)
 
-  if (!selected?.upstreamModelId || hostedModelIds.length === 0) {
-    return {
-      providers: []
-    }
+  if (hostedProviders.length === 0) {
+    return { providers: [] }
   }
 
   return {
-    model: selected.upstreamModelId,
-    provider: selected.providerSlug,
-    providers: [
-      {
-        authenticated: true,
-        capabilities: Object.fromEntries(hostedModelIds.map(model => [model, capabilitiesFor(selected)])),
-        is_current: true,
-        is_verxio_hosted: true,
-        models: hostedModelIds,
-        name: selected.displayName,
-        pricing: Object.fromEntries(hostedModelIds.map(model => [model, pricingFor(selected)])),
-        slug: selected.providerSlug,
-        total_models: hostedModelIds.length,
-        warning: selected.hostedAvailable
-          ? undefined
-          : `${selected.displayName} is not configured for hosted inference.`
-      }
-    ]
+    model: selected?.upstreamModelId,
+    provider: selected?.providerSlug,
+    providers: hostedProviders
   }
 }
 
@@ -342,26 +339,22 @@ export async function getScopedModelOptions(
   try {
     const [settings, catalog] = await Promise.all([getInferenceSettings(), getInferenceCatalog()])
     const hosted = hostedModelOptionsFromInference(settings, catalog)
-    // hostedModelOptionsFromInference returns {providers:[]} when the catalog
-    // row is incomplete — treat that as a miss so we don't paint "No models
-    // found" while Hermes still has a usable BYOK/runtime inventory.
     const hostedUsable = hosted && (hosted.providers?.length ?? 0) > 0 ? hosted : null
+    const runtime = await withBudget(runtimeOptionsPromise, HOSTED_RUNTIME_OPTIONS_BUDGET_MS)
+
+    if (hostedUsable && runtime) {
+      return prioritizeLinkedProviders(mergeHostedAndRuntimeModelOptions(hostedUsable, runtime))
+    }
 
     if (hostedUsable) {
-      const runtime = await withBudget(runtimeOptionsPromise, HOSTED_RUNTIME_OPTIONS_BUDGET_MS)
-
-      if (runtime) {
-        return prioritizeLinkedProviders(mergeHostedAndRuntimeModelOptions(hostedUsable, runtime))
-      }
-
       return prioritizeLinkedProviders(hostedUsable)
     }
 
-    // BYOK: only linked Hermes providers; never keep a stale Verxio-hosted row.
-    return ensureByokDefaultModel(prioritizeLinkedProviders(await runtimeOptionsPromise, { dropHosted: true }))
+    // Control-plane hosted catalog unavailable — fall back to runtime providers.
+    return ensureByokDefaultModel(prioritizeLinkedProviders(await runtimeOptionsPromise))
   } catch {
     // If the Verxio control-plane call hiccups, keep the model picker usable.
   }
 
-  return ensureByokDefaultModel(prioritizeLinkedProviders(await runtimeOptionsPromise, { dropHosted: true }))
+  return ensureByokDefaultModel(prioritizeLinkedProviders(await runtimeOptionsPromise))
 }

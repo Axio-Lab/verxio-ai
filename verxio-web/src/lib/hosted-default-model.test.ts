@@ -55,8 +55,11 @@ describe('resolveHostedDefaultModel', () => {
     })
   })
 
-  it('ignores BYOK mode', () => {
-    expect(resolveHostedDefaultModel({ defaultModelId: 'verxio-qwen', mode: 'byok' }, catalog)).toBeNull()
+  it('still resolves a hosted default when settings.mode is legacy byok', () => {
+    expect(resolveHostedDefaultModel({ defaultModelId: 'verxio-qwen', mode: 'byok' }, catalog)).toEqual({
+      model: 'qwen3.6-plus',
+      provider: 'alibaba'
+    })
   })
 })
 

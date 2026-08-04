@@ -75,7 +75,7 @@ beforeEach(() => {
 })
 
 describe('hostedModelOptionsFromInference', () => {
-  it('returns the selected Verxio hosted model group when hosted mode is active', () => {
+  it('returns every available Verxio hosted family', () => {
     const settings: VerxioInferenceSettings = {
       defaultModelId: 'verxio-qwen',
       mode: 'hosted',
@@ -88,12 +88,15 @@ describe('hostedModelOptionsFromInference', () => {
 
     expect(result?.provider).toBe('alibaba')
     expect(result?.model).toBe('qwen3.6-plus')
-    expect(result?.providers?.map(provider => provider.slug)).toEqual(['alibaba'])
+    expect(result?.providers?.map(provider => provider.slug)).toEqual(['alibaba', 'gemini'])
     expect(result?.providers?.every(provider => provider.is_verxio_hosted)).toBe(true)
-    expect(result?.providers?.flatMap(provider => provider.models ?? [])).toEqual(['qwen3.6-plus', 'qwen3.6-coder'])
+    expect(result?.providers?.find(provider => provider.slug === 'alibaba')?.models).toEqual([
+      'qwen3.6-plus',
+      'qwen3.6-coder'
+    ])
   })
 
-  it('switches the selected Verxio hosted model group', () => {
+  it('marks the selected Verxio hosted family as current', () => {
     const result = hostedModelOptionsFromInference(
       {
         defaultModelId: 'verxio-gemini',
@@ -107,27 +110,28 @@ describe('hostedModelOptionsFromInference', () => {
 
     expect(result?.provider).toBe('gemini')
     expect(result?.model).toBe('gemini-flash-lite-latest')
-    expect(result?.providers?.map(provider => provider.slug)).toEqual(['gemini'])
-    expect(result?.providers?.[0]?.models).toEqual([
+    expect(result?.providers?.map(provider => provider.slug)).toEqual(['alibaba', 'gemini'])
+    expect(result?.providers?.find(provider => provider.slug === 'gemini')?.is_current).toBe(true)
+    expect(result?.providers?.find(provider => provider.slug === 'gemini')?.models).toEqual([
       'gemini-flash-lite-latest',
       'gemini-3.1-flash-lite',
       'gemini-2.5-pro'
     ])
   })
 
-  it('lets BYOK mode use the runtime model catalog', () => {
-    expect(
-      hostedModelOptionsFromInference(
-        {
-          defaultModelId: 'verxio-qwen',
-          mode: 'byok',
-          monthlyCreditUsd: 0,
-          overageEnabled: false,
-          spendingLimitUsd: null
-        },
-        catalog
-      )
-    ).toBeNull()
+  it('still lists hosted families when settings.mode is legacy byok', () => {
+    const result = hostedModelOptionsFromInference(
+      {
+        defaultModelId: 'verxio-qwen',
+        mode: 'byok',
+        monthlyCreditUsd: 0,
+        overageEnabled: false,
+        spendingLimitUsd: null
+      },
+      catalog
+    )
+
+    expect(result?.providers?.map(provider => provider.slug)).toEqual(['alibaba', 'gemini'])
   })
 })
 
@@ -166,10 +170,13 @@ describe('mergeHostedAndRuntimeModelOptions', () => {
 
     expect(result.provider).toBe('openai')
     expect(result.model).toBe('gpt-5-mini')
-    expect(result.providers?.map(provider => provider.slug)).toEqual(['alibaba', 'openai'])
+    expect(result.providers?.map(provider => provider.slug)).toEqual(['alibaba', 'gemini', 'openai'])
     expect(result.providers?.flatMap(provider => provider.models ?? [])).toEqual([
       'qwen3.6-plus',
       'qwen3.6-coder',
+      'gemini-flash-lite-latest',
+      'gemini-3.1-flash-lite',
+      'gemini-2.5-pro',
       'gpt-5-mini'
     ])
   })
@@ -257,8 +264,8 @@ describe('mergeHostedAndRuntimeModelOptions', () => {
       ]
     })
 
-    expect(result.providers?.map(provider => provider.slug)).toEqual(['gemini', 'groq'])
-    expect(result.providers?.[0]).toMatchObject({
+    expect(result.providers?.map(provider => provider.slug)).toEqual(['alibaba', 'gemini', 'groq'])
+    expect(result.providers?.find(provider => provider.slug === 'gemini')).toMatchObject({
       is_current: true,
       is_verxio_hosted: true,
       models: [
@@ -270,7 +277,7 @@ describe('mergeHostedAndRuntimeModelOptions', () => {
       ],
       name: 'Verxio Gemini'
     })
-    expect(result.providers?.[1]).toMatchObject({
+    expect(result.providers?.find(provider => provider.slug === 'groq')).toMatchObject({
       models: ['llama-3.3-70b-versatile'],
       name: 'Groq'
     })
@@ -362,7 +369,7 @@ describe('getScopedModelOptions', () => {
 
     expect(result.model).toBe('gemini-flash-lite-latest')
     expect(result.provider).toBe('gemini')
-    expect(result.providers?.[0]).toMatchObject({
+    expect(result.providers?.find(provider => provider.slug === 'gemini')).toMatchObject({
       is_verxio_hosted: true,
       name: 'Verxio Gemini',
       slug: 'gemini'

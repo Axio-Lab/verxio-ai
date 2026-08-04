@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import {
   ConnectAccountFeaturedRow,
@@ -14,7 +14,6 @@ import { listOAuthProviders } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { ChevronDown, KeyRound } from '@/lib/icons'
 import { cn } from '@/lib/utils'
-import type { VerxioInferenceMode } from '@/lib/verxio-api'
 import { oauthProvidersForProduct, usesVerxioConnectAccountPicker } from '@/lib/verxio-oauth-providers'
 import { $desktopOnboarding } from '@/store/onboarding'
 import type { OnboardingContext } from '@/store/onboarding'
@@ -187,32 +186,16 @@ function NoProviderKeys() {
   )
 }
 
-export function ProvidersSettings({
-  onInferenceApplied,
-  onInferenceModeChange,
-  onViewChange,
-  requestGateway,
-  view
-}: ProvidersSettingsProps) {
+export function ProvidersSettings({ onInferenceApplied, onViewChange, requestGateway, view }: ProvidersSettingsProps) {
   const { t } = useI18n()
   const { confirmDialog, rowProps, vars } = useEnvCredentials()
   const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([])
   const [activeProviderId, setActiveProviderId] = useRouteStringParam('paccount')
   const [openProvider, setOpenProvider] = useState<null | string>(null)
-  const [inferenceMode, setInferenceMode] = useState<VerxioInferenceMode | null>(null)
-  const [switchingMode, setSwitchingMode] = useState(false)
   // The onboarding overlay owns the OAuth flow. Watch its `manual` flag so we
   // re-read connection state when the user finishes (or dismisses) a sign-in
   // they launched from this page — otherwise the cards keep their stale status.
   const onboardingActive = useStore($desktopOnboarding).manual
-
-  const handleInferenceModeChange = useCallback(
-    (mode: VerxioInferenceMode) => {
-      setInferenceMode(mode)
-      onInferenceModeChange?.(mode)
-    },
-    [onInferenceModeChange]
-  )
 
   const refreshOAuthProviders = async () => {
     try {
@@ -256,27 +239,11 @@ export function ProvidersSettings({
 
   const hasOauth = oauthProviders.length > 0
   const activeProvider = oauthProviders.find(provider => provider.id === activeProviderId) ?? null
-  const canConfigureOwnProviders = inferenceMode === 'byok'
-  // The sidebar subnav owns the Accounts/API-keys split now; with no OAuth
-  // providers there's nothing for the "Accounts" view to show, so fall to keys.
-  const showApiKeys = canConfigureOwnProviders && (view === 'keys' || !hasOauth)
+  // With no OAuth providers there's nothing for the "Accounts" view to show.
+  const showApiKeys = view === 'keys' || !hasOauth
 
-  useEffect(() => {
-    if (inferenceMode !== 'hosted') {
-      return
-    }
-
-    if (activeProviderId) {
-      setActiveProviderId(null)
-    }
-
-    if (view === 'keys') {
-      onViewChange('accounts')
-    }
-  }, [activeProviderId, inferenceMode, onViewChange, setActiveProviderId, view])
-
-  if (!vars || switchingMode) {
-    return <LoadingState label={switchingMode ? t.settings.providers.switching : t.settings.providers.loading} />
+  if (!vars) {
+    return <LoadingState label={t.settings.providers.loading} />
   }
 
   if (showApiKeys) {
@@ -316,7 +283,7 @@ export function ProvidersSettings({
   return (
     <>
       <SettingsContent>
-        {canConfigureOwnProviders && activeProvider ? (
+        {activeProvider ? (
           <ProviderAccountSetup
             onBack={() => setActiveProviderId(null)}
             onUpdated={async () => {
@@ -330,17 +297,13 @@ export function ProvidersSettings({
           <>
             <InferenceProviderSettings
               onInferenceApplied={onInferenceApplied}
-              onInferenceModeChange={handleInferenceModeChange}
               onOpenProviderKeys={() => onViewChange('keys')}
-              onSwitchingChange={setSwitchingMode}
             />
-            {canConfigureOwnProviders && (
-              <OAuthPicker
-                onSelectProvider={provider => setActiveProviderId(provider.id)}
-                onWantApiKey={() => onViewChange('keys')}
-                providers={oauthProviders}
-              />
-            )}
+            <OAuthPicker
+              onSelectProvider={provider => setActiveProviderId(provider.id)}
+              onWantApiKey={() => onViewChange('keys')}
+              providers={oauthProviders}
+            />
           </>
         )}
       </SettingsContent>
@@ -361,7 +324,6 @@ interface ProviderKeyGroup {
 
 interface ProvidersSettingsProps {
   onInferenceApplied?: () => void
-  onInferenceModeChange?: (mode: VerxioInferenceMode) => void
   onViewChange: (view: ProviderView) => void
   requestGateway: OnboardingContext['requestGateway']
   view: ProviderView

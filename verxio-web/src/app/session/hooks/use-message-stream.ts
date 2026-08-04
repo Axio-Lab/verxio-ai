@@ -698,21 +698,11 @@ export function useMessageStream({
             if (verxioApiEnabled()) {
               void Promise.all([getInferenceSettings(), getInferenceCatalog()])
                 .then(([settings, catalog]) => {
-                  // BYOK must never keep a Verxio Hosted default on the statusbar if
-                  // session.info still echoes a leftover Qwen/Gemini assignment.
                   if (nextModel) {
-                    if (settings.mode === 'byok' && isVerxioHostedDefaultSelection(nextModel, nextProvider, catalog)) {
-                      setCurrentModel('')
-                      setCurrentProvider('')
-
-                      return
-                    }
-
-                    // Hosted: ignore a leftover from the other family (Qwen pin
+                    // Ignore a leftover from the other hosted family (Qwen pin
                     // while Settings default is Gemini) so the statusbar matches
-                    // the picker.
+                    // the picker. Leave connected BYOK pins alone.
                     if (
-                      settings.mode === 'hosted' &&
                       isVerxioHostedDefaultSelection(nextModel, nextProvider, catalog) &&
                       !isSelectedHostedFamilyModel(nextModel, nextProvider, settings, catalog)
                     ) {
