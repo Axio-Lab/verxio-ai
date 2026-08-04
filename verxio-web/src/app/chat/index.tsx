@@ -194,10 +194,11 @@ export function ChatView({
     freshDraftReady && !isRoutedSessionView && !selectedSessionId && !activeSessionId && messages.length === 0
 
   // Session is still loading if the route references a session we haven't
-  // resumed yet. Once `activeSessionId` is set (runtime has resumed), the
-  // session exists — even if it has zero messages (a brand-new routed
-  // session). Cross-session switches clear `$messages` first so this gate
-  // shows the spinner instead of the previous transcript under a new title.
+  // painted yet. Cross-session switches clear `$messages` first so this gate
+  // shows the spinner instead of the previous transcript. REST/memory hydrate
+  // can fill messages before `activeSessionId` exists (gateway still waking) —
+  // once messages arrive, drop the spinner so the transcript is readable.
+  // Zero-message sessions still need `activeSessionId` so we don't spin forever.
   const loadingSession = isRoutedSessionView && messages.length === 0 && !activeSessionId
   const threadLoading = threadLoadingState(loadingSession, busy, awaitingResponse, lastVisibleMessageIsUser(messages))
   const showChatBar = !loadingSession

@@ -517,13 +517,13 @@ export function useSessionActions({
         setAwaitingResponse(false)
         clearComposerDraft()
         clearComposerAttachments()
+        busyRef.current = true
+        setBusy(true)
       }
 
       const isCurrentResume = () =>
         resumeRequestRef.current === requestId && selectedStoredSessionIdRef.current === storedSessionId
 
-      // Swap the single live gateway to this session's profile before any
-      // gateway call (no-op when it's already on that profile / single-profile).
       const storedForProfile = await resolveStoredSession(storedSessionId)
       const sessionProfile = storedForProfile?.profile
 
@@ -531,96 +531,33 @@ export function useSessionActions({
         return
       }
 
-      await ensureGatewayProfile(sessionProfile)
-
-      if (!isCurrentResume()) {
-        return
-      }
+      // Route-level optimistic clear may already have set selection + emptied
+      // messages before this runs (`switchingSessions` then looks false).
+      const alreadyClearedForTarget = !switchingSessions && $messages.get().length === 0 && !activeSessionIdRef.current
+      let localSnapshot: ChatMessage[] = switchingSessions || alreadyClearedForTarget ? [] : $messages.get()
+      let hydratedFromStore = false
+      let paintedFromMemoryCache = false
 
       const cachedRuntimeId = runtimeIdByStoredSessionIdRef.current.get(storedSessionId)
       const cachedState = cachedRuntimeId && sessionStateByRuntimeIdRef.current.get(cachedRuntimeId)
 
+      // Paint memory cache / REST transcript *before* ensureGatewayProfile.
+      // Profile wake and WS reconnect can take seconds; the session DB read
+      // does not need a live gateway, so the correct chat can show under the
+      // waking overlay instead of an empty spinner.
       if (cachedRuntimeId && cachedState) {
-        setActiveSessionId(cachedRuntimeId)
-        activeSessionIdRef.current = cachedRuntimeId
-        // Paint cached transcript immediately. A RAF-only sync left the previous
-        // session's messages on screen under the new title during switches.
-        setMessages(preserveLocalAssistantErrors(cachedState.messages, []))
+        localSnapshot = preserveLocalAssistantErrors(cachedState.messages, [])
+        paintedFromMemoryCache = true
+        setMessages(localSnapshot)
         syncSessionStateToView(cachedRuntimeId, cachedState)
         setCurrentCwd(cachedState.cwd)
         setCurrentBranch(cachedState.branch)
         setSessionStartedAt(Date.now())
-        clearComposerDraft()
-        clearComposerAttachments()
-        void ensureSessionYoloEnabled(requestGateway, cachedRuntimeId)
 
-        if (switchingSessions || cachedState.messages.length > 0) {
+        if (switchingSessions || localSnapshot.length > 0) {
           scrollThreadToLatest()
         }
-
-        try {
-          const usage = await requestGateway<UsageStats>('session.usage', { session_id: cachedRuntimeId })
-
-          if (!isCurrentResume()) {
-            return
-          }
-
-          if (usage) {
-            setCurrentUsage(current => ({ ...current, ...usage }))
-          }
-
-          return
-        } catch {
-          // The cached runtime id was minted by a prior backend instance. A
-          // pooled profile backend that gets idle-reaped (pruneSecondaryGateways)
-          // and respawned across a profile swap mints fresh ids, so this mapping
-          // now 404s ("session not found"). Drop it and fall through to a full
-          // resume that rebinds a live runtime id.
-          if (!isCurrentResume()) {
-            return
-          }
-
-          runtimeIdByStoredSessionIdRef.current.delete(storedSessionId)
-          sessionStateByRuntimeIdRef.current.delete(cachedRuntimeId)
-        }
-      }
-
-      setActiveSessionId(null)
-      activeSessionIdRef.current = null
-      busyRef.current = true
-      setBusy(true)
-      setAwaitingResponse(false)
-      setSessionStartedAt(Date.now())
-
-      // Re-assert clear if a same-session path left messages, or a concurrent
-      // paint raced after the optimistic switch clear above.
-      if (switchingSessions && $messages.get().length > 0) {
-        setMessages([])
-      }
-
-      const stored = $sessions.get().find(session => sessionMatchesStoredId(session, storedSessionId))
-
-      if (stored) {
-        setCurrentUsage(current => ({
-          ...current,
-          input: stored.input_tokens || 0,
-          output: stored.output_tokens || 0,
-          total: (stored.input_tokens || 0) + (stored.output_tokens || 0)
-        }))
-      }
-
-      try {
-        // Load the local snapshot first, then ask the gateway to resume.
-        // Never seed localSnapshot from `$messages` when switching sessions —
-        // that reused the previous transcript if getSessionMessages failed or
-        // raced, which is the "title updated, wrong chat still showing" bug.
-        // Route-level optimistic clear may already have set selection + emptied
-        // messages before this runs (`switchingSessions` then looks false).
-        const alreadyClearedForTarget =
-          !switchingSessions && $messages.get().length === 0 && !activeSessionIdRef.current
-        let localSnapshot: ChatMessage[] = switchingSessions || alreadyClearedForTarget ? [] : $messages.get()
-        let hydratedFromStore = false
-
+      } else {
         try {
           const storedMessages = await getSessionMessages(storedSessionId, sessionProfile)
 
@@ -638,6 +575,110 @@ export function useSessionActions({
           }
         } catch {
           // Non-fatal: gateway resume below can still hydrate the session.
+        }
+      }
+
+      if (!isCurrentResume()) {
+        return
+      }
+
+      // Swap the live gateway to this session's profile (no-op when already on
+      // that profile / single-profile). Happens after the transcript paint so
+      // wake latency never blanks the thread.
+      await ensureGatewayProfile(sessionProfile)
+
+      if (!isCurrentResume()) {
+        return
+      }
+
+      if (cachedRuntimeId && cachedState && paintedFromMemoryCache) {
+        setActiveSessionId(cachedRuntimeId)
+        activeSessionIdRef.current = cachedRuntimeId
+        clearComposerDraft()
+        clearComposerAttachments()
+        void ensureSessionYoloEnabled(requestGateway, cachedRuntimeId)
+
+        try {
+          const usage = await requestGateway<UsageStats>('session.usage', { session_id: cachedRuntimeId })
+
+          if (!isCurrentResume()) {
+            return
+          }
+
+          if (usage) {
+            setCurrentUsage(current => ({ ...current, ...usage }))
+          }
+
+          busyRef.current = false
+          setBusy(false)
+
+          return
+        } catch {
+          // The cached runtime id was minted by a prior backend instance. A
+          // pooled profile backend that gets idle-reaped (pruneSecondaryGateways)
+          // and respawned across a profile swap mints fresh ids, so this mapping
+          // now 404s ("session not found"). Drop it and fall through to a full
+          // resume that rebinds a live runtime id.
+          if (!isCurrentResume()) {
+            return
+          }
+
+          runtimeIdByStoredSessionIdRef.current.delete(storedSessionId)
+          sessionStateByRuntimeIdRef.current.delete(cachedRuntimeId)
+          paintedFromMemoryCache = false
+        }
+      }
+
+      setActiveSessionId(null)
+      activeSessionIdRef.current = null
+      busyRef.current = true
+      setBusy(true)
+      setAwaitingResponse(false)
+      setSessionStartedAt(Date.now())
+
+      // Re-assert clear if a concurrent paint raced after the optimistic switch.
+      // Keep REST/memory paints that landed before the gateway wake.
+      if (
+        (switchingSessions || alreadyClearedForTarget) &&
+        !hydratedFromStore &&
+        !paintedFromMemoryCache &&
+        $messages.get().length > 0
+      ) {
+        setMessages([])
+      }
+
+      const stored = $sessions.get().find(session => sessionMatchesStoredId(session, storedSessionId))
+
+      if (stored) {
+        setCurrentUsage(current => ({
+          ...current,
+          input: stored.input_tokens || 0,
+          output: stored.output_tokens || 0,
+          total: (stored.input_tokens || 0) + (stored.output_tokens || 0)
+        }))
+      }
+
+      try {
+        // Refresh from REST if the pre-wake paint missed (e.g. cache invalidated).
+        if (!hydratedFromStore && !paintedFromMemoryCache) {
+          try {
+            const storedMessages = await getSessionMessages(storedSessionId, sessionProfile)
+
+            if (isCurrentResume()) {
+              localSnapshot = preserveLocalAssistantErrors(toChatMessages(storedMessages.messages), [])
+              hydratedFromStore = true
+
+              if (!chatMessageArraysEquivalent($messages.get(), localSnapshot)) {
+                setMessages(localSnapshot)
+              }
+
+              if (localSnapshot.length > 0) {
+                scrollThreadToLatest()
+              }
+            }
+          } catch {
+            // Non-fatal: gateway resume below can still hydrate the session.
+          }
         }
 
         const resumed = await requestGateway<SessionResumeResponse>('session.resume', {
