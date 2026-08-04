@@ -387,6 +387,10 @@ def _write_runtime_config(runtime: RuntimeInstance, config: dict[str, Any]) -> N
     disk = _read_runtime_config(runtime)
     merged: dict[str, Any] = dict(disk)
     merged.update(config)
+    # Callers clear a section by setting it to None (update alone cannot delete).
+    for key, value in list(merged.items()):
+        if value is None:
+            merged.pop(key, None)
 
     for key in ("image_gen", "video_gen"):
         disk_section = disk.get(key)
@@ -397,6 +401,9 @@ def _write_runtime_config(runtime: RuntimeInstance, config: dict[str, Any]) -> N
         if not disk_provider:
             continue
         if incoming is None or not isinstance(incoming, dict) or not str(incoming.get("provider") or "").strip():
+            # Only restore media pins when the caller did not explicitly clear them.
+            if key in config and config.get(key) is None:
+                continue
             merged[key] = dict(disk_section)
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -540,10 +547,7 @@ def _strip_hosted_model_assignment(runtime: RuntimeInstance, model: HostedModelD
 
     raw_model.pop("provider", None)
     raw_model.pop("default", None)
-    if not raw_model:
-        config.pop("model", None)
-    else:
-        config["model"] = raw_model
+    config["model"] = None if not raw_model else raw_model
 
     _write_runtime_config(runtime, config)
 
@@ -567,10 +571,7 @@ def _strip_any_hosted_model_assignment(runtime: RuntimeInstance) -> bool:
 
     raw_model.pop("provider", None)
     raw_model.pop("default", None)
-    if not raw_model:
-        config.pop("model", None)
-    else:
-        config["model"] = raw_model
+    config["model"] = None if not raw_model else raw_model
 
     _write_runtime_config(runtime, config)
 

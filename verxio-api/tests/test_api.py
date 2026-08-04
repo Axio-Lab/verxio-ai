@@ -2185,6 +2185,7 @@ def test_inference_bridge_keeps_byok_selection_in_hybrid_mode(client, monkeypatc
     assert runtime_row
     runtime = control_plane.runtime_from_row(runtime_row)
     hermes_home = Path(runtime.hermes_home_path)
+    hermes_home.mkdir(parents=True, exist_ok=True)
 
     # User selected a connected OpenAI model — bridge must not overwrite it.
     (hermes_home / "config.yaml").write_text(
