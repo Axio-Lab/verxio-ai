@@ -7,7 +7,7 @@ import { Tip } from '@/components/ui/tooltip'
 import { getHermesConfigDefaults, getHermesConfigRecord, saveHermesConfig } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
-import { Archive, Bell, Globe, Info, KeyRound, Mic, RefreshCw, Settings2, Sparkles, Wrench, Zap } from '@/lib/icons'
+import { Archive, Bell, Info, KeyRound, Mic, Settings2, Sparkles, Wrench, Zap } from '@/lib/icons'
 import { notifyError } from '@/store/notifications'
 
 import { useRouteEnumParam } from '../hooks/use-route-enum-param'
@@ -23,21 +23,17 @@ import type { SettingsPageProps, SettingsView as SettingsViewId } from './types'
 
 const AboutSettings = lazy(async () => ({ default: (await import('./about-settings')).AboutSettings }))
 const ConfigSettings = lazy(async () => ({ default: (await import('./config-settings')).ConfigSettings }))
-const GatewaySettings = lazy(async () => ({ default: (await import('./gateway-settings')).GatewaySettings }))
 const KeysSettings = lazy(async () => ({ default: (await import('./keys-settings')).KeysSettings }))
 const McpSettings = lazy(async () => ({ default: (await import('./mcp-settings')).McpSettings }))
 const NotificationsSettings = lazy(async () => ({
   default: (await import('./notifications-settings')).NotificationsSettings
 }))
 const ProvidersSettings = lazy(async () => ({ default: (await import('./providers-settings')).ProvidersSettings }))
-const RuntimeSettings = lazy(async () => ({ default: (await import('./runtime-settings')).RuntimeSettings }))
 const SessionsSettings = lazy(async () => ({ default: (await import('./sessions-settings')).SessionsSettings }))
 
 const SETTINGS_VIEWS: readonly SettingsViewId[] = [
   ...SECTIONS.map(s => `config:${s.id}` as SettingsViewId),
   'providers',
-  'runtime',
-  'gateway',
   'keys',
   'mcp',
   'notifications',
@@ -148,18 +144,6 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
             </div>
           )}
           <OverlayNavItem
-            active={activeView === 'runtime'}
-            icon={RefreshCw}
-            label={t.settings.nav.runtime}
-            onClick={() => setActiveView('runtime')}
-          />
-          <OverlayNavItem
-            active={activeView === 'gateway'}
-            icon={Globe}
-            label={t.settings.nav.gateway}
-            onClick={() => setActiveView('gateway')}
-          />
-          <OverlayNavItem
             active={activeView === 'keys'}
             icon={KeyRound}
             label={t.settings.nav.apiKeys}
@@ -251,10 +235,6 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
               <AppearanceSettings />
             ) : activeView === 'about' ? (
               <AboutSettings />
-            ) : activeView === 'gateway' ? (
-              <GatewaySettings />
-            ) : activeView === 'runtime' ? (
-              <RuntimeSettings />
             ) : activeView.startsWith('config:') ? (
               <ConfigSettings
                 activeSectionId={activeView.slice('config:'.length)}

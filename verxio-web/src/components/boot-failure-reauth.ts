@@ -9,7 +9,7 @@ export interface RemoteReauth {
   url: string
   // True when every advertised provider is username/password — drives the
   // button copy ("Sign in to remote gateway" vs "Sign in with <provider>"),
-  // mirroring the gateway-settings page. Probe is best-effort.
+  // Probe is best-effort for reauth recovery.
   isPassword: boolean
   providerLabel: string
 }

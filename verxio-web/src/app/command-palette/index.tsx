@@ -17,7 +17,6 @@ import {
   ChevronRight,
   Clock,
   Cpu,
-  Globe,
   type IconComponent,
   Info,
   KeyRound,
@@ -104,7 +103,6 @@ const toSessionEntry = (session: SessionRow): SessionEntry => ({
 type NonConfigSettingsLabel =
   | 'about'
   | 'archivedChats'
-  | 'gateway'
   | 'keysSettings'
   | 'keysTools'
   | 'mcp'
@@ -130,7 +128,6 @@ const NON_CONFIG_SETTINGS: ReadonlyArray<{
     labelKey: 'providerApiKeys',
     tab: 'providers&pview=keys'
   },
-  { icon: Globe, keywords: ['connection', 'messaging'], labelKey: 'gateway', tab: 'gateway' },
   {
     icon: KeyRound,
     keywords: ['api', 'secrets', 'tokens', 'credentials', 'browser', 'search'],

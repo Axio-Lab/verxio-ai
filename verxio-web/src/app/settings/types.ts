@@ -5,16 +5,7 @@ import type { IconComponent } from '@/lib/icons'
 import type { OnboardingContext } from '@/store/onboarding'
 import type { EnvVarInfo } from '@/types/hermes'
 
-export type SettingsView =
-  | 'about'
-  | 'gateway'
-  | 'keys'
-  | 'mcp'
-  | 'notifications'
-  | 'providers'
-  | 'runtime'
-  | 'sessions'
-  | `config:${string}`
+export type SettingsView = 'about' | 'keys' | 'mcp' | 'notifications' | 'providers' | 'sessions' | `config:${string}`
 export type EnvPatch = Partial<Pick<EnvVarInfo, 'is_set' | 'redacted_value'>>
 
 export interface SettingsPageProps {
