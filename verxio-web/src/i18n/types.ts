@@ -213,7 +213,6 @@ export interface Translations {
       providers: string
       providerAccounts: string
       providerApiKeys: string
-      gateway: string
       apiKeys: string
       keysTools: string
       keysTranscription: string
@@ -222,40 +221,18 @@ export interface Translations {
       archivedChats: string
       about: string
       notifications: string
-      runtime: string
     }
     runtime: {
-      title: string
-      intro: string
-      statusTitle: string
-      statusDescription: string
-      statusConnected: string
-      statusStarting: string
-      statusStopped: string
-      statusError: string
-      statusUnknown: string
-      reloadTitle: string
-      reloadDescription: string
-      reloadAction: string
       reloadDoneTitle: string
       reloadDoneMessage: string
       reloadFailed: string
-      agentRestartTitle: string
-      agentRestartDescription: string
-      agentRestartAction: string
       agentRestartDoneTitle: string
       agentRestartDoneMessage: string
       agentRestartFailed: string
-      containerRestartTitle: string
-      containerRestartDescription: string
-      containerRestartAction: string
       containerRestartDoneTitle: string
       containerRestartDoneMessage: string
       containerRestartFailed: string
       restartTimeout: string
-      gatewayRestartTitle: string
-      gatewayRestartDescription: string
-      gatewayRestartAction: string
     }
     notifications: {
       title: string
@@ -277,7 +254,7 @@ export interface Translations {
       completionSoundPreview: string
     }
     sections: Record<string, string>
-    searchPlaceholder: Record<'about' | 'config' | 'gateway' | 'keys' | 'mcp' | 'sessions', string>
+    searchPlaceholder: Record<'about' | 'config' | 'keys' | 'mcp' | 'sessions', string>
     modeOptions: Record<'light' | 'dark' | 'system', ModeOptionCopy>
     appearance: {
       title: string
@@ -337,68 +314,6 @@ export interface Translations {
       replace: string
       set: string
       clear: string
-    }
-    gateway: {
-      loading: string
-      unavailableTitle: string
-      unavailableDesc: string
-      title: string
-      envOverride: string
-      intro: string
-      appliesTo: string
-      allProfiles: string
-      defaultConnection: string
-      profileConnection: (profile: string) => string
-      envOverrideTitle: string
-      envOverrideDesc: string
-      localTitle: string
-      localDesc: string
-      remoteTitle: string
-      remoteDesc: string
-      remoteUrlTitle: string
-      remoteUrlDesc: string
-      probing: string
-      probeError: string
-      signedIn: string
-      signIn: string
-      signOut: string
-      signInWith: (provider: string) => string
-      authTitle: string
-      authSignedInPassword: string
-      authSignedInOauth: string
-      authNeedsPassword: string
-      authNeedsOauth: (provider: string) => string
-      tokenTitle: string
-      tokenDesc: string
-      existingToken: (value: string) => string
-      savedToken: string
-      pasteSessionToken: string
-      testRemote: string
-      saveForRestart: string
-      saveAndReconnect: string
-      diagnostics: string
-      diagnosticsDesc: string
-      openLogs: string
-      incompleteTitle: string
-      incompleteSignIn: string
-      incompleteToken: string
-      incompleteSignInTest: string
-      incompleteTokenTest: string
-      enterUrlFirst: string
-      restartingTitle: string
-      savedTitle: string
-      restartingMessage: string
-      savedMessage: string
-      connectedTo: (baseUrl: string, version?: string) => string
-      reachableTitle: string
-      signedOutTitle: string
-      signedOutMessage: string
-      failedLoad: string
-      signInFailed: string
-      signOutFailed: string
-      testFailed: string
-      applyFailed: string
-      saveFailed: string
     }
     keys: {
       loading: string

@@ -172,7 +172,6 @@ export const ja = defineLocale({
       providers: 'プロバイダー',
       providerAccounts: 'アカウント',
       providerApiKeys: 'API キー',
-      gateway: 'ゲートウェイ',
       apiKeys: 'ツールとキー',
       keysTools: 'ツール',
       keysTranscription: 'Transcription',
@@ -180,45 +179,19 @@ export const ja = defineLocale({
       mcp: 'MCP',
       archivedChats: 'アーカイブ済みチャット',
       about: '情報',
-      notifications: 'Notifications',
-      runtime: 'Runtime'
+      notifications: 'Notifications'
     },
     runtime: {
-      title: 'Runtime',
-      intro:
-        'After changing providers, models, API keys, or custom endpoints, reload credentials or restart the agent so changes take effect.',
-      statusTitle: 'Container status',
-      statusDescription: '分離された Verxio ランタイムです。',
-      statusConnected: 'Connected',
-      statusStarting: 'Starting…',
-      statusStopped: 'Stopped',
-      statusError: 'Unavailable',
-      statusUnknown: 'Unknown',
-      reloadTitle: 'Reload credentials',
-      reloadDescription:
-        '保存済みのランタイム認証情報を再起動せずに再読み込みします。API キーや環境変数を変更した後に使います。',
-      reloadAction: 'Reload',
       reloadDoneTitle: 'Credentials reloaded',
       reloadDoneMessage: 'Start a new chat if the model or provider still looks stale.',
       reloadFailed: 'Could not reload credentials',
-      agentRestartTitle: 'Restart agent',
-      agentRestartDescription:
-        'Reload .env and restart the gateway process. Use after model/provider or config.yaml changes.',
-      agentRestartAction: 'Restart agent',
       agentRestartDoneTitle: 'Agent restarting',
       agentRestartDoneMessage: 'Verxio reconnects automatically. Start a new chat when the status bar is live again.',
       agentRestartFailed: 'Agent restart failed',
-      containerRestartTitle: 'Restart runtime container',
-      containerRestartDescription:
-        'Full Docker restart of your Verxio runtime. Use when hosted inference env or mounts changed.',
-      containerRestartAction: 'Restart container',
       containerRestartDoneTitle: 'Runtime restarted',
       containerRestartDoneMessage: 'Your agent container is back online.',
       containerRestartFailed: 'Runtime restart failed',
-      restartTimeout: 'Runtime did not come back online in time. Refresh the page or try again.',
-      gatewayRestartTitle: 'Restart messaging gateway',
-      gatewayRestartDescription: 'Reconnect WhatsApp, Telegram, and other messaging platforms after channel setup.',
-      gatewayRestartAction: 'Restart gateway'
+      restartTimeout: 'Runtime did not come back online in time. Refresh the page or try again.'
     },
     sections: {
       model: 'モデル',
@@ -233,7 +206,6 @@ export const ja = defineLocale({
     searchPlaceholder: {
       about: 'Verxio について',
       config: '設定を検索…',
-      gateway: 'ゲートウェイ接続…',
       keys: 'API キーを検索…',
       mcp: 'MCP サーバーを検索…',
       sessions: 'アーカイブ済みセッションを検索…'
@@ -473,78 +445,6 @@ export const ja = defineLocale({
       replace: '置き換え',
       set: '設定',
       clear: 'クリア'
-    },
-    gateway: {
-      loading: 'ゲートウェイ設定を読み込み中...',
-      unavailableTitle: 'ゲートウェイ設定は利用できません',
-      unavailableDesc: 'デスクトップ IPC ブリッジはゲートウェイ設定を公開していません。',
-      title: 'ゲートウェイ接続',
-      envOverride: 'env オーバーライド',
-      intro:
-        'Verxio はデフォルトで独自のローカルゲートウェイを起動します。別のマシンや信頼できるプロキシの背後で既に動作している Verxio バックエンドをこのアプリで制御する場合は、リモートゲートウェイを使用してください。以下でプロファイルを選択して、それぞれのリモートホストを設定します。',
-      appliesTo: '適用対象',
-      allProfiles: 'すべてのプロファイル',
-      defaultConnection: '独自のオーバーライドがないすべてのプロファイルのデフォルト接続。',
-      profileConnection: profile =>
-        `"${profile}" がアクティブプロファイルのときのみ使用される接続。ローカルに設定するとデフォルトを継承します。`,
-      envOverrideTitle: '環境変数がこのデスクトップセッションを制御しています。',
-      envOverrideDesc:
-        '保存された設定を使用するには HERMES_DESKTOP_REMOTE_URL と HERMES_DESKTOP_REMOTE_TOKEN の設定を解除してください。',
-      localTitle: 'ローカルゲートウェイ',
-      localDesc:
-        'ローカルホストでプライベートな Verxio バックエンドを起動します。これがデフォルトで、オフラインでも動作します。',
-      remoteTitle: 'リモートゲートウェイ',
-      remoteDesc:
-        'このデスクトップシェルをリモートの Verxio バックエンドに接続します。ホスト型ゲートウェイは OAuth またはユーザー名とパスワードを使用します。自己ホスト型はセッショントークンを使用する場合があります。',
-      remoteUrlTitle: 'リモート URL',
-      remoteUrlDesc: 'リモートダッシュボードバックエンドのベース URL。パスプレフィックスもサポートしています。',
-      probing: 'このゲートウェイの認証方法を確認中…',
-      probeError: 'このゲートウェイにまだ到達できません。URL を確認してください。応答後に認証方法が表示されます。',
-      signedIn: 'サインイン済み',
-      signIn: 'サインイン',
-      signOut: 'サインアウト',
-      signInWith: provider => `${provider} でサインイン`,
-      authTitle: '認証',
-      authSignedInPassword:
-        'このゲートウェイはユーザー名とパスワードを使用します。サインイン済みです。セッションは自動的に更新されます。',
-      authSignedInOauth:
-        'このゲートウェイは OAuth を使用します。サインイン済みです。セッションは自動的に更新されます。',
-      authNeedsPassword:
-        'このゲートウェイはユーザー名とパスワードを使用します。このデスクトップアプリを承認するにはサインインしてください。',
-      authNeedsOauth: provider =>
-        `このゲートウェイは OAuth を使用します。このデスクトップアプリを承認するには ${provider} でサインインしてください。`,
-      tokenTitle: 'セッショントークン',
-      tokenDesc:
-        'REST および WebSocket アクセスに使用するダッシュボードセッショントークン。保存済みトークンを維持するには空欄にしてください。',
-      existingToken: value => `既存のトークン ${value}`,
-      savedToken: '保存済み',
-      pasteSessionToken: 'セッショントークンを貼り付け',
-      testRemote: 'リモートをテスト',
-      saveForRestart: '次回起動時のために保存',
-      saveAndReconnect: '保存して再接続',
-      diagnostics: '診断',
-      diagnosticsDesc: 'ファイルマネージャーで desktop.log を表示します。ゲートウェイの起動に失敗した際に役立ちます。',
-      openLogs: 'ログを開く',
-      incompleteTitle: 'リモートゲートウェイの設定が不完全です',
-      incompleteSignIn: 'リモートに切り替える前にリモート URL を入力してサインインしてください。',
-      incompleteToken: 'リモートに切り替える前にリモート URL とセッショントークンを入力してください。',
-      incompleteSignInTest: 'テストする前にリモート URL を入力してサインインしてください。',
-      incompleteTokenTest: 'テストする前にリモート URL とセッショントークンを入力してください。',
-      enterUrlFirst: '最初にリモート URL を入力してください。',
-      restartingTitle: 'ゲートウェイ接続を再起動中',
-      savedTitle: 'ゲートウェイ設定を保存しました',
-      restartingMessage: 'Verxio は保存された設定を使用して再接続します。',
-      savedMessage: '次回起動時に保存されます。',
-      connectedTo: (baseUrl, version) => `${baseUrl}${version ? ` · Verxio ${version}` : ''} に接続しました`,
-      reachableTitle: 'リモートゲートウェイに到達可能',
-      signedOutTitle: 'サインアウトしました',
-      signedOutMessage: 'リモートゲートウェイセッションをクリアしました。',
-      failedLoad: 'ゲートウェイ設定の読み込みに失敗しました',
-      signInFailed: 'サインインに失敗しました',
-      signOutFailed: 'サインアウトに失敗しました',
-      testFailed: 'リモートゲートウェイのテストに失敗しました',
-      applyFailed: 'ゲートウェイ設定を適用できませんでした',
-      saveFailed: 'ゲートウェイ設定を保存できませんでした'
     },
     keys: {
       loading: 'API キーと認証情報を読み込み中...',
