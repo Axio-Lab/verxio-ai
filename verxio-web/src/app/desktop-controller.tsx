@@ -113,7 +113,6 @@ import { usePromptActions } from './session/hooks/use-prompt-actions'
 import { useRouteResume } from './session/hooks/use-route-resume'
 import { useSessionActions } from './session/hooks/use-session-actions'
 import { useSessionStateCache } from './session/hooks/use-session-state-cache'
-import { SettingsView } from './settings'
 import { AppShell } from './shell/app-shell'
 import { useOverlayRouting } from './shell/hooks/use-overlay-routing'
 import { useStatusbarItems } from './shell/hooks/use-statusbar-items'
@@ -132,6 +131,7 @@ const MessagingView = lazy(async () => ({ default: (await import('./messaging'))
 const NotepadView = lazy(async () => ({ default: (await import('./notepad')).NotepadView }))
 const ProfilesView = lazy(async () => ({ default: (await import('./profiles')).ProfilesView }))
 const SkillsView = lazy(async () => ({ default: (await import('./skills')).SkillsView }))
+const SettingsView = lazy(async () => ({ default: (await import('./settings')).SettingsView }))
 const SESSIONS_CACHE_KEY = 'verxio.sessions.cache.v1'
 
 function sessionsCacheKey(): string {
@@ -864,23 +864,25 @@ export function DesktopController() {
       <FolderAccessDialog />
 
       {settingsOpen && (
-        <SettingsView
-          gateway={gatewayRef.current}
-          onClose={closeOverlayToPreviousRoute}
-          onConfigSaved={() => {
-            void refreshHermesConfig()
-            clearModelOptionsQueries(queryClient)
-            void refreshModelOptionsQueries(queryClient).then(() => refreshCurrentModel())
-          }}
-          onMainModelChanged={(provider, model) => {
-            setCurrentProvider(provider)
-            setCurrentModel(model)
-            updateModelOptionsCache(provider, model, true)
-            void refreshCurrentModel()
-            void queryClient.invalidateQueries({ queryKey: ['model-options'] })
-          }}
-          requestGateway={requestGateway}
-        />
+        <Suspense fallback={null}>
+          <SettingsView
+            gateway={gatewayRef.current}
+            onClose={closeOverlayToPreviousRoute}
+            onConfigSaved={() => {
+              void refreshHermesConfig()
+              clearModelOptionsQueries(queryClient)
+              void refreshModelOptionsQueries(queryClient).then(() => refreshCurrentModel())
+            }}
+            onMainModelChanged={(provider, model) => {
+              setCurrentProvider(provider)
+              setCurrentModel(model)
+              updateModelOptionsCache(provider, model, true)
+              void refreshCurrentModel()
+              void queryClient.invalidateQueries({ queryKey: ['model-options'] })
+            }}
+            requestGateway={requestGateway}
+          />
+        </Suspense>
       )}
 
       {commandCenterOpen && (

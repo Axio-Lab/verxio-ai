@@ -251,6 +251,12 @@ export function ConfigSettings({
   }, [c.failedLoad])
 
   useEffect(() => {
+    // Voice catalogs are only needed on the Voice/TTS section — skip the
+    // network hop when browsing Model / Memory / other config tabs.
+    if (activeSectionId !== 'voice' && selectedTtsProvider !== 'elevenlabs') {
+      return
+    }
+
     let cancelled = false
 
     getElevenLabsVoices()
@@ -270,7 +276,7 @@ export function ConfigSettings({
       })
 
     return () => void (cancelled = true)
-  }, [])
+  }, [activeSectionId, selectedTtsProvider])
 
   useEffect(() => {
     if (selectedTtsProvider !== 'fishaudio') {
