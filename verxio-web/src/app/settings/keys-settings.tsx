@@ -12,15 +12,14 @@ import { CredentialKeyCard, credentialPlaceholder, credentialRowLabel } from './
 import { CustomToolKeyForm } from './custom-tool-key-form'
 import { useEnvCredentials } from './env-credentials'
 import { asText } from './helpers'
+import type { KeysView } from './nav-views'
 import { LoadingState, SettingsContent } from './primitives'
 import { TranscriptionKeySettings } from './transcription-key-settings'
 
+export type { KeysView } from './nav-views'
+export { KEYS_VIEWS } from './nav-views'
+
 const TOOLS_EXTRA_ENV_KEYS = new Set<string>(MEDIA_PROVIDER_TOOL_ENV_KEYS)
-
-// Sub-views surfaced as sidebar subnav under Tools & Keys (see settings/index.tsx).
-export const KEYS_VIEWS = ['tools', 'transcription', 'settings'] as const
-
-export type KeysView = (typeof KEYS_VIEWS)[number]
 
 // Providers live on their own page; messaging-platform credentials live on the
 // dedicated Messaging page (and are hidden here via `channel_managed`). This

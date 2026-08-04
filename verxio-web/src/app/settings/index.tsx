@@ -17,9 +17,8 @@ import { OverlayView } from '../overlays/overlay-view'
 
 import { AppearanceSettings } from './appearance-settings'
 import { SECTIONS } from './constants'
-import { KEYS_VIEWS, type KeysView } from './keys-settings'
+import { KEYS_VIEWS, type KeysView, PROVIDER_VIEWS, type ProviderView } from './nav-views'
 import { LoadingState } from './primitives'
-import { PROVIDER_VIEWS, type ProviderView } from './providers-settings'
 import type { SettingsPageProps, SettingsView as SettingsViewId } from './types'
 
 const AboutSettings = lazy(async () => ({ default: (await import('./about-settings')).AboutSettings }))

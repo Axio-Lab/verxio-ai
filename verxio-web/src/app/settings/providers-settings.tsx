@@ -26,13 +26,12 @@ import { isKeyVar, ProviderKeyRows } from './credential-key-ui'
 import { SettingsCategoryHeading, useEnvCredentials } from './env-credentials'
 import { providerGroup, providerMeta, providerPriority } from './helpers'
 import { InferenceProviderSettings } from './inference-provider-settings'
+import type { ProviderView } from './nav-views'
 import { LoadingState, SettingsContent } from './primitives'
 import { ProviderAccountSetup } from './provider-account-setup'
 
-// Sub-views surfaced as a sidebar subnav: account sign-in vs raw API keys.
-export const PROVIDER_VIEWS = ['accounts', 'keys'] as const
-
-export type ProviderView = (typeof PROVIDER_VIEWS)[number]
+export type { ProviderView } from './nav-views'
+export { PROVIDER_VIEWS } from './nav-views'
 
 // Group the env catalog by provider — one ListRow per vendor plus optional
 // advanced overrides (base URL, region, etc.). Groups without a key field and
