@@ -12,7 +12,7 @@ import { CredentialKeyCard, credentialPlaceholder, credentialRowLabel } from './
 import { CustomToolKeyForm } from './custom-tool-key-form'
 import { useEnvCredentials } from './env-credentials'
 import { asText } from './helpers'
-import type { KeysView } from './nav-views'
+import { KEYS_VIEWS, type KeysView } from './nav-views'
 import { LoadingState, SettingsContent } from './primitives'
 import { TranscriptionKeySettings } from './transcription-key-settings'
 
@@ -63,8 +63,7 @@ export function KeysSettings({ view }: KeysSettingsProps) {
             return true
           }
 
-          // Hosted mode hides Providers → API keys; still expose DashScope here
-          // so AI video/image generation credentials can be saved.
+          // Also expose DashScope here so AI video/image credentials are easy to find.
           return v === 'tools' && TOOLS_EXTRA_ENV_KEYS.has(key)
         })
         .sort(([a], [b]) => a.localeCompare(b))
