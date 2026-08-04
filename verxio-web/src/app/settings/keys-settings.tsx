@@ -22,18 +22,19 @@ export { KEYS_VIEWS } from './nav-views'
 const TOOLS_EXTRA_ENV_KEYS = new Set<string>(MEDIA_PROVIDER_TOOL_ENV_KEYS)
 
 // Providers live on their own page; messaging-platform credentials live on the
-// dedicated Messaging page (and are hidden here via `channel_managed`). This
-// view covers tool API keys plus server/setting env vars (API server, webhook,
-// gateway), which fold into the Settings subnav.
+// dedicated Messaging page (and are hidden here via `channel_managed`). Tools
+// covers tool/skill API keys; Settings covers non-gateway server env vars.
 
-// Backend categories that surface under each subnav. Platform credentials use the
-// `messaging` category but are flagged ``channel_managed`` and configured on
-// the Messaging page; only gateway-wide ``messaging`` rows (e.g. GATEWAY_PROXY)
-// appear here alongside ``setting``.
+// Backend categories that surface under each subnav.
 const VIEW_CATEGORIES: Record<KeysView, readonly string[]> = {
   transcription: [],
-  settings: ['setting', 'messaging'],
+  settings: ['setting'],
   tools: ['tool', 'skill']
+}
+
+/** Gateway connection env vars — removed from Settings UI with the Gateway tab. */
+function isGatewayEnvKey(key: string): boolean {
+  return key === 'GATEWAY_PROXY_KEY' || key.startsWith('GATEWAY_')
 }
 
 export function KeysSettings({ view }: KeysSettingsProps) {
@@ -55,7 +56,12 @@ export function KeysSettings({ view }: KeysSettingsProps) {
 
       const entries = Object.entries(vars)
         .filter(([key, info]) => {
-          if (info.channel_managed || CLOUD_TRANSCRIPTION_ENV_KEYS.includes(key)) {
+          if (info.channel_managed || CLOUD_TRANSCRIPTION_ENV_KEYS.includes(key) || isGatewayEnvKey(key)) {
+            return false
+          }
+
+          // Messaging/gateway-wide rows belong on Messaging, not Tools & Keys.
+          if (asText(info.category) === 'messaging') {
             return false
           }
 

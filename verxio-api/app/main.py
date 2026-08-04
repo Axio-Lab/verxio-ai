@@ -1386,6 +1386,9 @@ def _dashboard_path_is_lightweight(path: str) -> bool:
     return normalized in {
         "api/status",
         "api/config",
+        "api/config/defaults",
+        "api/config/schema",
+        "api/env",
         "api/sessions",
         "api/models",
         "api/model/info",

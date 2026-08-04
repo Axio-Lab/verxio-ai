@@ -54,12 +54,30 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
 
   useEffect(() => {
     const params = new URLSearchParams(search)
+    let dirty = false
 
     if (!params.has('tab') && params.has('pview')) {
       params.set('tab', 'providers')
+      dirty = true
+    }
+
+    // Drop nested deep-link params when their parent tab is not active so
+    // compact (max-xl) nav never keeps Tools/Accounts chips after leaving.
+    if (activeView !== 'providers' && (params.has('pview') || params.has('paccount'))) {
+      params.delete('pview')
+      params.delete('paccount')
+      dirty = true
+    }
+
+    if (activeView !== 'keys' && params.has('kview')) {
+      params.delete('kview')
+      dirty = true
+    }
+
+    if (dirty) {
       navigate({ hash, pathname, search: `?${params.toString()}` }, { replace: true })
     }
-  }, [hash, navigate, pathname, search])
+  }, [activeView, hash, navigate, pathname, search])
 
   const openProviderView = (view: ProviderView) => {
     setActiveView('providers')
@@ -70,6 +88,15 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
     setActiveView('keys')
     setKeysView(view)
   }
+
+  const openSettingsView = (view: SettingsViewId) => {
+    setActiveView(view)
+  }
+
+  // Compact header wraps nav into a single row. Keep nested chips on their own
+  // full-width row (not `contents`) so they unmount cleanly with the parent.
+  const nestedNavClass =
+    'ml-3.5 flex flex-col gap-0.5 pl-1.5 max-xl:ml-0 max-xl:w-full max-xl:basis-full max-xl:flex-row max-xl:flex-wrap max-xl:gap-1 max-xl:border-border/20 max-xl:pl-0'
 
   const importInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -114,7 +141,7 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
                 icon={s.icon}
                 key={s.id}
                 label={t.settings.sections[s.id] ?? s.label}
-                onClick={() => setActiveView(view)}
+                onClick={() => openSettingsView(view)}
               />
             )
           })}
@@ -123,10 +150,10 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
             active={activeView === 'providers'}
             icon={Zap}
             label={t.settings.nav.providers}
-            onClick={() => setActiveView('providers')}
+            onClick={() => openSettingsView('providers')}
           />
           {activeView === 'providers' && (
-            <div className="ml-3.5 flex flex-col gap-0.5 pl-1.5 max-xl:contents max-xl:ml-0 max-xl:pl-0">
+            <div className={nestedNavClass}>
               <OverlayNavItem
                 active={providerView === 'accounts'}
                 icon={Sparkles}
@@ -147,10 +174,10 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
             active={activeView === 'keys'}
             icon={KeyRound}
             label={t.settings.nav.apiKeys}
-            onClick={() => setActiveView('keys')}
+            onClick={() => openSettingsView('keys')}
           />
           {activeView === 'keys' && (
-            <div className="ml-3.5 flex flex-col gap-0.5 pl-1.5 max-xl:contents max-xl:ml-0 max-xl:pl-0">
+            <div className={nestedNavClass}>
               <OverlayNavItem
                 active={keysView === 'tools'}
                 icon={Wrench}
@@ -178,26 +205,26 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
             active={activeView === 'mcp'}
             icon={Wrench}
             label={t.settings.nav.mcp}
-            onClick={() => setActiveView('mcp')}
+            onClick={() => openSettingsView('mcp')}
           />
           <OverlayNavItem
             active={activeView === 'notifications'}
             icon={Bell}
             label={t.settings.nav.notifications}
-            onClick={() => setActiveView('notifications')}
+            onClick={() => openSettingsView('notifications')}
           />
           <OverlayNavItem
             active={activeView === 'sessions'}
             icon={Archive}
             label={t.settings.nav.archivedChats}
-            onClick={() => setActiveView('sessions')}
+            onClick={() => openSettingsView('sessions')}
           />
           <div className="my-2 h-px bg-border/30 max-xl:hidden" />
           <OverlayNavItem
             active={activeView === 'about'}
             icon={Info}
             label={t.settings.nav.about}
-            onClick={() => setActiveView('about')}
+            onClick={() => openSettingsView('about')}
           />
           <div className="mt-auto flex items-center gap-1 pt-2 max-xl:mt-0 max-xl:ml-auto max-xl:pt-0">
             <Tip label={t.settings.exportConfig}>
@@ -230,7 +257,9 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
         </OverlaySidebar>
 
         <OverlayMain className="px-0 pb-0 pt-[calc(var(--titlebar-height)+1rem)]">
-          <Suspense fallback={panelFallback}>
+          {/* Remount when leaving a panel family so compact layout never keeps
+              the previous tab's body painted under a new title. */}
+          <Suspense fallback={panelFallback} key={activeView.startsWith('config:') ? 'config' : activeView}>
             {activeView === 'config:appearance' ? (
               <AppearanceSettings />
             ) : activeView === 'about' ? (

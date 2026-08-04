@@ -231,21 +231,31 @@ export function ConfigSettings({
 
   useEffect(() => {
     let cancelled = false
-    Promise.all([getHermesConfigRecord(), getHermesConfigDefaults(), getHermesConfigSchema()])
-      .then(([c, d, s]) => {
+
+    // Paint config+schema first so Workspace/Advanced are usable; defaults can
+    // trail without blocking the whole settings panel on a cold gateway.
+    void (async () => {
+      try {
+        const [nextConfig, nextSchema] = await Promise.all([getHermesConfigRecord(), getHermesConfigSchema()])
+
         if (cancelled) {
           return
         }
 
-        setConfig(c)
-        setDefaults(d)
-        setSchema(s.fields)
-      })
-      .catch(err => {
+        setConfig(nextConfig)
+        setSchema(nextSchema.fields)
+
+        const nextDefaults = await getHermesConfigDefaults().catch(() => ({}) as HermesConfigRecord)
+
+        if (!cancelled) {
+          setDefaults(nextDefaults)
+        }
+      } catch (err) {
         if (!cancelled && !isAbortError(err)) {
           notifyError(err, c.failedLoad)
         }
-      })
+      }
+    })()
 
     return () => void (cancelled = true)
   }, [c.failedLoad])

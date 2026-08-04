@@ -1676,6 +1676,21 @@ def test_dashboard_model_options_uses_catalog_fast_path():
     assert not main._dashboard_path_is_lightweight("api/model/options")
 
 
+def test_dashboard_settings_reads_use_lightweight_path():
+    """Settings hydrate GETs must skip start_runtime lock (env/config schema)."""
+    for path in (
+        "api/env",
+        "api/config",
+        "api/config/defaults",
+        "api/config/schema",
+        "/api/env",
+        "/api/config/defaults",
+    ):
+        assert main._dashboard_path_is_lightweight(path), path
+
+    assert not main._dashboard_path_is_lightweight("api/env/reload")
+
+
 def test_dashboard_env_put_does_not_restart_runtime(client, monkeypatch):
     payload, token = signup(client, "env-save-no-restart@example.com")
     runtime_row = db.fetch_one(

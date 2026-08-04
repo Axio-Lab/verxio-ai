@@ -136,7 +136,7 @@ const NON_CONFIG_SETTINGS: ReadonlyArray<{
   },
   {
     icon: Settings2,
-    keywords: ['gateway', 'proxy', 'server', 'webhook', 'env'],
+    keywords: ['server', 'webhook', 'env', 'sudo'],
     labelKey: 'keysSettings',
     tab: 'keys&kview=settings'
   },
