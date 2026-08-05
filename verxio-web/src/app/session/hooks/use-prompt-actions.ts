@@ -1,5 +1,5 @@
 import type { AppendMessage, ThreadMessage } from '@assistant-ui/react'
-import { type MutableRefObject, useCallback } from 'react'
+import { type MutableRefObject, useCallback, useRef } from 'react'
 
 import { requestComposerFocus } from '@/app/chat/composer/focus'
 import { getProfiles } from '@/hermes'
@@ -97,16 +97,51 @@ function isSessionNotFoundError(error: unknown): boolean {
 }
 
 // The gateway refuses prompt.submit while a turn is running (4009 "session
-// busy"). Edit/restore (revert) can fire mid-turn, so they interrupt first then
-// retry the submit until the cooperative interrupt has wound the turn down.
-const REWIND_INTERRUPT_TIMEOUT_MS = 6_000
-const REWIND_RETRY_INTERVAL_MS = 150
+// busy"). It's a transient concurrency guard, never a user-facing error: a
+// submit racing the settle edge after cancel/interrupt (or a rewind mid-turn)
+// just waits a beat for the turn to wind down, then lands. Bounded so a
+// genuinely stuck turn still surfaces eventually.
+const SESSION_BUSY_RETRY_TIMEOUT_MS = 6_000
+const SESSION_BUSY_RETRY_INTERVAL_MS = 150
 
 function isSessionBusyError(error: unknown): boolean {
   return /session busy/i.test(error instanceof Error ? error.message : String(error))
 }
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+
+// Retry a gateway call across transient "session busy" so it never reaches the
+// user — the turn settles within the deadline and the call lands.
+// `isCurrent` lets cancel/stop abandon a retry loop so a cancelled submit can't
+// land after the UI has already moved on.
+async function withSessionBusyRetry<T>(call: () => Promise<T>, isCurrent?: () => boolean): Promise<T> {
+  const deadline = Date.now() + SESSION_BUSY_RETRY_TIMEOUT_MS
+
+  for (;;) {
+    if (isCurrent && !isCurrent()) {
+      throw new DOMException('Submit cancelled', 'AbortError')
+    }
+
+    try {
+      return await call()
+    } catch (err) {
+      if (isSessionBusyError(err) && Date.now() < deadline && (!isCurrent || isCurrent())) {
+        await sleep(SESSION_BUSY_RETRY_INTERVAL_MS)
+
+        continue
+      }
+
+      throw err
+    }
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    (error instanceof DOMException && error.name === 'AbortError') ||
+    (error instanceof Error && error.name === 'AbortError')
+  )
+}
 
 function isSessionIdCandidate(value: string): boolean {
   const trimmed = value.trim()
@@ -198,6 +233,9 @@ export function usePromptActions({
   const { t } = useI18n()
   const copy = t.desktop
   const statusbarCopy = t.shell.statusbar
+  // Bumped by cancelRun so an in-flight submit (session create / attach / submit)
+  // abandons before it can re-arm busy or hit the gateway after Stop.
+  const submitEpochRef = useRef(0)
 
   const appendSessionTextMessage = useCallback(
     (sessionId: string, role: ChatMessage['role'], text: string) => {
@@ -454,6 +492,9 @@ export function usePromptActions({
         return false
       }
 
+      const submitEpoch = ++submitEpochRef.current
+      const isCurrentSubmit = () => submitEpochRef.current === submitEpoch
+
       const optimisticId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
       const userMessage: ChatMessage = {
@@ -528,9 +569,22 @@ export function usePromptActions({
         try {
           sessionId = await createBackendSessionForSend(visibleText)
         } catch (err) {
+          if (!isCurrentSubmit()) {
+            dropOptimistic(null)
+
+            return false
+          }
+
           dropOptimistic(null)
           releaseBusy()
           notifyError(err, copy.sessionUnavailable)
+
+          return false
+        }
+
+        if (!isCurrentSubmit()) {
+          dropOptimistic(sessionId)
+          // cancelRun already released busy for the live UI; don't re-arm it.
 
           return false
         }
@@ -547,17 +601,41 @@ export function usePromptActions({
       }
 
       try {
+        if (!isCurrentSubmit()) {
+          dropOptimistic(sessionId)
+
+          return false
+        }
+
         let syncedAttachments = await syncAudioAttachmentsForSubmit(sessionId, attachments, {
           updateComposerAttachments: usingComposerAttachments
         })
+
+        if (!isCurrentSubmit()) {
+          dropOptimistic(sessionId)
+
+          return false
+        }
 
         syncedAttachments = await syncImageAttachmentsForSubmit(sessionId, syncedAttachments, {
           updateComposerAttachments: usingComposerAttachments
         })
 
+        if (!isCurrentSubmit()) {
+          dropOptimistic(sessionId)
+
+          return false
+        }
+
         syncedAttachments = await syncFileAttachmentsForSubmit(sessionId, syncedAttachments, {
           updateComposerAttachments: usingComposerAttachments
         })
+
+        if (!isCurrentSubmit()) {
+          dropOptimistic(sessionId)
+
+          return false
+        }
 
         // Image attachments are drained by prompt.submit from session.attached_images.
         // Only include text refs for non-image chips (files/audio/folders/urls).
@@ -578,12 +656,29 @@ export function usePromptActions({
           }
         }
 
+        if (!isCurrentSubmit()) {
+          dropOptimistic(sessionId)
+
+          return false
+        }
+
         // After deploy/runtime wipe, reconnect restores the WS but the tab may
         // still hold a dead in-memory runtime session id. Resume the durable
         // stored session once and retry — same recovery as sleep/wake on desktop.
+        // Also ride out transient 4009 "session busy" after a cancel/interrupt
+        // while the previous turn is still winding down.
         try {
-          await requestGateway('prompt.submit', { session_id: sessionId, text: submitText })
+          await withSessionBusyRetry(
+            () => requestGateway('prompt.submit', { session_id: sessionId, text: submitText }),
+            isCurrentSubmit
+          )
         } catch (firstErr) {
+          if (isAbortError(firstErr) || !isCurrentSubmit()) {
+            dropOptimistic(sessionId)
+
+            return false
+          }
+
           if (!isSessionNotFoundError(firstErr) || !selectedStoredSessionIdRef.current) {
             throw firstErr
           }
@@ -595,9 +690,22 @@ export function usePromptActions({
             throw firstErr
           }
 
+          if (!isCurrentSubmit()) {
+            dropOptimistic(sessionId)
+
+            return false
+          }
+
           sessionId = recoveredId
           seedOptimistic(recoveredId)
-          await requestGateway('prompt.submit', { session_id: recoveredId, text: submitText })
+          await withSessionBusyRetry(
+            () => requestGateway('prompt.submit', { session_id: recoveredId, text: submitText }),
+            isCurrentSubmit
+          )
+        }
+
+        if (!isCurrentSubmit()) {
+          return false
         }
 
         if (usingComposerAttachments) {
@@ -606,6 +714,19 @@ export function usePromptActions({
 
         return true
       } catch (err) {
+        if (isAbortError(err) || !isCurrentSubmit()) {
+          return false
+        }
+
+        // A queued drain that raced a not-yet-settled turn gets a transient
+        // "session busy" (4009). Don't surface an error bubble/toast — the entry
+        // stays queued and the composer's bounded auto-drain retries when idle.
+        if (options?.fromQueue && isSessionBusyError(err)) {
+          releaseBusy()
+
+          return false
+        }
+
         const message = inlineErrorMessage(err, copy.promptFailed)
 
         releaseBusy()
@@ -1036,6 +1157,10 @@ export function usePromptActions({
   const cancelRun = useCallback(async () => {
     const sessionId = activeSessionId || activeSessionIdRef.current
 
+    // Invalidate any in-flight submitPromptText so session create / attach /
+    // prompt.submit can't re-arm busy after Stop.
+    submitEpochRef.current += 1
+
     const releaseBusy = () => {
       setMutableRef(busyRef, false)
       setBusy(false)
@@ -1232,27 +1357,13 @@ export function usePromptActions({
         }
       }
 
-      const deadline = Date.now() + REWIND_INTERRUPT_TIMEOUT_MS
-
-      for (;;) {
-        try {
-          await requestGateway('prompt.submit', {
-            session_id: sessionId,
-            text,
-            ...(truncateOrdinal !== undefined && { truncate_before_user_ordinal: truncateOrdinal })
-          })
-
-          return
-        } catch (err) {
-          if (isSessionBusyError(err) && Date.now() < deadline) {
-            await sleep(REWIND_RETRY_INTERVAL_MS)
-
-            continue
-          }
-
-          throw err
-        }
-      }
+      await withSessionBusyRetry(() =>
+        requestGateway('prompt.submit', {
+          session_id: sessionId,
+          text,
+          ...(truncateOrdinal !== undefined && { truncate_before_user_ordinal: truncateOrdinal })
+        })
+      )
     },
     [requestGateway]
   )
