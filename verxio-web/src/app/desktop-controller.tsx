@@ -345,14 +345,21 @@ export function DesktopController() {
     }
   }, [])
 
-  const refreshSessions = useCallback(async () => {
+  const refreshSessions = useCallback(async (options?: { force?: boolean }) => {
     const now = Date.now()
+    const force = options?.force === true
 
     if (refreshSessionsInFlightRef.current) {
-      return refreshSessionsInFlightRef.current
+      if (!force) {
+        return refreshSessionsInFlightRef.current
+      }
+
+      // Load-more bumps the page size; wait out the stale in-flight fetch that
+      // still has the old limit, then issue a fresh request.
+      await refreshSessionsInFlightRef.current.catch(() => undefined)
     }
 
-    if ($sessions.get().length > 0 && now - lastSessionsRefreshAtRef.current < 2_000) {
+    if (!force && $sessions.get().length > 0 && now - lastSessionsRefreshAtRef.current < 2_000) {
       return
     }
 
@@ -395,7 +402,7 @@ export function DesktopController() {
 
   const loadMoreSessions = useCallback(() => {
     bumpSessionsLimit()
-    void refreshSessions()
+    void refreshSessions({ force: true })
   }, [refreshSessions])
 
   // Another tab mutated the shared session list — re-pull so the sidebar reflects it.

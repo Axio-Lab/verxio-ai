@@ -30,6 +30,45 @@ function updateAtom<T>(store: AppAtom<T>, next: Updater<T>) {
 export const sessionPinId = (session: Pick<SessionInfo, '_lineage_root_id' | 'id'>): string =>
   session._lineage_root_id ?? session.id
 
+const SESSION_TOMBSTONE_TTL_MS = 60_000
+const sessionTombstones = new Map<string, number>()
+
+function pruneSessionTombstones(now = Date.now()) {
+  for (const [id, until] of sessionTombstones) {
+    if (until <= now) {
+      sessionTombstones.delete(id)
+    }
+  }
+}
+
+/** Briefly hide a deleted/archived session from list merges so an in-flight
+ *  refresh that still includes the row cannot resurrect it in the sidebar. */
+export function markSessionTombstone(sessionId: string, lineageRootId?: null | string) {
+  const until = Date.now() + SESSION_TOMBSTONE_TTL_MS
+  sessionTombstones.set(sessionId, until)
+
+  if (lineageRootId && lineageRootId !== sessionId) {
+    sessionTombstones.set(lineageRootId, until)
+  }
+}
+
+export function clearSessionTombstone(sessionId: string, lineageRootId?: null | string) {
+  sessionTombstones.delete(sessionId)
+
+  if (lineageRootId) {
+    sessionTombstones.delete(lineageRootId)
+  }
+}
+
+export function isSessionTombstoned(session: Pick<SessionInfo, '_lineage_root_id' | 'id'>): boolean {
+  pruneSessionTombstones()
+
+  return (
+    sessionTombstones.has(session.id) ||
+    (session._lineage_root_id != null && sessionTombstones.has(session._lineage_root_id))
+  )
+}
+
 /** Merge a fresh server session page into the in-memory list, keeping any
  *  row the server omitted that we still want visible — both still-"working"
  *  sessions and pinned sessions.
@@ -51,28 +90,30 @@ export const sessionPinId = (session: Pick<SessionInfo, '_lineage_root_id' | 'id
  *  on the durable lineage-root id (see {@link sessionPinId}), while the loaded
  *  row surfaces under its live compression tip, so we match a survivor by
  *  either its live `id` or its `_lineage_root_id`. Optimistic deletes/archives
- *  drop the row from `previous` (and unpin it), so a removed session can't be
- *  resurrected here. */
+ *  drop the row from `previous` and mark a short-lived tombstone so a stale
+ *  in-flight refresh cannot put the removed row back via `incoming`. */
 export function mergeSessionPage(
   previous: SessionInfo[],
   incoming: SessionInfo[],
   keepIds: Iterable<string>
 ): SessionInfo[] {
   const keep = keepIds instanceof Set ? keepIds : new Set(keepIds)
+  const liveIncoming = incoming.filter(session => !isSessionTombstoned(session))
 
   if (keep.size === 0) {
-    return incoming
+    return liveIncoming
   }
 
-  const incomingIds = new Set(incoming.map(session => session.id))
+  const incomingIds = new Set(liveIncoming.map(session => session.id))
 
   const survivors = previous.filter(
     session =>
+      !isSessionTombstoned(session) &&
       !incomingIds.has(session.id) &&
       (keep.has(session.id) || (session._lineage_root_id != null && keep.has(session._lineage_root_id)))
   )
 
-  return survivors.length ? [...survivors, ...incoming] : incoming
+  return survivors.length ? [...survivors, ...liveIncoming] : liveIncoming
 }
 
 export const $connection = atom<HermesConnection | null>(null)
@@ -125,6 +166,19 @@ export const setSessions = (next: Updater<SessionInfo[]>) => updateAtom($session
 export const setSessionsTotal = (next: Updater<number>) => updateAtom($sessionsTotal, next)
 export const setSessionProfileTotals = (next: Updater<Record<string, number>>) =>
   updateAtom($sessionProfileTotals, next)
+
+/** Keep per-profile "Load more" math in sync with optimistic delete/archive. */
+export function adjustSessionProfileTotal(profile: string | null | undefined, delta: number) {
+  const key = (profile ?? '').trim() || 'default'
+
+  setSessionProfileTotals(prev => {
+    if (Object.keys(prev).length === 0 || typeof prev[key] !== 'number') {
+      return prev
+    }
+
+    return { ...prev, [key]: Math.max(0, prev[key] + delta) }
+  })
+}
 export const setSessionsLoading = (next: Updater<boolean>) => updateAtom($sessionsLoading, next)
 export const setWorkingSessionIds = (next: Updater<string[]>) => updateAtom($workingSessionIds, next)
 export const setActiveSessionId = (next: Updater<string | null>) => updateAtom($activeSessionId, next)

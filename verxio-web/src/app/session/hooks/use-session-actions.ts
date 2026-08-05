@@ -19,7 +19,10 @@ import {
   $currentCwd,
   $messages,
   $sessions,
+  adjustSessionProfileTotal,
+  clearSessionTombstone,
   getRememberedWorkspaceCwd,
+  markSessionTombstone,
   sessionPinId,
   setActiveSessionId,
   setAwaitingResponse,
@@ -928,10 +931,12 @@ export function useSessionActions({
       // live tip after compression. Drop both so the pin can't linger.
       const removedPinId = removed ? sessionPinId(removed) : storedSessionId
 
+      markSessionTombstone(storedSessionId, removed?._lineage_root_id)
       setSessions(prev => prev.filter(session => !sessionMatchesStoredId(session, storedSessionId)))
-      // Keep $sessionsTotal in sync so the sidebar's "Load N more" footer
-      // doesn't keep claiming the removed row is still on the server.
+      // Keep totals in sync so the sidebar's "Load N more" footer doesn't keep
+      // claiming the removed row is still on the server.
       setSessionsTotal(prev => Math.max(0, prev - 1))
+      adjustSessionProfileTotal(removed?.profile, -1)
       $pinnedSessionIds.set(previousPinned.filter(id => id !== storedSessionId && id !== removedPinId))
 
       // Tear down before awaiting so the route effect can't resume the
@@ -952,9 +957,12 @@ export function useSessionActions({
           clearQueuedPrompts(closingRuntimeId)
         }
       } catch (err) {
+        clearSessionTombstone(storedSessionId, removed?._lineage_root_id)
+
         if (removed) {
           setSessions(prev => [removed, ...prev])
           setSessionsTotal(prev => prev + 1)
+          adjustSessionProfileTotal(removed.profile, 1)
         }
 
         $pinnedSessionIds.set(previousPinned)
@@ -1010,11 +1018,13 @@ export function useSessionActions({
       const archivedPinId = archived ? sessionPinId(archived) : storedSessionId
 
       // Soft-hide: drop from the sidebar immediately, keep the data.
+      markSessionTombstone(storedSessionId, archived?._lineage_root_id)
       setSessions(prev => prev.filter(session => !sessionMatchesStoredId(session, storedSessionId)))
       // Archived sessions are hidden by the listSessions(min_messages=1) query
       // on the next refresh, so they count as "removed" for the load-more
       // footer math.
       setSessionsTotal(prev => Math.max(0, prev - 1))
+      adjustSessionProfileTotal(archived?.profile, -1)
       $pinnedSessionIds.set(previousPinned.filter(id => id !== storedSessionId && id !== archivedPinId))
 
       if (wasSelected) {
@@ -1025,9 +1035,12 @@ export function useSessionActions({
         await setSessionArchived(storedSessionId, true, archived?.profile)
         notify({ durationMs: 2_000, kind: 'success', message: copy.archived })
       } catch (err) {
+        clearSessionTombstone(storedSessionId, archived?._lineage_root_id)
+
         if (archived) {
           setSessions(prev => [archived, ...prev.filter(session => !sessionMatchesStoredId(session, storedSessionId))])
           setSessionsTotal(prev => prev + 1)
+          adjustSessionProfileTotal(archived.profile, 1)
         }
 
         $pinnedSessionIds.set(previousPinned)
