@@ -68,6 +68,17 @@ services:
     ports:
       - '127.0.0.1:8080:80'
 
+  # Marketing site for verxio.xyz / www — auth + dashboard stay on app.verxio.xyz (verxio-web).
+  verxio-landing:
+    build:
+      context: ./verxio-landing
+      args:
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-https://www.verxio.xyz}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-https://app.verxio.xyz}
+    image: verxio-landing:local
+    ports:
+      - '127.0.0.1:8081:80'
+
   hermes-runtime-image:
     build:
       context: ./hermes-agent

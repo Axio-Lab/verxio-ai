@@ -102,17 +102,18 @@ echo "    hermes-agent @ ${HERMES_SHA}"
 
 ensure_buildx
 
-echo "==> Building verxio-api + verxio-web"
-"${COMPOSE[@]}" build --build-arg INSTALL_TURSO=1 verxio-api verxio-web
+echo "==> Building verxio-api + verxio-web + verxio-landing"
+"${COMPOSE[@]}" build --build-arg INSTALL_TURSO=1 verxio-api verxio-web verxio-landing
 
 # Recreate control plane before Hermes so a Hermes build failure cannot leave
-# production stuck on yesterday's api/web containers.
+# production stuck on yesterday's api/web/landing containers.
 echo "==> Recreating control-plane services"
-"${COMPOSE[@]}" up -d --force-recreate verxio-api verxio-web
+"${COMPOSE[@]}" up -d --force-recreate verxio-api verxio-web verxio-landing
 
 echo "==> Waiting for API health (timeout ${API_HEALTH_TIMEOUT_SECONDS}s)"
 api_ready=0
 web_ready=0
+landing_ready=0
 for ((elapsed = 1; elapsed <= API_HEALTH_TIMEOUT_SECONDS; elapsed++)); do
   if [[ "${api_ready}" -ne 1 ]] \
     && curl -fsS -m 2 http://127.0.0.1:8787/api/health >/dev/null 2>&1; then
@@ -124,11 +125,16 @@ for ((elapsed = 1; elapsed <= API_HEALTH_TIMEOUT_SECONDS; elapsed++)); do
     web_ready=1
     echo "    web healthy after ${elapsed}s"
   fi
-  if [[ "${api_ready}" -eq 1 && "${web_ready}" -eq 1 ]]; then
+  if [[ "${landing_ready}" -ne 1 ]] \
+    && curl -fsS -m 2 -o /dev/null http://127.0.0.1:8081/ >/dev/null 2>&1; then
+    landing_ready=1
+    echo "    landing healthy after ${elapsed}s"
+  fi
+  if [[ "${api_ready}" -eq 1 && "${web_ready}" -eq 1 && "${landing_ready}" -eq 1 ]]; then
     break
   fi
   if ((elapsed % 10 == 0)); then
-    echo "    still waiting… ${elapsed}s (api=${api_ready} web=${web_ready})"
+    echo "    still waiting… ${elapsed}s (api=${api_ready} web=${web_ready} landing=${landing_ready})"
   fi
   sleep 1
 done
@@ -142,8 +148,14 @@ if [[ "${web_ready}" -ne 1 ]]; then
   "${COMPOSE[@]}" logs --tail=80 verxio-web || true
   exit 1
 fi
+if [[ "${landing_ready}" -ne 1 ]]; then
+  echo "ERROR: verxio-landing did not become healthy within ${API_HEALTH_TIMEOUT_SECONDS}s."
+  "${COMPOSE[@]}" logs --tail=80 verxio-landing || true
+  exit 1
+fi
 curl -sS -m 5 -w ' time=%{time_total}\n' http://127.0.0.1:8787/api/health
 curl -sS -m 5 -o /dev/null -w 'web time=%{time_total}\n' http://127.0.0.1:8080/
+curl -sS -m 5 -o /dev/null -w 'landing time=%{time_total}\n' http://127.0.0.1:8081/
 
 echo "==> Building Hermes runtime image (${HERMES_IMAGE})"
 HERMES_BEFORE="$(image_id "${HERMES_IMAGE}")"
