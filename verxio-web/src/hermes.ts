@@ -57,7 +57,10 @@ import type {
   WhatsAppPairingStatusResponse
 } from '@/types/hermes'
 
-const DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS = 30_000
+// Match desktop shared gateway default. Cold agent init + busy gateway can
+// exceed 30s; a short timeout surfaces as "request timed out: prompt.submit"
+// even when the turn would eventually stream.
+const DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS = 120_000
 
 export type {
   ActionResponse,
