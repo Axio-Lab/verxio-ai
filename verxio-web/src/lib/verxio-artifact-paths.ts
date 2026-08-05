@@ -1,5 +1,7 @@
-const ARTIFACT_PATH_RE =
-  /(?:\/workspace\/artifacts\/|\/artifacts\/|artifacts\/)[^\s<>"'()[\]{}]+?\.[a-z0-9]{1,8}(?:\?[^,\s<>"'()[\]{}]*)?/gi
+// Match a full artifact path token, then require a letter-led extension so
+// timestamped names like `0.00-verxio.png` are not truncated at `.00`.
+const ARTIFACT_PATH_RE = /(?:\/workspace\/artifacts\/|\/artifacts\/|artifacts\/)[^\s<>"'()[\]{}]+/gi
+const ARTIFACT_EXTENSION_RE = /\.[a-zA-Z][a-zA-Z0-9]{0,7}(?:\?[^,\s<>"'()[\]{}]*)?$/
 
 export function workspaceArtifactRelativePath(path: string): string | null {
   let raw = path
@@ -38,7 +40,7 @@ export function extractWorkspaceArtifactPaths(text: string): string[] {
   for (const match of text.matchAll(ARTIFACT_PATH_RE)) {
     const path = match[0].replace(/[.,;:!?]+$/g, '')
 
-    if (!workspaceArtifactRelativePath(path) || seen.has(path)) {
+    if (!ARTIFACT_EXTENSION_RE.test(path) || !workspaceArtifactRelativePath(path) || seen.has(path)) {
       continue
     }
 
