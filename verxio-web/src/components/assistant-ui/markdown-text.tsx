@@ -268,6 +268,30 @@ function unresolvedArtifact(path: string): ResolvedArtifact {
   }
 }
 
+function resolvedArtifactFromRecord(path: string, record: VerxioArtifact): ResolvedArtifact {
+  const target = artifactTargetForRecord(record, path)
+
+  return {
+    path,
+    record,
+    target,
+    previewUrl: target.url,
+    downloadUrl: verxioApiUrl(`/api/artifacts/${encodeURIComponent(record.id)}/download`)
+  }
+}
+
+async function resolveArtifactsFromList(paths: string[], refresh = false): Promise<ResolvedArtifact[]> {
+  const response = await listVerxioArtifacts(refresh ? { refresh: true } : undefined)
+
+  return paths.map(path => {
+    const record = response.artifacts.find(artifact => recordMatchesArtifactPath(artifact, path))
+
+    return record ? resolvedArtifactFromRecord(path, record) : unresolvedArtifact(path)
+  })
+}
+
+const ARTIFACT_RESOLVE_RETRY_DELAYS_MS = [0, 500, 1_500, 4_000] as const
+
 function useResolvedArtifacts(text: string): ResolvedArtifact[] {
   const paths = useMemo(() => extractWorkspaceArtifactPaths(text), [text])
   const [items, setItems] = useState<ResolvedArtifact[]>([])
@@ -287,39 +311,45 @@ function useResolvedArtifacts(text: string): ResolvedArtifact[] {
 
     let cancelled = false
 
-    void listVerxioArtifacts()
-      .then(response => {
-        if (cancelled) {
-          return
-        }
+    void (async () => {
+      try {
+        for (let attempt = 0; attempt < ARTIFACT_RESOLVE_RETRY_DELAYS_MS.length; attempt++) {
+          const delay = ARTIFACT_RESOLVE_RETRY_DELAYS_MS[attempt]
 
-        const resolved = paths.flatMap(path => {
-          const record = response.artifacts.find(artifact => recordMatchesArtifactPath(artifact, path))
-
-          if (!record) {
-            return [unresolvedArtifact(path)]
+          if (delay > 0) {
+            await new Promise<void>(resolve => {
+              window.setTimeout(resolve, delay)
+            })
           }
 
-          const target = artifactTargetForRecord(record, path)
+          if (cancelled) {
+            return
+          }
 
-          return [
-            {
-              path,
-              record,
-              target,
-              previewUrl: target.url,
-              downloadUrl: verxioApiUrl(`/api/artifacts/${encodeURIComponent(record.id)}/download`)
-            }
-          ]
-        })
+          // Match the click-to-preview path: try the short-lived cache first,
+          // then force a refresh when indexing lags the assistant message.
+          let resolved = await resolveArtifactsFromList(paths, attempt > 0)
 
-        setItems(resolved)
-      })
-      .catch(() => {
+          if (resolved.some(item => !item.record)) {
+            resolved = await resolveArtifactsFromList(paths, true)
+          }
+
+          if (cancelled) {
+            return
+          }
+
+          setItems(resolved)
+
+          if (resolved.every(item => item.record)) {
+            return
+          }
+        }
+      } catch {
         if (!cancelled) {
           setItems(paths.map(unresolvedArtifact))
         }
-      })
+      }
+    })()
 
     return () => {
       cancelled = true
