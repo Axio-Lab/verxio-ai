@@ -244,6 +244,64 @@ def _file_mtime_iso(stat_result: os.stat_result) -> str:
     return datetime.fromtimestamp(stat_result.st_mtime, tz=timezone.utc).isoformat()
 
 
+_ARTIFACT_SOURCE_RANK = {
+    "workspace": 3,
+    "workspace_root": 2,
+    "runtime_home": 1,
+}
+
+
+def _artifact_list_preference(row: dict[str, Any]) -> tuple:
+    """Higher tuple wins when collapsing byte-identical artifact rows."""
+    source = str(row.get("source") or "")
+    name = str(row.get("file_name") or "")
+    relative = str(row.get("relative_path") or "")
+    return (
+        _ARTIFACT_SOURCE_RANK.get(source, 0),
+        0 if relative.startswith(_RUNTIME_HOME_ARTIFACT_PREFIX) else 1,
+        1 if "final" in name.lower() else 0,
+        str(row.get("updated_at") or ""),
+        str(row.get("created_at") or ""),
+        # Stable tie-break so preference is deterministic across runs.
+        str(row.get("id") or ""),
+    )
+
+
+def _dedupe_artifact_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collapse byte-identical files (same sha256) for the Artifacts UI.
+
+    Keeps one preferred row per digest so workspace↔runtime-home mirrors and
+    renamed copies of the same bytes do not clutter the list. Near-identical
+    regenerations with different hashes are intentionally kept (those were
+    separate paid gens).
+    """
+    best_by_digest: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        digest = str(row.get("sha256") or "").strip()
+        if not digest:
+            continue
+        current = best_by_digest.get(digest)
+        if current is None or _artifact_list_preference(row) > _artifact_list_preference(current):
+            best_by_digest[digest] = row
+
+    seen: set[str] = set()
+    deduped: list[dict[str, Any]] = []
+    for row in rows:
+        digest = str(row.get("sha256") or "").strip()
+        if not digest:
+            public = {key: value for key, value in row.items() if key != "sha256"}
+            deduped.append(public)
+            continue
+        if digest in seen:
+            continue
+        winner = best_by_digest[digest]
+        if winner.get("id") != row.get("id"):
+            continue
+        seen.add(digest)
+        deduped.append({key: value for key, value in winner.items() if key != "sha256"})
+    return deduped
+
+
 def _artifact_path_is_skipped(relative: Path) -> bool:
     return any(part in _WORKSPACE_ARTIFACT_SKIP_DIRS for part in relative.parts)
 
@@ -1287,14 +1345,14 @@ def index_artifacts(runtime: RuntimeInstance) -> list[ArtifactRecord]:
     rows = db.fetch_all(
         """
         SELECT id, tenant_id, workspace_id, agent_id, file_name, relative_path,
-               content_type, size_bytes, source, created_at, updated_at
+               content_type, size_bytes, source, sha256, created_at, updated_at
         FROM artifacts
         WHERE workspace_id = ? AND agent_id = ?
         ORDER BY updated_at DESC, created_at DESC, file_name ASC
         """,
         (runtime.workspace_id, runtime.agent_id),
     )
-    return [ArtifactRecord(**row) for row in rows]
+    return [ArtifactRecord(**row) for row in _dedupe_artifact_rows(list(rows))]
 
 
 def artifact_file(runtime: RuntimeInstance, artifact_id: str) -> tuple[ArtifactRecord, Path]:

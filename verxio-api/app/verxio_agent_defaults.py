@@ -55,6 +55,11 @@ Workspace:
 - When you mention a generated file to the user, give its `/workspace/artifacts/...` path so Verxio can index and display it.
 - On WhatsApp, Telegram, Discord, Slack, or any other messaging channel: after creating a report or document under `/workspace/artifacts`, include a bare line `MEDIA:/workspace/artifacts/<filename>` in your reply so the platform attaches the file. Do not put that MEDIA line only inside backticks. Messaging users cannot open the Verxio app path — the attachment is how they download the report.
 
+Image generation cost:
+- Every successful `image_generate` call is billed by the image provider. Do not regenerate to make a grayscale, phone preview, crop, resize, watermark, or near-identical variant.
+- Prefer one paid generation (or one paid edit via `image_url`), then use local tools (Pillow/terminal) for previews and derivatives. Overwrite a single stable `*-FINAL.png` instead of keeping draft copies.
+- Do not call `image_generate` again unless the user asks for a real redesign or the previous image is clearly wrong.
+
 Notepad:
 - Use the `notepad` tool for the user's Verxio Notepad (list, read, create, update, share public summary URL, summarize).
 - The public share URL shows the note's `summary` field. When publishing a playbook, transcript digest, or shareable document, put that full packaged markdown in `summary` (you may also mirror it in `content`). Do not leave `summary` empty if the user needs a shareable URL.
@@ -100,6 +105,11 @@ Workspace and artifacts:
 - Terminal commands may use absolute `/workspace/...` paths.
 - When you mention a generated file to the user, give its `/workspace/artifacts/...` path so Verxio can index and display it.
 - On WhatsApp, Telegram, Discord, Slack, or any other messaging channel: after creating a report or document under `/workspace/artifacts`, include a bare line `MEDIA:/workspace/artifacts/<filename>` in your reply so the platform attaches the file. Do not put that MEDIA line only inside backticks. Messaging users cannot open the Verxio app path — the attachment is how they download the report.
+
+Image generation cost:
+- Every successful `image_generate` call is billed by the image provider. Do not regenerate to make a grayscale, phone preview, crop, resize, watermark, or near-identical variant.
+- Prefer one paid generation (or one paid edit via `image_url`), then use local tools (Pillow/terminal) for previews and derivatives. Overwrite a single stable `*-FINAL.png` instead of keeping draft copies.
+- Do not call `image_generate` again unless the user asks for a real redesign or the previous image is clearly wrong.
 
 Notepad:
 - When the user asks about notes, their notepad, meeting notes, or a public summary link, use the `notepad` tool (list/get/create/update/share/summarize).
@@ -234,6 +244,19 @@ def ensure_verxio_agent_defaults(hermes_home: Path) -> None:
                 "`MEDIA:/workspace/artifacts/<filename>` in your reply so the platform attaches the file. "
                 "Do not put that MEDIA line only inside backticks. Messaging users cannot open the Verxio "
                 "app path — the attachment is how they download the report.",
+            )
+        if "Image generation cost:" not in current:
+            current = _join_prompt_parts(
+                current,
+                "Image generation cost:\n"
+                "- Every successful `image_generate` call is billed by the image provider. Do not "
+                "regenerate to make a grayscale, phone preview, crop, resize, watermark, or "
+                "near-identical variant.\n"
+                "- Prefer one paid generation (or one paid edit via `image_url`), then use local "
+                "tools (Pillow/terminal) for previews and derivatives. Overwrite a single stable "
+                "`*-FINAL.png` instead of keeping draft copies.\n"
+                "- Do not call `image_generate` again unless the user asks for a real redesign or "
+                "the previous image is clearly wrong.",
             )
         if current != original:
             soul_path.write_text(current, encoding="utf-8")

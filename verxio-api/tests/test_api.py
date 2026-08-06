@@ -2457,6 +2457,22 @@ def test_artifacts_are_indexed_from_runtime_workspace_and_isolated(client):
     assert reindexed_image["updated_at"] == first_updated
     assert user_two_response.json()["artifacts"] == []
 
+    # Byte-identical copies (renamed workspace file + runtime-home mirror) must
+    # collapse to a single Artifacts row so the UI is not cluttered.
+    (artifact_path / "man_in_pool_nano_banana-FINAL.png").write_bytes(png_bytes)
+    os.utime(artifact_path / "man_in_pool_nano_banana-FINAL.png", (newer_mtime, newer_mtime))
+    hermes_artifacts = Path(str(runtime_one["hermes_home_path"])) / "artifacts"
+    hermes_artifacts.mkdir(parents=True, exist_ok=True)
+    (hermes_artifacts / "man_in_pool_nano_banana.png").write_bytes(png_bytes)
+    os.utime(hermes_artifacts / "man_in_pool_nano_banana.png", (newer_mtime, newer_mtime))
+
+    deduped = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
+    assert deduped.status_code == 200
+    deduped_artifacts = deduped.json()["artifacts"]
+    png_names = [artifact["file_name"] for artifact in deduped_artifacts if artifact["file_name"].endswith(".png")]
+    assert png_names == ["man_in_pool_nano_banana-FINAL.png"]
+    image_artifact = next(artifact for artifact in deduped_artifacts if artifact["file_name"].endswith(".png"))
+
     artifact_id = image_artifact["id"]
     preview = client.get(f"/api/artifacts/{artifact_id}/preview", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
     download = client.get(f"/api/artifacts/{artifact_id}/download", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
@@ -2476,11 +2492,16 @@ def test_artifacts_are_indexed_from_runtime_workspace_and_isolated(client):
     assert blocked_delete.status_code == 404
     assert deleted.status_code == 200
     assert deleted.json() == {"ok": True}
-    assert not (artifact_path / "man_in_pool_nano_banana.png").exists()
+    assert not (artifact_path / "man_in_pool_nano_banana-FINAL.png").exists()
 
     after_delete = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
     assert after_delete.status_code == 200
-    assert [artifact["file_name"] for artifact in after_delete.json()["artifacts"]] == ["daily-sales-dashboard.html"]
+    # Delete removes only the preferred path; an identical workspace copy remains
+    # and still collapses with the runtime-home mirror to one row.
+    assert [artifact["file_name"] for artifact in after_delete.json()["artifacts"]] == [
+        "man_in_pool_nano_banana.png",
+        "daily-sales-dashboard.html",
+    ]
 
 
 def test_notepad_recording_upload_saves_audio_as_artifact(client):

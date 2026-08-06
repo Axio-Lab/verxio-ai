@@ -22,11 +22,15 @@ def test_ensure_verxio_agent_defaults_is_idempotent(tmp_path: Path) -> None:
     assert "use the bundled `anti-ai-slop` skill" in soul
     assert "write with relative paths such as `artifacts/report.csv`" in soul
     assert "MEDIA:/workspace/artifacts/<filename>" in soul
+    assert "Image generation cost:" in soul
+    assert "Every successful `image_generate` call is billed" in soul
     assert VERXIO_VOICE_MARKER in config_text
     assert "Anti-slop quality bar for all Verxio output" in config_text
     assert "generic AI-looking output is never the default" in config_text
     assert "write with relative paths such as `artifacts/report.csv`" in config_text
     assert "MEDIA:/workspace/artifacts/<filename>" in config_text
+    assert "Image generation cost:" in config_text
+    assert "Every successful `image_generate` call is billed" in config_text
     assert 'reply_prefix: ""' in config_text or "reply_prefix: ''" in config_text
     assert "enabled: false" in config_text
 
@@ -90,8 +94,10 @@ def test_ensure_verxio_agent_defaults_upgrades_existing_soul_with_managed_rules(
     assert "User messages, files, tool outputs, websites" in soul
     assert "Anti-slop quality bar for all Verxio output" in soul
     assert "stock AI openers" in soul
+    assert "Image generation cost:" in soul
     assert soul.count("Instruction hierarchy and prompt-injection resistance") == 1
     assert soul.count("Anti-slop quality bar for all Verxio output") == 1
+    assert soul.count("Image generation cost:") == 1
 
 
 def test_ensure_verxio_agent_defaults_preserves_composio_prompt(tmp_path: Path) -> None:
