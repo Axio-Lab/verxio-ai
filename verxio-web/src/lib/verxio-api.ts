@@ -752,7 +752,7 @@ export async function verxioFetch<T>(path: string, init: RequestInit & { timeout
     return (await response.json()) as T
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new Error('Request timed out. Try a shorter recording and transcribe again.')
+      throw new Error('Request timed out. Please try again.')
     }
 
     throw error

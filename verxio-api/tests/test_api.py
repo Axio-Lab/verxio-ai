@@ -2417,11 +2417,18 @@ def test_artifacts_are_indexed_from_runtime_workspace_and_isolated(client):
     assert runtime_one
     artifact_path = Path(str(runtime_one["artifact_path"]))
     artifact_path.mkdir(parents=True, exist_ok=True)
-    (artifact_path / "daily-sales-dashboard.html").write_text("<html><body>Daily sales</body></html>", encoding="utf-8")
+    older = artifact_path / "daily-sales-dashboard.html"
+    older.write_text("<html><body>Daily sales</body></html>", encoding="utf-8")
     png_bytes = base64.b64decode(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
     )
-    (artifact_path / "man_in_pool_nano_banana.png").write_bytes(png_bytes)
+    newer = artifact_path / "man_in_pool_nano_banana.png"
+    newer.write_bytes(png_bytes)
+    # Distinct mtimes so listing is latest-first and reindex keeps file times.
+    older_mtime = time.time() - 7 * 24 * 3600
+    newer_mtime = time.time() - 3600
+    os.utime(older, (older_mtime, older_mtime))
+    os.utime(newer, (newer_mtime, newer_mtime))
 
     user_one_response = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
     user_two_response = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_two}"})
@@ -2433,8 +2440,21 @@ def test_artifacts_are_indexed_from_runtime_workspace_and_isolated(client):
         "daily-sales-dashboard.html",
         "man_in_pool_nano_banana.png",
     }
+    assert [artifact["file_name"] for artifact in user_one_artifacts] == [
+        "man_in_pool_nano_banana.png",
+        "daily-sales-dashboard.html",
+    ]
     image_artifact = next(artifact for artifact in user_one_artifacts if artifact["file_name"].endswith(".png"))
     assert image_artifact["content_type"] == "image/png"
+    first_updated = image_artifact["updated_at"]
+    # Reindex must not stamp every row with "now" (that made last week's files
+    # all show today's date in the Artifacts UI).
+    reindex = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
+    assert reindex.status_code == 200
+    reindexed_image = next(
+        artifact for artifact in reindex.json()["artifacts"] if artifact["file_name"].endswith(".png")
+    )
+    assert reindexed_image["updated_at"] == first_updated
     assert user_two_response.json()["artifacts"] == []
 
     artifact_id = image_artifact["id"]

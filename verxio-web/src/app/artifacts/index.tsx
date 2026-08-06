@@ -192,7 +192,10 @@ function mapVerxioArtifact(record: VerxioArtifact): ArtifactRecord {
       ? `/workspace/${workspaceRelativePath}`
       : `/workspace/artifacts/${workspaceRelativePath}`
 
-  const updated = Date.parse(record.updated_at || record.created_at)
+  // Prefer updated_at (file mtime from the API). Fall back to created_at.
+  const updated = Date.parse(record.updated_at || '')
+  const created = Date.parse(record.created_at || '')
+  const timestamp = Number.isFinite(updated) ? updated : Number.isFinite(created) ? created : Date.now()
 
   return {
     id: record.id,
@@ -203,7 +206,7 @@ function mapVerxioArtifact(record: VerxioArtifact): ArtifactRecord {
     deletable: true,
     sessionId: '',
     sessionTitle: 'Workspace artifacts',
-    timestamp: Number.isFinite(updated) ? updated : Date.now()
+    timestamp
   }
 }
 

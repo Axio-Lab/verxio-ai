@@ -8,6 +8,7 @@ import secrets
 import socket
 import subprocess
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -236,6 +237,11 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _file_mtime_iso(stat_result: os.stat_result) -> str:
+    """Stable artifact timestamps from disk mtime (not index wall-clock)."""
+    return datetime.fromtimestamp(stat_result.st_mtime, tz=timezone.utc).isoformat()
 
 
 def _artifact_path_is_skipped(relative: Path) -> bool:
@@ -1200,16 +1206,39 @@ def index_artifacts(runtime: RuntimeInstance) -> list[ArtifactRecord]:
     # is not bind-mounted leaves an empty ghost directory that hides real files.
     if _path_is_under_managed_runtime(artifact_root):
         artifact_root.mkdir(parents=True, exist_ok=True)
-    now = now_iso()
 
     for resolved, relative, source in _workspace_artifact_candidates(runtime):
         stat = resolved.stat()
         content_type = mimetypes.guess_type(str(resolved))[0] or "application/octet-stream"
+        # Use file mtime — stamping updated_at=now on every index made every
+        # artifact look like it was created "today" and scrambled sort order.
+        mtime_iso = _file_mtime_iso(stat)
         existing = db.fetch_one(
-            "SELECT id FROM artifacts WHERE workspace_id = ? AND agent_id = ? AND relative_path = ?",
+            """
+            SELECT id, size_bytes, sha256, absolute_path, content_type, source, updated_at
+            FROM artifacts
+            WHERE workspace_id = ? AND agent_id = ? AND relative_path = ?
+            """,
             (runtime.workspace_id, runtime.agent_id, relative),
         )
         if existing:
+            # Skip re-hashing / rewriting unchanged files — full SHA + UPDATE of
+            # hundreds of images was regularly aborting the web client's 60s
+            # artifacts timeout and also restamped every row with wall-clock "now".
+            unchanged = (
+                int(existing.get("size_bytes") or 0) == stat.st_size
+                and str(existing.get("absolute_path") or "") == str(resolved)
+                and str(existing.get("content_type") or "") == content_type
+                and str(existing.get("source") or "") == source
+                and str(existing.get("updated_at") or "") == mtime_iso
+                and existing.get("sha256")
+            )
+            if unchanged:
+                continue
+            if int(existing.get("size_bytes") or 0) == stat.st_size and existing.get("sha256"):
+                digest = str(existing["sha256"])
+            else:
+                digest = _sha256_file(resolved)
             db.execute(
                 """
                 UPDATE artifacts
@@ -1221,9 +1250,9 @@ def index_artifacts(runtime: RuntimeInstance) -> list[ArtifactRecord]:
                     str(resolved),
                     content_type,
                     stat.st_size,
-                    _sha256_file(resolved),
+                    digest,
                     source,
-                    now,
+                    mtime_iso,
                     existing["id"],
                 ),
             )
@@ -1248,8 +1277,8 @@ def index_artifacts(runtime: RuntimeInstance) -> list[ArtifactRecord]:
                     stat.st_size,
                     _sha256_file(resolved),
                     source,
-                    now,
-                    now,
+                    mtime_iso,
+                    mtime_iso,
                 ),
             )
 
@@ -1261,7 +1290,7 @@ def index_artifacts(runtime: RuntimeInstance) -> list[ArtifactRecord]:
                content_type, size_bytes, source, created_at, updated_at
         FROM artifacts
         WHERE workspace_id = ? AND agent_id = ?
-        ORDER BY updated_at DESC
+        ORDER BY updated_at DESC, created_at DESC, file_name ASC
         """,
         (runtime.workspace_id, runtime.agent_id),
     )
