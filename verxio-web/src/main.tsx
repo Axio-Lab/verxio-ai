@@ -18,9 +18,12 @@ import { VerxioAuthGate } from './components/verxio-auth-gate'
 import { I18nProvider } from './i18n'
 import { installClipboardShim } from './lib/clipboard'
 import { queryClient } from './lib/query-client'
+import { installStaleChunkReload } from './lib/stale-chunk'
 import { ThemeProvider } from './themes/context'
 
 installClipboardShim()
+// After a web redeploy, open tabs may 404 old Vite lazy chunks — reload once.
+installStaleChunkReload()
 
 // Defer the chat/shell bundle until after auth so first paint (login) stays small.
 const App = lazy(() => import('./app'))

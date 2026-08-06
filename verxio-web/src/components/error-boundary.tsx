@@ -3,6 +3,7 @@ import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { ErrorState } from '@/components/ui/error-state'
 import { useI18n } from '@/i18n'
+import { isStaleChunkError, reloadOnceForStaleChunk } from '@/lib/stale-chunk'
 
 export interface ErrorBoundaryFallbackProps {
   error: Error
@@ -28,6 +29,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
+    // Stale Vite chunk after redeploy — hard-reload once instead of the
+    // "Something broke" screen (Retry alone keeps the old shell and fails again).
+    if (isStaleChunkError(error) && reloadOnceForStaleChunk(error)) {
+      return
+    }
+
     const tag = this.props.label ? `[error-boundary:${this.props.label}]` : '[error-boundary]'
     console.error(tag, error, info.componentStack)
     this.props.onError?.(error, info)
