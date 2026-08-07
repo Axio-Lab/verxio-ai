@@ -1383,6 +1383,10 @@ def _dashboard_path_is_lightweight(path: str) -> bool:
     # made BYOK connect look "green" (status) while the model selector stayed
     # on "no model" until a later lucky refetch. It uses the model-options
     # catalog path below instead (skip sync/start lock, longer upstream budget).
+    #
+    # api/providers/oauth and api/model/auxiliary are cheap Hermes reads, but
+    # awaiting start_runtime on them made Settings → Providers fall back to
+    # API-keys-only (ChatGPT/OAuth missing) and Model settings spin forever.
     return normalized in {
         "api/status",
         "api/config",
@@ -1392,6 +1396,8 @@ def _dashboard_path_is_lightweight(path: str) -> bool:
         "api/sessions",
         "api/models",
         "api/model/info",
+        "api/model/auxiliary",
+        "api/providers/oauth",
     }
 
 def _dashboard_path_is_model_options(path: str) -> bool:

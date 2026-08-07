@@ -1683,12 +1683,18 @@ def test_dashboard_settings_reads_use_lightweight_path():
         "api/config",
         "api/config/defaults",
         "api/config/schema",
+        "api/model/auxiliary",
+        "api/providers/oauth",
         "/api/env",
         "/api/config/defaults",
+        "/api/providers/oauth",
+        "/api/model/auxiliary",
     ):
         assert main._dashboard_path_is_lightweight(path), path
 
     assert not main._dashboard_path_is_lightweight("api/env/reload")
+    # OAuth start/disconnect still need the full proxy path (writes).
+    assert not main._dashboard_path_is_lightweight("api/providers/oauth/openai-codex/start")
 
 
 def test_dashboard_env_put_does_not_restart_runtime(client, monkeypatch):
