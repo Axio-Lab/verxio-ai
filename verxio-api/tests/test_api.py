@@ -1676,6 +1676,22 @@ def test_dashboard_model_options_uses_catalog_fast_path():
     assert not main._dashboard_path_is_lightweight("api/model/options")
 
 
+def test_dashboard_analytics_uses_medium_read_path():
+    """Command Center usage must skip start_runtime and get a longer budget."""
+    for path in (
+        "api/analytics/usage",
+        "api/analytics/usage?days=30",
+        "/api/analytics/usage",
+        "api/analytics/models",
+    ):
+        # Query strings are not part of the FastAPI path param, but keep the
+        # bare analytics prefixes covered either way.
+        bare = path.split("?", 1)[0]
+        assert main._dashboard_path_is_medium_read(bare), bare
+        assert main._dashboard_path_is_model_options(bare), bare
+        assert not main._dashboard_path_is_lightweight(bare), bare
+
+
 def test_dashboard_settings_reads_use_lightweight_path():
     """Settings hydrate GETs must skip start_runtime lock (env/config schema)."""
     for path in (

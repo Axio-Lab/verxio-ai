@@ -1401,15 +1401,22 @@ def _dashboard_path_is_lightweight(path: str) -> bool:
     }
 
 def _dashboard_path_is_model_options(path: str) -> bool:
-    """GET model/options must not await bridge sync + start_runtime.
+    """Backward-compatible alias for the medium-read catalog path."""
+    return _dashboard_path_is_medium_read(path)
 
-    Those two steps alone were 15–20s on a healthy runtime (shared docker lock),
-    so the web picker hit its 2.5s hosted budget and flashed "No models found"
-    even though Hermes answered the catalog in ~1s on the compose network.
-    Seed the hosted default in the background like model/info; give the
-    upstream catalog a medium timeout (not the 2s status poll budget).
+
+def _dashboard_path_is_medium_read(path: str) -> bool:
+    """Slow-but-safe GETs that must skip awaited bridge sync + start_runtime.
+
+    ``api/model/options`` builds a priced catalog; ``api/analytics/*`` aggregates
+    session token/cost history (often 10–30s on a large state.db). Both used to
+    sit behind the shared start_runtime lock, so Command Center Usage showed
+    "No usage" and the model picker flashed empty even when Hermes had data.
     """
-    return path.strip("/") == "api/model/options"
+    normalized = path.strip("/")
+    if normalized == "api/model/options":
+        return True
+    return normalized.startswith("api/analytics/")
 
 def _dashboard_path_is_toolset_fast_path(path: str) -> bool:
     """Toolset config/provider/env must not wait on start_runtime's lock.
@@ -1531,10 +1538,11 @@ logger = logging.getLogger(__name__)
 async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     user = require_user(request)
     lightweight = _dashboard_request_is_read(request.method) and _dashboard_path_is_lightweight(path)
-    model_options = _dashboard_request_is_read(request.method) and _dashboard_path_is_model_options(path)
+    medium_read = _dashboard_request_is_read(request.method) and _dashboard_path_is_medium_read(path)
+    model_options = medium_read  # alias used by older start-lock / sync branches
     toolset_fast = _dashboard_path_is_toolset_fast_path(path)
     session_fast = _dashboard_path_is_session_mutation_fast_path(path, request.method)
-    skip_start_lock = lightweight or model_options or toolset_fast or session_fast
+    skip_start_lock = lightweight or medium_read or toolset_fast or session_fast
 
     # Reads must stay fast for boot polling. Bridge sync belongs on writes and
     # the websocket background task — never on every status/config/sessions GET.
@@ -1608,7 +1616,12 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
         # (host Docker Desktop + compose). A 2s budget turned healthy runtimes
         # into cascading 503s and left the web client stuck on CONNECTING.
         timeout = httpx.Timeout(8.0)
-    elif model_options or session_fast:
+    elif medium_read:
+        # Analytics aggregates a large state.db (~20s observed); model/options
+        # is usually faster. Keep both under the browser abort, off the 300s
+        # write budget, and off the start_runtime lock.
+        timeout = httpx.Timeout(45.0)
+    elif session_fast:
         timeout = httpx.Timeout(20.0)
     else:
         timeout = httpx.Timeout(300.0)
