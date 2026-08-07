@@ -189,6 +189,8 @@ export function ProvidersSettings({ onInferenceApplied, onViewChange, requestGat
   const { t } = useI18n()
   const { confirmDialog, rowProps, vars } = useEnvCredentials()
   const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([])
+  const [oauthError, setOauthError] = useState('')
+  const [oauthLoading, setOauthLoading] = useState(true)
   const [activeProviderId, setActiveProviderId] = useRouteStringParam('paccount')
   const [openProvider, setOpenProvider] = useState<null | string>(null)
   // The onboarding overlay owns the OAuth flow. Watch its `manual` flag so we
@@ -197,11 +199,17 @@ export function ProvidersSettings({ onInferenceApplied, onViewChange, requestGat
   const onboardingActive = useStore($desktopOnboarding).manual
 
   const refreshOAuthProviders = async () => {
+    setOauthLoading(true)
+    setOauthError('')
+
     try {
       const { providers } = await listOAuthProviders()
       setOauthProviders(providers)
-    } catch {
-      // Ignore — the OAuth panel just won't render.
+    } catch (err) {
+      setOauthProviders([])
+      setOauthError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setOauthLoading(false)
     }
   }
 
@@ -213,14 +221,24 @@ export function ProvidersSettings({ onInferenceApplied, onViewChange, requestGat
     let cancelled = false
 
     void (async () => {
+      setOauthLoading(true)
+      setOauthError('')
+
       try {
         const { providers } = await listOAuthProviders()
 
         if (!cancelled) {
           setOauthProviders(providers)
         }
-      } catch {
-        // Ignore — the OAuth panel just won't render.
+      } catch (err) {
+        if (!cancelled) {
+          setOauthProviders([])
+          setOauthError(err instanceof Error ? err.message : String(err))
+        }
+      } finally {
+        if (!cancelled) {
+          setOauthLoading(false)
+        }
       }
     })()
 
@@ -238,10 +256,11 @@ export function ProvidersSettings({ onInferenceApplied, onViewChange, requestGat
 
   const hasOauth = oauthProviders.length > 0
   const activeProvider = oauthProviders.find(provider => provider.id === activeProviderId) ?? null
-  // With no OAuth providers there's nothing for the "Accounts" view to show.
-  const showApiKeys = view === 'keys' || !hasOauth
+  // Accounts stays on the connect UI even when OAuth failed/empty — never
+  // silently rewrite Accounts into the API-keys catalog.
+  const showApiKeys = view === 'keys'
 
-  if (!vars) {
+  if (!vars || (view === 'accounts' && oauthLoading && !hasOauth && !oauthError)) {
     return <LoadingState label={t.settings.providers.loading} />
   }
 
@@ -298,6 +317,14 @@ export function ProvidersSettings({ onInferenceApplied, onViewChange, requestGat
               onInferenceApplied={onInferenceApplied}
               onOpenProviderKeys={() => onViewChange('keys')}
             />
+            {oauthError ? (
+              <div className="mb-4 grid gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-3 text-(length:--conversation-caption-font-size)">
+                <p className="text-destructive">Could not load account providers. {oauthError}</p>
+                <Button onClick={() => void refreshOAuthProviders()} size="sm" type="button" variant="textStrong">
+                  Retry
+                </Button>
+              </div>
+            ) : null}
             <OAuthPicker
               onSelectProvider={provider => setActiveProviderId(provider.id)}
               onWantApiKey={() => onViewChange('keys')}

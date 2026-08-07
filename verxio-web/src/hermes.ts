@@ -390,7 +390,10 @@ export function revealEnvVar(key: string): Promise<{ key: string; value: string 
 export function listOAuthProviders(): Promise<OAuthProvidersResponse> {
   return window.hermesDesktop.api<OAuthProvidersResponse>({
     ...profileScoped(),
-    path: '/api/providers/oauth'
+    path: '/api/providers/oauth',
+    // Settings Accounts must fail fast if the proxy is wedged — a long hang
+    // used to look like "only API keys exist" after the request finally aborted.
+    timeoutMs: 15_000
   })
 }
 
@@ -845,7 +848,9 @@ export function setGlobalModel(
 export function getAuxiliaryModels(): Promise<AuxiliaryModelsResponse> {
   return window.hermesDesktop.api<AuxiliaryModelsResponse>({
     ...profileScoped(),
-    path: '/api/model/auxiliary'
+    path: '/api/model/auxiliary',
+    // Model settings should not spin for the full 90s dashboard budget.
+    timeoutMs: 15_000
   })
 }
 

@@ -83,15 +83,45 @@ export function ModelSettings() {
     setError('')
 
     try {
-      const [modelInfo, modelOptions, auxiliaryModels] = await Promise.all([
+      // Settle independently so a wedged /api/model/auxiliary no longer blanks
+      // the whole Model settings panel.
+      const [modelInfoResult, modelOptionsResult, auxiliaryResult] = await Promise.allSettled([
         getGlobalModelInfo(),
         getScopedModelOptions(getGlobalModelOptions),
         getAuxiliaryModels()
       ])
 
-      setMainModel({ model: modelInfo.model, provider: modelInfo.provider })
-      setProviders(modelOptions.providers || [])
-      setAuxiliary(auxiliaryModels)
+      const errors: string[] = []
+
+      if (modelInfoResult.status === 'fulfilled') {
+        setMainModel({ model: modelInfoResult.value.model, provider: modelInfoResult.value.provider })
+      } else {
+        errors.push(
+          modelInfoResult.reason instanceof Error ? modelInfoResult.reason.message : String(modelInfoResult.reason)
+        )
+      }
+
+      if (modelOptionsResult.status === 'fulfilled') {
+        setProviders(modelOptionsResult.value.providers || [])
+      } else {
+        errors.push(
+          modelOptionsResult.reason instanceof Error
+            ? modelOptionsResult.reason.message
+            : String(modelOptionsResult.reason)
+        )
+      }
+
+      if (auxiliaryResult.status === 'fulfilled') {
+        setAuxiliary(auxiliaryResult.value)
+      } else {
+        errors.push(
+          auxiliaryResult.reason instanceof Error ? auxiliaryResult.reason.message : String(auxiliaryResult.reason)
+        )
+      }
+
+      if (errors.length) {
+        setError(errors[0] ?? 'Failed to load model settings')
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
