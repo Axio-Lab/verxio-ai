@@ -801,7 +801,10 @@ export function getProfileSetupCommand(name: string): Promise<ProfileSetupComman
 export function getUsageAnalytics(days = 30): Promise<AnalyticsResponse> {
   return window.hermesDesktop.api<AnalyticsResponse>({
     ...profileScoped(),
-    path: `/api/analytics/usage?days=${Math.max(1, Math.floor(days))}`
+    path: `/api/analytics/usage?days=${Math.max(1, Math.floor(days))}`,
+    // Large state.db aggregates regularly take 15–30s; the old default left
+    // Command Center Usage stuck on "No usage" after a proxy/start_runtime hang.
+    timeoutMs: 60_000
   })
 }
 
