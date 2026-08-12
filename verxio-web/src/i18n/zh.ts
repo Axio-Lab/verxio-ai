@@ -1162,6 +1162,58 @@ export const zh: Translations = {
       messageYourselfHelp:
         'To chat with your agent, open WhatsApp → tap your profile → Message yourself. Do not use a regular chat with your phone number.'
     },
+    webhooks: {
+      title: '入站 Webhook',
+      description:
+        '给 GitHub、GitLab 或你自己的应用一个 Verxio URL。入站事件会运行你的智能体，并把回复发到你已经连接的消息渠道。',
+      enableHint: '用下方开关打开 Webhooks，然后创建一条路由。',
+      listenerOn: 'Webhooks 已开启',
+      listenerOff: 'Webhooks 已关闭',
+      enabledTitle: '已启用 Webhooks',
+      enabledMessage: 'Verxio 将接受此工作区的入站事件。',
+      enableFailed: '无法启用 Webhooks',
+      loadFailed: '无法加载 Webhook 路由',
+      routesTitle: '路由',
+      loadingRoutes: '正在加载路由…',
+      emptyRoutes: '还没有路由。创建一条即可获得公开的 Verxio URL。',
+      createTitle: '新建路由',
+      createHint: '为路由命名，可选地过滤事件，并选择回复投递到哪个已连接渠道。',
+      needConnectedChannel: '请先在 Messaging 中连接一个渠道并设置其主聊天，然后再创建 Webhook 路由。',
+      nameLabel: '路由名称',
+      namePlaceholder: 'github-pr',
+      nameRequired: '请输入路由名称。',
+      eventsLabel: '事件（可选）',
+      eventsPlaceholder: 'pull_request, push',
+      promptLabel: '提示词模板（可选）',
+      promptPlaceholder: 'Review this event:\n{__raw__}',
+      deliverLabel: '投递至',
+      deliverPlaceholder: '选择已连接的渠道',
+      deliverRequired: '请选择一个已连接且设置了主聊天的消息渠道。',
+      noConnection: '未连接',
+      noHomeChannel: '未设置主频道',
+      setHomeChannel: platform => `请先在 Messaging → ${platform} 设置主频道，再投递到这里。`,
+      connectFirst: platform => `未连接。请先在 Messaging 中设置 ${platform}。`,
+      createAction: '创建路由',
+      creating: '正在创建…',
+      createdTitle: '路由已创建',
+      createdMessage: name => `把这条 Verxio URL 粘贴到 ${name}。`,
+      createFailed: '无法创建 Webhook 路由',
+      secretOnceTitle: '请立即复制此密钥',
+      secretOnceHint: 'Verxio 只显示一次签名密钥。把它作为 GitHub、GitLab 或你的应用中的 webhook secret。',
+      urlLabel: 'URL',
+      secretLabel: '密钥',
+      copiedTitle: label => `已复制 ${label}`,
+      copiedMessage: '可以粘贴了。',
+      copyFailed: '无法复制',
+      copyUrl: '复制 URL',
+      deleteRoute: '删除路由',
+      deletedTitle: '路由已删除',
+      deletedMessage: name => `${name} 将不再接收事件。`,
+      deleteFailed: '无法删除路由',
+      updateFailed: '无法更新路由',
+      deliversTo: channel => (channel ? `投递到 ${channel}` : '未设置投递目标'),
+      publicUrlHint: '公开 Verxio URL'
+    },
     platformIntro: {
       telegram:
         '在 Telegram 中，与 @BotFather 对话，运行 /newbot，复制它给你的令牌。然后从 @userinfobot 获取你的数字用户 ID。',
@@ -1185,7 +1237,7 @@ export const zh: Translations = {
       qqbot: '在 QQ 开放平台 (q.qq.com) 注册一个应用，复制 App ID 和 Client Secret。',
       api_server:
         '把 Verxio 暴露为兼容 OpenAI 的 API。设置一个鉴权密钥，然后把 Open WebUI / LobeChat 等指向 host:port。',
-      webhook: '运行一个 HTTP 服务器，供其他工具 (GitHub、GitLab、自定义应用)POST。用 secret 验证签名。'
+      webhook: '给 GitHub、GitLab 或自定义应用一个 Verxio URL。用密钥验证签名，并把回复发到已连接的消息渠道。'
     }
   },
 
@@ -1369,6 +1421,7 @@ export const zh: Translations = {
     customHint: 'Cron 表达式，或类似"每小时""工作日上午 9 点"的短语。',
     optional: '可选',
     promptScheduleRequired: '提示词和排程为必填项。',
+    deliverRequired: '请选择“此桌面”，或已连接且设置了主频道的消息渠道。',
     saveChanges: '保存更改',
     createAction: '创建定时任务'
   },
