@@ -180,15 +180,12 @@ from app.runtime_manager import (
     index_artifacts,
     mark_runtime_healthy,
     normalize_gateway_status_content,
-    restart_runtime,
     runtime_container_env_matches,
     runtime_dashboard_base_url,
     runtime_dashboard_ws_candidates,
     runtime_health,
     runtime_live_dashboard_token,
     runtime_live_dashboard_token_async,
-    start_runtime,
-    stop_runtime,
     sync_runtime_workspace,
     wait_for_runtime_ready,
     warm_runtime_docker_network,
@@ -1229,9 +1226,10 @@ async def _sync_composio_bridge_for_user(user: dict, *, apply_live: bool = False
     accounts, bridge, runtime_env_changed = await asyncio.to_thread(_prepare)
 
     if allow_restart and runtime.status == "running" and runtime_env_changed:
-        # Env injection requires a new container. Rare — only when the platform
-        # key was added after the runtime was already started.
-        await restart_runtime(runtime, extra_env=runtime_env_for_user(str(user["id"])))
+        # Env injection requires a new runtime process (docker or k8s).
+        await get_runtime_manager().restart(
+            runtime, extra_env=runtime_env_for_user(str(user["id"]))
+        )
     elif apply_live and runtime.status in {"running", "starting"} and (bridge.changed or bridge.enabled):
         # Soft-reload whenever the bridge is live — not only when config bytes
         # changed. Prod sessions often already have the MCP URL on disk but a
@@ -1275,7 +1273,7 @@ async def _sync_inference_bridge_for_user(
     bridge, runtime_env, runtime_env_changed = await asyncio.to_thread(_prepare)
 
     if allow_restart and runtime.status == "running" and (runtime_env_changed or (refresh_running and bridge.changed)):
-        await restart_runtime(runtime, extra_env=runtime_env)
+        await get_runtime_manager().restart(runtime, extra_env=runtime_env)
 
     return bridge
 
