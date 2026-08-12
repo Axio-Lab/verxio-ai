@@ -61,6 +61,22 @@ bash scripts/scale/runtime_docker_test.sh
 
 ## Optional: Kubernetes
 
+### Local kind (dev)
+
+```bash
+bash deploy/k8s/setup-kind-local.sh
+# then in .env:
+# VERXIO_RUNTIME_MANAGER=k8s
+# VERXIO_K8S_ENABLED=true
+# VERXIO_K8S_NAMESPACE=verxio-runtimes
+docker compose -f docker-compose.verxio.yml build --build-arg INSTALL_SCALE=1 verxio-api
+docker compose -f docker-compose.verxio.yml up -d --force-recreate verxio-api
+```
+
+See `deploy/k8s/README.md`.
+
+### Cluster (prod)
+
 1. Install API with `--extra k8s` / `INSTALL_SCALE=1`
 2. `VERXIO_RUNTIME_MANAGER=k8s`
 3. `VERXIO_K8S_ENABLED=true`

@@ -16,14 +16,18 @@ RUN pip install --no-cache-dir uv
 ARG INSTALL_TURSO=
 ARG INSTALL_SCALE=
 COPY verxio-api/pyproject.toml verxio-api/uv.lock ./
+# Turso (libsql) may need a compiler on some platforms. Scale extras (redis/boto3/
+# kubernetes) ship wheels — install them without build-essential.
 RUN EXTRAS="" \
     && if [ -n "$INSTALL_TURSO" ]; then EXTRAS="$EXTRAS --extra turso"; fi \
     && if [ -n "$INSTALL_SCALE" ]; then EXTRAS="$EXTRAS --extra scale"; fi \
-    && if [ -n "$INSTALL_TURSO" ] || [ -n "$INSTALL_SCALE" ]; then \
+    && if [ -n "$INSTALL_TURSO" ]; then \
         apt-get update \
         && apt-get install -y --no-install-recommends build-essential cmake pkg-config \
         && rm -rf /var/lib/apt/lists/* \
         && uv sync --frozen --no-dev $EXTRAS; \
+    elif [ -n "$EXTRAS" ]; then \
+        uv sync --frozen --no-dev $EXTRAS; \
     else \
         uv sync --frozen --no-dev; \
     fi
