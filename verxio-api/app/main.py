@@ -70,6 +70,16 @@ from app.knowledge_bases import (
     list_documents as list_knowledge_documents,
     list_knowledge_bases,
 )
+from app.messaging_webhooks import (
+    MessagingWebhookCreate,
+    MessagingWebhookEnabledToggle,
+    create_webhook as create_messaging_webhook,
+    delete_webhook as delete_messaging_webhook,
+    enable_webhooks as enable_messaging_webhooks,
+    ingest_public_hook,
+    list_webhooks as list_messaging_webhooks,
+    set_webhook_enabled as set_messaging_webhook_enabled,
+)
 from app.slack_manifest import build_slack_manifest
 from app.models import (
     ArtifactListResponse,
@@ -1148,6 +1158,44 @@ async def ingest_workflow_webhook_route(trigger_id: str, request: Request) -> Wo
         raise HTTPException(status_code=400, detail="Workflow webhook payload must be an object.")
     run = await run_webhook_trigger(trigger_id, secret, payload)
     return WorkflowWebhookIngestResponse(run=run)
+
+
+@app.post("/api/hooks/{workspace_id}/{route_name}")
+async def ingest_messaging_hook_route(workspace_id: str, route_name: str, request: Request) -> Response:
+    upstream = await ingest_public_hook(workspace_id, route_name, request)
+    excluded = {"content-encoding", "content-length", "transfer-encoding", "connection"}
+    headers = {key: value for key, value in upstream.headers.items() if key.lower() not in excluded}
+    return Response(content=upstream.content, status_code=upstream.status_code, headers=headers)
+
+
+@app.get("/api/messaging/webhooks")
+async def list_messaging_webhooks_route(request: Request) -> dict[str, Any]:
+    return await list_messaging_webhooks(request, require_user(request))
+
+
+@app.post("/api/messaging/webhooks/enable")
+async def enable_messaging_webhooks_route(request: Request) -> dict[str, Any]:
+    return await enable_messaging_webhooks(require_user(request))
+
+
+@app.post("/api/messaging/webhooks")
+async def create_messaging_webhook_route(payload: MessagingWebhookCreate, request: Request) -> dict[str, Any]:
+    return await create_messaging_webhook(request, require_user(request), payload)
+
+
+@app.delete("/api/messaging/webhooks/{name}")
+async def delete_messaging_webhook_route(name: str, request: Request) -> dict[str, Any]:
+    return await delete_messaging_webhook(require_user(request), name)
+
+
+@app.put("/api/messaging/webhooks/{name}/enabled")
+async def set_messaging_webhook_enabled_route(
+    name: str,
+    payload: MessagingWebhookEnabledToggle,
+    request: Request,
+) -> dict[str, Any]:
+    return await set_messaging_webhook_enabled(require_user(request), name, payload.enabled)
+
 
 @app.get("/api/public/workflow-agents/{public_token}", response_model=WorkflowAgentPublicInfo)
 async def get_public_workflow_agent_route(public_token: str) -> WorkflowAgentPublicInfo:
