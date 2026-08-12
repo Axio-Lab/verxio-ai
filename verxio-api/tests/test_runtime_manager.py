@@ -39,6 +39,16 @@ def test_runtime_dashboard_base_url_prefers_configured_compose_network(monkeypat
     )
 
 
+def test_runtime_webhook_base_url_uses_compose_network(monkeypatch):
+    _reset_network_cache()
+    monkeypatch.setenv("VERXIO_RUNTIME_DOCKER_NETWORK", "verxio-ai_default")
+    monkeypatch.delenv("VERXIO_RUNTIME_MANAGER", raising=False)
+
+    assert runtime_manager.runtime_webhook_base_url(_runtime(), ensure_network=False) == (
+        "http://verxio-ws-1-agent-1:8644"
+    )
+
+
 def test_ensure_runtime_on_network_connects_once(monkeypatch):
     _reset_network_cache()
     monkeypatch.setenv("VERXIO_RUNTIME_DOCKER_NETWORK", "verxio-ai_default")

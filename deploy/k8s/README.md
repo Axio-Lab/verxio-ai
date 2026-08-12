@@ -40,6 +40,8 @@ Then `POST /api/runtime/wake` and:
 kubectl -n verxio-runtimes get pods
 ```
 
+Messaging webhooks (`POST /api/hooks/{workspace_id}/{route}`) hit **verxio-api**, which wakes the user runtime and forwards to the runtime webhook port on the cluster-internal Service (`8644`). Do not publish that port to the public internet.
+
 ## Local vs production
 
 | | Local (kind) | Production cluster |

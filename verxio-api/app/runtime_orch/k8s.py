@@ -55,12 +55,20 @@ class K8sRuntimeManager:
             return token
         return secrets.token_urlsafe(32)
 
+    def _port_digest(self, runtime: RuntimeInstance) -> int:
+        return sum(ord(c) for c in runtime.id) % 2000
+
     def _host_port_for(self, runtime: RuntimeInstance) -> int:
         """Stable hostPort in the same range as local-docker published ports."""
         start = int(os.getenv("VERXIO_DASHBOARD_PORT_START", "19119") or "19119")
-        # Stable offset from runtime id so wake/restart reuse the same node port.
-        digest = sum(ord(c) for c in runtime.id) % 2000
-        return start + digest
+        return start + self._port_digest(runtime)
+
+    def _webhook_host_port_for(self, runtime: RuntimeInstance) -> int:
+        start = int(os.getenv("VERXIO_WEBHOOK_PORT_START", "18644") or "18644")
+        return start + self._port_digest(runtime)
+
+    def _webhook_container_port(self) -> int:
+        return int(os.getenv("VERXIO_WEBHOOK_PORT", "8644") or "8644")
 
     def _runtime_host_paths(self, runtime: RuntimeInstance) -> tuple[str, str] | None:
         if not self.host_path_root:
@@ -100,9 +108,14 @@ class K8sRuntimeManager:
             env.append({"name": key, "value": value})
 
         name = self.pod_name(runtime)
-        port_spec: dict[str, Any] = {"containerPort": 9119, "name": "dashboard"}
+        dashboard_port: dict[str, Any] = {"containerPort": 9119, "name": "dashboard"}
+        webhook_port: dict[str, Any] = {
+            "containerPort": self._webhook_container_port(),
+            "name": "webhook",
+        }
         if self.connect_mode == "hostport" and host_port is not None:
-            port_spec["hostPort"] = int(host_port)
+            dashboard_port["hostPort"] = int(host_port)
+            webhook_port["hostPort"] = self._webhook_host_port_for(runtime)
 
         # Hermes only allowlists /api/status for unauthenticated probes (not /api/health).
         readiness = {
@@ -118,7 +131,7 @@ class K8sRuntimeManager:
             "image": self.image,
             "imagePullPolicy": os.getenv("VERXIO_K8S_IMAGE_PULL_POLICY", "IfNotPresent"),
             "args": ["gateway", "run"],
-            "ports": [port_spec],
+            "ports": [dashboard_port, webhook_port],
             "env": env,
             "readinessProbe": readiness,
             "resources": {
@@ -187,7 +200,14 @@ class K8sRuntimeManager:
                 "selector": {
                     "verxio.io/runtime-id": runtime.id,
                 },
-                "ports": [{"name": "dashboard", "port": 9119, "targetPort": 9119}],
+                "ports": [
+                    {"name": "dashboard", "port": 9119, "targetPort": 9119},
+                    {
+                        "name": "webhook",
+                        "port": self._webhook_container_port(),
+                        "targetPort": self._webhook_container_port(),
+                    },
+                ],
             },
         }
 
@@ -213,6 +233,35 @@ class K8sRuntimeManager:
                 "K8s runtime manager is disabled. Set VERXIO_K8S_ENABLED=true and configure cluster access."
             )
 
+    def _ensure_service(self, core: Any, name: str, service: dict[str, Any]) -> None:
+        from kubernetes.client.rest import ApiException
+
+        try:
+            existing = core.read_namespaced_service(name=name, namespace=self.namespace)
+        except ApiException as exc:
+            if exc.status != 404:
+                raise RuntimeManagerError(f"K8s read service failed: {exc.status}") from exc
+            try:
+                core.create_namespaced_service(namespace=self.namespace, body=service)
+            except ApiException as create_exc:
+                if create_exc.status != 409:
+                    raise RuntimeManagerError(
+                        f"K8s create service failed: {create_exc.status} {create_exc.reason}"
+                    ) from create_exc
+            return
+
+        port_names = {getattr(port, "name", "") for port in (existing.spec.ports or [])}
+        if "webhook" in port_names:
+            return
+        try:
+            core.patch_namespaced_service(
+                name=name,
+                namespace=self.namespace,
+                body={"spec": {"ports": service["spec"]["ports"]}},
+            )
+        except ApiException as exc:
+            raise RuntimeManagerError(f"K8s patch service failed: {exc.status}") from exc
+
     def _wait_pod_gone(self, core: Any, name: str, timeout: float = 60.0) -> None:
         from kubernetes.client.rest import ApiException
 
@@ -227,21 +276,33 @@ class K8sRuntimeManager:
             time.sleep(1.0)
         raise RuntimeManagerError(f"K8s pod {name} still exists after delete wait")
 
+    def _node_ip(self) -> str:
+        try:
+            return socket.gethostbyname(self.node_host)
+        except OSError:
+            return self.node_host
+
     def _dashboard_url(self, *, name: str, host_port: int | None) -> str:
         mode = self.connect_mode
         if mode == "hostport":
             if host_port is None:
                 raise RuntimeManagerError("hostPort connect mode requires a host_port")
-            host = self.node_host
-            try:
-                host = socket.gethostbyname(self.node_host)
-            except OSError:
-                pass
-            return f"http://{host}:{host_port}"
-        if mode == "podip":
-            # Filled after pod is scheduled; provisional Service DNS until then.
-            return f"http://{name}.{self.namespace}.svc.cluster.local:9119"
+            return f"http://{self._node_ip()}:{host_port}"
         return f"http://{name}.{self.namespace}.svc.cluster.local:9119"
+
+    def _webhook_url(self, runtime: RuntimeInstance, *, dashboard_url: str | None = None) -> str:
+        pod = self.pod_name(runtime)
+        port = self._webhook_container_port()
+        mode = self.connect_mode
+        if mode == "hostport":
+            return f"http://{self._node_ip()}:{self._webhook_host_port_for(runtime)}"
+        if mode == "podip":
+            from urllib.parse import urlparse
+
+            parsed_host = urlparse(dashboard_url or runtime.dashboard_url or "").hostname or ""
+            if parsed_host and "svc.cluster.local" not in parsed_host:
+                return f"http://{parsed_host}:{port}"
+        return f"http://{pod}.{self.namespace}.svc.cluster.local:{port}"
 
     async def start(
         self,
@@ -281,19 +342,7 @@ class K8sRuntimeManager:
                     self._wait_pod_gone(core, name)
                 elif phase in {"", "Pending", "Running"}:
                     # Empty phase = just created / not yet reported — never replace.
-                    try:
-                        core.read_namespaced_service(name=name, namespace=self.namespace)
-                    except ApiException as exc:
-                        if exc.status == 404:
-                            try:
-                                core.create_namespaced_service(namespace=self.namespace, body=service)
-                            except ApiException as create_exc:
-                                if create_exc.status != 409:
-                                    raise RuntimeManagerError(
-                                        f"K8s create service failed: {create_exc.status} {create_exc.reason}"
-                                    ) from create_exc
-                        else:
-                            raise RuntimeManagerError(f"K8s read service failed: {exc.status}") from exc
+                    self._ensure_service(core, name, service)
                     return "reused"
                 elif phase in {"Failed", "Succeeded", "Unknown"}:
                     try:
@@ -420,6 +469,9 @@ class K8sRuntimeManager:
             name=self.pod_name(runtime),
             host_port=self._host_port_for(runtime) if self.connect_mode == "hostport" else None,
         )
+
+    async def webhook_address(self, runtime: RuntimeInstance) -> str | None:
+        return self._webhook_url(runtime)
 
     async def health(self, runtime: RuntimeInstance) -> tuple[bool, str]:
         base = await self.address(runtime)

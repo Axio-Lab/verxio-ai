@@ -110,6 +110,7 @@ def test_factory_builds_backends():
 
 def test_k8s_manifest_render(monkeypatch):
     monkeypatch.setenv("VERXIO_K8S_HOST_PATH_ROOT", "/verxio-runtimes")
+    monkeypatch.setenv("VERXIO_K8S_CONNECT_MODE", "hostPort")
     mgr = K8sRuntimeManager(namespace="verxio-test")
     manifest = mgr.render_pod_manifest(
         _rt(status="stopped"),
@@ -126,6 +127,11 @@ def test_k8s_manifest_render(monkeypatch):
     assert env["VERXIO_RUNTIME_TOKEN"] == "tok_test"
     port = manifest["spec"]["containers"][0]["ports"][0]
     assert port["hostPort"] == 19199
+    assert port["name"] == "dashboard"
+    webhook = manifest["spec"]["containers"][0]["ports"][1]
+    assert webhook["name"] == "webhook"
+    assert webhook["containerPort"] == 8644
+    assert webhook["hostPort"] == mgr._webhook_host_port_for(_rt(status="stopped"))
     assert manifest["spec"]["restartPolicy"] == "Always"
     probe = manifest["spec"]["containers"][0]["readinessProbe"]["httpGet"]
     assert probe["path"] == "/api/status"
@@ -135,6 +141,24 @@ def test_k8s_manifest_render(monkeypatch):
     vols = {v["name"]: v["hostPath"]["path"] for v in manifest["spec"]["volumes"]}
     assert vols["hermes-home"].startswith("/verxio-runtimes/")
     assert vols["hermes-home"].endswith("/hermes-home")
+
+
+def test_k8s_service_includes_webhook_port(monkeypatch):
+    monkeypatch.setenv("VERXIO_K8S_CONNECT_MODE", "cluster")
+    mgr = K8sRuntimeManager(namespace="verxio-test")
+    service = mgr.render_service_manifest(_rt(status="stopped"))
+    ports = {p["name"]: p for p in service["spec"]["ports"]}
+    assert ports["dashboard"]["port"] == 9119
+    assert ports["webhook"]["port"] == 8644
+    assert ports["webhook"]["targetPort"] == 8644
+
+
+def test_k8s_webhook_address_uses_service_dns_in_cluster_mode(monkeypatch):
+    monkeypatch.setenv("VERXIO_K8S_CONNECT_MODE", "cluster")
+    monkeypatch.setenv("VERXIO_K8S_NAMESPACE", "verxio-test")
+    mgr = K8sRuntimeManager(namespace="verxio-test")
+    url = asyncio.run(mgr.webhook_address(_rt(status="running", container_name="verxio-ws-1-agent-1")))
+    assert url == "http://verxio-ws-1-agent-1.verxio-test.svc.cluster.local:8644"
 
 
 def test_wake_queue_dedupes():
