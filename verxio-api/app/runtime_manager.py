@@ -907,13 +907,27 @@ async def _start_runtime_locked(
         "--name",
         container_name,
         "--restart",
-        "unless-stopped",
+        os.getenv("VERXIO_RUNTIME_RESTART_POLICY", "no").strip() or "no",
         "-v",
         f"{_docker_mount_path(runtime.hermes_home_path)}:/opt/data",
         "-v",
         f"{_docker_mount_path(runtime.workspace_path)}:/workspace",
-        "-p",
-        f"{_runtime_publish_host()}:{port}:9119",
+    ]
+    publish_ports = os.getenv("VERXIO_RUNTIME_PUBLISH_PORTS", "true").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if publish_ports:
+        cmd.extend(
+            [
+                "-p",
+                f"{_runtime_publish_host()}:{port}:9119",
+            ]
+        )
+    cmd.extend(
+        [
         "-e",
         "HERMES_DASHBOARD=1",
         "-e",
@@ -943,7 +957,8 @@ async def _start_runtime_locked(
         f"HERMES_UID={os.getenv('VERXIO_RUNTIME_UID', os.getenv('HERMES_UID', '10000'))}",
         "-e",
         f"HERMES_GID={os.getenv('VERXIO_RUNTIME_GID', os.getenv('HERMES_GID', '10000'))}",
-    ]
+        ]
+    )
     # Cache/env only here — never sync-probe docker.sock on the event loop.
     network = _runtime_docker_network(allow_docker_probe=False)
     if not network:

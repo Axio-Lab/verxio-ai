@@ -101,6 +101,11 @@ class RuntimeInstance(BaseModel):
     last_started_at: str | None = None
     last_seen_at: str | None = None
     last_error: str | None = None
+    last_activity_at: str | None = None
+    idle_policy: str = "default"
+    cell_id: str = "cell_default"
+    manager: str | None = None
+    external_ref: str | None = None
 
 class RuntimeControlResponse(BaseModel):
     runtime: RuntimeInstance

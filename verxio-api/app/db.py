@@ -690,6 +690,18 @@ def _ensure_legacy_columns(conn: Any) -> None:
         if column not in workflow_trigger_columns:
             conn.execute(f"ALTER TABLE workflow_triggers ADD COLUMN {column} {definition}")
 
+    runtime_columns = _table_columns(conn, "runtime_instances")
+    runtime_additions = {
+        "last_activity_at": "TEXT",
+        "idle_policy": "TEXT NOT NULL DEFAULT 'default'",
+        "cell_id": "TEXT NOT NULL DEFAULT 'cell_default'",
+        "manager": "TEXT",
+        "external_ref": "TEXT",
+    }
+    for column, definition in runtime_additions.items():
+        if column not in runtime_columns:
+            conn.execute(f"ALTER TABLE runtime_instances ADD COLUMN {column} {definition}")
+
     conn.execute(
         """
         CREATE INDEX IF NOT EXISTS idx_workflow_triggers_schedule_due

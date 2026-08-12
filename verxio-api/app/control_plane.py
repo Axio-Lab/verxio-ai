@@ -332,6 +332,11 @@ def runtime_from_row(row: dict[str, Any]) -> RuntimeInstance:
         last_started_at=row.get("last_started_at"),
         last_seen_at=row.get("last_seen_at"),
         last_error=row.get("last_error"),
+        last_activity_at=row.get("last_activity_at"),
+        idle_policy=str(row.get("idle_policy") or "default"),
+        cell_id=str(row.get("cell_id") or "cell_default"),
+        manager=row.get("manager"),
+        external_ref=row.get("external_ref"),
     )
 
 
@@ -416,6 +421,8 @@ def ensure_personal_workspace(
 
 
 def ensure_runtime_instance(workspace: Workspace, agent: AgentProfile) -> RuntimeInstance:
+    from app.runtime_orch.cells import cell_for_tenant
+
     row = db.fetch_one(
         "SELECT * FROM runtime_instances WHERE workspace_id = ? AND agent_id = ?",
         (workspace.id, agent.id),
@@ -424,27 +431,33 @@ def ensure_runtime_instance(workspace: Workspace, agent: AgentProfile) -> Runtim
         created_at = now_iso()
         paths = runtime_paths(workspace.id, agent.id)
         runtime_id = new_id("rt")
+        manager = os.getenv("VERXIO_RUNTIME_MANAGER", "local-docker")
+        cell = cell_for_tenant(workspace.tenant_id)
         with db.transaction() as conn:
             conn.execute(
                 """
                 INSERT INTO runtime_instances (
                     id, tenant_id, workspace_id, agent_id, mode, status, image,
-                    hermes_home_path, workspace_path, artifact_path, created_at, updated_at
+                    hermes_home_path, workspace_path, artifact_path, created_at, updated_at,
+                    idle_policy, cell_id, manager
                 )
-                VALUES (?, ?, ?, ?, ?, 'stopped', ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, 'stopped', ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     runtime_id,
                     workspace.tenant_id,
                     workspace.id,
                     agent.id,
-                    os.getenv("VERXIO_RUNTIME_MANAGER", "local-docker"),
+                    manager,
                     os.getenv("VERXIO_HERMES_IMAGE", "nousresearch/hermes-agent:latest"),
                     paths["hermes_home_path"],
                     paths["workspace_path"],
                     paths["artifact_path"],
                     created_at,
                     created_at,
+                    os.getenv("VERXIO_RUNTIME_IDLE_POLICY", "default"),
+                    cell.id,
+                    manager,
                 ),
             )
         row = db.fetch_one("SELECT * FROM runtime_instances WHERE id = ?", (runtime_id,))
@@ -476,6 +489,11 @@ def save_runtime(runtime: RuntimeInstance, **patch: Any) -> RuntimeInstance:
         "last_started_at",
         "last_seen_at",
         "last_error",
+        "last_activity_at",
+        "idle_policy",
+        "cell_id",
+        "manager",
+        "external_ref",
     }
     fields = {key: value for key, value in patch.items() if key in allowed}
     fields["updated_at"] = now_iso()

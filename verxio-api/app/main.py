@@ -193,6 +193,10 @@ from app.runtime_manager import (
     wait_for_runtime_ready,
     warm_runtime_docker_network,
 )
+from app.runtime_orch.factory import get_runtime_manager
+from app.runtime_orch.idle import list_idle_policies, resolve_idle_policy
+from app.runtime_orch.lifecycle import drain_runtime, reap_idle_runtimes, touch_runtime_activity, wake_runtime
+from app.runtime_orch.states import RuntimeStatus
 from app.store import AUDIT_LOG, PROFILE, RUNS, WORKSPACE
 from app.transcription_catalog import list_transcription_catalog
 from app.workflow_agents import (
@@ -475,6 +479,8 @@ async def get_runtime(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
     runtime = get_runtime_for_user(user)
     connected, detail = await runtime_health(runtime)
+    if connected:
+        runtime = touch_runtime_activity(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
 
 @app.post("/api/runtime/start", response_model=RuntimeControlResponse)
@@ -482,14 +488,40 @@ async def start_runtime_route(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
     await _sync_composio_bridge_for_user(user)
     await _sync_inference_bridge_for_user(user, refresh_running=True)
-    runtime = await start_runtime(get_runtime_for_user(user), extra_env=runtime_env_for_user(str(user["id"])))
+    runtime = await wake_runtime(
+        get_runtime_for_user(user),
+        extra_env=runtime_env_for_user(str(user["id"])),
+        reason="api.start",
+    )
+    connected, detail = await runtime_health(runtime)
+    return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
+
+@app.post("/api/runtime/wake", response_model=RuntimeControlResponse)
+async def wake_runtime_route(request: Request) -> RuntimeControlResponse:
+    """Alias of start with explicit wake semantics for channels/cron."""
+    user = require_user(request)
+    await _sync_composio_bridge_for_user(user)
+    await _sync_inference_bridge_for_user(user, refresh_running=True)
+    runtime = await wake_runtime(
+        get_runtime_for_user(user),
+        extra_env=runtime_env_for_user(str(user["id"])),
+        reason="api.wake",
+    )
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
 
 @app.post("/api/runtime/stop", response_model=RuntimeControlResponse)
 async def stop_runtime_route(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
-    runtime = stop_runtime(get_runtime_for_user(user))
+    manager = get_runtime_manager()
+    runtime = await manager.stop(get_runtime_for_user(user))
+    connected, detail = await runtime_health(runtime)
+    return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
+
+@app.post("/api/runtime/drain", response_model=RuntimeControlResponse)
+async def drain_runtime_route(request: Request) -> RuntimeControlResponse:
+    user = require_user(request)
+    runtime = await drain_runtime(get_runtime_for_user(user))
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
 
@@ -498,9 +530,35 @@ async def restart_runtime_route(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
     await _sync_composio_bridge_for_user(user)
     await _sync_inference_bridge_for_user(user, refresh_running=True)
-    runtime = await restart_runtime(get_runtime_for_user(user), extra_env=runtime_env_for_user(str(user["id"])))
+    manager = get_runtime_manager()
+    runtime = await manager.restart(
+        get_runtime_for_user(user),
+        extra_env=runtime_env_for_user(str(user["id"])),
+    )
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
+
+@app.post("/api/runtime/idle/reap")
+async def reap_idle_runtimes_route(request: Request) -> dict[str, object]:
+    """Operator/cron endpoint: drain idle warm runtimes. Auth required."""
+    require_user(request)
+    drained = await reap_idle_runtimes()
+    return {"drained": drained, "count": len(drained)}
+
+@app.get("/api/runtime/idle/policies")
+async def idle_policies_route(request: Request) -> dict[str, object]:
+    require_user(request)
+    policies = [
+        {
+            "name": p.name,
+            "idle_ttl_seconds": p.idle_ttl_seconds,
+            "warm_hold_seconds": p.warm_hold_seconds,
+            "cold_start_slo_seconds": p.cold_start_slo_seconds,
+        }
+        for p in list_idle_policies()
+    ]
+    active = resolve_idle_policy()
+    return {"active": active.name, "policies": policies, "statuses": [s.value for s in RuntimeStatus]}
 
 @app.post("/api/runtime/workspace", response_model=RuntimeControlResponse)
 async def sync_runtime_workspace_route(
@@ -1516,10 +1574,11 @@ def _schedule_runtime_ensure(user: dict) -> None:
 
     async def _run() -> None:
         try:
-            runtime = await start_runtime(
+            runtime = await wake_runtime(
                 get_runtime_for_user(user),
                 extra_env=runtime_env_for_user(str(user["id"])),
                 wait_ready=False,
+                reason="background.ensure",
             )
             # Finish ready-wait in the background so WS can connect once Hermes is up.
             if runtime.status != "running":
@@ -1585,16 +1644,18 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
             ):
                 # Still try to bring the runtime up for a toolset write so the
                 # first-ever select after a cold boot isn't a hard 503.
-                runtime = await start_runtime(
+                runtime = await wake_runtime(
                     runtime,
                     extra_env=runtime_env_for_user(str(user["id"])),
                     wait_ready=False,
+                    reason="dashboard.toolset",
                 )
     else:
-        runtime = await start_runtime(
+        runtime = await wake_runtime(
             get_runtime_for_user(user),
             extra_env=runtime_env_for_user(str(user["id"])),
             wait_ready=False,
+            reason="dashboard.proxy",
         )
 
     base = runtime_dashboard_base_url(runtime, ensure_network=False)
