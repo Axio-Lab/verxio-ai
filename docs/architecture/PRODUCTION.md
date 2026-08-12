@@ -1,36 +1,61 @@
 # Production deploy — scale architecture
 
-## Current production path (Alibaba ECS + Docker)
+## Target: Kubernetes (separate local + prod clusters)
 
-This is the **supported production path today**.
+| | Local | Production |
+|--|--------|------------|
+| Cluster | kind (`verxio`) | ACK / EKS / GKE |
+| Manager | `VERXIO_RUNTIME_MANAGER=k8s` | same |
+| Connect | `hostPort` | `cluster` (API in-cluster) |
+| State | hostPath via kind mount | PVC + snapshots |
+| Image | `verxio-hermes-runtime:local` | private registry |
+
+Local setup: `bash deploy/k8s/setup-kind-local.sh` — see `deploy/k8s/README.md`.
+
+### Local `.env`
 
 ```bash
-# On the ECS host
-export DEPLOY_REF=verxio/architecture   # or merge to verxio/web / main first
-bash scripts/deploy-ecs.sh
+VERXIO_RUNTIME_MANAGER=k8s
+VERXIO_K8S_ENABLED=true
+VERXIO_K8S_NAMESPACE=verxio-runtimes
+VERXIO_K8S_CONNECT_MODE=hostPort
+VERXIO_K8S_NODE_HOST=verxio-control-plane
+VERXIO_K8S_HOST_PATH_ROOT=/verxio-runtimes
+VERXIO_HERMES_IMAGE=verxio-hermes-runtime:local
 ```
 
-Deploy enables:
-- `INSTALL_TURSO=1` + `INSTALL_SCALE=1` in the API image
-- Idle reaper background loop (`VERXIO_IDLE_REAPER_ENABLED=true`)
-- Wake/drain APIs + SQLite/Turso start leases (safe with uvicorn 2 workers)
-- Hermes restart policy `no` (scale-to-zero friendly)
-- Snapshots of `hermes-home` on drain (local under `.verxio/snapshots` by default)
+Compose API + kind pods **cannot** use pod IP / ClusterIP DNS from outside the CNI —
+`hostPort` bridges via the kind node. Hermes gets `HERMES_DASHBOARD_SESSION_TOKEN`
+injected automatically.
 
-### Required env (`.env` / compose)
+### Production cluster checklist
+
+1. Install API with `--extra k8s` / `INSTALL_SCALE=1`
+2. `VERXIO_RUNTIME_MANAGER=k8s`
+3. `VERXIO_K8S_ENABLED=true`
+4. `VERXIO_K8S_CONNECT_MODE=cluster` (Service DNS)
+5. Run API **in-cluster** (or otherwise on the pod network)
+6. In-cluster SA with create/delete Pod+Service in `VERXIO_K8S_NAMESPACE`
+7. Persist hermes-home via PVC / snapshot restore
+8. Private registry + `imagePullSecrets` (not `:local` images)
+
+## Interim: Alibaba ECS + local-docker
+
+Until the managed K8s cutover ships, ECS can keep using Docker:
+
+```bash
+export DEPLOY_REF=verxio/architecture
+bash scripts/deploy-ecs.sh
+```
 
 ```bash
 VERXIO_RUNTIME_MANAGER=local-docker
 VERXIO_RUNTIME_IDLE_ENABLED=true
-VERXIO_RUNTIME_IDLE_POLICY=default   # or free|pro|business
+VERXIO_RUNTIME_IDLE_POLICY=default
 VERXIO_IDLE_REAPER_ENABLED=true
 VERXIO_IDLE_REAPER_INTERVAL_SECONDS=60
 VERXIO_RUNTIME_RESTART_POLICY=no
 VERXIO_RUNTIME_DOCKER_NETWORK=verxio-ai_default
-# optional:
-# VERXIO_REDIS_URL=redis://...
-# VERXIO_ARTIFACT_STORE=s3
-# VERXIO_ARTIFACT_S3_BUCKET=...
 ```
 
 ### Smoke after deploy
@@ -48,61 +73,6 @@ curl -fsS http://127.0.0.1:8787/api/health
 ```bash
 bash scripts/scale/runtime_docker_test.sh
 ```
-
-## Optional: Fly runtime plane
-
-1. `fly apps create verxio-runtimes`
-2. Build/push Hermes image used as `VERXIO_FLY_HERMES_IMAGE`
-3. Set on control plane:
-   - `VERXIO_RUNTIME_MANAGER=fly`
-   - `VERXIO_FLY_API_TOKEN=...`
-   - `VERXIO_FLY_APP=verxio-runtimes`
-4. Configs under `deploy/fly/`
-
-## Optional: Kubernetes
-
-### Local kind (dev)
-
-```bash
-bash deploy/k8s/setup-kind-local.sh
-# then in .env:
-# VERXIO_RUNTIME_MANAGER=k8s
-# VERXIO_K8S_ENABLED=true
-# VERXIO_K8S_NAMESPACE=verxio-runtimes
-docker compose -f docker-compose.verxio.yml build --build-arg INSTALL_SCALE=1 verxio-api
-docker compose -f docker-compose.verxio.yml up -d --force-recreate verxio-api
-```
-
-See `deploy/k8s/README.md`.
-
-### Local kind notes
-
-Compose API + kind pods **cannot** use pod IP / ClusterIP DNS from outside the CNI.
-Use hostPort bridging:
-
-```bash
-VERXIO_K8S_CONNECT_MODE=hostPort
-VERXIO_K8S_NODE_HOST=verxio-control-plane
-```
-
-Hermes requires `HERMES_DASHBOARD_SESSION_TOKEN` on non-loopback binds — the K8s
-manager injects this automatically (same as local-docker).
-
-### Cluster (prod)
-
-**Production K8s requires the control-plane API in-cluster** (or otherwise on the
-pod network). Hybrid “API on ECS/VM + runtimes in K8s” is not supported without
-a dedicated network bridge.
-
-1. Install API with `--extra k8s` / `INSTALL_SCALE=1`
-2. `VERXIO_RUNTIME_MANAGER=k8s`
-3. `VERXIO_K8S_ENABLED=true`
-4. `VERXIO_K8S_CONNECT_MODE=cluster` (Service DNS)
-5. In-cluster SA with create/delete Pod+Service in `VERXIO_K8S_NAMESPACE`
-6. Persist hermes-home via PVC / snapshot restore (ephemeral pods lose `/opt/data` otherwise)
-7. Use a private registry + `imagePullSecrets` (not `:local` images)
-
-Until those are met, keep ECS on `VERXIO_RUNTIME_MANAGER=local-docker`.
 
 ## Rollback
 

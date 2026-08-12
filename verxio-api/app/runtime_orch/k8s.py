@@ -13,7 +13,7 @@ from typing import Any
 import httpx
 
 from app import db
-from app.control_plane import now_iso, save_runtime
+from app.control_plane import now_iso, safe_path_part, save_runtime
 from app.models import RuntimeInstance
 from app.runtime_orch.manager import RuntimeManagerError
 from app.runtime_orch.states import RuntimeStatus, assert_transition
@@ -39,6 +39,9 @@ class K8sRuntimeManager:
         # podIP: direct pod IP (only when CNI routes to the API)
         self.connect_mode = (os.getenv("VERXIO_K8S_CONNECT_MODE") or "hostPort").strip().lower()
         self.node_host = (os.getenv("VERXIO_K8S_NODE_HOST") or "verxio-control-plane").strip()
+        # Kind: hostPath root inside the kind node (see deploy/k8s/setup-kind-local.sh extraMounts).
+        # Prod: leave empty and use PVC / snapshot restore instead.
+        self.host_path_root = (os.getenv("VERXIO_K8S_HOST_PATH_ROOT") or "").strip().rstrip("/")
         self._core = None
 
     def pod_name(self, runtime: RuntimeInstance) -> str:
@@ -58,6 +61,12 @@ class K8sRuntimeManager:
         # Stable offset from runtime id so wake/restart reuse the same node port.
         digest = sum(ord(c) for c in runtime.id) % 2000
         return start + digest
+
+    def _runtime_host_paths(self, runtime: RuntimeInstance) -> tuple[str, str] | None:
+        if not self.host_path_root:
+            return None
+        base = f"{self.host_path_root}/{safe_path_part(runtime.workspace_id)}/{safe_path_part(runtime.agent_id)}"
+        return f"{base}/hermes-home", f"{base}/workspace"
 
     def render_pod_manifest(
         self,
@@ -104,6 +113,47 @@ class K8sRuntimeManager:
             "failureThreshold": 36,
         }
 
+        container: dict[str, Any] = {
+            "name": "hermes",
+            "image": self.image,
+            "imagePullPolicy": os.getenv("VERXIO_K8S_IMAGE_PULL_POLICY", "IfNotPresent"),
+            "args": ["gateway", "run"],
+            "ports": [port_spec],
+            "env": env,
+            "readinessProbe": readiness,
+            "resources": {
+                "requests": {
+                    "cpu": os.getenv("VERXIO_K8S_CPU_REQUEST", "250m"),
+                    "memory": os.getenv("VERXIO_K8S_MEMORY_REQUEST", "1Gi"),
+                },
+                "limits": {
+                    "cpu": os.getenv("VERXIO_K8S_CPU_LIMIT", "2"),
+                    "memory": os.getenv("VERXIO_K8S_MEMORY_LIMIT", "4Gi"),
+                },
+            },
+        }
+
+        volumes: list[dict[str, Any]] = []
+        host_paths = self._runtime_host_paths(runtime)
+        if host_paths:
+            hermes_host, workspace_host = host_paths
+            container["volumeMounts"] = [
+                {"name": "hermes-home", "mountPath": "/opt/data"},
+                {"name": "workspace", "mountPath": "/workspace"},
+            ]
+            volumes = [
+                {"name": "hermes-home", "hostPath": {"path": hermes_host, "type": "DirectoryOrCreate"}},
+                {"name": "workspace", "hostPath": {"path": workspace_host, "type": "DirectoryOrCreate"}},
+            ]
+
+        spec: dict[str, Any] = {
+            # Restart if dashboard exits during boot; Never caused Failed pods + 409 races.
+            "restartPolicy": "Always",
+            "containers": [container],
+        }
+        if volumes:
+            spec["volumes"] = volumes
+
         return {
             "apiVersion": "v1",
             "kind": "Pod",
@@ -117,31 +167,7 @@ class K8sRuntimeManager:
                     "verxio.io/agent-id": runtime.agent_id,
                 },
             },
-            "spec": {
-                # Restart if dashboard exits during boot; Never caused Failed pods + 409 races.
-                "restartPolicy": "Always",
-                "containers": [
-                    {
-                        "name": "hermes",
-                        "image": self.image,
-                        "imagePullPolicy": os.getenv("VERXIO_K8S_IMAGE_PULL_POLICY", "IfNotPresent"),
-                        "args": ["gateway", "run"],
-                        "ports": [port_spec],
-                        "env": env,
-                        "readinessProbe": readiness,
-                        "resources": {
-                            "requests": {
-                                "cpu": os.getenv("VERXIO_K8S_CPU_REQUEST", "250m"),
-                                "memory": os.getenv("VERXIO_K8S_MEMORY_REQUEST", "1Gi"),
-                            },
-                            "limits": {
-                                "cpu": os.getenv("VERXIO_K8S_CPU_LIMIT", "2"),
-                                "memory": os.getenv("VERXIO_K8S_MEMORY_LIMIT", "4Gi"),
-                            },
-                        },
-                    }
-                ],
-            },
+            "spec": spec,
         }
 
     def render_service_manifest(self, runtime: RuntimeInstance) -> dict[str, Any]:

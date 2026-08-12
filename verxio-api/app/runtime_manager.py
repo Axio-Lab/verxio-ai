@@ -694,7 +694,7 @@ def runtime_dashboard_base_url(runtime: RuntimeInstance, *, ensure_network: bool
     ``ensure_network`` is for start/WS paths only — never on status polling.
     """
     manager = (runtime.manager or os.getenv("VERXIO_RUNTIME_MANAGER", "local-docker") or "local-docker").strip().lower()
-    if manager in {"k8s", "fly"}:
+    if manager in {"k8s", "kubernetes"}:
         return runtime.dashboard_url
 
     if ensure_network:
@@ -716,7 +716,7 @@ def runtime_dashboard_ws_candidates(runtime: RuntimeInstance) -> list[str]:
     right when the browser opened the gateway socket.
     """
     manager = (runtime.manager or os.getenv("VERXIO_RUNTIME_MANAGER", "local-docker") or "local-docker").strip().lower()
-    if manager in {"k8s", "fly"}:
+    if manager in {"k8s", "kubernetes"}:
         return [runtime.dashboard_url] if runtime.dashboard_url else []
 
     candidates: list[str] = []

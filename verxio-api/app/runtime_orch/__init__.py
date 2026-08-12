@@ -1,12 +1,8 @@
 """Pluggable runtime orchestration for Verxio scale architecture.
 
-Phases:
-  1. Lifecycle state machine + idle/wake
-  2. RuntimeManager protocol + LocalDocker
-  3. Redis leases + artifact object store
-  4. FlyRuntimeManager
-  5. Plan idle policies + wake queue
-  6. K8sRuntimeManager stub
+Backends:
+  - LocalDockerRuntimeManager (legacy / ECS fallback)
+  - K8sRuntimeManager (local kind + production cluster)
 """
 
 from app.runtime_orch.factory import get_runtime_manager

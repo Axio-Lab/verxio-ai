@@ -1,14 +1,15 @@
 # Verxio scale architecture
 
-**Production status:** ECS + `local-docker` path is deployable end-to-end.  
+**Target runtime plane:** Kubernetes (kind locally, managed cluster in production).  
+`local-docker` remains a fallback for ECS until the K8s cutover is complete.  
 See [PRODUCTION.md](./PRODUCTION.md).
 
 ## Stack
 
-| Layer | Production default | Optional |
-|-------|--------------------|----------|
-| Control plane | Docker Compose on ECS | Fly (`deploy/fly/verxio-api.fly.toml`) |
-| Runtime backend | `local-docker` | `fly`, `k8s` |
+| Layer | Target | Fallback |
+|-------|--------|----------|
+| Control plane | Compose (local) / in-cluster (prod) | ECS Compose |
+| Runtime backend | `k8s` | `local-docker` |
 | Leases | SQLite/Turso table (multi-worker safe) | Redis |
 | Snapshots | Local `.verxio/snapshots` | S3/R2 |
 | Idle | Background reaper in API lifespan | — |
@@ -19,7 +20,7 @@ See [PRODUCTION.md](./PRODUCTION.md).
 
 - Lifecycle wake/drain + checkpoint restore
 - Background idle reaper + wake queue worker
-- Managers: LocalDocker, Fly (Machines API), K8s (live apply when enabled)
+- Managers: K8s (primary), LocalDocker (fallback)
 - Cells, idle policies, artifact store
 
 ## API

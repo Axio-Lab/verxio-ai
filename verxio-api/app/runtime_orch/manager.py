@@ -1,4 +1,4 @@
-"""RuntimeManager protocol — backends: local-docker, fly, k8s."""
+"""RuntimeManager protocol — backends: local-docker, k8s."""
 
 from __future__ import annotations
 

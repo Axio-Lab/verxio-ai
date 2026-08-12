@@ -100,13 +100,16 @@ def test_cell_assignment_single_and_multi(monkeypatch):
 def test_factory_builds_backends():
     reset_runtime_manager_for_tests()
     assert build_runtime_manager("local-docker").name == "local-docker"
-    assert build_runtime_manager("fly").name == "fly"
     assert build_runtime_manager("k8s").name == "k8s"
+    assert build_runtime_manager("kubernetes").name == "k8s"
+    with pytest.raises(ValueError):
+        build_runtime_manager("fly")
     with pytest.raises(ValueError):
         build_runtime_manager("nope")
 
 
-def test_k8s_manifest_render():
+def test_k8s_manifest_render(monkeypatch):
+    monkeypatch.setenv("VERXIO_K8S_HOST_PATH_ROOT", "/verxio-runtimes")
     mgr = K8sRuntimeManager(namespace="verxio-test")
     manifest = mgr.render_pod_manifest(
         _rt(status="stopped"),
@@ -126,6 +129,12 @@ def test_k8s_manifest_render():
     assert manifest["spec"]["restartPolicy"] == "Always"
     probe = manifest["spec"]["containers"][0]["readinessProbe"]["httpGet"]
     assert probe["path"] == "/api/status"
+    mounts = {m["name"]: m["mountPath"] for m in manifest["spec"]["containers"][0]["volumeMounts"]}
+    assert mounts["hermes-home"] == "/opt/data"
+    assert mounts["workspace"] == "/workspace"
+    vols = {v["name"]: v["hostPath"]["path"] for v in manifest["spec"]["volumes"]}
+    assert vols["hermes-home"].startswith("/verxio-runtimes/")
+    assert vols["hermes-home"].endswith("/hermes-home")
 
 
 def test_wake_queue_dedupes():
