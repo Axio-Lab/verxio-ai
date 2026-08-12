@@ -15,6 +15,7 @@ import type {
   CronJobUpdates,
   ElevenLabsVoicesResponse,
   EnvVarInfo,
+  FishAudioVoicesResponse,
   HermesConfig,
   HermesConfigRecord,
   LogsResponse,
@@ -56,7 +57,10 @@ import type {
   WhatsAppPairingStatusResponse
 } from '@/types/hermes'
 
-const DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS = 30_000
+// Match desktop shared gateway default. Cold agent init + busy gateway can
+// exceed 30s; a short timeout surfaces as "request timed out: prompt.submit"
+// even when the turn would eventually stream.
+const DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS = 120_000
 
 export type {
   ActionResponse,
@@ -79,6 +83,11 @@ export type {
   ElevenLabsVoice,
   ElevenLabsVoicesResponse,
   EnvVarInfo,
+  FishAudioAttachmentUploadResponse,
+  FishAudioConfirmationData,
+  FishAudioVoice,
+  FishAudioVoiceAction,
+  FishAudioVoicesResponse,
   GatewayReadyPayload,
   HermesConfig,
   HermesConfigRecord,
@@ -229,7 +238,10 @@ export function deleteSession(id: string, profile?: string | null): Promise<{ ok
   return window.hermesDesktop.api<{ ok: boolean }>({
     ...(profile ? { profile } : {}),
     path: `/api/sessions/${encodeURIComponent(id)}`,
-    method: 'DELETE'
+    method: 'DELETE',
+    // Cheap DB write on Hermes, but the Verxio proxy can queue behind runtime
+    // ensure work — keep well under the old 90s cold-start budget.
+    timeoutMs: 60_000
   })
 }
 
@@ -378,7 +390,10 @@ export function revealEnvVar(key: string): Promise<{ key: string; value: string 
 export function listOAuthProviders(): Promise<OAuthProvidersResponse> {
   return window.hermesDesktop.api<OAuthProvidersResponse>({
     ...profileScoped(),
-    path: '/api/providers/oauth'
+    path: '/api/providers/oauth',
+    // Settings Accounts must fail fast if the proxy is wedged — a long hang
+    // used to look like "only API keys exist" after the request finally aborted.
+    timeoutMs: 15_000
   })
 }
 
@@ -476,6 +491,15 @@ export function updateSkillContent(name: string, content: string, profile?: stri
     path: '/api/skills/content',
     method: 'PUT',
     body: { content, name, profile: profile || undefined }
+  })
+}
+
+export function deleteSkill(name: string, profile?: string | null): Promise<{ success: boolean; message?: string }> {
+  return window.hermesDesktop.api<{ success: boolean; message?: string }>({
+    ...(profile ? { profile } : profileScoped()),
+    path: '/api/skills',
+    method: 'DELETE',
+    body: { name, profile: profile || undefined }
   })
 }
 
@@ -777,7 +801,10 @@ export function getProfileSetupCommand(name: string): Promise<ProfileSetupComman
 export function getUsageAnalytics(days = 30): Promise<AnalyticsResponse> {
   return window.hermesDesktop.api<AnalyticsResponse>({
     ...profileScoped(),
-    path: `/api/analytics/usage?days=${Math.max(1, Math.floor(days))}`
+    path: `/api/analytics/usage?days=${Math.max(1, Math.floor(days))}`,
+    // Large state.db aggregates regularly take 15–30s; the old default left
+    // Command Center Usage stuck on "No usage" after a proxy/start_runtime hang.
+    timeoutMs: 60_000
   })
 }
 
@@ -824,7 +851,9 @@ export function setGlobalModel(
 export function getAuxiliaryModels(): Promise<AuxiliaryModelsResponse> {
   return window.hermesDesktop.api<AuxiliaryModelsResponse>({
     ...profileScoped(),
-    path: '/api/model/auxiliary'
+    path: '/api/model/auxiliary',
+    // Model settings should not spin for the full 90s dashboard budget.
+    timeoutMs: 15_000
   })
 }
 
@@ -951,5 +980,11 @@ export function speakText(text: string): Promise<AudioSpeakResponse> {
 export function getElevenLabsVoices(): Promise<ElevenLabsVoicesResponse> {
   return window.hermesDesktop.api<ElevenLabsVoicesResponse>({
     path: '/api/audio/elevenlabs/voices'
+  })
+}
+
+export function getFishAudioVoices(): Promise<FishAudioVoicesResponse> {
+  return window.hermesDesktop.api<FishAudioVoicesResponse>({
+    path: '/api/audio/fishaudio/voices'
   })
 }

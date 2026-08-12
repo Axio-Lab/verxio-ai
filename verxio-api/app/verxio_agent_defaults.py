@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -53,8 +55,14 @@ Workspace:
 - When you mention a generated file to the user, give its `/workspace/artifacts/...` path so Verxio can index and display it.
 - On WhatsApp, Telegram, Discord, Slack, or any other messaging channel: after creating a report or document under `/workspace/artifacts`, include a bare line `MEDIA:/workspace/artifacts/<filename>` in your reply so the platform attaches the file. Do not put that MEDIA line only inside backticks. Messaging users cannot open the Verxio app path — the attachment is how they download the report.
 
+Image generation cost:
+- Every successful `image_generate` call is billed by the image provider. Do not regenerate to make a grayscale, phone preview, crop, resize, watermark, or near-identical variant.
+- Prefer one paid generation (or one paid edit via `image_url`), then use local tools (Pillow/terminal) for previews and derivatives. Overwrite a single stable `*-FINAL.png` instead of keeping draft copies.
+- Do not call `image_generate` again unless the user asks for a real redesign or the previous image is clearly wrong.
+
 Notepad:
 - Use the `notepad` tool for the user's Verxio Notepad (list, read, create, update, share public summary URL, summarize).
+- The public share URL shows the note's `summary` field. When publishing a playbook, transcript digest, or shareable document, put that full packaged markdown in `summary` (you may also mirror it in `content`). Do not leave `summary` empty if the user needs a shareable URL.
 - Do not invent workspace `.md` files or phone Notes when they ask about notepad contents.
 
 Integrations:
@@ -98,8 +106,14 @@ Workspace and artifacts:
 - When you mention a generated file to the user, give its `/workspace/artifacts/...` path so Verxio can index and display it.
 - On WhatsApp, Telegram, Discord, Slack, or any other messaging channel: after creating a report or document under `/workspace/artifacts`, include a bare line `MEDIA:/workspace/artifacts/<filename>` in your reply so the platform attaches the file. Do not put that MEDIA line only inside backticks. Messaging users cannot open the Verxio app path — the attachment is how they download the report.
 
+Image generation cost:
+- Every successful `image_generate` call is billed by the image provider. Do not regenerate to make a grayscale, phone preview, crop, resize, watermark, or near-identical variant.
+- Prefer one paid generation (or one paid edit via `image_url`), then use local tools (Pillow/terminal) for previews and derivatives. Overwrite a single stable `*-FINAL.png` instead of keeping draft copies.
+- Do not call `image_generate` again unless the user asks for a real redesign or the previous image is clearly wrong.
+
 Notepad:
 - When the user asks about notes, their notepad, meeting notes, or a public summary link, use the `notepad` tool (list/get/create/update/share/summarize).
+- The public share URL renders `summary` only. For playbooks, digests, and other shareable docs, put the full packaged markdown in `summary` before calling `share`. Leaving `summary` empty produces a blank preview.
 - Do not invent local `.md` files or phone Notes as a substitute for Verxio Notepad.
 - After `share`, give the user the returned public URL so they can open the summary in a browser.
 
@@ -128,25 +142,43 @@ def _strip_managed_verxio_prompt(prompt: str) -> str:
     return _join_prompt_parts(prompt[:start], prompt[next_managed_start:])
 
 
+def _mark_config_unreadable(config_path: Path) -> dict[str, Any]:
+    # Keep a backup for forensics, but do NOT treat this as an empty config
+    # that is safe to rewrite. A later write of only agent/whatsapp defaults
+    # would wipe messaging platforms.*.connections, image_gen/video_gen pins,
+    # and other user state.
+    backup = config_path.with_name(f"{config_path.name}.bak-{int(time.time())}")
+    try:
+        if config_path.exists() and not backup.exists():
+            config_path.replace(backup)
+    except OSError:
+        pass
+    return {"__verxio_config_unreadable__": True}
+
+
 def _load_config(config_path: Path) -> dict[str, Any]:
     if not config_path.exists():
         return {}
 
     try:
-        loaded = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    except yaml.YAMLError:
-        # Keep a backup for forensics, but do NOT treat this as an empty config
-        # that is safe to rewrite. A later write of only agent/whatsapp defaults
-        # would wipe messaging platforms.*.connections and other user state.
-        backup = config_path.with_name(f"{config_path.name}.bak-{int(time.time())}")
-        try:
-            if not backup.exists():
-                config_path.replace(backup)
-        except OSError:
-            pass
+        raw = config_path.read_text(encoding="utf-8")
+    except OSError:
         return {"__verxio_config_unreadable__": True}
 
-    return loaded if isinstance(loaded, dict) else {}
+    # Empty/truncated mid-write files parse as None/{}. Rewriting agent+whatsapp
+    # defaults on top of that is what wiped toolset pins and platform connections.
+    if not raw.strip():
+        return _mark_config_unreadable(config_path) if config_path.exists() else {}
+
+    try:
+        loaded = yaml.safe_load(raw)
+    except yaml.YAMLError:
+        return _mark_config_unreadable(config_path)
+
+    if not isinstance(loaded, dict):
+        return _mark_config_unreadable(config_path)
+
+    return loaded
 
 
 def _dump_config(config: dict[str, Any]) -> str:
@@ -157,6 +189,24 @@ def _dump_config(config: dict[str, Any]) -> str:
     SafeDumper = yaml.SafeDumper
     SafeDumper.add_representer(str, _represent_str)
     return yaml.dump(config, Dumper=SafeDumper, sort_keys=False, allow_unicode=True)
+
+
+def _atomic_write_text(path: Path, body: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(body)
+            handle.flush()
+            os.fsync(handle.fileno())
+        tmp_path.replace(path)
+    except Exception:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
 
 
 def _whatsapp_session_paired(hermes_home: Path) -> bool:
@@ -195,14 +245,27 @@ def ensure_verxio_agent_defaults(hermes_home: Path) -> None:
                 "Do not put that MEDIA line only inside backticks. Messaging users cannot open the Verxio "
                 "app path — the attachment is how they download the report.",
             )
+        if "Image generation cost:" not in current:
+            current = _join_prompt_parts(
+                current,
+                "Image generation cost:\n"
+                "- Every successful `image_generate` call is billed by the image provider. Do not "
+                "regenerate to make a grayscale, phone preview, crop, resize, watermark, or "
+                "near-identical variant.\n"
+                "- Prefer one paid generation (or one paid edit via `image_url`), then use local "
+                "tools (Pillow/terminal) for previews and derivatives. Overwrite a single stable "
+                "`*-FINAL.png` instead of keeping draft copies.\n"
+                "- Do not call `image_generate` again unless the user asks for a real redesign or "
+                "the previous image is clearly wrong.",
+            )
         if current != original:
             soul_path.write_text(current, encoding="utf-8")
 
     config_path = hermes_home / "config.yaml"
     config = _load_config(config_path)
     if config.get("__verxio_config_unreadable__"):
-        # Corrupt YAML was moved aside; refuse to clobber messaging / model state
-        # with a slim agent+whatsapp stub. Operator can restore from the .bak-*.
+        # Corrupt/empty YAML was moved aside; refuse to clobber messaging / model
+        # / toolset state with a slim agent+whatsapp stub. Restore from .bak-*.
         return
 
     agent = config.get("agent")
@@ -213,7 +276,6 @@ def ensure_verxio_agent_defaults(hermes_home: Path) -> None:
         _strip_managed_verxio_prompt(existing_prompt),
         VERXIO_SYSTEM_PROMPT,
     )
-    config["agent"] = agent
 
     whatsapp = config.get("whatsapp")
     if not isinstance(whatsapp, dict):
@@ -224,6 +286,15 @@ def ensure_verxio_agent_defaults(hermes_home: Path) -> None:
             whatsapp.pop("enabled", None)
     else:
         whatsapp["enabled"] = False
-    config["whatsapp"] = whatsapp
 
-    config_path.write_text(_dump_config(config), encoding="utf-8")
+    # Re-read immediately before write. A concurrent truncate/partial write used
+    # to make the first load look empty; writing only agent+whatsapp then wiped
+    # image_gen/video_gen pins and platforms.*.connections.
+    disk = _load_config(config_path)
+    if disk.get("__verxio_config_unreadable__"):
+        return
+    merged = dict(disk)
+    merged["agent"] = agent
+    merged["whatsapp"] = whatsapp
+
+    _atomic_write_text(config_path, _dump_config(merged))

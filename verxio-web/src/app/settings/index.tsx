@@ -1,5 +1,5 @@
 import { IconDownload, IconRefresh, IconUpload } from '@tabler/icons-react'
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -7,8 +7,7 @@ import { Tip } from '@/components/ui/tooltip'
 import { getHermesConfigDefaults, getHermesConfigRecord, saveHermesConfig } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
-import { Archive, Bell, Globe, Info, KeyRound, Mic, RefreshCw, Settings2, Sparkles, Wrench, Zap } from '@/lib/icons'
-import type { VerxioInferenceMode } from '@/lib/verxio-api'
+import { Archive, Bell, Info, KeyRound, Mic, Settings2, Sparkles, Wrench, Zap } from '@/lib/icons'
 import { notifyError } from '@/store/notifications'
 
 import { useRouteEnumParam } from '../hooks/use-route-enum-param'
@@ -16,24 +15,25 @@ import { OverlayIconButton } from '../overlays/overlay-chrome'
 import { OverlayMain, OverlayNavItem, OverlaySidebar, OverlaySplitLayout } from '../overlays/overlay-split-layout'
 import { OverlayView } from '../overlays/overlay-view'
 
-import { AboutSettings } from './about-settings'
 import { AppearanceSettings } from './appearance-settings'
-import { ConfigSettings } from './config-settings'
 import { SECTIONS } from './constants'
-import { GatewaySettings } from './gateway-settings'
-import { KEYS_VIEWS, KeysSettings, type KeysView } from './keys-settings'
-import { McpSettings } from './mcp-settings'
-import { NotificationsSettings } from './notifications-settings'
-import { PROVIDER_VIEWS, ProvidersSettings, type ProviderView } from './providers-settings'
-import { RuntimeSettings } from './runtime-settings'
-import { SessionsSettings } from './sessions-settings'
+import { KEYS_VIEWS, type KeysView, PROVIDER_VIEWS, type ProviderView } from './nav-views'
+import { LoadingState } from './primitives'
 import type { SettingsPageProps, SettingsView as SettingsViewId } from './types'
+
+const AboutSettings = lazy(async () => ({ default: (await import('./about-settings')).AboutSettings }))
+const ConfigSettings = lazy(async () => ({ default: (await import('./config-settings')).ConfigSettings }))
+const KeysSettings = lazy(async () => ({ default: (await import('./keys-settings')).KeysSettings }))
+const McpSettings = lazy(async () => ({ default: (await import('./mcp-settings')).McpSettings }))
+const NotificationsSettings = lazy(async () => ({
+  default: (await import('./notifications-settings')).NotificationsSettings
+}))
+const ProvidersSettings = lazy(async () => ({ default: (await import('./providers-settings')).ProvidersSettings }))
+const SessionsSettings = lazy(async () => ({ default: (await import('./sessions-settings')).SessionsSettings }))
 
 const SETTINGS_VIEWS: readonly SettingsViewId[] = [
   ...SECTIONS.map(s => `config:${s.id}` as SettingsViewId),
   'providers',
-  'runtime',
-  'gateway',
   'keys',
   'mcp',
   'notifications',
@@ -49,36 +49,54 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
   // Providers subnav (Accounts vs API keys) lives in its own param so each
   // sub-view is deep-linkable and survives a refresh.
   const [providerView, setProviderView] = useRouteEnumParam<ProviderView>('pview', PROVIDER_VIEWS, 'accounts')
-  const [providerMode, setProviderMode] = useState<VerxioInferenceMode | null>(null)
   const [keysView, setKeysView] = useRouteEnumParam<KeysView>('kview', KEYS_VIEWS, 'tools')
   const [confirmResetOpen, setConfirmResetOpen] = useState(false)
 
   useEffect(() => {
     const params = new URLSearchParams(search)
+    let dirty = false
 
     if (!params.has('tab') && params.has('pview')) {
       params.set('tab', 'providers')
+      dirty = true
+    }
+
+    // Drop nested deep-link params when their parent tab is not active so
+    // compact (max-xl) nav never keeps Tools/Accounts chips after leaving.
+    if (activeView !== 'providers' && (params.has('pview') || params.has('paccount'))) {
+      params.delete('pview')
+      params.delete('paccount')
+      dirty = true
+    }
+
+    if (activeView !== 'keys' && params.has('kview')) {
+      params.delete('kview')
+      dirty = true
+    }
+
+    if (dirty) {
       navigate({ hash, pathname, search: `?${params.toString()}` }, { replace: true })
     }
-  }, [hash, navigate, pathname, search])
-
-  useEffect(() => {
-    if (activeView === 'providers' && providerMode === 'hosted' && providerView === 'keys') {
-      setProviderView('accounts')
-    }
-  }, [activeView, providerMode, providerView, setProviderView])
+  }, [activeView, hash, navigate, pathname, search])
 
   const openProviderView = (view: ProviderView) => {
     setActiveView('providers')
     setProviderView(view)
   }
 
-  const showProviderApiKeys = providerMode === 'byok'
-
   const openKeysView = (view: KeysView) => {
     setActiveView('keys')
     setKeysView(view)
   }
+
+  const openSettingsView = (view: SettingsViewId) => {
+    setActiveView(view)
+  }
+
+  // Compact header wraps nav into a single row. Keep nested chips on their own
+  // full-width row (not `contents`) so they unmount cleanly with the parent.
+  const nestedNavClass =
+    'ml-3.5 flex flex-col gap-0.5 pl-1.5 max-xl:ml-0 max-xl:w-full max-xl:basis-full max-xl:flex-row max-xl:flex-wrap max-xl:gap-1 max-xl:border-border/20 max-xl:pl-0'
 
   const importInputRef = useRef<HTMLInputElement | null>(null)
 
@@ -108,6 +126,8 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
     }
   }
 
+  const panelFallback = <LoadingState label={t.common.loading} />
+
   return (
     <OverlayView closeLabel={t.settings.closeSettings} onClose={onClose}>
       <OverlaySplitLayout>
@@ -121,7 +141,7 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
                 icon={s.icon}
                 key={s.id}
                 label={t.settings.sections[s.id] ?? s.label}
-                onClick={() => setActiveView(view)}
+                onClick={() => openSettingsView(view)}
               />
             )
           })}
@@ -130,10 +150,10 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
             active={activeView === 'providers'}
             icon={Zap}
             label={t.settings.nav.providers}
-            onClick={() => setActiveView('providers')}
+            onClick={() => openSettingsView('providers')}
           />
           {activeView === 'providers' && (
-            <div className="ml-3.5 flex flex-col gap-0.5 pl-1.5 max-xl:contents max-xl:ml-0 max-xl:pl-0">
+            <div className={nestedNavClass}>
               <OverlayNavItem
                 active={providerView === 'accounts'}
                 icon={Sparkles}
@@ -141,37 +161,23 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
                 nested
                 onClick={() => openProviderView('accounts')}
               />
-              {showProviderApiKeys && (
-                <OverlayNavItem
-                  active={providerView === 'keys'}
-                  icon={KeyRound}
-                  label={t.settings.nav.providerApiKeys}
-                  nested
-                  onClick={() => openProviderView('keys')}
-                />
-              )}
+              <OverlayNavItem
+                active={providerView === 'keys'}
+                icon={KeyRound}
+                label={t.settings.nav.providerApiKeys}
+                nested
+                onClick={() => openProviderView('keys')}
+              />
             </div>
           )}
-          <OverlayNavItem
-            active={activeView === 'runtime'}
-            icon={RefreshCw}
-            label={t.settings.nav.runtime}
-            onClick={() => setActiveView('runtime')}
-          />
-          <OverlayNavItem
-            active={activeView === 'gateway'}
-            icon={Globe}
-            label={t.settings.nav.gateway}
-            onClick={() => setActiveView('gateway')}
-          />
           <OverlayNavItem
             active={activeView === 'keys'}
             icon={KeyRound}
             label={t.settings.nav.apiKeys}
-            onClick={() => setActiveView('keys')}
+            onClick={() => openSettingsView('keys')}
           />
           {activeView === 'keys' && (
-            <div className="ml-3.5 flex flex-col gap-0.5 pl-1.5 max-xl:contents max-xl:ml-0 max-xl:pl-0">
+            <div className={nestedNavClass}>
               <OverlayNavItem
                 active={keysView === 'tools'}
                 icon={Wrench}
@@ -199,26 +205,26 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
             active={activeView === 'mcp'}
             icon={Wrench}
             label={t.settings.nav.mcp}
-            onClick={() => setActiveView('mcp')}
+            onClick={() => openSettingsView('mcp')}
           />
           <OverlayNavItem
             active={activeView === 'notifications'}
             icon={Bell}
             label={t.settings.nav.notifications}
-            onClick={() => setActiveView('notifications')}
+            onClick={() => openSettingsView('notifications')}
           />
           <OverlayNavItem
             active={activeView === 'sessions'}
             icon={Archive}
             label={t.settings.nav.archivedChats}
-            onClick={() => setActiveView('sessions')}
+            onClick={() => openSettingsView('sessions')}
           />
           <div className="my-2 h-px bg-border/30 max-xl:hidden" />
           <OverlayNavItem
             active={activeView === 'about'}
             icon={Info}
             label={t.settings.nav.about}
-            onClick={() => setActiveView('about')}
+            onClick={() => openSettingsView('about')}
           />
           <div className="mt-auto flex items-center gap-1 pt-2 max-xl:mt-0 max-xl:ml-auto max-xl:pt-0">
             <Tip label={t.settings.exportConfig}>
@@ -251,37 +257,36 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
         </OverlaySidebar>
 
         <OverlayMain className="px-0 pb-0 pt-[calc(var(--titlebar-height)+1rem)]">
-          {activeView === 'config:appearance' ? (
-            <AppearanceSettings />
-          ) : activeView === 'about' ? (
-            <AboutSettings />
-          ) : activeView === 'gateway' ? (
-            <GatewaySettings />
-          ) : activeView === 'runtime' ? (
-            <RuntimeSettings />
-          ) : activeView.startsWith('config:') ? (
-            <ConfigSettings
-              activeSectionId={activeView.slice('config:'.length)}
-              importInputRef={importInputRef}
-              onConfigSaved={onConfigSaved}
-            />
-          ) : activeView === 'providers' ? (
-            <ProvidersSettings
-              onInferenceApplied={onConfigSaved}
-              onInferenceModeChange={setProviderMode}
-              onViewChange={setProviderView}
-              requestGateway={requestGateway}
-              view={providerView}
-            />
-          ) : activeView === 'keys' ? (
-            <KeysSettings view={keysView} />
-          ) : activeView === 'mcp' ? (
-            <McpSettings gateway={gateway} onConfigSaved={onConfigSaved} />
-          ) : activeView === 'notifications' ? (
-            <NotificationsSettings />
-          ) : (
-            <SessionsSettings />
-          )}
+          {/* Remount when leaving a panel family so compact layout never keeps
+              the previous tab's body painted under a new title. */}
+          <Suspense fallback={panelFallback} key={activeView.startsWith('config:') ? 'config' : activeView}>
+            {activeView === 'config:appearance' ? (
+              <AppearanceSettings />
+            ) : activeView === 'about' ? (
+              <AboutSettings />
+            ) : activeView.startsWith('config:') ? (
+              <ConfigSettings
+                activeSectionId={activeView.slice('config:'.length)}
+                importInputRef={importInputRef}
+                onConfigSaved={onConfigSaved}
+              />
+            ) : activeView === 'providers' ? (
+              <ProvidersSettings
+                onInferenceApplied={onConfigSaved}
+                onViewChange={setProviderView}
+                requestGateway={requestGateway}
+                view={providerView}
+              />
+            ) : activeView === 'keys' ? (
+              <KeysSettings view={keysView} />
+            ) : activeView === 'mcp' ? (
+              <McpSettings gateway={gateway} onConfigSaved={onConfigSaved} />
+            ) : activeView === 'notifications' ? (
+              <NotificationsSettings />
+            ) : (
+              <SessionsSettings />
+            )}
+          </Suspense>
         </OverlayMain>
       </OverlaySplitLayout>
       <ConfirmDialog

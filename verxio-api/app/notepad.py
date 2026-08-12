@@ -243,11 +243,22 @@ def update_note(
     note_id: str,
     payload: NotepadNoteUpdateRequest,
 ) -> NotepadNoteRecord:
-    _ensure_note(workspace, profile, note_id)
+    existing = _ensure_note(workspace, profile, note_id)
     updates = payload.model_dump(exclude_unset=True)
 
     if "folder_id" in updates:
         _ensure_folder(workspace, profile, updates["folder_id"])
+
+    # Notes expose content and summary as separate panes / share surfaces.
+    # Agents often PATCH only ``content`` after create (where summary was
+    # mirrored from content). Keep the summary pane in sync when it was still
+    # that mirror or empty — do not clobber an independently authored summary
+    # (e.g. hermes-summary) unless the caller explicitly sends ``summary``.
+    if "content" in updates and "summary" not in updates:
+        old_content = str(existing.get("content") or "").strip()
+        old_summary = str(existing.get("summary") or "").strip()
+        if not old_summary or old_summary == old_content:
+            updates["summary"] = updates.get("content") or ""
 
     fields: list[str] = []
     params: list[Any] = []
@@ -289,30 +300,63 @@ def delete_note(workspace: Workspace, profile: AgentProfile, note_id: str) -> di
     return {"ok": True}
 
 
-async def summarize_note(workspace: Workspace, profile: AgentProfile, note_id: str) -> NotepadNoteRecord:
-    note = _note_from_row(_ensure_note(workspace, profile, note_id))
+def _build_notepad_summary_prompt(*, meeting_type: str, title: str, content: str, transcript: str) -> str:
+    """Build the LLM prompt for the Notepad Summarize button.
+
+    Voice notes and screen recordings land as long transcripts in ``content`` /
+    ``transcript``. The summary must be an in-depth walkthrough of that source
+    material — not a short executive blurb.
+    """
     source = "\n\n".join(
         part
         for part in [
-            f"Meeting type: {note.meeting_type}",
-            f"Title: {note.title}",
-            f"Written notes:\n{note.content}".strip(),
-            f"Transcript:\n{note.transcript}".strip(),
+            f"Meeting type: {meeting_type}",
+            f"Title: {title}",
+            f"Written notes:\n{content}".strip(),
+            f"Transcript:\n{transcript}".strip(),
         ]
         if part.strip()
     )
+    return "\n".join(
+        [
+            "You are writing an in-depth summary of a Verxio Notepad entry.",
+            "The source is often a voice note, microphone recording, screen/device recording transcript, or meeting notes — treat it as primary source material that the reader did not listen to.",
+            "Do NOT write a short teaser, one-paragraph blurb, or high-level executive overview.",
+            "Write a thorough, detailed Markdown summary that someone can read instead of replaying the recording.",
+            "",
+            "Requirements:",
+            "- Cover the full arc of the source: opening context, each major topic or segment in order, and how it closes.",
+            "- Expand on explanations, arguments, demos, UI/workflow steps, numbers, names, and examples — do not collapse them into vague bullets.",
+            "- Call out decisions, commitments, blockers, follow-ups, and action items with owners/timing when the source mentions them.",
+            "- Preserve notable exact quotes when they appear in the transcript.",
+            "- Prefer depth over brevity. A long, structured summary is correct; a short summary is wrong.",
+            "",
+            "Return only valid Markdown. Prefer sections like:",
+            "## Overview",
+            "## Detailed walkthrough",
+            "## Key points",
+            "## Decisions",
+            "## Action items",
+            "## Notable quotes",
+            "Omit a section only when the source truly has nothing for it.",
+            "",
+            # Long voice/screen transcripts need headroom; soft-cap to keep the
+            # dashboard completion within typical context budgets.
+            source[:80_000],
+        ]
+    )
 
-    if not source.strip():
+
+async def summarize_note(workspace: Workspace, profile: AgentProfile, note_id: str) -> NotepadNoteRecord:
+    note = _note_from_row(_ensure_note(workspace, profile, note_id))
+    if not any(part.strip() for part in (note.content, note.transcript, note.title)):
         raise HTTPException(status_code=400, detail="Add notes or a transcript before generating a summary.")
 
-    prompt = "\n".join(
-        [
-            "Turn this meeting transcript and the user's written notes into concise internal meeting notes.",
-            "Return only valid Markdown. Use concise sections with ## Summary, ## Decisions, ## Action items, and ## Quotes when available.",
-            "Preserve exact quotes only when they appear in the transcript.",
-            "",
-            source[:24_000],
-        ]
+    prompt = _build_notepad_summary_prompt(
+        meeting_type=note.meeting_type,
+        title=note.title,
+        content=note.content,
+        transcript=note.transcript,
     )
     if get_runtime_settings().mode == "demo":
         result = await HermesRuntimeAdapter().run_agent(workspace, profile, prompt)
@@ -330,6 +374,25 @@ async def summarize_note(workspace: Workspace, profile: AgentProfile, note_id: s
     )
 
 
+def _ensure_shareable_summary(
+    workspace: Workspace,
+    profile: AgentProfile,
+    note: NotepadNoteRecord,
+) -> NotepadNoteRecord:
+    """Public share URLs render ``summary``. Promote notes/transcript if empty."""
+    if (note.summary or "").strip():
+        return note
+    fallback = (note.content or "").strip() or (note.transcript or "").strip()
+    if not fallback:
+        return note
+    return update_note(
+        workspace,
+        profile,
+        note.id,
+        NotepadNoteUpdateRequest(summary=fallback),
+    )
+
+
 def create_share(
     workspace: Workspace,
     profile: AgentProfile,
@@ -337,6 +400,7 @@ def create_share(
     share_url_for_token: Any,
 ) -> NotepadShareResponse:
     note = _note_from_row(_ensure_note(workspace, profile, note_id))
+    note = _ensure_shareable_summary(workspace, profile, note)
     if note.share_token:
         return NotepadShareResponse(token=note.share_token, url=share_url_for_token(note.share_token), note=note)
 

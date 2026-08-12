@@ -8,8 +8,9 @@ import mimetypes
 import os
 import re
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qsl, urlencode
 
 import httpx
@@ -36,6 +37,8 @@ from app.auth import (
     verify_login_code,
 )
 from app.composio_catalog import (
+    claim_composio_webhook,
+    complete_composio_webhook,
     complete_composio_connection,
     delete_composio_account,
     get_composio_catalog_error,
@@ -46,7 +49,10 @@ from app.composio_catalog import (
     list_composio_app_tools,
     list_composio_accounts,
     list_composio_apps,
+    list_composio_trigger_types,
+    release_composio_webhook,
     sync_composio_runtime_bridge,
+    verify_composio_webhook,
 )
 from app.control_plane import ensure_runtime_directories, get_context_for_user, get_runtime_for_user
 from app.inference import (
@@ -57,7 +63,13 @@ from app.inference import (
     update_inference_settings,
     ensure_inference_settings,
 )
-from app.leash_agent import clear_leash_agent, read_leash_agent, write_leash_agent
+from app.knowledge_bases import (
+    create_document as create_knowledge_document,
+    create_knowledge_base,
+    delete_knowledge_base,
+    list_documents as list_knowledge_documents,
+    list_knowledge_bases,
+)
 from app.slack_manifest import build_slack_manifest
 from app.models import (
     ArtifactListResponse,
@@ -74,12 +86,19 @@ from app.models import (
     ComposioConnectionsResponse,
     ComposioInitiateRequest,
     ComposioInitiateResponse,
+    ComposioTriggerTypesResponse,
     EmailRequest,
     HermesRuntimeMetadata,
     InferenceCatalogResponse,
     InferenceSettings,
     InferenceSettingsUpdate,
     InferenceUsageResponse,
+    KnowledgeBaseCreateRequest,
+    KnowledgeBaseRecord,
+    KnowledgeBasesResponse,
+    KnowledgeDocumentCreateRequest,
+    KnowledgeDocumentRecord,
+    KnowledgeDocumentsResponse,
     LoginRequest,
     NotepadFolderCreateRequest,
     NotepadFolderRecord,
@@ -92,31 +111,7 @@ from app.models import (
     NotepadRecordingUploadResponse,
     NotepadShareResponse,
     PasswordResetRequest,
-    PulseAnalyticsResponse,
-    PulseAutomationCreateRequest,
-    PulseAutomationGenerateRequest,
-    PulseAutomationListResponse,
-    PulseAutomationRecord,
-    PulseAutomationSimulateRequest,
-    PulseAutomationSimulateResponse,
-    PulseAutomationToggleRequest,
-    PulseAutomationUpdateRequest,
-    PulseChannelConnectRequest,
-    PulseChannelConnectResponse,
-    PulseChannelCreateRequest,
-    PulseChannelRecord,
-    PulseChannelsResponse,
-    PulseConversationDetailResponse,
-    PulseConversationRecord,
-    PulseConversationStateRequest,
-    PulseConversationsResponse,
-    PulseMetaOAuthCompleteRequest,
-    PulseMetaOAuthCompleteResponse,
     RuntimeInstance,
-    PulseMessageRecord,
-    PulseSendMessageRequest,
-    PulseTagsResponse,
-    PulseWebhookIngestResponse,
     PublicNotepadShareResponse,
     RunRecord,
     RunRequest,
@@ -124,6 +119,46 @@ from app.models import (
     RuntimeWorkspaceSyncRequest,
     SignupRequest,
     TranscriptionCatalogResponse,
+    WorkflowAgentCreateRequest,
+    WorkflowCustomToolCreateRequest,
+    WorkflowCustomToolRecord,
+    WorkflowCustomToolsResponse,
+    WorkflowCustomToolUpdateRequest,
+    WorkflowAgentRecord,
+    WorkflowAgentSetupApprovalRequest,
+    WorkflowAgentSetupApprovalResponse,
+    WorkflowAgentSetupApplyRequest,
+    WorkflowAgentSetupApplyResponse,
+    WorkflowAgentSetupDraftRequest,
+    WorkflowAgentSetupDraftResponse,
+    WorkflowAgentSetupDraftUpdateRequest,
+    WorkflowAgentsResponse,
+    WorkflowAgentUpdateRequest,
+    WorkflowAgentEmbedAssetRequest,
+    WorkflowAgentEmbedConfigRecord,
+    WorkflowAgentEmbedConfigUpdateRequest,
+    WorkflowAgentPublicInfo,
+    WorkflowAgentPublicRunRequest,
+    WorkflowAgentPublicRunResponse,
+    WorkflowDeliveriesResponse,
+    WorkflowDeliveryCreateRequest,
+    WorkflowDeliveryRecord,
+    WorkflowDeliveryUpdateRequest,
+    WorkflowIntegrationCapabilitiesResponse,
+    WorkflowMessagingTriggerRequest,
+    WorkflowRunCreateRequest,
+    WorkflowRunEventsResponse,
+    WorkflowRunRecord,
+    WorkflowRunsResponse,
+    WorkflowSkillCapabilitiesResponse,
+    WorkflowToolCapabilitiesResponse,
+    WorkflowTriggerCreateRequest,
+    WorkflowTriggerRecord,
+    WorkflowTriggerRunRequest,
+    WorkflowTriggerRunsResponse,
+    WorkflowTriggersResponse,
+    WorkflowTriggerUpdateRequest,
+    WorkflowWebhookIngestResponse,
 )
 from app.notepad import (
     create_folder,
@@ -138,29 +173,6 @@ from app.notepad import (
     update_folder,
     update_note,
 )
-from app.pulse import (
-    analytics as pulse_analytics,
-    channel_capability_matrix,
-    complete_meta_oauth,
-    connect_channel,
-    create_automation as create_pulse_automation,
-    create_channel as create_pulse_channel,
-    delete_automation as delete_pulse_automation,
-    delete_channel as delete_pulse_channel,
-    generated_flow_from_prompt,
-    get_conversation_detail as get_pulse_conversation_detail,
-    list_automations as list_pulse_automations,
-    list_channels as list_pulse_channels,
-    list_conversations as list_pulse_conversations,
-    list_tags as list_pulse_tags,
-    send_human_message as send_pulse_human_message,
-    simulate_automation as simulate_pulse_automation,
-    toggle_automation as toggle_pulse_automation,
-    update_automation as update_pulse_automation,
-    update_conversation_state as update_pulse_conversation_state,
-)
-from app.pulse_engine import tick_due_runs as tick_pulse_due_runs
-from app.pulse_webhooks import ingest_meta_webhook, ingest_whatsapp_webhook, verify_challenge
 from app.runtime import HermesRuntimeAdapter, hosted_runtime_status, is_hosted_control_plane
 from app.runtime_dashboard import soft_reload_runtime_mcp
 from app.runtime_manager import (
@@ -183,7 +195,46 @@ from app.runtime_manager import (
 )
 from app.store import AUDIT_LOG, PROFILE, RUNS, WORKSPACE
 from app.transcription_catalog import list_transcription_catalog
-
+from app.workflow_agents import (
+    apply_setup_draft as apply_workflow_setup_draft,
+    create_agent as create_workflow_agent,
+    create_custom_tool as create_workflow_custom_tool,
+    create_setup_draft as create_workflow_setup_draft,
+    create_setup_update_draft as create_workflow_setup_update_draft,
+    create_delivery as create_workflow_delivery,
+    create_trigger as create_workflow_trigger,
+    delete_agent as delete_workflow_agent,
+    delete_custom_tool as delete_workflow_custom_tool,
+    delete_delivery as delete_workflow_delivery,
+    delete_setup_draft as delete_workflow_setup_draft,
+    delete_trigger as delete_workflow_trigger,
+    get_agent as get_workflow_agent,
+    get_embed_config as get_workflow_embed_config,
+    get_public_embed_info as get_workflow_public_embed_info,
+    list_agents as list_workflow_agents,
+    list_custom_tools as list_workflow_custom_tools,
+    list_integration_capabilities as list_workflow_integration_capabilities,
+    list_deliveries as list_workflow_deliveries,
+    list_run_events as list_workflow_run_events,
+    list_runs as list_workflow_runs,
+    list_skill_capabilities as list_workflow_skill_capabilities,
+    list_tool_capabilities as list_workflow_tool_capabilities,
+    list_triggers as list_workflow_triggers,
+    run_agent as run_workflow_agent,
+    run_composio_trigger_event as run_workflow_composio_trigger_event,
+    run_matching_triggers as run_matching_workflow_triggers,
+    run_messaging_gateway_triggers as run_workflow_messaging_gateway_triggers,
+    run_public_embed_agent as run_workflow_public_embed_agent,
+    run_webhook_trigger,
+    tick_due_schedule_triggers as tick_due_workflow_schedule_triggers,
+    update_agent as update_workflow_agent,
+    update_custom_tool as update_workflow_custom_tool,
+    update_delivery as update_workflow_delivery,
+    update_embed_config as update_workflow_embed_config,
+    update_setup_approvals as update_workflow_setup_approvals,
+    update_trigger as update_workflow_trigger,
+    upload_embed_asset as upload_workflow_embed_asset,
+)
 
 APP_ROOT = Path(__file__).resolve().parent.parent
 STATIC_ROOT = APP_ROOT / "static"
@@ -204,7 +255,6 @@ _AUDIO_MIME_EXTENSIONS = {
     "video/webm": ".webm",
 }
 
-
 def _audio_extension_for_mime(mime_type: str) -> str:
     normalized = (mime_type or "").split(";", 1)[0].strip().lower()
     if normalized in _AUDIO_MIME_EXTENSIONS:
@@ -212,14 +262,12 @@ def _audio_extension_for_mime(mime_type: str) -> str:
     guessed = mimetypes.guess_extension(normalized)
     return guessed if guessed in {".aac", ".flac", ".m4a", ".mp3", ".mp4", ".ogg", ".wav", ".webm"} else ".webm"
 
-
 def _safe_recording_filename(file_name: str, mime_type: str) -> str:
     requested = Path(file_name or "notepad-recording").name
     stem = Path(requested).stem or "notepad-recording"
     safe_stem = re.sub(r"[^A-Za-z0-9._ -]+", "-", stem).strip(" ._-") or "notepad-recording"
     safe_stem = safe_stem[:120]
     return f"{safe_stem}{_audio_extension_for_mime(mime_type)}"
-
 
 def _decode_recording_payload(payload: NotepadRecordingUploadRequest) -> tuple[bytes, str]:
     data_url = payload.data_url.strip()
@@ -247,7 +295,6 @@ def _decode_recording_payload(payload: NotepadRecordingUploadRequest) -> tuple[b
 
     return audio_bytes, mime_type
 
-
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     db.run_migrations()
@@ -261,8 +308,33 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
             logging.getLogger(__name__).exception("Failed to warm runtime docker network cache")
 
     asyncio.create_task(_warm())
-    yield
 
+    async def _run_workflow_scheduler() -> None:
+        try:
+            interval = max(5.0, float(os.getenv("VERXIO_WORKFLOW_SCHEDULER_INTERVAL_SECONDS", "15")))
+        except ValueError:
+            interval = 15.0
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                await tick_due_workflow_schedule_triggers()
+            except Exception:
+                logging.getLogger(__name__).exception("Workflow schedule tick failed")
+
+    scheduler_enabled = os.getenv("VERXIO_WORKFLOW_SCHEDULER_ENABLED", "1").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+    scheduler_task = asyncio.create_task(_run_workflow_scheduler()) if scheduler_enabled else None
+    try:
+        yield
+    finally:
+        if scheduler_task is not None:
+            scheduler_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await scheduler_task
 
 app = FastAPI(
     title="Verxio API",
@@ -292,16 +364,13 @@ app.add_middleware(
 
 app.mount("/static", StaticFiles(directory=STATIC_ROOT), name="static")
 
-
 @app.get("/", include_in_schema=False)
 async def index() -> FileResponse:
     return FileResponse(STATIC_ROOT / "index.html")
 
-
 @app.get("/api/health")
 async def health() -> dict[str, str]:
     return {"status": "ok", "service": "verxio-api"}
-
 
 @app.get("/api/bootstrap", response_model=BootstrapResponse)
 async def bootstrap(request: Request) -> BootstrapResponse:
@@ -327,31 +396,25 @@ async def bootstrap(request: Request) -> BootstrapResponse:
         hermes=hermes,
     )
 
-
 @app.post("/api/auth/signup", response_model=AuthCodeChallengeResponse)
 async def signup_route(payload: SignupRequest) -> AuthCodeChallengeResponse:
     return signup(payload)
-
 
 @app.post("/api/auth/verify-email", response_model=AuthResponse)
 async def verify_email_route(payload: AuthCodeVerifyRequest, request: Request, response: Response) -> AuthResponse:
     return verify_email(payload, request, response)
 
-
 @app.post("/api/auth/verification/resend", response_model=AuthCodeChallengeResponse)
 async def resend_verification_route(payload: EmailRequest) -> AuthCodeChallengeResponse:
     return resend_verification(payload)
-
 
 @app.post("/api/auth/login", response_model=AuthResponse)
 async def login_route(payload: LoginRequest, request: Request, response: Response) -> AuthResponse:
     return login(payload, request, response)
 
-
 @app.post("/api/auth/login/code/request", response_model=AuthCodeChallengeResponse)
 async def request_login_code_route(payload: EmailRequest) -> AuthCodeChallengeResponse:
     return request_login_code(payload)
-
 
 @app.post("/api/auth/login/code/verify", response_model=AuthResponse)
 async def verify_login_code_route(
@@ -361,27 +424,22 @@ async def verify_login_code_route(
 ) -> AuthResponse:
     return verify_login_code(payload, request, response)
 
-
 @app.post("/api/auth/password/forgot", response_model=AuthCodeChallengeResponse)
 async def forgot_password_route(payload: EmailRequest) -> AuthCodeChallengeResponse:
     return request_password_reset(payload)
-
 
 @app.post("/api/auth/password/reset", response_model=AuthResponse)
 async def reset_password_route(payload: PasswordResetRequest, request: Request, response: Response) -> AuthResponse:
     return reset_password(payload, request, response)
 
-
 @app.post("/api/auth/logout")
 async def logout_route(request: Request, response: Response) -> dict[str, bool]:
     return logout(request, response)
-
 
 @app.get("/api/auth/me", response_model=AuthResponse)
 async def me_route(request: Request) -> AuthResponse:
     user = require_user(request)
     return me(user)
-
 
 @app.get("/api/profile")
 async def get_profile(request: Request):
@@ -391,11 +449,9 @@ async def get_profile(request: Request):
     _workspace, profile, _runtime_instance = get_context_for_user(user)
     return profile
 
-
 @app.get("/api/hermes")
 async def get_hermes_metadata():
     return await HermesRuntimeAdapter().metadata()
-
 
 @app.get("/api/messaging/slack/manifest")
 async def get_slack_manifest(
@@ -414,14 +470,12 @@ async def get_slack_manifest(
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-
 @app.get("/api/runtime", response_model=RuntimeControlResponse)
 async def get_runtime(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
     runtime = get_runtime_for_user(user)
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
-
 
 @app.post("/api/runtime/start", response_model=RuntimeControlResponse)
 async def start_runtime_route(request: Request) -> RuntimeControlResponse:
@@ -432,14 +486,12 @@ async def start_runtime_route(request: Request) -> RuntimeControlResponse:
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
 
-
 @app.post("/api/runtime/stop", response_model=RuntimeControlResponse)
 async def stop_runtime_route(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
     runtime = stop_runtime(get_runtime_for_user(user))
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
-
 
 @app.post("/api/runtime/restart", response_model=RuntimeControlResponse)
 async def restart_runtime_route(request: Request) -> RuntimeControlResponse:
@@ -449,7 +501,6 @@ async def restart_runtime_route(request: Request) -> RuntimeControlResponse:
     runtime = await restart_runtime(get_runtime_for_user(user), extra_env=runtime_env_for_user(str(user["id"])))
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
-
 
 @app.post("/api/runtime/workspace", response_model=RuntimeControlResponse)
 async def sync_runtime_workspace_route(
@@ -464,18 +515,15 @@ async def sync_runtime_workspace_route(
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
 
-
 @app.get("/api/inference/catalog", response_model=InferenceCatalogResponse)
 async def get_inference_catalog_route(request: Request) -> InferenceCatalogResponse:
     require_user(request)
     return list_inference_catalog()
 
-
 @app.get("/api/inference/settings", response_model=InferenceSettings)
 async def get_inference_settings_route(request: Request) -> InferenceSettings:
     user = require_user(request)
     return ensure_inference_settings(str(user["id"]))
-
 
 @app.put("/api/inference/settings", response_model=InferenceSettings)
 async def put_inference_settings_route(
@@ -486,19 +534,16 @@ async def put_inference_settings_route(
     await _sync_inference_bridge_for_user(user, refresh_running=True)
     return settings
 
-
 @app.get("/api/inference/usage", response_model=InferenceUsageResponse)
 async def get_inference_usage_route(request: Request) -> InferenceUsageResponse:
     user = require_user(request)
     return inference_usage(str(user["id"]))
-
 
 @app.get("/api/transcription/catalog", response_model=TranscriptionCatalogResponse)
 async def get_transcription_catalog_route(request: Request, refresh: bool = False) -> TranscriptionCatalogResponse:
     user = require_user(request)
     runtime = get_runtime_for_user(user)
     return await list_transcription_catalog(runtime, refresh=refresh)
-
 
 @app.get("/api/artifacts", response_model=ArtifactListResponse)
 async def list_artifacts(request: Request) -> ArtifactListResponse:
@@ -508,7 +553,6 @@ async def list_artifacts(request: Request) -> ArtifactListResponse:
     # so a large React scaffold cannot wedge health/auth and return HTML 502 pages.
     artifacts = await asyncio.to_thread(index_artifacts, runtime)
     return ArtifactListResponse(artifacts=artifacts)
-
 
 @app.post("/api/notepad/recordings", response_model=NotepadRecordingUploadResponse)
 async def upload_notepad_recording(
@@ -548,7 +592,6 @@ async def upload_notepad_recording(
 
     return NotepadRecordingUploadResponse(artifact=artifact)
 
-
 @app.get("/api/artifacts/{artifact_id}")
 async def get_artifact(artifact_id: str, request: Request):
     user = require_user(request)
@@ -558,7 +601,6 @@ async def get_artifact(artifact_id: str, request: Request):
     except (FileNotFoundError, KeyError) as exc:
         raise HTTPException(status_code=404, detail="Artifact not found.") from exc
     return record
-
 
 @app.delete("/api/artifacts/{artifact_id}")
 async def delete_artifact(artifact_id: str, request: Request):
@@ -585,7 +627,6 @@ async def delete_artifact(artifact_id: str, request: Request):
 
     return {"ok": True}
 
-
 @app.get("/api/artifacts/{artifact_id}/preview")
 async def preview_artifact(artifact_id: str, request: Request) -> FileResponse:
     user = require_user(request)
@@ -603,7 +644,6 @@ async def preview_artifact(artifact_id: str, request: Request) -> FileResponse:
         content_disposition_type="inline",
     )
 
-
 @app.get("/api/artifacts/{artifact_id}/download")
 async def download_artifact(artifact_id: str, request: Request) -> FileResponse:
     user = require_user(request)
@@ -619,13 +659,11 @@ async def download_artifact(artifact_id: str, request: Request) -> FileResponse:
         content_disposition_type="attachment",
     )
 
-
 def _share_url(_request: Request, token: str) -> str:
     public_base = os.getenv("VERXIO_PUBLIC_WEB_URL", "").strip().rstrip("/")
     if not public_base:
         public_base = "http://127.0.0.1:8080"
     return f"{public_base}/share/notepad/{token}"
-
 
 @app.get("/api/notepad", response_model=NotepadListResponse)
 async def list_notepad_route(request: Request) -> NotepadListResponse:
@@ -633,7 +671,6 @@ async def list_notepad_route(request: Request) -> NotepadListResponse:
 
     workspace, profile, _runtime_instance = get_context_for_request(request)
     return list_notepad(workspace, profile)
-
 
 @app.post("/api/notepad/folders", response_model=NotepadFolderRecord)
 async def create_notepad_folder_route(
@@ -644,7 +681,6 @@ async def create_notepad_folder_route(
 
     workspace, profile, _runtime_instance = get_context_for_request(request)
     return create_folder(workspace, profile, payload)
-
 
 @app.patch("/api/notepad/folders/{folder_id}", response_model=NotepadFolderRecord)
 async def update_notepad_folder_route(
@@ -657,14 +693,12 @@ async def update_notepad_folder_route(
     workspace, profile, _runtime_instance = get_context_for_request(request)
     return update_folder(workspace, profile, folder_id, payload)
 
-
 @app.delete("/api/notepad/folders/{folder_id}")
 async def delete_notepad_folder_route(folder_id: str, request: Request) -> dict[str, bool]:
     from app.runtime_auth import get_context_for_request
 
     workspace, profile, _runtime_instance = get_context_for_request(request)
     return delete_folder(workspace, profile, folder_id)
-
 
 @app.post("/api/notepad/notes", response_model=NotepadNoteRecord)
 async def create_notepad_note_route(
@@ -675,7 +709,6 @@ async def create_notepad_note_route(
 
     workspace, profile, _runtime_instance = get_context_for_request(request)
     return create_note(workspace, profile, payload)
-
 
 @app.patch("/api/notepad/notes/{note_id}", response_model=NotepadNoteRecord)
 async def update_notepad_note_route(
@@ -688,14 +721,12 @@ async def update_notepad_note_route(
     workspace, profile, _runtime_instance = get_context_for_request(request)
     return update_note(workspace, profile, note_id, payload)
 
-
 @app.delete("/api/notepad/notes/{note_id}")
 async def delete_notepad_note_route(note_id: str, request: Request) -> dict[str, bool]:
     from app.runtime_auth import get_context_for_request
 
     workspace, profile, _runtime_instance = get_context_for_request(request)
     return delete_note(workspace, profile, note_id)
-
 
 @app.post("/api/notepad/notes/{note_id}/summarize", response_model=NotepadNoteRecord)
 async def summarize_notepad_note_route(note_id: str, request: Request) -> NotepadNoteRecord:
@@ -704,14 +735,12 @@ async def summarize_notepad_note_route(note_id: str, request: Request) -> Notepa
     workspace, profile, _runtime_instance = get_context_for_request(request)
     return await summarize_note(workspace, profile, note_id)
 
-
 @app.post("/api/notepad/notes/{note_id}/share", response_model=NotepadShareResponse)
 async def create_notepad_share_route(note_id: str, request: Request) -> NotepadShareResponse:
     from app.runtime_auth import get_context_for_request
 
     workspace, profile, _runtime_instance = get_context_for_request(request)
     return create_share(workspace, profile, note_id, lambda token: _share_url(request, token))
-
 
 @app.delete("/api/notepad/notes/{note_id}/share")
 async def revoke_notepad_share_route(note_id: str, request: Request) -> dict[str, bool]:
@@ -720,221 +749,393 @@ async def revoke_notepad_share_route(note_id: str, request: Request) -> dict[str
     workspace, profile, _runtime_instance = get_context_for_request(request)
     return revoke_share(workspace, profile, note_id)
 
-
 @app.get("/api/public/notepad/{token}", response_model=PublicNotepadShareResponse)
 async def public_notepad_share_route(token: str) -> PublicNotepadShareResponse:
     return public_share(token)
 
-
-@app.get("/api/pulse/webhooks/meta", include_in_schema=False)
-async def verify_meta_pulse_webhook(request: Request) -> Response:
-    return verify_challenge(request)
-
-
-@app.post("/api/pulse/webhooks/meta", response_model=PulseWebhookIngestResponse)
-async def ingest_meta_pulse_webhook(
-    request: Request,
-    background_tasks: BackgroundTasks,
-) -> PulseWebhookIngestResponse:
-    return await ingest_meta_webhook(request, background_tasks)
-
-
-@app.get("/api/pulse/webhooks/whatsapp", include_in_schema=False)
-async def verify_whatsapp_pulse_webhook(request: Request) -> Response:
-    return verify_challenge(request)
-
-
-@app.post("/api/pulse/webhooks/whatsapp", response_model=PulseWebhookIngestResponse)
-async def ingest_whatsapp_pulse_webhook(
-    request: Request,
-    background_tasks: BackgroundTasks,
-) -> PulseWebhookIngestResponse:
-    return await ingest_whatsapp_webhook(request, background_tasks)
-
-
-@app.post("/api/pulse/webhooks/tiktok", response_model=PulseWebhookIngestResponse)
-async def ingest_tiktok_pulse_webhook() -> PulseWebhookIngestResponse:
-    raise HTTPException(status_code=409, detail="TikTok Business Messaging is partner-gated.")
-
-
-@app.post("/api/pulse/webhooks/linkedin", response_model=PulseWebhookIngestResponse)
-async def ingest_linkedin_pulse_webhook() -> PulseWebhookIngestResponse:
-    raise HTTPException(status_code=409, detail="LinkedIn messaging APIs are partner-gated.")
-
-
-@app.get("/api/pulse/channels", response_model=PulseChannelsResponse)
-async def list_pulse_channels_route(request: Request) -> PulseChannelsResponse:
+@app.get("/api/workflow-agents", response_model=WorkflowAgentsResponse)
+async def list_workflow_agents_route(request: Request) -> WorkflowAgentsResponse:
     user = require_user(request)
     workspace, profile, _runtime_instance = get_context_for_user(user)
-    return list_pulse_channels(workspace, profile)
+    return list_workflow_agents(workspace, profile)
 
-
-@app.post("/api/pulse/channels", response_model=PulseChannelRecord)
-async def create_pulse_channel_route(
-    payload: PulseChannelCreateRequest,
-    request: Request,
-) -> PulseChannelRecord:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
-    return create_pulse_channel(workspace, profile, payload)
-
-
-@app.post("/api/pulse/channels/connect", response_model=PulseChannelConnectResponse)
-async def connect_pulse_channel_route(
-    payload: PulseChannelConnectRequest,
-    request: Request,
-) -> PulseChannelConnectResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
-    return connect_channel(workspace, profile, payload)
-
-
-@app.post("/api/pulse/channels/meta/complete", response_model=PulseMetaOAuthCompleteResponse)
-async def complete_pulse_meta_oauth_route(
-    payload: PulseMetaOAuthCompleteRequest,
-    request: Request,
-) -> PulseMetaOAuthCompleteResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
-    return await complete_meta_oauth(workspace, profile, payload)
-
-
-@app.get("/api/pulse/channels/capabilities")
-async def get_pulse_channel_capabilities_route(request: Request):
+@app.get("/api/workflow-agents/capabilities/skills", response_model=WorkflowSkillCapabilitiesResponse)
+async def list_workflow_skill_capabilities_route(request: Request) -> WorkflowSkillCapabilitiesResponse:
     require_user(request)
-    return {"capabilityMatrix": channel_capability_matrix()}
+    return await list_workflow_skill_capabilities()
 
-
-@app.delete("/api/pulse/channels/{channel_id}")
-async def delete_pulse_channel_route(channel_id: str, request: Request) -> dict[str, bool]:
+@app.get("/api/workflow-agents/capabilities/tools", response_model=WorkflowToolCapabilitiesResponse)
+async def list_workflow_tool_capabilities_route(request: Request) -> WorkflowToolCapabilitiesResponse:
     user = require_user(request)
     workspace, profile, _runtime_instance = get_context_for_user(user)
-    return delete_pulse_channel(workspace, profile, channel_id)
+    return await list_workflow_tool_capabilities(workspace, profile)
 
-
-@app.get("/api/pulse/conversations", response_model=PulseConversationsResponse)
-async def list_pulse_conversations_route(request: Request) -> PulseConversationsResponse:
+@app.get("/api/workflow-agents/capabilities/integrations", response_model=WorkflowIntegrationCapabilitiesResponse)
+async def list_workflow_integration_capabilities_route(request: Request) -> WorkflowIntegrationCapabilitiesResponse:
     user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
-    return list_pulse_conversations(workspace, profile)
+    return list_workflow_integration_capabilities(str(user["id"]))
 
-
-@app.get("/api/pulse/conversations/{conversation_id}", response_model=PulseConversationDetailResponse)
-async def get_pulse_conversation_route(
-    conversation_id: str,
+@app.post("/api/workflow-agents/draft", response_model=WorkflowAgentSetupDraftResponse)
+async def create_workflow_agent_setup_draft_route(
+    payload: WorkflowAgentSetupDraftRequest,
     request: Request,
-) -> PulseConversationDetailResponse:
+) -> WorkflowAgentSetupDraftResponse:
     user = require_user(request)
     workspace, profile, _runtime_instance = get_context_for_user(user)
-    return get_pulse_conversation_detail(workspace, profile, conversation_id)
+    return create_workflow_setup_draft(workspace, profile, payload)
 
-
-@app.post("/api/pulse/conversations/{conversation_id}/messages", response_model=PulseMessageRecord)
-async def send_pulse_message_route(
-    conversation_id: str,
-    payload: PulseSendMessageRequest,
+@app.post("/api/workflow-agents/{agent_id}/draft-update", response_model=WorkflowAgentSetupDraftResponse)
+async def create_workflow_agent_setup_update_draft_route(
+    agent_id: str,
+    payload: WorkflowAgentSetupDraftUpdateRequest,
     request: Request,
-) -> PulseMessageRecord:
+) -> WorkflowAgentSetupDraftResponse:
     user = require_user(request)
     workspace, profile, _runtime_instance = get_context_for_user(user)
-    return send_pulse_human_message(workspace, profile, conversation_id, payload)
+    return create_workflow_setup_update_draft(workspace, profile, agent_id, payload)
 
-
-@app.post("/api/pulse/conversations/{conversation_id}/state", response_model=PulseConversationRecord)
-async def update_pulse_conversation_state_route(
-    conversation_id: str,
-    payload: PulseConversationStateRequest,
+@app.post("/api/workflow-agents/setup-actions/approve", response_model=WorkflowAgentSetupApprovalResponse)
+async def approve_workflow_agent_setup_actions_route(
+    payload: WorkflowAgentSetupApprovalRequest,
     request: Request,
-) -> PulseConversationRecord:
+) -> WorkflowAgentSetupApprovalResponse:
     user = require_user(request)
     workspace, profile, _runtime_instance = get_context_for_user(user)
-    return update_pulse_conversation_state(workspace, profile, conversation_id, payload)
+    return update_workflow_setup_approvals(workspace, profile, payload)
 
-
-@app.get("/api/pulse/automations", response_model=PulseAutomationListResponse)
-async def list_pulse_automations_route(request: Request) -> PulseAutomationListResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
-    return list_pulse_automations(workspace, profile)
-
-
-@app.post("/api/pulse/automations", response_model=PulseAutomationRecord)
-async def create_pulse_automation_route(
-    payload: PulseAutomationCreateRequest,
+@app.post("/api/workflow-agents/setup-actions/apply", response_model=WorkflowAgentSetupApplyResponse)
+async def apply_workflow_agent_setup_draft_route(
+    payload: WorkflowAgentSetupApplyRequest,
     request: Request,
-) -> PulseAutomationRecord:
+) -> WorkflowAgentSetupApplyResponse:
     user = require_user(request)
     workspace, profile, _runtime_instance = get_context_for_user(user)
-    return create_pulse_automation(workspace, profile, payload)
+    return apply_workflow_setup_draft(workspace, profile, payload, request)
 
+@app.delete("/api/workflow-agents/setup-drafts/{draft_id}")
+async def delete_workflow_agent_setup_draft_route(draft_id: str, request: Request) -> dict[str, bool]:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return delete_workflow_setup_draft(workspace, profile, draft_id)
 
-@app.put("/api/pulse/automations/{automation_id}", response_model=PulseAutomationRecord)
-async def update_pulse_automation_route(
-    automation_id: str,
-    payload: PulseAutomationUpdateRequest,
+@app.get("/api/knowledge-bases", response_model=KnowledgeBasesResponse)
+async def list_knowledge_bases_route(request: Request) -> KnowledgeBasesResponse:
+    user = require_user(request)
+    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    return list_knowledge_bases(workspace)
+
+@app.post("/api/knowledge-bases", response_model=KnowledgeBaseRecord)
+async def create_knowledge_base_route(
+    payload: KnowledgeBaseCreateRequest,
     request: Request,
-) -> PulseAutomationRecord:
+) -> KnowledgeBaseRecord:
     user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
-    return update_pulse_automation(workspace, profile, automation_id, payload)
+    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    return create_knowledge_base(workspace, payload)
 
-
-@app.delete("/api/pulse/automations/{automation_id}")
-async def delete_pulse_automation_route(automation_id: str, request: Request) -> dict[str, bool]:
+@app.delete("/api/knowledge-bases/{knowledge_base_id}")
+async def delete_knowledge_base_route(knowledge_base_id: str, request: Request) -> dict[str, bool]:
     user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
-    return delete_pulse_automation(workspace, profile, automation_id)
+    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    return delete_knowledge_base(workspace, knowledge_base_id)
 
+@app.get("/api/knowledge-bases/{knowledge_base_id}/documents", response_model=KnowledgeDocumentsResponse)
+async def list_knowledge_documents_route(knowledge_base_id: str, request: Request) -> KnowledgeDocumentsResponse:
+    user = require_user(request)
+    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    return list_knowledge_documents(workspace, knowledge_base_id)
 
-@app.post("/api/pulse/automations/{automation_id}/enable", response_model=PulseAutomationRecord)
-async def enable_pulse_automation_route(
-    automation_id: str,
-    payload: PulseAutomationToggleRequest,
+@app.post("/api/knowledge-bases/{knowledge_base_id}/documents", response_model=KnowledgeDocumentRecord)
+async def create_knowledge_document_route(
+    knowledge_base_id: str,
+    payload: KnowledgeDocumentCreateRequest,
     request: Request,
-) -> PulseAutomationRecord:
+) -> KnowledgeDocumentRecord:
     user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
-    return toggle_pulse_automation(workspace, profile, automation_id, payload)
+    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    return create_knowledge_document(workspace, knowledge_base_id, payload)
 
-
-@app.post("/api/pulse/automations/generate", response_model=PulseAutomationRecord)
-async def generate_pulse_automation_route(
-    payload: PulseAutomationGenerateRequest,
+@app.post("/api/workflow-agents", response_model=WorkflowAgentRecord)
+async def create_workflow_agent_route(
+    payload: WorkflowAgentCreateRequest,
     request: Request,
-) -> PulseAutomationRecord:
-    require_user(request)
-    return generated_flow_from_prompt(payload)
+) -> WorkflowAgentRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return create_workflow_agent(workspace, profile, payload)
 
+@app.get("/api/workflow-agents/custom-tools", response_model=WorkflowCustomToolsResponse)
+async def list_workflow_custom_tools_route(request: Request) -> WorkflowCustomToolsResponse:
+    user = require_user(request)
+    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    return list_workflow_custom_tools(workspace)
 
-@app.post("/api/pulse/automations/simulate", response_model=PulseAutomationSimulateResponse)
-async def simulate_pulse_automation_route(
-    payload: PulseAutomationSimulateRequest,
+@app.post("/api/workflow-agents/custom-tools", response_model=WorkflowCustomToolRecord)
+async def create_workflow_custom_tool_route(
+    payload: WorkflowCustomToolCreateRequest,
     request: Request,
-) -> PulseAutomationSimulateResponse:
+) -> WorkflowCustomToolRecord:
+    user = require_user(request)
+    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    return create_workflow_custom_tool(workspace, payload)
+
+@app.put("/api/workflow-agents/custom-tools/{tool_id}", response_model=WorkflowCustomToolRecord)
+async def update_workflow_custom_tool_route(
+    tool_id: str,
+    payload: WorkflowCustomToolUpdateRequest,
+    request: Request,
+) -> WorkflowCustomToolRecord:
+    user = require_user(request)
+    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    return update_workflow_custom_tool(workspace, tool_id, payload)
+
+@app.delete("/api/workflow-agents/custom-tools/{tool_id}")
+async def delete_workflow_custom_tool_route(tool_id: str, request: Request) -> dict[str, bool]:
+    user = require_user(request)
+    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    return delete_workflow_custom_tool(workspace, tool_id)
+
+@app.get("/api/workflow-agents/{agent_id}", response_model=WorkflowAgentRecord)
+async def get_workflow_agent_route(agent_id: str, request: Request) -> WorkflowAgentRecord:
     user = require_user(request)
     workspace, profile, _runtime_instance = get_context_for_user(user)
-    return simulate_pulse_automation(workspace, profile, payload)
+    return get_workflow_agent(workspace, profile, agent_id)
 
-
-@app.get("/api/pulse/tags", response_model=PulseTagsResponse)
-async def list_pulse_tags_route(request: Request) -> PulseTagsResponse:
+@app.put("/api/workflow-agents/{agent_id}", response_model=WorkflowAgentRecord)
+async def update_workflow_agent_route(
+    agent_id: str,
+    payload: WorkflowAgentUpdateRequest,
+    request: Request,
+) -> WorkflowAgentRecord:
     user = require_user(request)
     workspace, profile, _runtime_instance = get_context_for_user(user)
-    return list_pulse_tags(workspace, profile)
+    return update_workflow_agent(workspace, profile, agent_id, payload)
 
-
-@app.get("/api/pulse/analytics", response_model=PulseAnalyticsResponse)
-async def get_pulse_analytics_route(request: Request) -> PulseAnalyticsResponse:
+@app.delete("/api/workflow-agents/{agent_id}")
+async def delete_workflow_agent_route(agent_id: str, request: Request) -> dict[str, bool]:
     user = require_user(request)
     workspace, profile, _runtime_instance = get_context_for_user(user)
-    return pulse_analytics(workspace, profile)
+    return delete_workflow_agent(workspace, profile, agent_id)
 
+@app.get("/api/workflow-agents/{agent_id}/triggers", response_model=WorkflowTriggersResponse)
+async def list_workflow_triggers_route(agent_id: str, request: Request) -> WorkflowTriggersResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return list_workflow_triggers(workspace, profile, agent_id, request)
 
-@app.post("/api/pulse/internal/tick")
-async def tick_pulse_route(request: Request) -> dict[str, int]:
-    require_user(request)
-    return tick_pulse_due_runs()
+@app.post("/api/workflow-agents/{agent_id}/triggers", response_model=WorkflowTriggerRecord)
+async def create_workflow_trigger_route(
+    agent_id: str,
+    payload: WorkflowTriggerCreateRequest,
+    request: Request,
+) -> WorkflowTriggerRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return create_workflow_trigger(workspace, profile, agent_id, payload, request)
 
+@app.put("/api/workflow-agents/{agent_id}/triggers/{trigger_id}", response_model=WorkflowTriggerRecord)
+async def update_workflow_trigger_route(
+    agent_id: str,
+    trigger_id: str,
+    payload: WorkflowTriggerUpdateRequest,
+    request: Request,
+) -> WorkflowTriggerRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return update_workflow_trigger(workspace, profile, agent_id, trigger_id, payload, request)
+
+@app.delete("/api/workflow-agents/{agent_id}/triggers/{trigger_id}")
+async def delete_workflow_trigger_route(agent_id: str, trigger_id: str, request: Request) -> dict[str, bool]:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return delete_workflow_trigger(workspace, profile, agent_id, trigger_id)
+
+@app.get("/api/workflow-agents/{agent_id}/deliveries", response_model=WorkflowDeliveriesResponse)
+async def list_workflow_deliveries_route(agent_id: str, request: Request) -> WorkflowDeliveriesResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return list_workflow_deliveries(workspace, profile, agent_id)
+
+@app.post("/api/workflow-agents/{agent_id}/deliveries", response_model=WorkflowDeliveryRecord)
+async def create_workflow_delivery_route(
+    agent_id: str,
+    payload: WorkflowDeliveryCreateRequest,
+    request: Request,
+) -> WorkflowDeliveryRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return create_workflow_delivery(workspace, profile, agent_id, payload)
+
+@app.put("/api/workflow-agents/{agent_id}/deliveries/{delivery_id}", response_model=WorkflowDeliveryRecord)
+async def update_workflow_delivery_route(
+    agent_id: str,
+    delivery_id: str,
+    payload: WorkflowDeliveryUpdateRequest,
+    request: Request,
+) -> WorkflowDeliveryRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return update_workflow_delivery(workspace, profile, agent_id, delivery_id, payload)
+
+@app.delete("/api/workflow-agents/{agent_id}/deliveries/{delivery_id}")
+async def delete_workflow_delivery_route(agent_id: str, delivery_id: str, request: Request) -> dict[str, bool]:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return delete_workflow_delivery(workspace, profile, agent_id, delivery_id)
+
+@app.get("/api/workflow-agents/{agent_id}/embed", response_model=WorkflowAgentEmbedConfigRecord)
+async def get_workflow_embed_config_route(agent_id: str, request: Request) -> WorkflowAgentEmbedConfigRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return get_workflow_embed_config(workspace, profile, agent_id, request)
+
+@app.put("/api/workflow-agents/{agent_id}/embed", response_model=WorkflowAgentEmbedConfigRecord)
+async def update_workflow_embed_config_route(
+    agent_id: str,
+    payload: WorkflowAgentEmbedConfigUpdateRequest,
+    request: Request,
+) -> WorkflowAgentEmbedConfigRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return update_workflow_embed_config(workspace, profile, agent_id, payload, request)
+
+@app.post("/api/workflow-agents/{agent_id}/embed/asset", response_model=WorkflowAgentEmbedConfigRecord)
+async def upload_workflow_embed_asset_route(
+    agent_id: str,
+    payload: WorkflowAgentEmbedAssetRequest,
+    request: Request,
+) -> WorkflowAgentEmbedConfigRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return upload_workflow_embed_asset(workspace, profile, agent_id, payload, request)
+
+@app.get("/api/workflow-agents/{agent_id}/runs", response_model=WorkflowRunsResponse)
+async def list_workflow_runs_route(agent_id: str, request: Request, limit: int = 50) -> WorkflowRunsResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return list_workflow_runs(workspace, profile, agent_id, limit)
+
+@app.get("/api/workflow-agents/{agent_id}/runs/{run_id}/events", response_model=WorkflowRunEventsResponse)
+async def list_workflow_run_events_route(agent_id: str, run_id: str, request: Request) -> WorkflowRunEventsResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return list_workflow_run_events(workspace, profile, agent_id, run_id)
+
+@app.post("/api/workflow-agents/{agent_id}/runs", response_model=WorkflowRunRecord)
+async def run_workflow_agent_route(
+    agent_id: str,
+    payload: WorkflowRunCreateRequest,
+    request: Request,
+) -> WorkflowRunRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return await run_workflow_agent(workspace, profile, agent_id, payload)
+
+@app.post("/api/workflow-agents/triggers/api", response_model=WorkflowTriggerRunsResponse)
+async def run_workflow_api_triggers_route(
+    payload: WorkflowTriggerRunRequest,
+    request: Request,
+) -> WorkflowTriggerRunsResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return await run_matching_workflow_triggers(workspace, profile, "api", payload.event_name, payload.input)
+
+@app.post("/api/workflow-agents/triggers/chat", response_model=WorkflowTriggerRunsResponse)
+async def run_workflow_chat_triggers_route(
+    payload: WorkflowTriggerRunRequest,
+    request: Request,
+) -> WorkflowTriggerRunsResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return await run_matching_workflow_triggers(workspace, profile, "chat", payload.event_name, payload.input)
+
+@app.post("/api/workflow-agents/triggers/messaging", response_model=WorkflowTriggerRunsResponse)
+async def run_workflow_messaging_gateway_triggers_route(
+    payload: WorkflowMessagingTriggerRequest,
+    request: Request,
+) -> WorkflowTriggerRunsResponse:
+    from app.runtime_auth import get_context_for_request
+
+    workspace, profile, _runtime_instance = get_context_for_request(request)
+    return await run_workflow_messaging_gateway_triggers(workspace, profile, payload)
+
+@app.post("/api/workflow-agents/triggers/app-events", response_model=WorkflowTriggerRunsResponse)
+async def run_workflow_app_event_triggers_route(
+    payload: WorkflowTriggerRunRequest,
+    request: Request,
+) -> WorkflowTriggerRunsResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return await run_matching_workflow_triggers(workspace, profile, "app_event", payload.event_name, payload.input)
+
+@app.post("/api/workflow-agents/triggers/schedules/tick", response_model=WorkflowTriggerRunsResponse)
+async def tick_workflow_schedule_triggers_route(request: Request) -> WorkflowTriggerRunsResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return await tick_due_workflow_schedule_triggers(workspace, profile)
+
+@app.post("/api/workflow-webhooks/{trigger_id}", response_model=WorkflowWebhookIngestResponse)
+async def ingest_workflow_webhook_route(trigger_id: str, request: Request) -> WorkflowWebhookIngestResponse:
+    secret = request.headers.get("X-Verxio-Webhook-Secret") or request.query_params.get("secret") or ""
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid workflow webhook JSON.") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Workflow webhook payload must be an object.")
+    run = await run_webhook_trigger(trigger_id, secret, payload)
+    return WorkflowWebhookIngestResponse(run=run)
+
+@app.get("/api/public/workflow-agents/{public_token}", response_model=WorkflowAgentPublicInfo)
+async def get_public_workflow_agent_route(public_token: str) -> WorkflowAgentPublicInfo:
+    return get_workflow_public_embed_info(public_token)
+
+@app.post("/api/public/workflow-agents/{public_token}/runs", response_model=WorkflowAgentPublicRunResponse)
+async def run_public_workflow_agent_route(
+    public_token: str,
+    payload: WorkflowAgentPublicRunRequest,
+    request: Request,
+) -> WorkflowAgentPublicRunResponse:
+    return await run_workflow_public_embed_agent(public_token, payload, request)
+
+@app.get("/api/public/workflow-agent-embed.js", include_in_schema=False)
+async def workflow_agent_embed_script_route() -> Response:
+    script = """
+(() => {
+  const current = document.currentScript;
+  const token = current?.dataset?.agentToken;
+  if (!token || document.querySelector(`[data-verxio-agent-root="${token}"]`)) return;
+  const root = document.createElement('div');
+  root.dataset.verxioAgentRoot = token;
+  root.style.cssText = 'position:fixed;right:20px;bottom:20px;z-index:2147483000;font-family:Inter,system-ui,sans-serif';
+  root.innerHTML = '<button type="button" data-open style="border:0;border-radius:999px;padding:12px 14px;background:#0ea5e9;color:white;box-shadow:0 10px 30px rgba(15,23,42,.18);cursor:pointer">Chat</button><form data-panel hidden style="width:320px;max-width:calc(100vw - 32px);background:white;border:1px solid #dbe3ea;border-radius:8px;box-shadow:0 18px 60px rgba(15,23,42,.22);overflow:hidden"><div data-title style="padding:12px 14px;font-weight:600;background:#f8fafc">Verxio Agent</div><textarea name="message" rows="4" placeholder="Ask anything" style="width:100%;box-sizing:border-box;border:0;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;padding:12px;resize:vertical"></textarea><div data-output style="min-height:36px;padding:10px 12px;color:#475569;font-size:13px"></div><div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px"><span style="font-size:11px;color:#94a3b8">Powered by Verxio</span><button type="submit" style="border:0;border-radius:6px;padding:8px 12px;background:#0ea5e9;color:white;cursor:pointer">Send</button></div></form>';
+  document.body.appendChild(root);
+  const panel = root.querySelector('[data-panel]');
+  const output = root.querySelector('[data-output]');
+  const button = root.querySelector('[data-open]');
+  fetch(`/api/public/workflow-agents/${encodeURIComponent(token)}`).then(r => r.ok ? r.json() : null).then(info => {
+    if (!info) return;
+    root.querySelector('[data-title]').textContent = info.display_name || info.name || 'Verxio Agent';
+    button.style.background = info.primary_color || '#0ea5e9';
+    panel.querySelector('button[type="submit"]').style.background = info.primary_color || '#0ea5e9';
+  }).catch(() => {});
+  button.addEventListener('click', () => { panel.hidden = !panel.hidden; });
+  panel.addEventListener('submit', async event => {
+    event.preventDefault();
+    const message = new FormData(panel).get('message')?.toString().trim();
+    if (!message) return;
+    output.textContent = 'Sending...';
+    const response = await fetch(`/api/public/workflow-agents/${encodeURIComponent(token)}/runs`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ message, page_url: location.href })
+    });
+    const body = await response.json().catch(() => ({}));
+    output.textContent = body.run?.output_text || body.detail || 'Agent run queued.';
+  });
+})();
+"""
+    return Response(content=script.strip(), media_type="application/javascript")
 
 async def _sync_composio_bridge_for_user(user: dict, *, apply_live: bool = False, allow_restart: bool = True):
     """Sync Composio → Hermes MCP config without bouncing the UI.
@@ -974,7 +1175,6 @@ async def _sync_composio_bridge_for_user(user: dict, *, apply_live: bool = False
 
     return accounts, bridge
 
-
 async def _sync_inference_bridge_for_user(
     user: dict,
     *,
@@ -1013,7 +1213,6 @@ async def _sync_inference_bridge_for_user(
 
     return bridge
 
-
 @app.get("/api/composio/connections", response_model=ComposioConnectionsResponse)
 async def list_composio_connections_route(request: Request) -> ComposioConnectionsResponse:
     user = require_user(request)
@@ -1023,7 +1222,6 @@ async def list_composio_connections_route(request: Request) -> ComposioConnectio
         configured=is_composio_configured(),
         toolBridge=bridge,
     )
-
 
 @app.get("/api/composio/connections/apps", response_model=ComposioAppsResponse)
 async def list_composio_apps_route(request: Request) -> ComposioAppsResponse:
@@ -1035,7 +1233,6 @@ async def list_composio_apps_route(request: Request) -> ComposioAppsResponse:
         catalogReady=is_composio_catalog_ready(),
         catalogError=get_composio_catalog_error(),
     )
-
 
 @app.get("/api/composio/connections/apps/{app_slug}/tools", response_model=ComposioAppToolsResponse)
 async def list_composio_app_tools_route(
@@ -1049,6 +1246,36 @@ async def list_composio_app_tools_route(
         catalogError=get_composio_catalog_error(),
     )
 
+@app.get(
+    "/api/composio/connections/apps/{app_slug}/triggers",
+    response_model=ComposioTriggerTypesResponse,
+)
+async def list_composio_trigger_types_route(
+    app_slug: str,
+    request: Request,
+) -> ComposioTriggerTypesResponse:
+    require_user(request)
+    return list_composio_trigger_types(app_slug)
+
+@app.post("/api/composio/webhooks", response_model=WorkflowTriggerRunsResponse)
+async def ingest_composio_webhook_route(request: Request) -> WorkflowTriggerRunsResponse:
+    body = await request.body()
+    webhook_id = request.headers.get("webhook-id", "")
+    payload = verify_composio_webhook(
+        body,
+        webhook_id=webhook_id,
+        webhook_timestamp=request.headers.get("webhook-timestamp", ""),
+        webhook_signature=request.headers.get("webhook-signature", ""),
+    )
+    if not claim_composio_webhook(webhook_id):
+        return WorkflowTriggerRunsResponse(runs=[])
+    try:
+        result = await run_workflow_composio_trigger_event(payload)
+    except Exception:
+        release_composio_webhook(webhook_id)
+        raise
+    complete_composio_webhook(webhook_id)
+    return result
 
 @app.get(
     "/api/composio/connections/apps/{app_slug}/setup",
@@ -1060,14 +1287,12 @@ async def get_composio_connection_setup_route(
     require_user(request)
     return get_composio_connection_setup(app_slug)
 
-
 @app.post("/api/composio/connections/initiate", response_model=ComposioInitiateResponse)
 async def initiate_composio_connection_route(
     payload: ComposioInitiateRequest, request: Request
 ) -> ComposioInitiateResponse:
     user = require_user(request)
     return initiate_composio_connection(str(user["id"]), payload.appSlug, payload.callbackUrl)
-
 
 @app.post(
     "/api/composio/connections/complete",
@@ -1081,7 +1306,6 @@ async def complete_composio_connection_route(
     await _sync_composio_bridge_for_user(user, apply_live=True)
     return result
 
-
 @app.delete("/api/composio/connections/{account_id}")
 async def delete_composio_connection_route(account_id: str, request: Request) -> dict[str, str]:
     user = require_user(request)
@@ -1092,43 +1316,6 @@ async def delete_composio_connection_route(account_id: str, request: Request) ->
     result = delete_composio_account(account_id)
     await _sync_composio_bridge_for_user(user, apply_live=True)
     return result
-
-
-@app.get("/api/leash/agent-config")
-async def get_leash_agent_config(request: Request) -> dict:
-    """Read Leash agent.json from the runtime volume. Pass-through cache only — never stored in Turso."""
-    user = require_user(request)
-    runtime = get_runtime_for_user(user)
-    ensure_runtime_directories(runtime)
-    payload = read_leash_agent(runtime)
-    if payload is None:
-        raise HTTPException(status_code=404, detail="Leash agent config not found.")
-    return {"ok": True, "config": payload}
-
-
-@app.put("/api/leash/agent-config")
-async def put_leash_agent_config(request: Request) -> dict[str, bool]:
-    """Write Leash agent.json to the runtime volume from the browser. Body is not logged or persisted in Turso."""
-    user = require_user(request)
-    runtime = get_runtime_for_user(user)
-    ensure_runtime_directories(runtime)
-    try:
-        body = await request.json()
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="Invalid JSON body.") from exc
-    if not isinstance(body, dict):
-        raise HTTPException(status_code=400, detail="Leash agent config must be a JSON object.")
-    write_leash_agent(runtime, body)
-    return {"ok": True}
-
-
-@app.delete("/api/leash/agent-config")
-async def delete_leash_agent_config(request: Request) -> dict[str, bool]:
-    user = require_user(request)
-    runtime = get_runtime_for_user(user)
-    clear_leash_agent(runtime)
-    return {"ok": True}
-
 
 def _runtime_dashboard_token(runtime_id: str, runtime: RuntimeInstance | None = None, *, prefer_live: bool = False) -> str:
     row = db.fetch_one("SELECT dashboard_token FROM runtime_instances WHERE id = ?", (runtime_id,))
@@ -1152,7 +1339,6 @@ def _runtime_dashboard_token(runtime_id: str, runtime: RuntimeInstance | None = 
     if not token:
         raise HTTPException(status_code=503, detail="Runtime dashboard token is not ready.")
     return token
-
 
 async def _runtime_dashboard_token_async(
     runtime_id: str,
@@ -1180,7 +1366,6 @@ async def _runtime_dashboard_token_async(
         raise HTTPException(status_code=503, detail="Runtime dashboard token is not ready.")
     return token
 
-
 def _proxy_headers(request: Request, token: str) -> dict[str, str]:
     blocked = {"host", "cookie", "authorization", "x-hermes-session-token"}
     headers = {key: value for key, value in request.headers.items() if key.lower() not in blocked}
@@ -1188,45 +1373,114 @@ def _proxy_headers(request: Request, token: str) -> dict[str, str]:
     headers["Authorization"] = f"Bearer {token}"
     return headers
 
-
 def _dashboard_request_is_read(method: str) -> bool:
     return method.upper() in {"GET", "HEAD", "OPTIONS"}
-
 
 def _dashboard_path_is_lightweight(path: str) -> bool:
     normalized = path.strip("/")
     # api/model/options builds a priced/capabilities catalog and routinely
     # exceeds the 2s lightweight proxy budget — treating it as lightweight
     # made BYOK connect look "green" (status) while the model selector stayed
-    # on "no model" until a later lucky refetch.
+    # on "no model" until a later lucky refetch. It uses the model-options
+    # catalog path below instead (skip sync/start lock, longer upstream budget).
+    #
+    # api/providers/oauth and api/model/auxiliary are cheap Hermes reads, but
+    # awaiting start_runtime on them made Settings → Providers fall back to
+    # API-keys-only (ChatGPT/OAuth missing) and Model settings spin forever.
     return normalized in {
         "api/status",
         "api/config",
+        "api/config/defaults",
+        "api/config/schema",
+        "api/env",
         "api/sessions",
         "api/models",
         "api/model/info",
+        "api/model/auxiliary",
+        "api/providers/oauth",
     }
 
+def _dashboard_path_is_model_options(path: str) -> bool:
+    """Backward-compatible alias for the medium-read catalog path."""
+    return _dashboard_path_is_medium_read(path)
+
+
+def _dashboard_path_is_medium_read(path: str) -> bool:
+    """Slow-but-safe GETs that must skip awaited bridge sync + start_runtime.
+
+    ``api/model/options`` builds a priced catalog; ``api/analytics/*`` aggregates
+    session token/cost history (often 10–30s on a large state.db). Both used to
+    sit behind the shared start_runtime lock, so Command Center Usage showed
+    "No usage" and the model picker flashed empty even when Hermes had data.
+    """
+    normalized = path.strip("/")
+    if normalized == "api/model/options":
+        return True
+    return normalized.startswith("api/analytics/")
+
+def _dashboard_path_is_toolset_fast_path(path: str) -> bool:
+    """Toolset config/provider/env must not wait on start_runtime's lock.
+
+    Skills → Toolsets provider switches used to hang 60–120s behind
+    ``start_runtime`` (shared asyncio lock + docker inspect) and the
+    synchronous inference-bridge sync. Hermes itself applies a provider
+    pin in well under a second; the Verxio proxy was the bottleneck, so
+    OpenAI/image selections never persisted and the agent kept answering
+    with the DashScope fallback.
+    """
+    normalized = path.strip("/")
+    if not normalized.startswith("api/tools/toolsets"):
+        return False
+    if normalized == "api/tools/toolsets":
+        return True
+    return (
+        normalized.endswith("/config")
+        or normalized.endswith("/provider")
+        or normalized.endswith("/env")
+    )
+
+
+def _dashboard_path_is_session_mutation_fast_path(path: str, method: str = "") -> bool:
+    """Session delete/rename/archive must not await bridge sync + start_runtime.
+
+    Sidebar deletes are pure Hermes ``state.db`` writes. Queuing them behind
+    the shared docker start lock + inference-bridge sync made multi-delete
+    hit the browser's 90s abort ("Verxio backend timed out while starting"),
+    after which the UI restored the row — so refresh showed sessions again.
+    """
+    method_u = (method or "").upper()
+    normalized = path.strip("/")
+    if method_u == "POST" and normalized == "api/sessions/bulk-delete":
+        return True
+    if method_u == "DELETE" and normalized == "api/sessions/empty":
+        return True
+    if method_u in {"DELETE", "PATCH"}:
+        parts = normalized.split("/")
+        if len(parts) == 3 and parts[0] == "api" and parts[1] == "sessions" and parts[2]:
+            return True
+    return False
 
 def _dashboard_path_needs_inference_sync(path: str) -> bool:
-    """Model reads need the hosted default written into Hermes config.yaml.
+    """Model info needs the hosted default written into Hermes config.yaml.
 
     Fresh runtimes ship without a model section, so GET /api/model/info returns
     empty until sync_inference_runtime_bridge runs. Status/config polls stay
-    lightweight; only model endpoints pay for this seed.
+    lightweight. GET model/options is intentionally excluded — scheduling a
+    bridge sync on every catalog open saturated docker.sock and made inference
+    settings/catalog (and the picker) take tens of seconds.
     """
     normalized = path.strip("/")
-    return normalized in {"api/model/info", "api/model/options"}
-
+    return normalized == "api/model/info"
 
 def _dashboard_path_needs_inference_env_reassert(path: str, method: str) -> bool:
-    """Dashboard env writes can drop Verxio-injected hosted model env vars.
+    """Env/toolset writes that used to force a Docker runtime restart.
 
-    Hermes' `/api/env/reload` mirrors `.env` into `os.environ` and removes keys
-    absent from `.env`. Hosted inference secrets are intentionally injected as
-    container env, not persisted into `.env`, so a generic Tools & Keys reload
-    can make the running gateway process forget `DASHSCOPE_API_KEY` while
-    `config.yaml` still selects `provider: alibaba`.
+    Hermes' `/api/env/reload` mirrors `.env` into `os.environ` and, when
+    ``VERXIO_HOSTED=1``, preserves injected hosted model secrets
+    (``DASHSCOPE_API_KEY`` / ``GEMINI_API_KEY`` / ``GOOGLE_API_KEY``) that are
+    not persisted into `.env`. A full container restart on every Tools /
+    Toolsets key save blocked the HTTP response for 30–90s and surfaced false
+    "timed out while starting" errors — so the proxy no longer restarts here.
     """
     if _dashboard_request_is_read(method):
         return False
@@ -1241,15 +1495,12 @@ def _dashboard_path_needs_inference_env_reassert(path: str, method: str) -> bool
         and (normalized.endswith("/env") or normalized.endswith("/provider"))
     )
 
-
 _ENSURE_TASKS: set[asyncio.Task[None]] = set()
 _BRIDGE_TASKS: set[asyncio.Task[None]] = set()
-
 
 def _track_background_task(task: asyncio.Task[None], bucket: set[asyncio.Task[None]]) -> None:
     bucket.add(task)
     task.add_done_callback(bucket.discard)
-
 
 def _schedule_inference_bridge_sync(user: dict) -> None:
     async def _run() -> None:
@@ -1259,7 +1510,6 @@ def _schedule_inference_bridge_sync(user: dict) -> None:
             logger.exception("Background inference bridge sync failed")
 
     _track_background_task(asyncio.create_task(_run()), _BRIDGE_TASKS)
-
 
 def _schedule_runtime_ensure(user: dict) -> None:
     """Kick container ensure off the request path (status polls must stay instant)."""
@@ -1279,9 +1529,7 @@ def _schedule_runtime_ensure(user: dict) -> None:
 
     _track_background_task(asyncio.create_task(_run()), _ENSURE_TASKS)
 
-
 logger = logging.getLogger(__name__)
-
 
 @app.api_route(
     "/api/runtime/dashboard/{path:path}",
@@ -1290,26 +1538,58 @@ logger = logging.getLogger(__name__)
 async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     user = require_user(request)
     lightweight = _dashboard_request_is_read(request.method) and _dashboard_path_is_lightweight(path)
+    medium_read = _dashboard_request_is_read(request.method) and _dashboard_path_is_medium_read(path)
+    model_options = medium_read  # alias used by older start-lock / sync branches
+    toolset_fast = _dashboard_path_is_toolset_fast_path(path)
+    session_fast = _dashboard_path_is_session_mutation_fast_path(path, request.method)
+    skip_start_lock = lightweight or medium_read or toolset_fast or session_fast
 
     # Reads must stay fast for boot polling. Bridge sync belongs on writes and
     # the websocket background task — never on every status/config/sessions GET.
     # Exception: model info/options must seed Hermes with the user's hosted
-    # default first, or the statusbar paints "No model" on a fresh runtime.
-    if not _dashboard_request_is_read(request.method):
-        await _sync_composio_bridge_for_user(user, apply_live=True)
-        await _sync_inference_bridge_for_user(user)
-    elif _dashboard_path_needs_inference_sync(path):
-        if lightweight:
+    # default — but only as a background task. Awaiting sync + start_runtime on
+    # GET model/options made the picker wait 15–20s and flash empty.
+    # Toolset provider/env pins are Hermes config writes only — never block them
+    # on docker inspect / bridge sync or OpenAI→DashScope switches time out.
+    # Session delete/rename is the same class of cheap Hermes DB write.
+    if toolset_fast:
+        if not _dashboard_request_is_read(request.method):
             _schedule_inference_bridge_sync(user)
-        else:
-            await _sync_inference_bridge_for_user(user, allow_restart=False)
+    elif session_fast:
+        pass
+    elif not _dashboard_request_is_read(request.method):
+        # Model switches + Tools/Keys saves hit this path. Never Docker-restart
+        # or MCP-reload here — those made the runtime feel like it was crashing
+        # (30–90s "starting" toasts). Composio live reload stays on the
+        # Connections routes; inference env injection stays on start/restart.
+        await _sync_inference_bridge_for_user(user, allow_restart=False)
+    elif _dashboard_path_needs_inference_sync(path):
+        _schedule_inference_bridge_sync(user)
 
     # Lightweight GETs never call start_runtime. Refresh was paying a full
     # ensure/health tax on every status poll and felt like a cold start.
-    if lightweight:
+    # Model-options + toolset/session fast-path also skip the shared start lock
+    # when already running.
+    if skip_start_lock:
         runtime = get_runtime_for_user(user)
         if runtime.status != "running":
             _schedule_runtime_ensure(user)
+            # Session delete/rename must never await the start lock — a stuck
+            # "starting" row was still making multi-delete take 30–40s and hit
+            # the browser abort. Proxy via container DNS when we can; else 503.
+            if (
+                toolset_fast
+                and not session_fast
+                and not lightweight
+                and not model_options
+            ):
+                # Still try to bring the runtime up for a toolset write so the
+                # first-ever select after a cold boot isn't a hard 503.
+                runtime = await start_runtime(
+                    runtime,
+                    extra_env=runtime_env_for_user(str(user["id"])),
+                    wait_ready=False,
+                )
     else:
         runtime = await start_runtime(
             get_runtime_for_user(user),
@@ -1319,15 +1599,32 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
 
     base = runtime_dashboard_base_url(runtime, ensure_network=False)
     if not base:
-        if lightweight:
+        if skip_start_lock:
             _schedule_runtime_ensure(user)
         raise HTTPException(status_code=503, detail="Runtime dashboard is starting. Retry shortly.")
 
     # Status polls must stay cheap: DB token + short upstream timeout.
+    # Model options needs longer than 2s (catalog build) but must not sit behind
+    # the 300s write timeout while the UI already fell back to hosted defaults.
+    # Session delete/rename is a SQLite write — keep it well under the browser
+    # abort so multi-delete doesn't look like a cold start.
     token = await _runtime_dashboard_token_async(runtime.id, runtime, prefer_live=False)
     target = f"{base.rstrip('/')}/{path}"
     body = await request.body()
-    timeout = httpx.Timeout(2.0 if lightweight else 300.0)
+    if lightweight:
+        # Hermes /api/status regularly takes 2–5s under concurrent boot polls
+        # (host Docker Desktop + compose). A 2s budget turned healthy runtimes
+        # into cascading 503s and left the web client stuck on CONNECTING.
+        timeout = httpx.Timeout(8.0)
+    elif medium_read:
+        # Analytics aggregates a large state.db (~20s observed); model/options
+        # is usually faster. Keep both under the browser abort, off the 300s
+        # write budget, and off the start_runtime lock.
+        timeout = httpx.Timeout(45.0)
+    elif session_fast:
+        timeout = httpx.Timeout(20.0)
+    else:
+        timeout = httpx.Timeout(300.0)
     try:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
             upstream = await client.request(
@@ -1338,7 +1635,7 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
                 headers=_proxy_headers(request, token),
             )
     except (httpx.ConnectError, httpx.ConnectTimeout, httpx.RemoteProtocolError, httpx.ReadError, httpx.TimeoutException) as exc:
-        if lightweight:
+        if skip_start_lock:
             _schedule_runtime_ensure(user)
         raise HTTPException(
             status_code=503,
@@ -1347,14 +1644,18 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
 
     if upstream.status_code < 500:
         mark_runtime_healthy(runtime)
-    elif lightweight and upstream.status_code >= 500:
+    elif skip_start_lock and upstream.status_code >= 500:
         _schedule_runtime_ensure(user)
 
+    # Intentionally no docker restart on env/toolset writes. Hermes already
+    # preserves VERXIO_HOSTED inference env across `/api/env/reload`, and
+    # restarting here made key saves time out in the browser.
     if upstream.status_code < 400 and _dashboard_path_needs_inference_env_reassert(path, request.method):
-        runtime_env = runtime_env_for_user(str(user["id"]))
-        if runtime_env and runtime.status == "running":
-            runtime = await restart_runtime(get_runtime_for_user(user, fresh=True), extra_env=runtime_env)
-            mark_runtime_healthy(runtime)
+        logger.debug(
+            "Skipping runtime restart after %s %s (hosted env preserved in-process)",
+            request.method,
+            path,
+        )
 
     response_headers = {
         key: value
@@ -1366,14 +1667,12 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
         content = normalize_gateway_status_content(content)
     return Response(content=content, status_code=upstream.status_code, headers=response_headers)
 
-
 def _ws_target_url(runtime_url: str, path: str, query: str, token: str) -> str:
     parsed = httpx.URL(runtime_url)
     scheme = "wss" if parsed.scheme == "https" else "ws"
     params = [(key, value) for key, value in parse_qsl(query, keep_blank_values=True) if key != "token"]
     params.append(("token", token))
     return f"{scheme}://{parsed.host}:{parsed.port or 80}/{path}?{urlencode(params)}"
-
 
 def _runtime_ws_open_timeout_seconds() -> float:
     # Keep this short: a hung docker-proxy/upstream must not stall the API worker.
@@ -1383,14 +1682,12 @@ def _runtime_ws_open_timeout_seconds() -> float:
     except ValueError:
         return 8.0
 
-
 async def _safe_websocket_close(websocket: WebSocket, code: int) -> None:
     try:
         await websocket.close(code=code)
     except RuntimeError:
         # Starlette rejects a second close after the socket is already gone.
         pass
-
 
 @app.websocket("/api/runtime/dashboard/ws/{path:path}")
 async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
@@ -1485,13 +1782,11 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
         logger.exception("Runtime dashboard websocket proxy failed for path=%s", path)
         await _safe_websocket_close(websocket, 1011)
 
-
 def _find_run(run_id: str) -> RunRecord:
     for run in RUNS:
         if run.id == run_id:
             return run
     raise HTTPException(status_code=404, detail="Run not found")
-
 
 async def _refresh_run(run: RunRecord) -> RunRecord:
     if (
@@ -1522,7 +1817,6 @@ async def _refresh_run(run: RunRecord) -> RunRecord:
             ),
         )
     return run
-
 
 @app.post("/api/runs", response_model=RunRecord)
 async def create_run(payload: RunRequest) -> RunRecord:
@@ -1578,12 +1872,10 @@ async def create_run(payload: RunRequest) -> RunRecord:
 
     return run
 
-
 @app.get("/api/runs/{run_id}", response_model=RunRecord)
 async def get_run(run_id: str) -> RunRecord:
     run = _find_run(run_id)
     return await _refresh_run(run)
-
 
 @app.post("/api/runs/{run_id}/stop", response_model=RunRecord)
 async def stop_run(run_id: str) -> RunRecord:
@@ -1612,7 +1904,6 @@ async def stop_run(run_id: str) -> RunRecord:
         ),
     )
     return run
-
 
 @app.get("/{full_path:path}", include_in_schema=False)
 async def spa_fallback(full_path: str) -> FileResponse:

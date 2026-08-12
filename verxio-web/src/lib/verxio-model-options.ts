@@ -1,4 +1,4 @@
-import { getGlobalModelOptions } from '@/hermes'
+import { getGlobalModelOptions, setModelAssignment } from '@/hermes'
 import {
   getInferenceCatalog,
   getInferenceSettings,
@@ -70,39 +70,36 @@ export function hostedModelOptionsFromInference(
   settings: VerxioInferenceSettings,
   catalog: VerxioInferenceCatalogResponse
 ): ModelOptionsResponse | null {
-  if (settings.mode !== 'hosted') {
-    return null
-  }
-
   const selected = selectedHostedModel(settings, catalog)
+  const hostedProviders = (catalog.models ?? [])
+    .filter(model => model.hostedAvailable && model.upstreamModelId)
+    .map(model => {
+      const hostedModelIds = selectedHostedModelIds(model)
+      const isCurrent = Boolean(selected && model.id === selected.id)
 
-  const hostedModelIds = selected ? selectedHostedModelIds(selected) : []
+      return {
+        authenticated: true,
+        capabilities: Object.fromEntries(hostedModelIds.map(id => [id, capabilitiesFor(model)])),
+        is_current: isCurrent,
+        is_verxio_hosted: true,
+        models: hostedModelIds,
+        name: model.displayName,
+        pricing: Object.fromEntries(hostedModelIds.map(id => [id, pricingFor(model)])),
+        slug: model.providerSlug,
+        total_models: hostedModelIds.length,
+        warning: model.hostedAvailable ? undefined : `${model.displayName} is not configured for hosted inference.`
+      } satisfies ModelOptionProvider
+    })
+    .filter(provider => (provider.models ?? []).length > 0)
 
-  if (!selected?.upstreamModelId || hostedModelIds.length === 0) {
-    return {
-      providers: []
-    }
+  if (hostedProviders.length === 0) {
+    return { providers: [] }
   }
 
   return {
-    model: selected.upstreamModelId,
-    provider: selected.providerSlug,
-    providers: [
-      {
-        authenticated: true,
-        capabilities: Object.fromEntries(hostedModelIds.map(model => [model, capabilitiesFor(selected)])),
-        is_current: true,
-        is_verxio_hosted: true,
-        models: hostedModelIds,
-        name: selected.displayName,
-        pricing: Object.fromEntries(hostedModelIds.map(model => [model, pricingFor(selected)])),
-        slug: selected.providerSlug,
-        total_models: hostedModelIds.length,
-        warning: selected.hostedAvailable
-          ? undefined
-          : `${selected.displayName} is not configured for hosted inference.`
-      }
-    ]
+    model: selected?.upstreamModelId,
+    provider: selected?.providerSlug,
+    providers: hostedProviders
   }
 }
 
@@ -110,6 +107,52 @@ function configuredRuntimeProviders(options: ModelOptionsResponse): ModelOptionP
   return (options.providers ?? []).filter(
     provider => provider.authenticated !== false && (provider.models ?? []).length > 0
   )
+}
+
+function firstConfiguredRuntimeModel(options: ModelOptionsResponse): { model: string; provider: string } | null {
+  const provider = configuredRuntimeProviders(options)[0]
+  const model = provider?.models?.[0]
+
+  if (!provider?.slug || !model) {
+    return null
+  }
+
+  return {
+    model: String(model),
+    provider: String(provider.slug)
+  }
+}
+
+export async function ensureByokDefaultModel(options: ModelOptionsResponse): Promise<ModelOptionsResponse> {
+  const currentModel = String(options.model || '').trim()
+  const currentProvider = String(options.provider || '').trim()
+
+  if (currentModel && currentProvider) {
+    return options
+  }
+
+  const fallback = firstConfiguredRuntimeModel(options)
+
+  if (!fallback) {
+    return options
+  }
+
+  try {
+    await setModelAssignment({
+      model: fallback.model,
+      provider: fallback.provider,
+      scope: 'main'
+    })
+  } catch {
+    // The picker/statusbar can still use this session-safe default. Persistence
+    // will retry the next time the user explicitly selects a model.
+  }
+
+  return {
+    ...options,
+    model: fallback.model,
+    provider: fallback.provider
+  }
 }
 
 /** Pin Verxio-hosted, then linked/authenticated providers, above the rest. */
@@ -235,10 +278,51 @@ export function mergeHostedAndRuntimeModelOptions(
 
   return {
     ...runtime,
-    model: hosted.model,
-    provider: hosted.provider,
+    // Keep the runtime/session selection when present. Forcing hosted.model here
+    // made every picker refresh show the hosted default (flash lite) as current
+    // even after the user switched to another hosted Gemini/Qwen model.
+    model: String(runtime?.model || '').trim() || hosted.model,
+    provider: String(runtime?.provider || '').trim() || hosted.provider,
     providers
   }
+}
+
+/** Cap how long hosted mode waits on Hermes /api/model/options.
+
+  That endpoint can hang while the dashboard enumerates BYOK/OAuth providers.
+  Hosted Gemini/Qwen options come from the Verxio control plane and must stay
+  usable even when the runtime catalog never returns — otherwise the statusbar
+  shows "no model" / "No models found" while Telegram still answers via config.
+*/
+const HOSTED_RUNTIME_OPTIONS_BUDGET_MS = 2_500
+
+function withBudget<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise(resolve => {
+    let settled = false
+
+    const timer = globalThis.setTimeout(() => {
+      if (!settled) {
+        settled = true
+        resolve(null)
+      }
+    }, ms)
+
+    promise
+      .then(value => {
+        if (!settled) {
+          settled = true
+          globalThis.clearTimeout(timer)
+          resolve(value)
+        }
+      })
+      .catch(() => {
+        if (!settled) {
+          settled = true
+          globalThis.clearTimeout(timer)
+          resolve(null)
+        }
+      })
+  })
 }
 
 export async function getScopedModelOptions(
@@ -249,24 +333,28 @@ export async function getScopedModelOptions(
   }
 
   const runtimeOptionsPromise = loadRuntimeOptions()
+  // Avoid unhandled rejection if we abandon a slow runtime catalog fetch.
+  void runtimeOptionsPromise.catch(() => undefined)
 
   try {
     const [settings, catalog] = await Promise.all([getInferenceSettings(), getInferenceCatalog()])
     const hosted = hostedModelOptionsFromInference(settings, catalog)
+    const hostedUsable = hosted && (hosted.providers?.length ?? 0) > 0 ? hosted : null
+    const runtime = await withBudget(runtimeOptionsPromise, HOSTED_RUNTIME_OPTIONS_BUDGET_MS)
 
-    if (hosted) {
-      try {
-        return prioritizeLinkedProviders(mergeHostedAndRuntimeModelOptions(hosted, await runtimeOptionsPromise))
-      } catch {
-        return prioritizeLinkedProviders(hosted)
-      }
+    if (hostedUsable && runtime) {
+      return prioritizeLinkedProviders(mergeHostedAndRuntimeModelOptions(hostedUsable, runtime))
     }
 
-    // BYOK: only linked Hermes providers; never keep a stale Verxio-hosted row.
-    return prioritizeLinkedProviders(await runtimeOptionsPromise, { dropHosted: true })
+    if (hostedUsable) {
+      return prioritizeLinkedProviders(hostedUsable)
+    }
+
+    // Control-plane hosted catalog unavailable — fall back to runtime providers.
+    return ensureByokDefaultModel(prioritizeLinkedProviders(await runtimeOptionsPromise))
   } catch {
     // If the Verxio control-plane call hiccups, keep the model picker usable.
   }
 
-  return prioritizeLinkedProviders(await runtimeOptionsPromise, { dropHosted: true })
+  return ensureByokDefaultModel(prioritizeLinkedProviders(await runtimeOptionsPromise))
 }

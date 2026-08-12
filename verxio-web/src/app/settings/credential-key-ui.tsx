@@ -184,9 +184,14 @@ export function CredentialKeyCard({
             className={cn('size-2 shrink-0 rounded-full', info.is_set ? 'bg-primary' : 'bg-(--ui-stroke-secondary)')}
           />
 
-          <span className="min-w-0 truncate text-[length:var(--conversation-text-font-size)] font-medium text-foreground">
-            {label}
-          </span>
+          <div className="min-w-0">
+            <span className="block truncate text-[length:var(--conversation-text-font-size)] font-medium text-foreground">
+              {label}
+            </span>
+            {isKeyVar(varKey, info) && label.replace(/\s+/g, '_').toUpperCase() !== varKey && (
+              <span className="block truncate font-mono text-[0.625rem] text-muted-foreground">{varKey}</span>
+            )}
+          </div>
 
           {expandable && (
             <ChevronDown

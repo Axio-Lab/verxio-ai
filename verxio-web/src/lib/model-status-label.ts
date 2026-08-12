@@ -18,10 +18,20 @@ export function reasoningEffortLabel(effort: string): string {
 }
 
 export function currentPickerSelection(
-  _hasSession: boolean,
+  hasSession: boolean,
   store: { model: string; provider: string },
   options?: { model?: string; provider?: string }
 ): { model: string; provider: string } {
+  // Live sessions own the statusbar selection via /model + session.info.
+  // Prefer the store so a hosted merge that pins options.model to the default
+  // (flash lite) cannot steal the checkmark after the user picked another model.
+  if (hasSession && store.model.trim()) {
+    return {
+      model: store.model,
+      provider: store.provider || String(options?.provider || '')
+    }
+  }
+
   return {
     model: String(options?.model || store.model || ''),
     provider: String(options?.provider || store.provider || '')

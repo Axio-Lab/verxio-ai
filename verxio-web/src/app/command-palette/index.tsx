@@ -17,7 +17,6 @@ import {
   ChevronRight,
   Clock,
   Cpu,
-  Globe,
   type IconComponent,
   Info,
   KeyRound,
@@ -53,7 +52,6 @@ import {
   MESSAGING_ROUTE,
   NEW_CHAT_ROUTE,
   PROFILES_ROUTE,
-  PULSE_ROUTE,
   sessionRoute,
   SETTINGS_ROUTE,
   SKILLS_ROUTE
@@ -105,7 +103,6 @@ const toSessionEntry = (session: SessionRow): SessionEntry => ({
 type NonConfigSettingsLabel =
   | 'about'
   | 'archivedChats'
-  | 'gateway'
   | 'keysSettings'
   | 'keysTools'
   | 'mcp'
@@ -131,7 +128,6 @@ const NON_CONFIG_SETTINGS: ReadonlyArray<{
     labelKey: 'providerApiKeys',
     tab: 'providers&pview=keys'
   },
-  { icon: Globe, keywords: ['connection', 'messaging'], labelKey: 'gateway', tab: 'gateway' },
   {
     icon: KeyRound,
     keywords: ['api', 'secrets', 'tokens', 'credentials', 'browser', 'search'],
@@ -140,7 +136,7 @@ const NON_CONFIG_SETTINGS: ReadonlyArray<{
   },
   {
     icon: Settings2,
-    keywords: ['gateway', 'proxy', 'server', 'webhook', 'env'],
+    keywords: ['server', 'webhook', 'env', 'sudo'],
     labelKey: 'keysSettings',
     tab: 'keys&kview=settings'
   },
@@ -242,7 +238,6 @@ export function CommandPalette() {
             run: go(SKILLS_ROUTE)
           },
           { icon: MessageCircle, id: 'nav-messaging', label: cc.nav.messaging.title, run: go(MESSAGING_ROUTE) },
-          { icon: Zap, id: 'nav-pulse', label: cc.nav.pulse.title, run: go(PULSE_ROUTE) },
           { icon: Package, id: 'nav-artifacts', label: cc.nav.artifacts.title, run: go(ARTIFACTS_ROUTE) },
           {
             icon: Clock,

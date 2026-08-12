@@ -1,6 +1,5 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,14 +8,11 @@ import { getHermesConfigRecord, type HermesGateway, saveHermesConfig } from '@/h
 import { useI18n } from '@/i18n'
 import { COMPOSIO_MCP_SERVER_NAME, isComposioMcpServer } from '@/lib/composio'
 import { Wrench } from '@/lib/icons'
-import { isLeashIdentityConfigured } from '@/lib/leash/identity'
-import { LEASH_MCP_SERVER_NAME } from '@/lib/leash/types'
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
 import { $activeSessionId } from '@/store/session'
 import type { HermesConfigRecord } from '@/types/hermes'
 
-import { LeashMcpPanel } from './leash-mcp-panel'
 import { EmptyState, LoadingState, Pill, SettingsContent } from './primitives'
 import { useDeepLinkHighlight } from './use-deep-link-highlight'
 
@@ -33,6 +29,9 @@ const EMPTY_SERVER = {
   env: {}
 }
 
+/** Legacy Leash MCP entry — strip from configs so it no longer appears or runs. */
+const LEGACY_LEASH_MCP_SERVER_NAME = 'leash'
+
 function getServers(config: HermesConfigRecord | null): McpServers {
   const raw = config?.mcp_servers
 
@@ -41,8 +40,21 @@ function getServers(config: HermesConfigRecord | null): McpServers {
 
 function listEditableMcpServerNames(servers: McpServers): string[] {
   return Object.keys(servers)
-    .filter(name => !isComposioMcpServer(name))
+    .filter(name => !isComposioMcpServer(name) && name !== LEGACY_LEASH_MCP_SERVER_NAME)
     .sort()
+}
+
+function stripLegacyLeashServer(config: HermesConfigRecord): HermesConfigRecord | null {
+  const servers = getServers(config)
+
+  if (!(LEGACY_LEASH_MCP_SERVER_NAME in servers)) {
+    return null
+  }
+
+  const nextServers = { ...servers }
+  delete nextServers[LEGACY_LEASH_MCP_SERVER_NAME]
+
+  return { ...config, mcp_servers: nextServers }
 }
 
 const transportLabel = (server: Record<string, unknown>) =>
@@ -58,7 +70,6 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps) {
   const { t } = useI18n()
   const m = t.settings.mcp
   const activeSessionId = useStore($activeSessionId)
-  const [searchParams] = useSearchParams()
   const [config, setConfig] = useState<HermesConfigRecord | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const [name, setName] = useState('')
@@ -70,58 +81,56 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps) {
     let cancelled = false
 
     getHermesConfigRecord()
-      .then(next => {
+      .then(async next => {
         if (cancelled) {
           return
         }
 
-        setConfig(next)
-        const serverParam = searchParams.get('server')
+        const cleaned = stripLegacyLeashServer(next)
 
-        if (serverParam === LEASH_MCP_SERVER_NAME) {
-          setSelected(LEASH_MCP_SERVER_NAME)
+        if (cleaned) {
+          try {
+            await saveHermesConfig(cleaned)
+            if (cancelled) {
+              return
+            }
 
-          return
+            setConfig(cleaned)
+            setSelected(listEditableMcpServerNames(getServers(cleaned))[0] ?? null)
+            onConfigSaved?.()
+
+            return
+          } catch {
+            // Fall through and still show the cleaned list locally.
+            if (!cancelled) {
+              setConfig(cleaned)
+              setSelected(listEditableMcpServerNames(getServers(cleaned))[0] ?? null)
+            }
+
+            return
+          }
         }
 
-        const first = listEditableMcpServerNames(getServers(next))[0] ?? LEASH_MCP_SERVER_NAME
-        setSelected(first)
+        setConfig(next)
+        setSelected(listEditableMcpServerNames(getServers(next))[0] ?? null)
       })
       .catch(err => notifyError(err, m.failedLoad))
 
     return () => void (cancelled = true)
-  }, [m.failedLoad, searchParams])
+  }, [m.failedLoad, onConfigSaved])
 
   const servers = useMemo(() => getServers(config), [config])
-
-  const names = useMemo(() => {
-    const keys = listEditableMcpServerNames(servers)
-
-    if (!keys.includes(LEASH_MCP_SERVER_NAME)) {
-      return [LEASH_MCP_SERVER_NAME, ...keys]
-    }
-
-    return keys
-  }, [servers])
+  const names = useMemo(() => listEditableMcpServerNames(servers), [servers])
 
   useDeepLinkHighlight({
     block: 'nearest',
     elementId: serverName => `mcp-server-${serverName}`,
     onResolve: setSelected,
     param: 'server',
-    ready: serverName =>
-      serverName === LEASH_MCP_SERVER_NAME ||
-      (Boolean(config) && serverName in servers && !isComposioMcpServer(serverName))
+    ready: serverName => Boolean(config) && serverName in servers && !isComposioMcpServer(serverName)
   })
 
   useEffect(() => {
-    if (selected === LEASH_MCP_SERVER_NAME) {
-      setName(LEASH_MCP_SERVER_NAME)
-      setBody(JSON.stringify(servers[LEASH_MCP_SERVER_NAME] ?? EMPTY_SERVER, null, 2))
-
-      return
-    }
-
     const server = selected ? servers[selected] : null
 
     setName(selected ?? '')
@@ -163,21 +172,14 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps) {
       return
     }
 
-    if (nextName === LEASH_MCP_SERVER_NAME) {
+    if (nextName === COMPOSIO_MCP_SERVER_NAME || nextName === LEGACY_LEASH_MCP_SERVER_NAME) {
       notify({
         kind: 'warning',
         title: m.nameRequiredTitle,
-        message: 'Configure Leash identity in the panel above — keys are managed on this device only.'
-      })
-
-      return
-    }
-
-    if (nextName === COMPOSIO_MCP_SERVER_NAME) {
-      notify({
-        kind: 'warning',
-        title: m.nameRequiredTitle,
-        message: 'Composio is managed automatically. Connect apps under Skills → Connections instead.'
+        message:
+          nextName === COMPOSIO_MCP_SERVER_NAME
+            ? 'Composio is managed automatically. Connect apps under Skills → Connections instead.'
+            : 'That MCP server name is reserved.'
       })
 
       return
@@ -224,7 +226,7 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps) {
   }
 
   const removeServer = async (serverName: string) => {
-    if (serverName === LEASH_MCP_SERVER_NAME || isComposioMcpServer(serverName)) {
+    if (isComposioMcpServer(serverName)) {
       return
     }
 
@@ -237,7 +239,7 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps) {
       const nextConfig = { ...config, mcp_servers: nextServers }
       await saveHermesConfig(nextConfig)
       setConfig(nextConfig)
-      setSelected(Object.keys(nextServers).sort()[0] ?? LEASH_MCP_SERVER_NAME)
+      setSelected(listEditableMcpServerNames(nextServers)[0] ?? null)
       onConfigSaved?.()
     } catch (err) {
       notifyError(err, m.removeFailed)
@@ -245,9 +247,6 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps) {
       setSaving(false)
     }
   }
-
-  const showLeashPanel = selected === LEASH_MCP_SERVER_NAME
-  const leashConfigured = isLeashIdentityConfigured()
 
   return (
     <SettingsContent>
@@ -269,7 +268,6 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps) {
               {names.map(serverName => {
                 const server = servers[serverName]
                 const active = selected === serverName
-                const isLeash = serverName === LEASH_MCP_SERVER_NAME
 
                 return (
                   <button
@@ -284,17 +282,8 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps) {
                   >
                     <div className="truncate text-sm font-medium">{serverName}</div>
                     <div className="mt-1 flex items-center gap-1.5">
-                      {isLeash ? (
-                        <>
-                          <Pill>{leashConfigured ? t.leash.panel.statusRegistered : t.leash.panel.statusNone}</Pill>
-                          {server && <Pill>{transportLabel(server)}</Pill>}
-                        </>
-                      ) : (
-                        <>
-                          <Pill>{transportLabel(server)}</Pill>
-                          {server?.disabled === true && <Pill>{m.disabled}</Pill>}
-                        </>
-                      )}
+                      <Pill>{transportLabel(server)}</Pill>
+                      {server?.disabled === true && <Pill>{m.disabled}</Pill>}
                     </div>
                   </button>
                 )
@@ -304,55 +293,41 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps) {
         </div>
 
         <div className="grid content-start gap-3">
-          {showLeashPanel ? (
-            <>
-              <LeashMcpPanel onReloadMcp={reloadMcp} />
-              {servers[LEASH_MCP_SERVER_NAME] && (
-                <details className="rounded-md border border-(--ui-stroke-tertiary) p-3">
-                  <summary className="cursor-pointer text-xs text-muted-foreground">{m.serverJson}</summary>
-                  <pre className="mt-2 overflow-x-auto font-mono text-xs">{body}</pre>
-                </details>
-              )}
-            </>
-          ) : (
-            <>
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <Wrench className="size-4 text-muted-foreground" />
-                {selected ? m.editServer : m.newServer}
-              </div>
-              <label className="grid gap-1.5">
-                <span className="text-xs text-muted-foreground">{m.name}</span>
-                <Input onChange={event => setName(event.currentTarget.value)} placeholder="filesystem" value={name} />
-              </label>
-              <label className="grid gap-1.5">
-                <span className="text-xs text-muted-foreground">{m.serverJson}</span>
-                <Textarea
-                  className="min-h-80 font-mono text-xs"
-                  onChange={event => setBody(event.currentTarget.value)}
-                  spellCheck={false}
-                  value={body}
-                />
-              </label>
-              <div className="flex items-center justify-between">
-                {selected ? (
-                  <Button
-                    className="text-destructive hover:text-destructive"
-                    disabled={saving}
-                    onClick={() => void removeServer(selected)}
-                    size="xs"
-                    variant="text"
-                  >
-                    {m.remove}
-                  </Button>
-                ) : (
-                  <span />
-                )}
-                <Button disabled={saving} onClick={() => void saveServer()} size="sm">
-                  {saving ? t.common.saving : m.saveServer}
-                </Button>
-              </div>
-            </>
-          )}
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <Wrench className="size-4 text-muted-foreground" />
+            {selected ? m.editServer : m.newServer}
+          </div>
+          <label className="grid gap-1.5">
+            <span className="text-xs text-muted-foreground">{m.name}</span>
+            <Input onChange={event => setName(event.currentTarget.value)} placeholder="filesystem" value={name} />
+          </label>
+          <label className="grid gap-1.5">
+            <span className="text-xs text-muted-foreground">{m.serverJson}</span>
+            <Textarea
+              className="min-h-80 font-mono text-xs"
+              onChange={event => setBody(event.currentTarget.value)}
+              spellCheck={false}
+              value={body}
+            />
+          </label>
+          <div className="flex items-center justify-between">
+            {selected ? (
+              <Button
+                className="text-destructive hover:text-destructive"
+                disabled={saving}
+                onClick={() => void removeServer(selected)}
+                size="xs"
+                variant="text"
+              >
+                {m.remove}
+              </Button>
+            ) : (
+              <span />
+            )}
+            <Button disabled={saving} onClick={() => void saveServer()} size="sm">
+              {saving ? t.common.saving : m.saveServer}
+            </Button>
+          </div>
         </div>
       </div>
     </SettingsContent>

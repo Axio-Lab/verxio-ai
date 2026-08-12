@@ -88,15 +88,18 @@ export const PreviewStatusRow = memo(function PreviewStatusRow({ item, onDismiss
     setOpening(true)
 
     try {
-      // Desktop: right-rail preview pane (local file or URL).
-      // Hosted web: open the resolved preview URL in a browser tab.
-      if (!isVerxioDesktop()) {
+      const resolved = await resolveTarget()
+      const previewKind = resolved.previewKind
+
+      // Text/markdown/html/images: in-session preview on web and desktop.
+      // Binary/unknown: hosted web still opens an external tab.
+      if (!isVerxioDesktop() && previewKind !== 'text' && previewKind !== 'html' && previewKind !== 'image') {
         await openResolvedInBrowser()
 
         return
       }
 
-      setCurrentSessionPreviewTarget(await resolveTarget(), 'tool-result', item.target)
+      setCurrentSessionPreviewTarget(resolved, 'tool-result', item.target)
     } catch (error) {
       notifyError(error, t.preview.unavailable)
     } finally {

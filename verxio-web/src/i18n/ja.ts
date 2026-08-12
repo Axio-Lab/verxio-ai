@@ -172,7 +172,6 @@ export const ja = defineLocale({
       providers: 'プロバイダー',
       providerAccounts: 'アカウント',
       providerApiKeys: 'API キー',
-      gateway: 'ゲートウェイ',
       apiKeys: 'ツールとキー',
       keysTools: 'ツール',
       keysTranscription: 'Transcription',
@@ -180,45 +179,19 @@ export const ja = defineLocale({
       mcp: 'MCP',
       archivedChats: 'アーカイブ済みチャット',
       about: '情報',
-      notifications: 'Notifications',
-      runtime: 'Runtime'
+      notifications: 'Notifications'
     },
     runtime: {
-      title: 'Runtime',
-      intro:
-        'After changing providers, models, API keys, or custom endpoints, reload credentials or restart the agent so changes take effect.',
-      statusTitle: 'Container status',
-      statusDescription: '分離された Verxio ランタイムです。',
-      statusConnected: 'Connected',
-      statusStarting: 'Starting…',
-      statusStopped: 'Stopped',
-      statusError: 'Unavailable',
-      statusUnknown: 'Unknown',
-      reloadTitle: 'Reload credentials',
-      reloadDescription:
-        '保存済みのランタイム認証情報を再起動せずに再読み込みします。API キーや環境変数を変更した後に使います。',
-      reloadAction: 'Reload',
       reloadDoneTitle: 'Credentials reloaded',
       reloadDoneMessage: 'Start a new chat if the model or provider still looks stale.',
       reloadFailed: 'Could not reload credentials',
-      agentRestartTitle: 'Restart agent',
-      agentRestartDescription:
-        'Reload .env and restart the gateway process. Use after model/provider or config.yaml changes.',
-      agentRestartAction: 'Restart agent',
       agentRestartDoneTitle: 'Agent restarting',
       agentRestartDoneMessage: 'Verxio reconnects automatically. Start a new chat when the status bar is live again.',
       agentRestartFailed: 'Agent restart failed',
-      containerRestartTitle: 'Restart runtime container',
-      containerRestartDescription:
-        'Full Docker restart of your Verxio runtime. Use when hosted inference env or mounts changed.',
-      containerRestartAction: 'Restart container',
       containerRestartDoneTitle: 'Runtime restarted',
       containerRestartDoneMessage: 'Your agent container is back online.',
       containerRestartFailed: 'Runtime restart failed',
-      restartTimeout: 'Runtime did not come back online in time. Refresh the page or try again.',
-      gatewayRestartTitle: 'Restart messaging gateway',
-      gatewayRestartDescription: 'Reconnect WhatsApp, Telegram, and other messaging platforms after channel setup.',
-      gatewayRestartAction: 'Restart gateway'
+      restartTimeout: 'Runtime did not come back online in time. Refresh the page or try again.'
     },
     sections: {
       model: 'モデル',
@@ -233,7 +206,6 @@ export const ja = defineLocale({
     searchPlaceholder: {
       about: 'Verxio について',
       config: '設定を検索…',
-      gateway: 'ゲートウェイ接続…',
       keys: 'API キーを検索…',
       mcp: 'MCP サーバーを検索…',
       sessions: 'アーカイブ済みセッションを検索…'
@@ -340,6 +312,11 @@ export const ja = defineLocale({
         elevenlabs: {
           voiceId: 'ElevenLabs 音声',
           modelId: 'ElevenLabs モデル'
+        },
+        fishaudio: {
+          model: 'Fish Audio TTS モデル',
+          referenceId: 'Fish Audio 音声',
+          format: 'Fish Audio 形式'
         }
       },
       memory: {
@@ -429,29 +406,8 @@ export const ja = defineLocale({
     }),
     about: {
       heading: 'Verxio',
-      version: value => `バージョン ${value}`,
-      versionUnavailable: 'バージョンを取得できません',
-      updates: '更新',
-      checkNow: '今すぐ確認',
-      checking: '確認中…',
-      seeWhatsNew: '新機能を見る',
-      releaseNotes: 'リリースノート',
-      onLatest: '最新バージョンです。',
-      installing: '更新をインストール中です。',
-      cantUpdate: 'このビルドはアプリ内から更新できません。',
-      cantReach: '更新サーバーに接続できませんでした。',
-      tapCheck: '更新を探すには「今すぐ確認」を押してください。',
-      updateReady: count => `新しい更新の準備ができました (${count} 件の変更を含みます)。`,
-      lastChecked: age => `前回確認: ${age}`,
-      justNowSuffix: ' · たった今',
-      automaticUpdates: '自動更新',
-      automaticUpdatesDesc: 'Verxio はバックグラウンドで自動的に更新を確認し、利用可能になったら通知します。',
-      branchCommit: (branch, commit) => `ブランチ ${branch} · コミット ${commit}`,
-      never: '未確認',
-      justNow: 'たった今',
-      minAgo: count => `${count} 分前`,
-      hoursAgo: count => `${count} 時間前`,
-      daysAgo: count => `${count} 日前`
+      description:
+        'Verxio は、チャット、メッセージング、接続済みアプリを通じてチームの仕事を進める自己改善型 AI エージェントです。'
     },
     config: {
       none: 'なし',
@@ -489,78 +445,6 @@ export const ja = defineLocale({
       replace: '置き換え',
       set: '設定',
       clear: 'クリア'
-    },
-    gateway: {
-      loading: 'ゲートウェイ設定を読み込み中...',
-      unavailableTitle: 'ゲートウェイ設定は利用できません',
-      unavailableDesc: 'デスクトップ IPC ブリッジはゲートウェイ設定を公開していません。',
-      title: 'ゲートウェイ接続',
-      envOverride: 'env オーバーライド',
-      intro:
-        'Verxio はデフォルトで独自のローカルゲートウェイを起動します。別のマシンや信頼できるプロキシの背後で既に動作している Verxio バックエンドをこのアプリで制御する場合は、リモートゲートウェイを使用してください。以下でプロファイルを選択して、それぞれのリモートホストを設定します。',
-      appliesTo: '適用対象',
-      allProfiles: 'すべてのプロファイル',
-      defaultConnection: '独自のオーバーライドがないすべてのプロファイルのデフォルト接続。',
-      profileConnection: profile =>
-        `"${profile}" がアクティブプロファイルのときのみ使用される接続。ローカルに設定するとデフォルトを継承します。`,
-      envOverrideTitle: '環境変数がこのデスクトップセッションを制御しています。',
-      envOverrideDesc:
-        '保存された設定を使用するには HERMES_DESKTOP_REMOTE_URL と HERMES_DESKTOP_REMOTE_TOKEN の設定を解除してください。',
-      localTitle: 'ローカルゲートウェイ',
-      localDesc:
-        'ローカルホストでプライベートな Verxio バックエンドを起動します。これがデフォルトで、オフラインでも動作します。',
-      remoteTitle: 'リモートゲートウェイ',
-      remoteDesc:
-        'このデスクトップシェルをリモートの Verxio バックエンドに接続します。ホスト型ゲートウェイは OAuth またはユーザー名とパスワードを使用します。自己ホスト型はセッショントークンを使用する場合があります。',
-      remoteUrlTitle: 'リモート URL',
-      remoteUrlDesc: 'リモートダッシュボードバックエンドのベース URL。パスプレフィックスもサポートしています。',
-      probing: 'このゲートウェイの認証方法を確認中…',
-      probeError: 'このゲートウェイにまだ到達できません。URL を確認してください。応答後に認証方法が表示されます。',
-      signedIn: 'サインイン済み',
-      signIn: 'サインイン',
-      signOut: 'サインアウト',
-      signInWith: provider => `${provider} でサインイン`,
-      authTitle: '認証',
-      authSignedInPassword:
-        'このゲートウェイはユーザー名とパスワードを使用します。サインイン済みです。セッションは自動的に更新されます。',
-      authSignedInOauth:
-        'このゲートウェイは OAuth を使用します。サインイン済みです。セッションは自動的に更新されます。',
-      authNeedsPassword:
-        'このゲートウェイはユーザー名とパスワードを使用します。このデスクトップアプリを承認するにはサインインしてください。',
-      authNeedsOauth: provider =>
-        `このゲートウェイは OAuth を使用します。このデスクトップアプリを承認するには ${provider} でサインインしてください。`,
-      tokenTitle: 'セッショントークン',
-      tokenDesc:
-        'REST および WebSocket アクセスに使用するダッシュボードセッショントークン。保存済みトークンを維持するには空欄にしてください。',
-      existingToken: value => `既存のトークン ${value}`,
-      savedToken: '保存済み',
-      pasteSessionToken: 'セッショントークンを貼り付け',
-      testRemote: 'リモートをテスト',
-      saveForRestart: '次回起動時のために保存',
-      saveAndReconnect: '保存して再接続',
-      diagnostics: '診断',
-      diagnosticsDesc: 'ファイルマネージャーで desktop.log を表示します。ゲートウェイの起動に失敗した際に役立ちます。',
-      openLogs: 'ログを開く',
-      incompleteTitle: 'リモートゲートウェイの設定が不完全です',
-      incompleteSignIn: 'リモートに切り替える前にリモート URL を入力してサインインしてください。',
-      incompleteToken: 'リモートに切り替える前にリモート URL とセッショントークンを入力してください。',
-      incompleteSignInTest: 'テストする前にリモート URL を入力してサインインしてください。',
-      incompleteTokenTest: 'テストする前にリモート URL とセッショントークンを入力してください。',
-      enterUrlFirst: '最初にリモート URL を入力してください。',
-      restartingTitle: 'ゲートウェイ接続を再起動中',
-      savedTitle: 'ゲートウェイ設定を保存しました',
-      restartingMessage: 'Verxio は保存された設定を使用して再接続します。',
-      savedMessage: '次回起動時に保存されます。',
-      connectedTo: (baseUrl, version) => `${baseUrl}${version ? ` · Verxio ${version}` : ''} に接続しました`,
-      reachableTitle: 'リモートゲートウェイに到達可能',
-      signedOutTitle: 'サインアウトしました',
-      signedOutMessage: 'リモートゲートウェイセッションをクリアしました。',
-      failedLoad: 'ゲートウェイ設定の読み込みに失敗しました',
-      signInFailed: 'サインインに失敗しました',
-      signOutFailed: 'サインアウトに失敗しました',
-      testFailed: 'リモートゲートウェイのテストに失敗しました',
-      applyFailed: 'ゲートウェイ設定を適用できませんでした',
-      saveFailed: 'ゲートウェイ設定を保存できませんでした'
     },
     keys: {
       loading: 'API キーと認証情報を読み込み中...',
@@ -645,6 +529,7 @@ export const ja = defineLocale({
       otherProviders: 'その他のプロバイダー',
       noProviderKeys: '利用可能なプロバイダー API キーがありません。',
       loading: 'プロバイダーを読み込み中...',
+      switching: 'プロバイダーモードを切り替え中...',
       accountLabel: 'アカウント',
       disconnect: '切断',
       reconnect: '再接続',
@@ -700,7 +585,12 @@ export const ja = defineLocale({
       noProviderOptions:
         'このツールセットにはプロバイダーのオプションがありません。有効にすれば現在の設定で動作します。',
       noProviders: '現在このツールセットに利用可能なプロバイダーがありません。',
-      ready: '準備完了',
+      ready: 'キー設定済み',
+      active: '使用中',
+      useProvider: 'このプロバイダーを使う',
+      usingProvider: (provider, model) => (model ? `使用中: ${provider} · ${model}` : `使用中: ${provider}`),
+      usingProviderHint:
+        'チャットで使われるのは「使用中」のプロバイダーだけです。行をクリックするとキーを確認できます。「このプロバイダーを使う」で切り替えます。「キー設定済み」は認証情報が保存済みという意味です。',
       nousIncluded:
         'Verxio サブスクリプションに含まれています。有効にするには Subscription portal にサインインしてください。',
       noApiKeyRequired: 'API キーは不要です。',
@@ -760,6 +650,12 @@ export const ja = defineLocale({
       saving: '保存中…',
       saveChanges: '変更を保存',
       createSkill: 'スキルを作成',
+      deleteSkill: 'スキルを削除',
+      deleteTitle: name => `${name} を削除しますか？`,
+      deleteDesc: name => `「${name}」スキルをこのプロファイルから完全に削除します。元に戻せません。`,
+      deleteConfirm: 'スキルを削除',
+      deleting: '削除中…',
+      deleted: 'スキルを削除しました',
       importPackage: 'パッケージを読み込む',
       importing: '展開中…',
       importHint: 'Zip または SKILL.md — ブラウザで展開し、作成します。',
@@ -1329,6 +1225,20 @@ export const ja = defineLocale({
     deleteConfirm: 'アーティファクトを削除',
     deleting: '削除中',
     deleted: 'アーティファクトを削除しました',
+    selectAll: '表示中のアーティファクトをすべて選択',
+    selectHint: '一括削除する項目を選択',
+    selectItem: label => `${label} を選択`,
+    selectedCount: count => `${count} 件選択中`,
+    deleteSelected: count => `${count} 件を削除`,
+    batchDeleteTitle: count => `${count} 件のアーティファクトを削除しますか？`,
+    batchDeleteDescription: count => `選択した ${count} 件を完全に削除します。この操作は元に戻せません。`,
+    batchDeleted: count => `${count} 件のアーティファクトを削除しました`,
+    batchDeleteFailed: '一部のアーティファクトを削除できませんでした',
+    batchDeletePartial: (deleted, failed) => `${deleted} 件削除、${failed} 件失敗`,
+    previewDescription: '生成されたアーティファクトの内容をプレビュー',
+    downloadAction: 'ダウンロード',
+    downloadStarted: 'ダウンロードを開始しました',
+    downloadFailed: 'ダウンロードに失敗しました',
     itemsImage: '画像',
     itemsLink: 'リンク',
     itemsFile: 'ファイル',
@@ -1506,6 +1416,9 @@ export const ja = defineLocale({
     themeTryPre: '試してみる: ',
     themeTryPost: '。',
     attachLabel: '添付',
+    audio: '音声サンプル…',
+    audioAttachFailed: '音声サンプルを添付できませんでした',
+    audioNeedsUpload: '「音声サンプル」からファイルを選択し、安全にアップロードしてください。',
     files: 'ファイル…',
     folder: 'フォルダー…',
     images: '画像…',
@@ -2020,11 +1933,19 @@ export const ja = defineLocale({
     sudoPlaceholder: 'sudo パスワード',
     secretTitle: 'シークレットが必要です',
     secretDesc: 'Verxio は続行するための認証情報が必要です。',
-    secretPlaceholder: 'シークレット値'
+    secretPlaceholder: 'シークレット値',
+    fishAudioTitle: 'Fish Audio 操作の確認',
+    fishAudioDescription: '続行する前に、サーバーが許可した音声操作を確認してください。',
+    fishAudioAction: '操作',
+    fishAudioExpires: '認可の有効期限',
+    fishAudioWorking: 'Fish Audio の音声操作を適用しています',
+    fishAudioConfirmationFailed: 'Fish Audio の確認を送信できませんでした'
   },
 
   desktop: {
     audioReadFailed: '録音した音声を読み取れませんでした',
+    audioAttachmentExpired: 'この音声添付は利用できません。再度添付してやり直してください。',
+    useAttachedAudio: '添付された音声サンプルを使用してください。',
     sessionUnavailable: 'セッションが利用できません',
     createSessionFailed: '新しいセッションを作成できませんでした',
     promptFailed: 'プロンプトに失敗しました',
@@ -2092,61 +2013,6 @@ export const ja = defineLocale({
     boundaryDesc: 'ビューで予期しないエラーが発生しました。チャットと設定は安全です。',
     reloadWindow: 'ウィンドウを再読み込み',
     openLogs: 'ログを開く'
-  },
-
-  leash: {
-    banner: {
-      title: 'Give your agent a Leash identity',
-      body: 'Register an on-chain agent identity so your assistant can pay, earn, and be discovered. Keys stay on this device only.',
-      setup: 'Set up',
-      dismiss: 'Dismiss',
-      never: "Don't show again"
-    },
-    panel: {
-      title: 'Leash identity (MCP)',
-      subtitle: 'Identity layer for AI agents — mint, pay, and verify on Solana via @leashmarket/mcp.',
-      custodyNotice:
-        'Your executive keypair and private keys are stored only on this device (secure desktop storage when available; browser local storage on web). Export a backup and keep it somewhere safe. Verxio does not store your keys and cannot recover them if you lose this device or clear site data.',
-      statusNone: 'Not configured',
-      statusPendingFunding: 'Funding required',
-      statusRegistered: 'Registered',
-      mintLabel: 'Agent mint',
-      treasuryLabel: 'Treasury',
-      executiveLabel: 'Executive public key',
-      networkLabel: 'Network',
-      networkDevnet: 'Solana devnet',
-      networkMainnet: 'Solana mainnet',
-      rpcLabel: 'RPC URL (optional, recommended)',
-      rpcPlaceholder: 'https://devnet.helius-rpc.com/?api-key=…',
-      generateKeypair: 'Generate new keypair on this device',
-      importLabel: 'Or import executive private key (base58)',
-      importPlaceholder: 'Paste 64-byte Solana secret key (base58)',
-      importKeypair: 'Import keypair',
-      pendingFundingHint:
-        'Fund the executive public key with ~0.01 SOL, then ask your agent in chat to continue Leash registration (leash_register_agent).',
-      registeredHint:
-        'Your agent identity is registered. Use Leash MCP tools in chat for payments, discovery, and treasury actions.',
-      exportJson: 'Export backup',
-      importJson: 'Import backup',
-      pullFromRuntime: 'Sync from runtime',
-      removeIdentity: 'Remove identity from this device',
-      removeConfirm:
-        'Remove Leash identity from this device and disable the Leash MCP server? Export a backup first — this cannot be undone.',
-      chatHint: 'After saving, reload MCP below if tools do not appear on the next turn.',
-      savedTitle: 'Leash identity saved',
-      savedMessage: 'Identity synced to your runtime. Reload MCP if tools are missing.',
-      saveFailed: 'Could not save Leash identity',
-      generateFailed: 'Could not generate keypair',
-      importFailed: 'Could not import keypair',
-      pullEmptyTitle: 'Nothing to sync',
-      pullEmptyMessage: 'No Leash agent file found in the runtime yet.',
-      pullSavedTitle: 'Synced from runtime',
-      pullSavedMessage: 'Updated the copy stored on this device.',
-      pullFailed: 'Could not sync from runtime',
-      removedTitle: 'Leash identity removed',
-      removedMessage: 'Local keys cleared and Leash MCP disabled.',
-      removeFailed: 'Could not remove Leash identity'
-    }
   },
 
   ui: {

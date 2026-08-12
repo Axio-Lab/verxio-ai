@@ -2,8 +2,6 @@ import { useStore } from '@nanostores/react'
 import type { CSSProperties, ReactNode } from 'react'
 import { useSyncExternalStore } from 'react'
 
-// Leash setup lives in Settings → MCP; no top-of-page banner for now.
-// import { LeashIdentityBanner } from '@/components/leash-identity-banner'
 import { NotificationStack } from '@/components/notifications'
 import { PaneShell } from '@/components/pane-shell'
 import { SidebarProvider } from '@/components/ui/sidebar'
@@ -148,8 +146,6 @@ export function AppShell({
       }
     >
       <TitlebarControls leftTools={leftTitlebarTools} onOpenSettings={onOpenSettings} tools={titlebarTools} />
-
-      {/* <LeashIdentityBanner /> */}
 
       <main className="relative z-3 flex min-h-0 w-full flex-1 flex-col overflow-hidden transition-none">
         <PaneShell className="min-h-0 flex-1">

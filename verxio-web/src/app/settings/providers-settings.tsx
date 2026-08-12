@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import {
   ConnectAccountFeaturedRow,
@@ -14,7 +14,6 @@ import { listOAuthProviders } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { ChevronDown, KeyRound } from '@/lib/icons'
 import { cn } from '@/lib/utils'
-import type { VerxioInferenceMode } from '@/lib/verxio-api'
 import { oauthProvidersForProduct, usesVerxioConnectAccountPicker } from '@/lib/verxio-oauth-providers'
 import { $desktopOnboarding } from '@/store/onboarding'
 import type { OnboardingContext } from '@/store/onboarding'
@@ -27,13 +26,12 @@ import { isKeyVar, ProviderKeyRows } from './credential-key-ui'
 import { SettingsCategoryHeading, useEnvCredentials } from './env-credentials'
 import { providerGroup, providerMeta, providerPriority } from './helpers'
 import { InferenceProviderSettings } from './inference-provider-settings'
+import type { ProviderView } from './nav-views'
 import { LoadingState, SettingsContent } from './primitives'
 import { ProviderAccountSetup } from './provider-account-setup'
 
-// Sub-views surfaced as a sidebar subnav: account sign-in vs raw API keys.
-export const PROVIDER_VIEWS = ['accounts', 'keys'] as const
-
-export type ProviderView = (typeof PROVIDER_VIEWS)[number]
+export type { ProviderView } from './nav-views'
+export { PROVIDER_VIEWS } from './nav-views'
 
 // Group the env catalog by provider — one ListRow per vendor plus optional
 // advanced overrides (base URL, region, etc.). Groups without a key field and
@@ -187,38 +185,31 @@ function NoProviderKeys() {
   )
 }
 
-export function ProvidersSettings({
-  onInferenceApplied,
-  onInferenceModeChange,
-  onViewChange,
-  requestGateway,
-  view
-}: ProvidersSettingsProps) {
+export function ProvidersSettings({ onInferenceApplied, onViewChange, requestGateway, view }: ProvidersSettingsProps) {
   const { t } = useI18n()
   const { confirmDialog, rowProps, vars } = useEnvCredentials()
   const [oauthProviders, setOauthProviders] = useState<OAuthProvider[]>([])
+  const [oauthError, setOauthError] = useState('')
+  const [oauthLoading, setOauthLoading] = useState(true)
   const [activeProviderId, setActiveProviderId] = useRouteStringParam('paccount')
   const [openProvider, setOpenProvider] = useState<null | string>(null)
-  const [inferenceMode, setInferenceMode] = useState<VerxioInferenceMode | null>(null)
   // The onboarding overlay owns the OAuth flow. Watch its `manual` flag so we
   // re-read connection state when the user finishes (or dismisses) a sign-in
   // they launched from this page — otherwise the cards keep their stale status.
   const onboardingActive = useStore($desktopOnboarding).manual
 
-  const handleInferenceModeChange = useCallback(
-    (mode: VerxioInferenceMode) => {
-      setInferenceMode(mode)
-      onInferenceModeChange?.(mode)
-    },
-    [onInferenceModeChange]
-  )
-
   const refreshOAuthProviders = async () => {
+    setOauthLoading(true)
+    setOauthError('')
+
     try {
       const { providers } = await listOAuthProviders()
       setOauthProviders(providers)
-    } catch {
-      // Ignore — the OAuth panel just won't render.
+    } catch (err) {
+      setOauthProviders([])
+      setOauthError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setOauthLoading(false)
     }
   }
 
@@ -230,14 +221,24 @@ export function ProvidersSettings({
     let cancelled = false
 
     void (async () => {
+      setOauthLoading(true)
+      setOauthError('')
+
       try {
         const { providers } = await listOAuthProviders()
 
         if (!cancelled) {
           setOauthProviders(providers)
         }
-      } catch {
-        // Ignore — the OAuth panel just won't render.
+      } catch (err) {
+        if (!cancelled) {
+          setOauthProviders([])
+          setOauthError(err instanceof Error ? err.message : String(err))
+        }
+      } finally {
+        if (!cancelled) {
+          setOauthLoading(false)
+        }
       }
     })()
 
@@ -255,26 +256,11 @@ export function ProvidersSettings({
 
   const hasOauth = oauthProviders.length > 0
   const activeProvider = oauthProviders.find(provider => provider.id === activeProviderId) ?? null
-  const canConfigureOwnProviders = inferenceMode === 'byok'
-  // The sidebar subnav owns the Accounts/API-keys split now; with no OAuth
-  // providers there's nothing for the "Accounts" view to show, so fall to keys.
-  const showApiKeys = canConfigureOwnProviders && (view === 'keys' || !hasOauth)
+  // Accounts stays on the connect UI even when OAuth failed/empty — never
+  // silently rewrite Accounts into the API-keys catalog.
+  const showApiKeys = view === 'keys'
 
-  useEffect(() => {
-    if (inferenceMode !== 'hosted') {
-      return
-    }
-
-    if (activeProviderId) {
-      setActiveProviderId(null)
-    }
-
-    if (view === 'keys') {
-      onViewChange('accounts')
-    }
-  }, [activeProviderId, inferenceMode, onViewChange, setActiveProviderId, view])
-
-  if (!vars) {
+  if (!vars || (view === 'accounts' && oauthLoading && !hasOauth && !oauthError)) {
     return <LoadingState label={t.settings.providers.loading} />
   }
 
@@ -315,7 +301,7 @@ export function ProvidersSettings({
   return (
     <>
       <SettingsContent>
-        {canConfigureOwnProviders && activeProvider ? (
+        {activeProvider ? (
           <ProviderAccountSetup
             onBack={() => setActiveProviderId(null)}
             onUpdated={async () => {
@@ -329,16 +315,21 @@ export function ProvidersSettings({
           <>
             <InferenceProviderSettings
               onInferenceApplied={onInferenceApplied}
-              onInferenceModeChange={handleInferenceModeChange}
               onOpenProviderKeys={() => onViewChange('keys')}
             />
-            {canConfigureOwnProviders && (
-              <OAuthPicker
-                onSelectProvider={provider => setActiveProviderId(provider.id)}
-                onWantApiKey={() => onViewChange('keys')}
-                providers={oauthProviders}
-              />
-            )}
+            {oauthError ? (
+              <div className="mb-4 grid gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-3 text-(length:--conversation-caption-font-size)">
+                <p className="text-destructive">Could not load account providers. {oauthError}</p>
+                <Button onClick={() => void refreshOAuthProviders()} size="sm" type="button" variant="textStrong">
+                  Retry
+                </Button>
+              </div>
+            ) : null}
+            <OAuthPicker
+              onSelectProvider={provider => setActiveProviderId(provider.id)}
+              onWantApiKey={() => onViewChange('keys')}
+              providers={oauthProviders}
+            />
           </>
         )}
       </SettingsContent>
@@ -359,7 +350,6 @@ interface ProviderKeyGroup {
 
 interface ProvidersSettingsProps {
   onInferenceApplied?: () => void
-  onInferenceModeChange?: (mode: VerxioInferenceMode) => void
   onViewChange: (view: ProviderView) => void
   requestGateway: OnboardingContext['requestGateway']
   view: ProviderView

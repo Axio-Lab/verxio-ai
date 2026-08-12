@@ -19,7 +19,10 @@ import {
   $currentCwd,
   $messages,
   $sessions,
+  adjustSessionProfileTotal,
+  clearSessionTombstone,
   getRememberedWorkspaceCwd,
+  markSessionTombstone,
   sessionPinId,
   setActiveSessionId,
   setAwaitingResponse,
@@ -44,8 +47,24 @@ import {
   setYoloActive
 } from '@/store/session'
 import { broadcastSessionsChanged } from '@/store/session-sync'
+import { requestScrollToBottom } from '@/store/thread-scroll'
 import { reportBackendContract } from '@/store/updates'
 import type { SessionCreateResponse, SessionInfo, SessionResumeResponse, UsageStats } from '@/types/hermes'
+
+/** Pin the transcript to the latest turn after a session hydrate/switch. */
+function scrollThreadToLatest() {
+  requestScrollToBottom()
+
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  // Virtualizer + markdown layout often grow after the first paint; re-pin.
+  requestAnimationFrame(() => {
+    requestScrollToBottom()
+    requestAnimationFrame(() => requestScrollToBottom())
+  })
+}
 
 import { NEW_CHAT_ROUTE, NOT_FOUND_ROUTE, sessionRoute, SETTINGS_ROUTE } from '../../routes'
 import type { ClientSessionState, SidebarNavItem } from '../../types'
@@ -481,11 +500,33 @@ export function useSessionActions({
       const requestId = resumeRequestRef.current + 1
       resumeRequestRef.current = requestId
 
+      const previousSelected = selectedStoredSessionIdRef.current
+      // Cross-session switch: drop the previous transcript *before* any await
+      // (profile resolve / gateway wake). Route changes update the URL first;
+      // clearing here prevents the old chat from sitting under the new title
+      // for the whole wake/resume window. Same-session rebind/ctrl+R keeps
+      // messages to avoid an empty-thread flash.
+      const switchingSessions = previousSelected !== storedSessionId
+
+      setFreshDraftReady(false)
+      setSelectedStoredSessionId(storedSessionId)
+      selectedStoredSessionIdRef.current = storedSessionId
+      clearNotifications()
+
+      if (switchingSessions) {
+        setActiveSessionId(null)
+        activeSessionIdRef.current = null
+        setMessages([])
+        setAwaitingResponse(false)
+        clearComposerDraft()
+        clearComposerAttachments()
+        busyRef.current = true
+        setBusy(true)
+      }
+
       const isCurrentResume = () =>
         resumeRequestRef.current === requestId && selectedStoredSessionIdRef.current === storedSessionId
 
-      // Swap the single live gateway to this session's profile before any
-      // gateway call (no-op when it's already on that profile / single-profile).
       const storedForProfile = await resolveStoredSession(storedSessionId)
       const sessionProfile = storedForProfile?.profile
 
@@ -493,22 +534,69 @@ export function useSessionActions({
         return
       }
 
-      await ensureGatewayProfile(sessionProfile)
+      // Route-level optimistic clear may already have set selection + emptied
+      // messages before this runs (`switchingSessions` then looks false).
+      const alreadyClearedForTarget = !switchingSessions && $messages.get().length === 0 && !activeSessionIdRef.current
+      let localSnapshot: ChatMessage[] = switchingSessions || alreadyClearedForTarget ? [] : $messages.get()
+      let hydratedFromStore = false
+      let paintedFromMemoryCache = false
 
       const cachedRuntimeId = runtimeIdByStoredSessionIdRef.current.get(storedSessionId)
       const cachedState = cachedRuntimeId && sessionStateByRuntimeIdRef.current.get(cachedRuntimeId)
 
+      // Paint memory cache / REST transcript *before* ensureGatewayProfile.
+      // Profile wake and WS reconnect can take seconds; the session DB read
+      // does not need a live gateway, so the correct chat can show under the
+      // waking overlay instead of an empty spinner.
       if (cachedRuntimeId && cachedState) {
-        setFreshDraftReady(false)
-        clearNotifications()
-        setSelectedStoredSessionId(storedSessionId)
-        selectedStoredSessionIdRef.current = storedSessionId
-        setActiveSessionId(cachedRuntimeId)
-        activeSessionIdRef.current = cachedRuntimeId
+        localSnapshot = preserveLocalAssistantErrors(cachedState.messages, [])
+        paintedFromMemoryCache = true
+        setMessages(localSnapshot)
         syncSessionStateToView(cachedRuntimeId, cachedState)
         setCurrentCwd(cachedState.cwd)
         setCurrentBranch(cachedState.branch)
         setSessionStartedAt(Date.now())
+
+        if (switchingSessions || localSnapshot.length > 0) {
+          scrollThreadToLatest()
+        }
+      } else {
+        try {
+          const storedMessages = await getSessionMessages(storedSessionId, sessionProfile)
+
+          if (isCurrentResume()) {
+            localSnapshot = preserveLocalAssistantErrors(toChatMessages(storedMessages.messages), [])
+            hydratedFromStore = true
+
+            if (!chatMessageArraysEquivalent($messages.get(), localSnapshot)) {
+              setMessages(localSnapshot)
+            }
+
+            if (localSnapshot.length > 0) {
+              scrollThreadToLatest()
+            }
+          }
+        } catch {
+          // Non-fatal: gateway resume below can still hydrate the session.
+        }
+      }
+
+      if (!isCurrentResume()) {
+        return
+      }
+
+      // Swap the live gateway to this session's profile (no-op when already on
+      // that profile / single-profile). Happens after the transcript paint so
+      // wake latency never blanks the thread.
+      await ensureGatewayProfile(sessionProfile)
+
+      if (!isCurrentResume()) {
+        return
+      }
+
+      if (cachedRuntimeId && cachedState && paintedFromMemoryCache) {
+        setActiveSessionId(cachedRuntimeId)
+        activeSessionIdRef.current = cachedRuntimeId
         clearComposerDraft()
         clearComposerAttachments()
         void ensureSessionYoloEnabled(requestGateway, cachedRuntimeId)
@@ -524,6 +612,9 @@ export function useSessionActions({
             setCurrentUsage(current => ({ ...current, ...usage }))
           }
 
+          busyRef.current = false
+          setBusy(false)
+
           return
         } catch {
           // The cached runtime id was minted by a prior backend instance. A
@@ -537,19 +628,28 @@ export function useSessionActions({
 
           runtimeIdByStoredSessionIdRef.current.delete(storedSessionId)
           sessionStateByRuntimeIdRef.current.delete(cachedRuntimeId)
+          paintedFromMemoryCache = false
         }
       }
 
-      setFreshDraftReady(false)
       setActiveSessionId(null)
       activeSessionIdRef.current = null
       busyRef.current = true
       setBusy(true)
       setAwaitingResponse(false)
-      clearNotifications()
-      setSelectedStoredSessionId(storedSessionId)
-      selectedStoredSessionIdRef.current = storedSessionId
       setSessionStartedAt(Date.now())
+
+      // Re-assert clear if a concurrent paint raced after the optimistic switch.
+      // Keep REST/memory paints that landed before the gateway wake.
+      if (
+        (switchingSessions || alreadyClearedForTarget) &&
+        !hydratedFromStore &&
+        !paintedFromMemoryCache &&
+        $messages.get().length > 0
+      ) {
+        setMessages([])
+      }
+
       const stored = $sessions.get().find(session => sessionMatchesStoredId(session, storedSessionId))
 
       if (stored) {
@@ -562,29 +662,26 @@ export function useSessionActions({
       }
 
       try {
-        // Load the local snapshot first, then ask the gateway to resume.
-        // Previously these raced:
-        //   1. clear messages to []
-        //   2. local getSessionMessages -> 45 msgs
-        //   3. a second resume path cleared [] again
-        //   4. gateway resume -> 43 msgs
-        // That is the ctrl+R flash chain. Avoid showing an empty thread
-        // while we already have a route-scoped session id, and don't race the
-        // local snapshot against gateway resume.
-        let localSnapshot = $messages.get()
+        // Refresh from REST if the pre-wake paint missed (e.g. cache invalidated).
+        if (!hydratedFromStore && !paintedFromMemoryCache) {
+          try {
+            const storedMessages = await getSessionMessages(storedSessionId, sessionProfile)
 
-        try {
-          const storedMessages = await getSessionMessages(storedSessionId, sessionProfile)
+            if (isCurrentResume()) {
+              localSnapshot = preserveLocalAssistantErrors(toChatMessages(storedMessages.messages), [])
+              hydratedFromStore = true
 
-          if (isCurrentResume()) {
-            localSnapshot = preserveLocalAssistantErrors(toChatMessages(storedMessages.messages), $messages.get())
+              if (!chatMessageArraysEquivalent($messages.get(), localSnapshot)) {
+                setMessages(localSnapshot)
+              }
 
-            if (!chatMessageArraysEquivalent($messages.get(), localSnapshot)) {
-              setMessages(localSnapshot)
+              if (localSnapshot.length > 0) {
+                scrollThreadToLatest()
+              }
             }
+          } catch {
+            // Non-fatal: gateway resume below can still hydrate the session.
           }
-        } catch {
-          // Non-fatal: gateway resume below can still hydrate the session.
         }
 
         const resumed = await requestGateway<SessionResumeResponse>('session.resume', {
@@ -607,23 +704,24 @@ export function useSessionActions({
           reconcileResumeMessages(toChatMessages(resumed.messages), currentMessages),
           currentMessages
         )
-        // Avoid a second visible transcript rebuild on resume/switch.
-        // `getSessionMessages()` is the stable stored transcript snapshot and
-        // paints first; `session.resume` can return a slightly different
-        // runtime-shaped projection (e.g. tool/system coalescing), which was
-        // causing a second full message-list replacement a second later.
-        // Keep the already-painted local snapshot for the view/cache when it
-        // exists; use gateway messages only as a fallback when no local
-        // snapshot was available.
-
-        const preferredMessages =
-          localSnapshot.length > 0
+        // Prefer the stored snapshot when we successfully loaded it. Never fall
+        // back to a leftover previous-session `currentMessages` after a switch.
+        const preferredMessages = hydratedFromStore
+          ? localSnapshot
+          : localSnapshot.length > 0
             ? localSnapshot
             : chatMessageArraysEquivalent(currentMessages, resumedMessages)
               ? currentMessages
               : resumedMessages
 
-        const messagesForView = preserveLocalAssistantErrors(preferredMessages, currentMessages)
+        const messagesForView = preserveLocalAssistantErrors(
+          preferredMessages,
+          hydratedFromStore ? [] : currentMessages
+        )
+
+        if (!chatMessageArraysEquivalent(currentMessages, messagesForView)) {
+          setMessages(messagesForView)
+        }
 
         setActiveSessionId(resumed.session_id)
         activeSessionIdRef.current = resumed.session_id
@@ -645,6 +743,7 @@ export function useSessionActions({
         )
         clearComposerDraft()
         clearComposerAttachments()
+        scrollThreadToLatest()
       } catch (err) {
         if (!isCurrentResume()) {
           return
@@ -657,7 +756,8 @@ export function useSessionActions({
             return
           }
 
-          setMessages(preserveLocalAssistantErrors(toChatMessages(fallback.messages), $messages.get()))
+          setMessages(preserveLocalAssistantErrors(toChatMessages(fallback.messages), []))
+          scrollThreadToLatest()
           notifyError(err, copy.resumeFailed)
         } catch (fallbackErr) {
           if (!isCurrentResume()) {
@@ -831,10 +931,12 @@ export function useSessionActions({
       // live tip after compression. Drop both so the pin can't linger.
       const removedPinId = removed ? sessionPinId(removed) : storedSessionId
 
+      markSessionTombstone(storedSessionId, removed?._lineage_root_id)
       setSessions(prev => prev.filter(session => !sessionMatchesStoredId(session, storedSessionId)))
-      // Keep $sessionsTotal in sync so the sidebar's "Load N more" footer
-      // doesn't keep claiming the removed row is still on the server.
+      // Keep totals in sync so the sidebar's "Load N more" footer doesn't keep
+      // claiming the removed row is still on the server.
       setSessionsTotal(prev => Math.max(0, prev - 1))
+      adjustSessionProfileTotal(removed?.profile, -1)
       $pinnedSessionIds.set(previousPinned.filter(id => id !== storedSessionId && id !== removedPinId))
 
       // Tear down before awaiting so the route effect can't resume the
@@ -855,9 +957,12 @@ export function useSessionActions({
           clearQueuedPrompts(closingRuntimeId)
         }
       } catch (err) {
+        clearSessionTombstone(storedSessionId, removed?._lineage_root_id)
+
         if (removed) {
           setSessions(prev => [removed, ...prev])
           setSessionsTotal(prev => prev + 1)
+          adjustSessionProfileTotal(removed.profile, 1)
         }
 
         $pinnedSessionIds.set(previousPinned)
@@ -913,11 +1018,13 @@ export function useSessionActions({
       const archivedPinId = archived ? sessionPinId(archived) : storedSessionId
 
       // Soft-hide: drop from the sidebar immediately, keep the data.
+      markSessionTombstone(storedSessionId, archived?._lineage_root_id)
       setSessions(prev => prev.filter(session => !sessionMatchesStoredId(session, storedSessionId)))
       // Archived sessions are hidden by the listSessions(min_messages=1) query
       // on the next refresh, so they count as "removed" for the load-more
       // footer math.
       setSessionsTotal(prev => Math.max(0, prev - 1))
+      adjustSessionProfileTotal(archived?.profile, -1)
       $pinnedSessionIds.set(previousPinned.filter(id => id !== storedSessionId && id !== archivedPinId))
 
       if (wasSelected) {
@@ -928,9 +1035,12 @@ export function useSessionActions({
         await setSessionArchived(storedSessionId, true, archived?.profile)
         notify({ durationMs: 2_000, kind: 'success', message: copy.archived })
       } catch (err) {
+        clearSessionTombstone(storedSessionId, archived?._lineage_root_id)
+
         if (archived) {
           setSessions(prev => [archived, ...prev.filter(session => !sessionMatchesStoredId(session, storedSessionId))])
           setSessionsTotal(prev => prev + 1)
+          adjustSessionProfileTotal(archived.profile, 1)
         }
 
         $pinnedSessionIds.set(previousPinned)

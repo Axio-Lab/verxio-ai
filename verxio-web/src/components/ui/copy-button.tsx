@@ -13,24 +13,63 @@ type CopyButtonAppearance = 'button' | 'icon' | 'inline' | 'menu-item' | 'tool-r
 type CopyStatus = 'copied' | 'error' | 'idle'
 const COPIED_RESET_MS = 1_500
 
+function copyWithExecCommand(text: string) {
+  if (typeof document === 'undefined') {
+    throw new Error('Clipboard API is unavailable')
+  }
+
+  if (!document.hasFocus()) {
+    throw new Error('Focus the Verxio window, then try copying again.')
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.left = '-9999px'
+  textarea.style.position = 'fixed'
+  textarea.style.top = '0'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+
+  try {
+    if (!document.execCommand('copy')) {
+      throw new Error('Browser clipboard copy failed.')
+    }
+  } finally {
+    document.body.removeChild(textarea)
+  }
+}
+
+/** Write text to the clipboard across desktop IPC and browser environments. */
 export async function writeClipboardText(text: string) {
   if (!text) {
     return
   }
 
   if (window.hermesDesktop?.writeClipboard) {
-    await window.hermesDesktop.writeClipboard(text)
+    try {
+      const copied = await window.hermesDesktop.writeClipboard(text)
 
-    return
+      if (copied) {
+        return
+      }
+    } catch {
+      // Fall through to browser clipboard paths.
+    }
   }
 
   if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text)
+    try {
+      await navigator.clipboard.writeText(text)
 
-    return
+      return
+    } catch {
+      // Fall through to the selection-based copy path when permissions deny Clipboard API access.
+    }
   }
 
-  throw new Error('Clipboard API is unavailable')
+  copyWithExecCommand(text)
 }
 
 export interface CopyButtonProps {

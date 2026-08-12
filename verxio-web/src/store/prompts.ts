@@ -1,5 +1,7 @@
 import { atom, computed, type ReadableAtom } from 'nanostores'
 
+import type { FishAudioConfirmationData, FishAudioVoiceAction } from '@/types/hermes'
+
 import { $activeSessionId } from './session'
 
 // Blocking interactive prompts the gateway raises mid-turn. Each maps to a
@@ -23,6 +25,7 @@ interface KeyedPrompt {
 interface PromptStore<T extends KeyedPrompt> {
   $active: ReadableAtom<null | T>
   clear: (sessionId?: string | null, requestId?: string) => void
+  get: (sessionId?: string | null) => T | null
   reset: () => void
   set: (request: T) => void
 }
@@ -37,6 +40,7 @@ function keyedPromptStore<T extends KeyedPrompt>(): PromptStore<T> {
 
   return {
     $active: computed([$all, $activeSessionId], (all, activeId) => all[keyFor(activeId)] ?? null),
+    get: sessionId => $all.get()[keyFor(sessionId)] ?? null,
     reset: () => $all.set({}),
     set: request => $all.set({ ...$all.get(), [keyFor(request.sessionId)]: request }),
     clear(sessionId, requestId) {
@@ -84,7 +88,19 @@ export interface SecretRequest extends KeyedPrompt {
   requestId: string
 }
 
+export interface FishAudioConfirmationRequest extends KeyedPrompt {
+  action: FishAudioVoiceAction
+  actionLabel: string
+  attachmentDigest?: string
+  confirmation: FishAudioConfirmationData
+  description?: string
+  expiresAt: string
+  error?: string
+  requestId: string
+}
+
 const approval = keyedPromptStore<ApprovalRequest>()
+const fishAudioConfirmation = keyedPromptStore<FishAudioConfirmationRequest>()
 const sudo = keyedPromptStore<SudoRequest>()
 const secret = keyedPromptStore<SecretRequest>()
 
@@ -100,11 +116,24 @@ export const $secretRequest = secret.$active
 export const setSecretRequest = secret.set
 export const clearSecretRequest = secret.clear
 
+export const $fishAudioConfirmationRequest = fishAudioConfirmation.$active
+export const setFishAudioConfirmationRequest = fishAudioConfirmation.set
+export const clearFishAudioConfirmationRequest = fishAudioConfirmation.clear
+
+export function setFishAudioConfirmationError(sessionId: string | null, error: string): void {
+  const current = fishAudioConfirmation.get(sessionId)
+
+  if (current) {
+    fishAudioConfirmation.set({ ...current, error })
+  }
+}
+
 // Drop in-flight prompts for `sessionId` (a turn ended) across all three kinds —
 // or every parked prompt when no session is given (global reset / tests).
 export function clearAllPrompts(sessionId?: string | null): void {
   if (sessionId === undefined) {
     approval.reset()
+    fishAudioConfirmation.reset()
     sudo.reset()
     secret.reset()
 

@@ -1,6 +1,15 @@
 import { type MutableRefObject, useEffect, useRef } from 'react'
 
 import { isNewChatRoute } from '@/app/routes'
+import { clearComposerAttachments, clearComposerDraft } from '@/store/composer'
+import { clearNotifications } from '@/store/notifications'
+import {
+  setActiveSessionId,
+  setAwaitingResponse,
+  setFreshDraftReady,
+  setMessages,
+  setSelectedStoredSessionId
+} from '@/store/session'
 
 interface RouteResumeOptions {
   activeSessionId: string | null
@@ -66,11 +75,27 @@ export function useRouteResume({
     lastPathnameRef.current = locationPathname
     wasGatewayOpenRef.current = gatewayOpen
 
-    if (currentView !== 'chat' || !gatewayOpen) {
+    if (currentView !== 'chat') {
       return
     }
 
     if (routedSessionId) {
+      // Sidebar/nav updates the URL immediately. Clear the previous transcript
+      // as soon as the route changes so "Waking up…" never leaves the old chat
+      // painted under the new title — even while the gateway is still connecting.
+      if (pathnameChanged && routedSessionId !== selectedStoredSessionIdRef.current && !creatingSessionRef.current) {
+        setFreshDraftReady(false)
+        setSelectedStoredSessionId(routedSessionId)
+        selectedStoredSessionIdRef.current = routedSessionId
+        setActiveSessionId(null)
+        activeSessionIdRef.current = null
+        setMessages([])
+        setAwaitingResponse(false)
+        clearNotifications()
+        clearComposerDraft()
+        clearComposerAttachments()
+      }
+
       const cachedRuntime = runtimeIdByStoredSessionIdRef.current.get(routedSessionId)
 
       const alreadyActive =
@@ -78,15 +103,19 @@ export function useRouteResume({
         Boolean(cachedRuntime) &&
         cachedRuntime === activeSessionIdRef.current
 
-      // Resume only when the route meaningfully changed (or gateway just opened).
-      // This avoids a transient /:sid re-resume during "new chat" state clears
-      // before the pathname updates from /:sid -> /.
+      // Kick resume on route change even when the gateway isn't open yet —
+      // resume paints from REST/memory before waiting on WS wake. Also re-run
+      // when the gateway becomes open so a failed pre-open resume can finish.
       const shouldResume = pathnameChanged || gatewayBecameOpen
 
       if (!alreadyActive && shouldResume && !creatingSessionRef.current) {
         void resumeSession(routedSessionId, true)
       }
 
+      return
+    }
+
+    if (!gatewayOpen) {
       return
     }
 

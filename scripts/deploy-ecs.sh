@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Deploy Verxio on ECS: pull main, rebuild services + Hermes runtime image,
-# recreate control plane, and wipe per-user runtimes so they boot on the new image.
+# Deploy Verxio on ECS: pull DEPLOY_REF (default main), rebuild services +
+# Hermes runtime image, recreate control plane, and wipe per-user runtimes so
+# they boot on the new image.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -14,7 +15,10 @@ export COMPOSE_DOCKER_CLI_BUILD=1
 
 COMPOSE=(docker compose -f docker-compose.verxio.yml)
 HERMES_IMAGE="${VERXIO_HERMES_IMAGE:-verxio-hermes-runtime:local}"
+# Default main. For current production branch: DEPLOY_REF=verxio/web bash scripts/deploy-ecs.sh
 DEPLOY_REF="${DEPLOY_REF:-main}"
+# Cold start after recreate can exceed 30s (migrations / Turso / workers).
+API_HEALTH_TIMEOUT_SECONDS="${API_HEALTH_TIMEOUT_SECONDS:-120}"
 
 image_id() {
   docker image inspect -f '{{.Id}}' "$1" 2>/dev/null || echo "(missing)"
@@ -98,29 +102,60 @@ echo "    hermes-agent @ ${HERMES_SHA}"
 
 ensure_buildx
 
-echo "==> Building verxio-api + verxio-web"
-"${COMPOSE[@]}" build --build-arg INSTALL_TURSO=1 verxio-api verxio-web
+echo "==> Building verxio-api + verxio-web + verxio-landing"
+"${COMPOSE[@]}" build --build-arg INSTALL_TURSO=1 verxio-api verxio-web verxio-landing
 
 # Recreate control plane before Hermes so a Hermes build failure cannot leave
-# production stuck on yesterday's api/web containers.
+# production stuck on yesterday's api/web/landing containers.
 echo "==> Recreating control-plane services"
-"${COMPOSE[@]}" up -d --force-recreate verxio-api verxio-web
+"${COMPOSE[@]}" up -d --force-recreate verxio-api verxio-web verxio-landing
 
-echo "==> Waiting for API health"
+echo "==> Waiting for API health (timeout ${API_HEALTH_TIMEOUT_SECONDS}s)"
 api_ready=0
-for _ in $(seq 1 30); do
-  if curl -fsS -m 2 http://127.0.0.1:8787/api/health >/dev/null 2>&1; then
+web_ready=0
+landing_ready=0
+for ((elapsed = 1; elapsed <= API_HEALTH_TIMEOUT_SECONDS; elapsed++)); do
+  if [[ "${api_ready}" -ne 1 ]] \
+    && curl -fsS -m 2 http://127.0.0.1:8787/api/health >/dev/null 2>&1; then
     api_ready=1
+    echo "    api healthy after ${elapsed}s"
+  fi
+  if [[ "${web_ready}" -ne 1 ]] \
+    && curl -fsS -m 2 -o /dev/null http://127.0.0.1:8080/ >/dev/null 2>&1; then
+    web_ready=1
+    echo "    web healthy after ${elapsed}s"
+  fi
+  if [[ "${landing_ready}" -ne 1 ]] \
+    && curl -fsS -m 2 -o /dev/null http://127.0.0.1:8081/ >/dev/null 2>&1; then
+    landing_ready=1
+    echo "    landing healthy after ${elapsed}s"
+  fi
+  if [[ "${api_ready}" -eq 1 && "${web_ready}" -eq 1 && "${landing_ready}" -eq 1 ]]; then
     break
+  fi
+  if ((elapsed % 10 == 0)); then
+    echo "    still waiting… ${elapsed}s (api=${api_ready} web=${web_ready} landing=${landing_ready})"
   fi
   sleep 1
 done
 if [[ "${api_ready}" -ne 1 ]]; then
-  echo "ERROR: verxio-api did not become healthy within 30s."
+  echo "ERROR: verxio-api did not become healthy within ${API_HEALTH_TIMEOUT_SECONDS}s."
   "${COMPOSE[@]}" logs --tail=80 verxio-api || true
   exit 1
 fi
+if [[ "${web_ready}" -ne 1 ]]; then
+  echo "ERROR: verxio-web did not become healthy within ${API_HEALTH_TIMEOUT_SECONDS}s."
+  "${COMPOSE[@]}" logs --tail=80 verxio-web || true
+  exit 1
+fi
+if [[ "${landing_ready}" -ne 1 ]]; then
+  echo "ERROR: verxio-landing did not become healthy within ${API_HEALTH_TIMEOUT_SECONDS}s."
+  "${COMPOSE[@]}" logs --tail=80 verxio-landing || true
+  exit 1
+fi
 curl -sS -m 5 -w ' time=%{time_total}\n' http://127.0.0.1:8787/api/health
+curl -sS -m 5 -o /dev/null -w 'web time=%{time_total}\n' http://127.0.0.1:8080/
+curl -sS -m 5 -o /dev/null -w 'landing time=%{time_total}\n' http://127.0.0.1:8081/
 
 echo "==> Building Hermes runtime image (${HERMES_IMAGE})"
 HERMES_BEFORE="$(image_id "${HERMES_IMAGE}")"

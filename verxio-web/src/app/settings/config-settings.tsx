@@ -8,12 +8,14 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import {
   getElevenLabsVoices,
+  getFishAudioVoices,
   getHermesConfigDefaults,
   getHermesConfigRecord,
   getHermesConfigSchema,
   saveHermesConfig
 } from '@/hermes'
 import { useI18n } from '@/i18n'
+import { FISH_AUDIO_VOICES_CHANGED_EVENT, notifyFishAudioVoicesChanged } from '@/lib/fishaudio-session'
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
 import type { ConfigFieldSchema, HermesConfigRecord } from '@/types/hermes'
@@ -218,31 +220,53 @@ export function ConfigSettings({
   const [schema, setSchema] = useState<Record<string, ConfigFieldSchema> | null>(null)
   const [elevenLabsVoiceOptions, setElevenLabsVoiceOptions] = useState<string[] | null>(null)
   const [elevenLabsVoiceLabels, setElevenLabsVoiceLabels] = useState<Record<string, string>>({})
+  const [fishAudioVoiceOptions, setFishAudioVoiceOptions] = useState<string[] | null>(null)
+  const [fishAudioVoiceLabels, setFishAudioVoiceLabels] = useState<Record<string, string>>({})
+  const [fishAudioVoicesLoading, setFishAudioVoicesLoading] = useState(false)
+  const [fishAudioVoicesVersion, setFishAudioVoicesVersion] = useState(0)
+  const fishAudioDefaultChangedRef = useRef(false)
   const saveVersionRef = useRef(0)
   const [saveVersion, setSaveVersion] = useState(0)
+  const selectedTtsProvider = config ? getNested(config, 'tts.provider') : null
 
   useEffect(() => {
     let cancelled = false
-    Promise.all([getHermesConfigRecord(), getHermesConfigDefaults(), getHermesConfigSchema()])
-      .then(([c, d, s]) => {
+
+    // Paint config+schema first so Workspace/Advanced are usable; defaults can
+    // trail without blocking the whole settings panel on a cold gateway.
+    void (async () => {
+      try {
+        const [nextConfig, nextSchema] = await Promise.all([getHermesConfigRecord(), getHermesConfigSchema()])
+
         if (cancelled) {
           return
         }
 
-        setConfig(c)
-        setDefaults(d)
-        setSchema(s.fields)
-      })
-      .catch(err => {
+        setConfig(nextConfig)
+        setSchema(nextSchema.fields)
+
+        const nextDefaults = await getHermesConfigDefaults().catch(() => ({}) as HermesConfigRecord)
+
+        if (!cancelled) {
+          setDefaults(nextDefaults)
+        }
+      } catch (err) {
         if (!cancelled && !isAbortError(err)) {
           notifyError(err, c.failedLoad)
         }
-      })
+      }
+    })()
 
     return () => void (cancelled = true)
   }, [c.failedLoad])
 
   useEffect(() => {
+    // Voice catalogs are only needed on the Voice/TTS section — skip the
+    // network hop when browsing Model / Memory / other config tabs.
+    if (activeSectionId !== 'voice' && selectedTtsProvider !== 'elevenlabs') {
+      return
+    }
+
     let cancelled = false
 
     getElevenLabsVoices()
@@ -262,6 +286,46 @@ export function ConfigSettings({
       })
 
     return () => void (cancelled = true)
+  }, [activeSectionId, selectedTtsProvider])
+
+  useEffect(() => {
+    if (selectedTtsProvider !== 'fishaudio') {
+      return
+    }
+
+    let cancelled = false
+    setFishAudioVoicesLoading(true)
+
+    getFishAudioVoices()
+      .then(result => {
+        if (cancelled) {
+          return
+        }
+
+        const voices = result.available ? result.voices : []
+        setFishAudioVoiceOptions(voices.map(voice => voice.voice_id))
+        setFishAudioVoiceLabels(Object.fromEntries(voices.map(voice => [voice.voice_id, voice.label])))
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFishAudioVoiceOptions([])
+          setFishAudioVoiceLabels({})
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setFishAudioVoicesLoading(false)
+        }
+      })
+
+    return () => void (cancelled = true)
+  }, [fishAudioVoicesVersion, selectedTtsProvider])
+
+  useEffect(() => {
+    const refresh = () => setFishAudioVoicesVersion(version => version + 1)
+    window.addEventListener(FISH_AUDIO_VOICES_CHANGED_EVENT, refresh)
+
+    return () => window.removeEventListener(FISH_AUDIO_VOICES_CHANGED_EVENT, refresh)
   }, [])
 
   useEffect(() => {
@@ -277,6 +341,11 @@ export function ConfigSettings({
           await saveHermesConfig(config)
 
           if (saveVersionRef.current === v) {
+            if (fishAudioDefaultChangedRef.current) {
+              fishAudioDefaultChangedRef.current = false
+              notifyFishAudioVoicesChanged('set_default')
+            }
+
             onConfigSaved?.()
           }
         } catch (err) {
@@ -368,6 +437,10 @@ export function ConfigSettings({
     return <LoadingState label={c.loading} />
   }
 
+  if (activeSectionId === 'voice' && selectedTtsProvider === 'fishaudio' && fishAudioVoicesLoading) {
+    return <LoadingState label="Loading Fish Audio voices..." />
+  }
+
   return (
     <SettingsContent>
       {activeSectionId === 'model' && (
@@ -390,10 +463,24 @@ export function ConfigSettings({
                 enumOptions={
                   key === 'tts.elevenlabs.voice_id'
                     ? enumOptionsFor(key, getNested(config, key), config, elevenLabsVoiceOptions ?? undefined)
-                    : enumOptionsFor(key, getNested(config, key), config)
+                    : key === 'tts.fishaudio.reference_id'
+                      ? enumOptionsFor(key, getNested(config, key), config, fishAudioVoiceOptions ?? undefined)
+                      : enumOptionsFor(key, getNested(config, key), config)
                 }
-                onChange={value => updateConfig(setNested(config, key, value))}
-                optionLabels={key === 'tts.elevenlabs.voice_id' ? elevenLabsVoiceLabels : undefined}
+                onChange={value => {
+                  if (key === 'tts.fishaudio.reference_id') {
+                    fishAudioDefaultChangedRef.current = true
+                  }
+
+                  updateConfig(setNested(config, key, value))
+                }}
+                optionLabels={
+                  key === 'tts.elevenlabs.voice_id'
+                    ? elevenLabsVoiceLabels
+                    : key === 'tts.fishaudio.reference_id'
+                      ? fishAudioVoiceLabels
+                      : undefined
+                }
                 schema={field}
                 schemaKey={key}
                 value={getNested(config, key)}

@@ -46,7 +46,7 @@ communication channels, internal tools, and scheduled workflows.
   Composio, with access to 20,000+ possible actions.
 - **Learns continuously** - remember prior work, reuse successful workflows,
   create skills, and become more useful every day.
-- **Automates customer messaging with Pulse** - build visual workflows for
+- **Automates customer messaging** - build visual workflows for
   Instagram, Messenger, and WhatsApp that qualify leads, tag conversations,
   respond to customers, and route follow-up.
 - **Captures meetings with Notepad** - record meetings, generate transcripts,
@@ -85,12 +85,11 @@ workspace context.
 Verxio has several product surfaces that all point at the same private agent:
 
 - **Verxio Web** - the main browser workspace for chat, settings, skills,
-  connections, automations, artifacts, Pulse, and Notepad.
+  connections, automations, artifacts, and Notepad.
 - **Verxio Desktop** - the native app for local file access, terminal access,
   system-aware workflows, and desktop meeting capture.
 - **Messaging gateways** - Slack, WhatsApp, Telegram, Discord, and other
   supported platforms let the agent work where teams already communicate.
-- **Pulse** - the visual automation layer for customer messaging workflows.
 - **Notepad** - the meeting workspace for transcripts, AI summaries, folders,
   and shareable notes.
 - **Skills and Connections** - the place where businesses connect apps, manage
@@ -99,7 +98,7 @@ Verxio has several product surfaces that all point at the same private agent:
 ## Product Architecture
 
 Verxio is the product layer: users, workspaces, billing-ready control plane,
-runtime orchestration, web/desktop interfaces, artifacts, Pulse, Notepad, and
+runtime orchestration, web/desktop interfaces, artifacts, Notepad, and
 messaging setup.
 
 Hermes is the internal self-improving agent runtime that powers memory, tools,
@@ -248,7 +247,7 @@ Verxio brings these components together into a complete product experience. The
 split is intentional:
 
 - **Verxio owns the product experience** - authentication, workspaces, runtime
-  lifecycle, web and desktop apps, app connections, Pulse, Notepad, artifacts,
+  lifecycle, web and desktop apps, app connections, Notepad, artifacts,
   usage metering, and messaging setup.
 - **The runtime owns agent behavior** - memory, skills, tools, scheduled work,
   messaging execution, delegation, and self-improvement.
@@ -277,7 +276,7 @@ working product by accelerating:
   environment reload issues, artifact preview bugs, model selector behavior,
   read-aloud support, and agent resume edge cases with targeted tests and
   Docker verification.
-- **Product iteration** - shaping Pulse, Notepad, artifacts, messaging,
+- **Product iteration** - shaping Notepad, artifacts, messaging,
   settings, skills, runtime orchestration, and desktop capabilities into a
   unified experience instead of separate technical demos.
 
@@ -290,10 +289,10 @@ runtime rebuilds.
 Core directories:
 
 - `verxio-api/` - FastAPI control plane with auth, workspaces, runtime
-  orchestration, Composio bridge, Pulse automations, Notepad, artifact
+  orchestration, Composio bridge, Notepad, artifact
   management, usage metering, and proxying.
 - `verxio-web/` - React web app for chat, settings, skills, messaging,
-  connections, Pulse, Notepad, and artifacts.
+  connections, Notepad, and artifacts.
 - `verxio-desktop/` - Electron shell that reuses `verxio-web` and enables
   native file access, terminal support, system audio recording, and desktop
   bridge APIs.
@@ -325,20 +324,6 @@ remain inside that agent's private runtime home.
 This separation lets Verxio provide a polished hosted product while preserving
 per-customer isolation for credentials, memory, learned skills, files, and
 generated artifacts.
-
-## Pulse
-
-Pulse is Verxio's automation layer for customer messaging. It lets businesses
-build visual workflows for Instagram, Messenger, and WhatsApp so the agent can:
-
-- Respond to inbound messages.
-- Qualify leads.
-- Tag customers and conversations.
-- Route conversations by status, intent, or source.
-- Trigger follow-up work across connected apps.
-
-Pulse is designed around channel capabilities, so businesses can understand what
-each messaging platform allows before they automate customer communication.
 
 ## Notepad
 
@@ -444,7 +429,7 @@ parts businesses need before they can trust AI in production:
   runtime stores memory and learning.
 - **Desktop support** - native bridge APIs unlock file, terminal, and recording
   capabilities without fragmenting the web product.
-- **Business-grade workflows** - Pulse, Notepad, scheduled work, artifacts, and
+- **Business-grade workflows** - Notepad, scheduled work, artifacts, and
   app connections make the agent useful beyond chat.
 
 ## What We Learned

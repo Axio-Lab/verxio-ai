@@ -127,6 +127,8 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
   )
 
   const switchTo = (model: string, provider: string) =>
+    // Live session: pin this chat only so lead/default (Settings) can stay on
+    // another model. No session yet: write the profile default for the next chat.
     onSelectModel({ model, persistGlobal: !activeSessionId, provider })
 
   const selectFamily = async (family: ModelFamily, provider: ModelOptionProvider) => {

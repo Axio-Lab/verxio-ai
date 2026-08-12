@@ -36,6 +36,31 @@ import {
 } from '@/lib/web-local-fs'
 import { $currentCwd, setCurrentCwd } from '@/store/session'
 
+/** Captured before the clipboard shim can wrap `navigator.clipboard.writeText`. */
+const nativeClipboardWriteText = navigator.clipboard?.writeText?.bind(navigator.clipboard) ?? null
+
+function copyTextWithExecCommand(text: string): boolean {
+  if (typeof document === 'undefined' || !document.hasFocus()) {
+    return false
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', '')
+  textarea.style.left = '-9999px'
+  textarea.style.position = 'fixed'
+  textarea.style.top = '0'
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+
+  try {
+    return document.execCommand('copy')
+  } finally {
+    document.body.removeChild(textarea)
+  }
+}
+
 async function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -46,20 +71,58 @@ async function blobToDataUrl(blob: Blob): Promise<string> {
   })
 }
 
-async function readWebArtifactDataUrl(filePath: string): Promise<string> {
+async function resolveWebArtifactPreviewUrl(filePath: string): Promise<string | null> {
+  if (/^https?:\/\//i.test(filePath) && filePath.includes('/api/artifacts/')) {
+    return filePath
+  }
+
   const preview = await verxioArtifactPreviewTarget(filePath)
 
-  if (!preview?.url) {
+  return preview?.url ?? null
+}
+
+async function readWebArtifactDataUrl(filePath: string): Promise<string> {
+  const url = await resolveWebArtifactPreviewUrl(filePath)
+
+  if (!url) {
     throw new Error('File preview is not available in Verxio Web yet.')
   }
 
-  const response = await fetch(preview.url, { credentials: 'include' })
+  const response = await fetch(url, { credentials: 'include' })
 
   if (!response.ok) {
     throw new Error(`Failed to load artifact preview (${response.status})`)
   }
 
   return blobToDataUrl(await response.blob())
+}
+
+async function readWebArtifactText(filePath: string): Promise<HermesReadFileTextResult | null> {
+  const url = await resolveWebArtifactPreviewUrl(filePath)
+
+  if (!url) {
+    return null
+  }
+
+  const response = await fetch(url, { credentials: 'include' })
+
+  if (!response.ok) {
+    throw new Error(`Failed to load artifact preview (${response.status})`)
+  }
+
+  const text = await response.text()
+  const mimeType = response.headers.get('content-type') || undefined
+  const lower = filePath.toLowerCase()
+  const language = lower.endsWith('.md') || lower.endsWith('.markdown') ? 'markdown' : undefined
+
+  return {
+    binary: false,
+    byteSize: new TextEncoder().encode(text).byteLength,
+    language,
+    mimeType,
+    path: filePath,
+    text
+  }
 }
 
 declare global {
@@ -255,36 +318,56 @@ async function requestJson<T>(
 }
 
 async function fetchJson<T>(url: string, init: RequestInit & { timeoutMs?: number } = {}): Promise<T> {
-  let res = await requestJson(url, init)
+  const maxAttempts = verxioApiEnabled() ? 4 : 1
+  let res: Response | null = null
 
-  if (res.status === 401) {
-    const refreshed = await refreshSessionToken()
-
-    if (refreshed) {
-      res = await requestJson(url, init)
-    }
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    res = await requestJson(url, init)
 
     if (res.status === 401) {
-      let alreadyReloaded = false
+      const refreshed = await refreshSessionToken()
 
-      try {
-        alreadyReloaded = sessionStorage.getItem(TOKEN_RELOAD_KEY) === '1'
-      } catch {
-        /* privacy mode */
+      if (refreshed) {
+        res = await requestJson(url, init)
       }
 
-      if (!alreadyReloaded) {
+      if (res.status === 401) {
+        let alreadyReloaded = false
+
         try {
-          sessionStorage.setItem(TOKEN_RELOAD_KEY, '1')
+          alreadyReloaded = sessionStorage.getItem(TOKEN_RELOAD_KEY) === '1'
         } catch {
           /* privacy mode */
         }
 
-        window.location.reload()
+        if (!alreadyReloaded) {
+          try {
+            sessionStorage.setItem(TOKEN_RELOAD_KEY, '1')
+          } catch {
+            /* privacy mode */
+          }
 
-        return new Promise<T>(() => {})
+          window.location.reload()
+
+          return new Promise<T>(() => {})
+        }
       }
     }
+
+    // Runtime briefly returns 503 while ensuring the dashboard; retry quietly
+    // instead of toasting "timed out while starting" on every Tools key save.
+    const starting = res.status === 503
+    const retryable = starting && attempt < maxAttempts - 1
+
+    if (!retryable) {
+      break
+    }
+
+    await new Promise(resolve => window.setTimeout(resolve, 400 * (attempt + 1)))
+  }
+
+  if (!res) {
+    throw new Error('Verxio backend did not respond. Retry in a moment.')
   }
 
   if (res.ok) {
@@ -643,6 +726,12 @@ export function installWebBridge(): void {
         return local
       }
 
+      const artifact = await readWebArtifactText(filePath)
+
+      if (artifact) {
+        return artifact
+      }
+
       return {
         path: filePath,
         text: '',
@@ -673,10 +762,22 @@ export function installWebBridge(): void {
       return []
     },
     writeClipboard: async (text: string) => {
-      try {
-        await navigator.clipboard.writeText(text)
+      if (!text) {
+        return false
+      }
 
-        return true
+      try {
+        if (nativeClipboardWriteText) {
+          await nativeClipboardWriteText(text)
+
+          return true
+        }
+      } catch {
+        // Fall through to execCommand when the Clipboard API is blocked.
+      }
+
+      try {
+        return copyTextWithExecCommand(text)
       } catch {
         return false
       }
@@ -686,7 +787,10 @@ export function installWebBridge(): void {
     saveImageFromUrl: async () => false,
     saveImageBuffer: async () => '',
     saveClipboardImage: async () => '',
-    getPathForFile: (file: File) => file.name,
+    // Never invent a filesystem path from a browser File.name — the gateway
+    // cannot resolve it and image.attach fails with "image not found: …".
+    // Callers should keep the File and upload bytes via image.attach_bytes.
+    getPathForFile: () => '',
     normalizePreviewTarget: async () => null,
     watchPreviewFile: async (url: string) => {
       const id = crypto.randomUUID()

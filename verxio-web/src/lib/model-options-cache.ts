@@ -3,7 +3,9 @@ import type { QueryClient } from '@tanstack/react-query'
 import { readVerxioAuthScope } from '@/lib/auth-scope'
 import type { ModelOptionsResponse } from '@/types/hermes'
 
-const MODEL_OPTIONS_CACHE_KEY = 'verxio.model-options.cache.v2'
+// Bump when the runtime provider eligibility contract changes so an old
+// inventory cannot keep unsupported providers visible after deployment.
+const MODEL_OPTIONS_CACHE_KEY = 'verxio.model-options.cache.v4'
 
 /** While true, model-options loaders should pass refresh=1 to Hermes. */
 let forceRefreshActive = false
@@ -34,6 +36,13 @@ export function readCachedModelOptions(scope: string): ModelOptionsResponse | un
 
 export function writeCachedModelOptions(scope: string, options: ModelOptionsResponse): void {
   if (typeof window === 'undefined' || !Array.isArray(options.providers)) {
+    return
+  }
+
+  // Never persist an empty catalog — a hung Hermes /api/model/options used to
+  // write {providers:[]} and leave the picker on "No models found" after reload
+  // even when Verxio Hosted Gemini/Qwen was still configured.
+  if (options.providers.length === 0) {
     return
   }
 

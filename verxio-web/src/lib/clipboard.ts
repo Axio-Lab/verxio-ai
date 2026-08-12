@@ -1,7 +1,8 @@
 // Routes `navigator.clipboard.writeText` through Electron IPC, since the
 // renderer's clipboard API throws "Write permission denied" whenever the
 // document loses focus (e.g. clicking a portaled Radix dropdown). The IPC
-// path runs in the main process and is unconditional.
+// path runs in the main process and is unconditional. On web, the bridge
+// implementation falls back to execCommand when the Clipboard API is blocked.
 
 export function installClipboardShim() {
   const ipc = window.hermesDesktop?.writeClipboard
@@ -14,10 +15,22 @@ export function installClipboardShim() {
 
   const writeText = async (text: string) => {
     try {
-      await ipc(text)
+      const copied = await ipc(text)
+
+      if (copied) {
+        return
+      }
     } catch {
-      await native?.(text)
+      // Fall through to the native clipboard path.
     }
+
+    if (native) {
+      await native(text)
+
+      return
+    }
+
+    throw new Error('Clipboard API is unavailable')
   }
 
   try {

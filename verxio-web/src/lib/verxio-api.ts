@@ -121,6 +121,357 @@ export interface VerxioNotepadNoteInput {
   source?: string
 }
 
+export type WorkflowTriggerType = 'api' | 'app_event' | 'chat' | 'manual' | 'schedule' | 'webhook'
+export type WorkflowRunStatus = 'completed' | 'failed' | 'queued' | 'running'
+export type WorkflowDeliveryType =
+  | 'approval_first'
+  | 'composio_action'
+  | 'reply_to_source'
+  | 'save_only'
+  | 'send_message'
+  | 'webhook_callback'
+
+export interface WorkflowAgent {
+  id: string
+  tenant_id: string
+  workspace_id: string
+  runtime_agent_id: string
+  name: string
+  role: string
+  description: string
+  instructions: string
+  model_id: string
+  enabled: boolean
+  skills: string[]
+  knowledge: string[]
+  tools: string[]
+  integrations: string[]
+  approval_policy: string
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowAgentInput {
+  approval_policy?: string
+  description?: string
+  enabled?: boolean
+  instructions?: string
+  model_id?: string
+  integrations?: string[]
+  knowledge?: string[]
+  name?: string
+  role?: string
+  skills?: string[]
+  tools?: string[]
+}
+
+export type WorkflowSetupActor = 'gateway' | 'session' | 'web'
+export type WorkflowSetupApprovalRisk =
+  | 'broad_messaging_trigger'
+  | 'destructive_change'
+  | 'external_delivery'
+  | 'paid_or_key_backed_tool'
+  | 'public_link'
+  | 'webhook_callback'
+
+export interface WorkflowSetupTriggerDraft {
+  config: Record<string, unknown>
+  enabled: boolean
+  event_name: string
+  name: string
+  trigger_type: WorkflowTriggerType
+}
+
+export interface WorkflowSetupDeliveryDraft {
+  channel: string
+  config: Record<string, unknown>
+  delivery_type: string
+  destination: string
+  enabled: boolean
+  name?: string
+  require_approval: boolean
+  template: string
+}
+
+export interface WorkflowAgentSetupDraftData {
+  agent: WorkflowAgentInput & { name: string }
+  deliveries: WorkflowSetupDeliveryDraft[]
+  missing?: string[]
+  missing_setup?: string[]
+  notes: string[]
+  triggers: WorkflowSetupTriggerDraft[]
+}
+
+export interface WorkflowAgentSetupApproval {
+  action?: string
+  action_label?: string
+  approved_at?: string | null
+  id: string
+  metadata?: Record<string, unknown>
+  risk?: WorkflowSetupApprovalRisk
+  risk_type?: WorkflowSetupApprovalRisk
+  runtime_agent_id?: string
+  setup_draft_id?: string | null
+  status: 'approved' | 'pending' | 'rejected'
+  tenant_id: string
+  created_at: string
+  workflow_agent_id: string | null
+  workspace_id: string
+  updated_at: string
+}
+
+export interface WorkflowAgentSetupDraft {
+  approvals_required: WorkflowSetupApprovalRisk[]
+  id: string
+  runtime_agent_id: string
+  tenant_id: string
+  workspace_id: string
+  workflow_agent_id: string | null
+  source: WorkflowSetupActor
+  prompt: string
+  status: string
+  draft: WorkflowAgentSetupDraftData
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowAgentSetupDraftResponse {
+  approvals: WorkflowAgentSetupApproval[]
+  draft: WorkflowAgentSetupDraft
+}
+
+export interface WorkflowSkillCapability {
+  category: string
+  description: string
+  enabled: boolean
+  name: string
+}
+
+export interface WorkflowSkillCapabilitiesResponse {
+  errors: string[]
+  skills: WorkflowSkillCapability[]
+}
+
+export interface WorkflowToolCapability {
+  api_key_env: string
+  auth_type: string
+  category: string
+  configured: boolean
+  description: string
+  display_name: string
+  enabled: boolean
+  id: string | null
+  method: string
+  name: string
+  source: string
+  tools: string[]
+  url: string
+}
+
+export interface WorkflowToolCapabilitiesResponse {
+  errors: string[]
+  tools: WorkflowToolCapability[]
+}
+
+export interface WorkflowIntegrationCapability {
+  authMode: string | null
+  categories: string[]
+  connected: boolean
+  description: string
+  name: string
+  slug: string
+}
+
+export interface WorkflowIntegrationCapabilitiesResponse {
+  configured: boolean
+  errors: string[]
+  integrations: WorkflowIntegrationCapability[]
+}
+
+export interface WorkflowCustomTool {
+  api_key_env: string
+  auth_type: string
+  created_at: string
+  description: string
+  enabled: boolean
+  headers: Record<string, string>
+  id: string
+  method: string
+  name: string
+  request_schema: Record<string, unknown>
+  response_hint: string
+  tenant_id: string
+  updated_at: string
+  url: string
+  workspace_id: string
+}
+
+export interface WorkflowCustomToolInput {
+  api_key_env?: string
+  auth_type?: string
+  description?: string
+  enabled?: boolean
+  headers?: Record<string, string>
+  method?: string
+  name: string
+  request_schema?: Record<string, unknown>
+  response_hint?: string
+  url: string
+}
+
+export interface KnowledgeBase {
+  id: string
+  tenant_id: string
+  workspace_id: string
+  name: string
+  description: string
+  document_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface KnowledgeDocument {
+  id: string
+  tenant_id: string
+  workspace_id: string
+  knowledge_base_id: string
+  title: string
+  source: string
+  content: string
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowTrigger {
+  id: string
+  tenant_id: string
+  workspace_id: string
+  workflow_agent_id: string
+  trigger_type: WorkflowTriggerType
+  event_name: string
+  name: string
+  enabled: boolean
+  secret: string
+  config: Record<string, unknown>
+  webhook_url: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowTriggerInput {
+  config?: Record<string, unknown>
+  enabled?: boolean
+  event_name?: string
+  name?: string
+  rotate_secret?: boolean
+  trigger_type?: WorkflowTriggerType
+}
+
+export interface WorkflowDelivery {
+  id: string
+  tenant_id: string
+  workspace_id: string
+  workflow_agent_id: string
+  delivery_type: WorkflowDeliveryType
+  name: string
+  channel: string
+  destination: string
+  template: string
+  enabled: boolean
+  require_approval: boolean
+  config: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowDeliveryInput {
+  channel?: string
+  config?: Record<string, unknown>
+  delivery_type?: WorkflowDeliveryType
+  destination?: string
+  enabled?: boolean
+  name?: string
+  require_approval?: boolean
+  template?: string
+}
+
+export interface WorkflowAgentEmbedConfig {
+  id: string
+  tenant_id: string
+  workspace_id: string
+  runtime_agent_id: string
+  workflow_agent_id: string
+  public_token: string
+  enabled: boolean
+  display_name: string
+  welcome_message: string
+  primary_color: string
+  logo_url: string
+  asset_url: string
+  allowed_origins: string[]
+  share_url: string
+  embed_script: string
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowAgentEmbedConfigInput {
+  allowed_origins?: string[]
+  asset_url?: string
+  display_name?: string
+  enabled?: boolean
+  logo_url?: string
+  primary_color?: string
+  welcome_message?: string
+}
+
+export interface WorkflowAgentEmbedAssetInput {
+  data_url: string
+  file_name: string
+}
+
+export interface WorkflowAgentPublicInfo {
+  public_token: string
+  name: string
+  description: string
+  display_name: string
+  welcome_message: string
+  primary_color: string
+  logo_url: string
+  asset_url: string
+  powered_by: string
+}
+
+export interface WorkflowRun {
+  id: string
+  tenant_id: string
+  workspace_id: string
+  runtime_agent_id: string
+  workflow_agent_id: string
+  trigger_id: string | null
+  trigger_type: WorkflowTriggerType
+  status: WorkflowRunStatus
+  input: Record<string, unknown>
+  output_text: string
+  error: string | null
+  started_at: string | null
+  completed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface WorkflowRunEvent {
+  id: string
+  tenant_id: string
+  workspace_id: string
+  workflow_agent_id: string
+  workflow_run_id: string
+  event_type: string
+  message: string
+  metadata: Record<string, unknown>
+  created_at: string
+}
+
 export interface ComposioConnectedAccount {
   id: string
   appSlug: string
@@ -132,6 +483,7 @@ export interface ComposioToolPreview {
   slug: string
   name: string
   description: string
+  inputParameters: Record<string, unknown>
 }
 
 export interface ComposioToolBridgeStatus {
@@ -197,6 +549,19 @@ export interface ComposioAppToolsResponse {
   configured: boolean
   catalogReady?: boolean
   catalogError?: string | null
+}
+
+export interface ComposioTriggerType {
+  slug: string
+  name: string
+  description: string
+  config: Record<string, unknown>
+  payload: Record<string, unknown>
+}
+
+export interface ComposioTriggerTypesResponse {
+  triggers: ComposioTriggerType[]
+  configured: boolean
 }
 
 export interface ComposioInitiateResponse {
@@ -289,160 +654,6 @@ export interface VerxioTranscriptionCatalogResponse {
   cacheTtlSeconds: number
 }
 
-export type PulseChannelType = 'instagram' | 'messenger' | 'whatsapp' | 'tiktok' | 'linkedin'
-export type PulseConversationState = 'automated' | 'human' | 'paused'
-
-export interface PulseChannelCapability {
-  key: string
-  label: string
-  supported: boolean
-  description?: string
-  gated?: boolean
-}
-
-export interface PulseChannelCapabilityMatrixItem {
-  channel_type: PulseChannelType
-  name: string
-  tier: 'first_class' | 'limited' | 'partner_gated'
-  description: string
-  docsUrl: string
-  capabilities: PulseChannelCapability[]
-}
-
-export interface PulseChannel {
-  id: string
-  channel_type: PulseChannelType
-  external_id: string
-  display_name: string
-  status: string
-  capabilities: Record<string, unknown>
-  created_at: string
-  updated_at: string
-}
-
-export interface PulseChannelsResponse {
-  channels: PulseChannel[]
-  capabilityMatrix: PulseChannelCapabilityMatrixItem[]
-}
-
-export interface PulseChannelConnectResponse {
-  channel?: PulseChannel | null
-  redirectUrl?: string | null
-  message: string
-}
-
-export interface PulseMetaOAuthCompleteResponse {
-  channels: PulseChannel[]
-  message: string
-}
-
-export interface PulseConversation {
-  id: string
-  channel_id: string
-  contact_id: string
-  channel_type: PulseChannelType
-  channel_name: string
-  contact_name: string
-  state: PulseConversationState
-  window_expires_at?: string | null
-  last_inbound_at?: string | null
-  last_outbound_at?: string | null
-  last_message?: string | null
-  unread: number
-  created_at: string
-  updated_at: string
-}
-
-export interface PulseContact {
-  id: string
-  external_user_id: string
-  username?: string | null
-  display_name: string
-  fields: Record<string, unknown>
-  consent_state: string
-  tags: string[]
-  created_at: string
-  updated_at: string
-}
-
-export interface PulseMessage {
-  id: string
-  conversation_id: string
-  direction: 'inbound' | 'outbound' | 'system'
-  body: string
-  media: Array<Record<string, unknown>>
-  provider_message_id?: string | null
-  status: string
-  created_at: string
-  updated_at: string
-}
-
-export interface PulseConversationsResponse {
-  conversations: PulseConversation[]
-}
-
-export interface PulseConversationDetailResponse {
-  conversation: PulseConversation
-  contact: PulseContact
-  messages: PulseMessage[]
-}
-
-export interface PulseFlowNode {
-  id: string
-  kind:
-    | 'trigger'
-    | 'send_message'
-    | 'ask_question'
-    | 'wait'
-    | 'condition'
-    | 'set_tag'
-    | 'set_field'
-    | 'ai_reply'
-    | 'composio_action'
-    | 'handoff'
-    | 'end'
-  label: string
-  config: Record<string, unknown>
-}
-
-export interface PulseFlowEdge {
-  id: string
-  source: string
-  target: string
-  condition?: string | null
-}
-
-export interface PulseFlowDefinition {
-  nodes: PulseFlowNode[]
-  edges: PulseFlowEdge[]
-}
-
-export interface PulseAutomation {
-  id: string
-  name: string
-  channel_type: PulseChannelType
-  enabled: boolean
-  flow: PulseFlowDefinition
-  version: number
-  created_at: string
-  updated_at: string
-}
-
-export interface PulseAutomationListResponse {
-  automations: PulseAutomation[]
-}
-
-export interface PulseAnalyticsResponse {
-  totals: Record<string, number>
-  channelBreakdown: Array<Record<string, unknown>>
-  recentRuns: Array<Record<string, unknown>>
-}
-
-export interface PulseAutomationSimulateResponse {
-  transcript: PulseMessage[]
-  context: Record<string, unknown>
-}
-
 export function verxioApiBaseUrl(): string {
   const baked = import.meta.env.VITE_VERXIO_API_URL?.replace(/\/$/, '') ?? ''
 
@@ -510,20 +721,24 @@ export async function verxioFetch<T>(path: string, init: RequestInit & { timeout
       const detail = await response.text().catch(() => '')
 
       if (detail) {
+        let parsedMessage = ''
+
         try {
           const parsed = JSON.parse(detail) as { detail?: unknown; message?: unknown }
 
           if (typeof parsed.detail === 'string' && parsed.detail.trim()) {
-            throw new Error(parsed.detail.trim())
+            parsedMessage = parsed.detail.trim()
           }
 
           if (typeof parsed.message === 'string' && parsed.message.trim()) {
-            throw new Error(parsed.message.trim())
+            parsedMessage = parsed.message.trim()
           }
-        } catch (error) {
-          if (error instanceof Error && error.message !== detail) {
-            throw error
-          }
+        } catch {
+          parsedMessage = ''
+        }
+
+        if (parsedMessage) {
+          throw new Error(parsedMessage)
         }
       }
 
@@ -537,7 +752,7 @@ export async function verxioFetch<T>(path: string, init: RequestInit & { timeout
     return (await response.json()) as T
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
-      throw new Error('Request timed out. Try a shorter recording and transcribe again.')
+      throw new Error('Request timed out. Please try again.')
     }
 
     throw error
@@ -671,9 +886,27 @@ export function listVerxioArtifacts(options?: { refresh?: boolean }): Promise<Ve
 }
 
 export function deleteVerxioArtifact(artifactId: string): Promise<{ ok: boolean }> {
+  artifactsListCache = null
+
   return verxioFetch<{ ok: boolean }>(`/api/artifacts/${encodeURIComponent(artifactId)}`, {
     method: 'DELETE'
   })
+}
+
+export async function deleteVerxioArtifacts(artifactIds: string[]): Promise<{ failed: string[]; deleted: string[] }> {
+  const deleted: string[] = []
+  const failed: string[] = []
+
+  for (const artifactId of artifactIds) {
+    try {
+      await deleteVerxioArtifact(artifactId)
+      deleted.push(artifactId)
+    } catch {
+      failed.push(artifactId)
+    }
+  }
+
+  return { deleted, failed }
 }
 
 export function listNotepad(): Promise<VerxioNotepadListResponse> {
@@ -741,6 +974,234 @@ export function revokeNotepadShare(noteId: string): Promise<{ ok: boolean }> {
   })
 }
 
+export function listWorkflowAgents(): Promise<{ agents: WorkflowAgent[]; setup_drafts?: WorkflowAgentSetupDraft[] }> {
+  return verxioFetch<{ agents: WorkflowAgent[]; setup_drafts?: WorkflowAgentSetupDraft[] }>('/api/workflow-agents')
+}
+
+export function listWorkflowSkillCapabilities(): Promise<WorkflowSkillCapabilitiesResponse> {
+  return verxioFetch<WorkflowSkillCapabilitiesResponse>('/api/workflow-agents/capabilities/skills')
+}
+
+export function listWorkflowToolCapabilities(): Promise<WorkflowToolCapabilitiesResponse> {
+  return verxioFetch<WorkflowToolCapabilitiesResponse>('/api/workflow-agents/capabilities/tools')
+}
+
+export function createWorkflowCustomTool(input: WorkflowCustomToolInput): Promise<WorkflowCustomTool> {
+  return verxioFetch<WorkflowCustomTool>('/api/workflow-agents/custom-tools', {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
+}
+
+export function listWorkflowIntegrationCapabilities(): Promise<WorkflowIntegrationCapabilitiesResponse> {
+  return verxioFetch<WorkflowIntegrationCapabilitiesResponse>('/api/workflow-agents/capabilities/integrations')
+}
+
+export function listKnowledgeBases(): Promise<{ knowledge_bases: KnowledgeBase[] }> {
+  return verxioFetch<{ knowledge_bases: KnowledgeBase[] }>('/api/knowledge-bases')
+}
+
+export function createKnowledgeBase(input: { description?: string; name: string }): Promise<KnowledgeBase> {
+  return verxioFetch<KnowledgeBase>('/api/knowledge-bases', {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
+}
+
+export function deleteKnowledgeBase(knowledgeBaseId: string): Promise<{ ok: boolean }> {
+  return verxioFetch<{ ok: boolean }>(`/api/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}`, {
+    method: 'DELETE'
+  })
+}
+
+export function listKnowledgeDocuments(knowledgeBaseId: string): Promise<{ documents: KnowledgeDocument[] }> {
+  return verxioFetch<{ documents: KnowledgeDocument[] }>(
+    `/api/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/documents`
+  )
+}
+
+export function createKnowledgeDocument(
+  knowledgeBaseId: string,
+  input: { content: string; source?: string; title: string }
+): Promise<KnowledgeDocument> {
+  return verxioFetch<KnowledgeDocument>(`/api/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/documents`, {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
+}
+
+export function createWorkflowAgent(input: WorkflowAgentInput & { name: string }): Promise<WorkflowAgent> {
+  return verxioFetch<WorkflowAgent>('/api/workflow-agents', {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
+}
+
+export function draftWorkflowAgentSetup(input: {
+  prompt: string
+  source?: WorkflowSetupActor
+  source_ref?: string
+}): Promise<WorkflowAgentSetupDraftResponse> {
+  return verxioFetch<WorkflowAgentSetupDraftResponse>('/api/workflow-agents/draft', {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
+}
+
+export function draftWorkflowAgentSetupUpdate(
+  agentId: string,
+  input: {
+    prompt: string
+    source?: WorkflowSetupActor
+    source_ref?: string
+  }
+): Promise<WorkflowAgentSetupDraftResponse> {
+  return verxioFetch<WorkflowAgentSetupDraftResponse>(
+    `/api/workflow-agents/${encodeURIComponent(agentId)}/draft-update`,
+    {
+      body: JSON.stringify(input),
+      method: 'POST'
+    }
+  )
+}
+
+export function updateWorkflowAgent(agentId: string, input: WorkflowAgentInput): Promise<WorkflowAgent> {
+  return verxioFetch<WorkflowAgent>(`/api/workflow-agents/${encodeURIComponent(agentId)}`, {
+    body: JSON.stringify(input),
+    method: 'PUT'
+  })
+}
+
+export function deleteWorkflowAgent(agentId: string): Promise<{ ok: boolean }> {
+  return verxioFetch<{ ok: boolean }>(`/api/workflow-agents/${encodeURIComponent(agentId)}`, {
+    method: 'DELETE'
+  })
+}
+
+export function deleteWorkflowAgentSetupDraft(draftId: string): Promise<{ ok: boolean }> {
+  return verxioFetch<{ ok: boolean }>(`/api/workflow-agents/setup-drafts/${encodeURIComponent(draftId)}`, {
+    method: 'DELETE'
+  })
+}
+
+export function listWorkflowTriggers(agentId: string): Promise<{ triggers: WorkflowTrigger[] }> {
+  return verxioFetch<{ triggers: WorkflowTrigger[] }>(`/api/workflow-agents/${encodeURIComponent(agentId)}/triggers`)
+}
+
+export function createWorkflowTrigger(
+  agentId: string,
+  input: WorkflowTriggerInput & { trigger_type: WorkflowTriggerType }
+): Promise<WorkflowTrigger> {
+  return verxioFetch<WorkflowTrigger>(`/api/workflow-agents/${encodeURIComponent(agentId)}/triggers`, {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
+}
+
+export function updateWorkflowTrigger(
+  agentId: string,
+  triggerId: string,
+  input: WorkflowTriggerInput
+): Promise<WorkflowTrigger> {
+  return verxioFetch<WorkflowTrigger>(
+    `/api/workflow-agents/${encodeURIComponent(agentId)}/triggers/${encodeURIComponent(triggerId)}`,
+    {
+      body: JSON.stringify(input),
+      method: 'PUT'
+    }
+  )
+}
+
+export function deleteWorkflowTrigger(agentId: string, triggerId: string): Promise<{ ok: boolean }> {
+  return verxioFetch<{ ok: boolean }>(
+    `/api/workflow-agents/${encodeURIComponent(agentId)}/triggers/${encodeURIComponent(triggerId)}`,
+    {
+      method: 'DELETE'
+    }
+  )
+}
+
+export function listWorkflowDeliveries(agentId: string): Promise<{ deliveries: WorkflowDelivery[] }> {
+  return verxioFetch<{ deliveries: WorkflowDelivery[] }>(
+    `/api/workflow-agents/${encodeURIComponent(agentId)}/deliveries`
+  )
+}
+
+export function createWorkflowDelivery(
+  agentId: string,
+  input: WorkflowDeliveryInput & { delivery_type: WorkflowDeliveryType }
+): Promise<WorkflowDelivery> {
+  return verxioFetch<WorkflowDelivery>(`/api/workflow-agents/${encodeURIComponent(agentId)}/deliveries`, {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
+}
+
+export function updateWorkflowDelivery(
+  agentId: string,
+  deliveryId: string,
+  input: WorkflowDeliveryInput
+): Promise<WorkflowDelivery> {
+  return verxioFetch<WorkflowDelivery>(
+    `/api/workflow-agents/${encodeURIComponent(agentId)}/deliveries/${encodeURIComponent(deliveryId)}`,
+    {
+      body: JSON.stringify(input),
+      method: 'PUT'
+    }
+  )
+}
+
+export function deleteWorkflowDelivery(agentId: string, deliveryId: string): Promise<{ ok: boolean }> {
+  return verxioFetch<{ ok: boolean }>(
+    `/api/workflow-agents/${encodeURIComponent(agentId)}/deliveries/${encodeURIComponent(deliveryId)}`,
+    {
+      method: 'DELETE'
+    }
+  )
+}
+
+export function getWorkflowAgentEmbedConfig(agentId: string): Promise<WorkflowAgentEmbedConfig> {
+  return verxioFetch<WorkflowAgentEmbedConfig>(`/api/workflow-agents/${encodeURIComponent(agentId)}/embed`)
+}
+
+export function updateWorkflowAgentEmbedConfig(
+  agentId: string,
+  input: WorkflowAgentEmbedConfigInput
+): Promise<WorkflowAgentEmbedConfig> {
+  return verxioFetch<WorkflowAgentEmbedConfig>(`/api/workflow-agents/${encodeURIComponent(agentId)}/embed`, {
+    body: JSON.stringify(input),
+    method: 'PUT'
+  })
+}
+
+export function uploadWorkflowAgentEmbedAsset(
+  agentId: string,
+  input: WorkflowAgentEmbedAssetInput
+): Promise<WorkflowAgentEmbedConfig> {
+  return verxioFetch<WorkflowAgentEmbedConfig>(`/api/workflow-agents/${encodeURIComponent(agentId)}/embed/asset`, {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
+}
+
+export function listWorkflowRuns(agentId: string): Promise<{ runs: WorkflowRun[] }> {
+  return verxioFetch<{ runs: WorkflowRun[] }>(`/api/workflow-agents/${encodeURIComponent(agentId)}/runs`)
+}
+
+export function runWorkflowAgent(agentId: string, input: Record<string, unknown>): Promise<WorkflowRun> {
+  return verxioFetch<WorkflowRun>(`/api/workflow-agents/${encodeURIComponent(agentId)}/runs`, {
+    body: JSON.stringify({ input }),
+    method: 'POST',
+    timeoutMs: 240_000
+  })
+}
+
+export function listWorkflowRunEvents(agentId: string, runId: string): Promise<{ events: WorkflowRunEvent[] }> {
+  return verxioFetch<{ events: WorkflowRunEvent[] }>(
+    `/api/workflow-agents/${encodeURIComponent(agentId)}/runs/${encodeURIComponent(runId)}/events`
+  )
+}
+
 export async function getPublicNotepadShare(token: string): Promise<VerxioPublicNotepadShareResponse> {
   const response = await fetch(verxioApiUrl(`/api/public/notepad/${encodeURIComponent(token)}`), {
     credentials: 'omit'
@@ -751,6 +1212,52 @@ export async function getPublicNotepadShare(token: string): Promise<VerxioPublic
   }
 
   return (await response.json()) as VerxioPublicNotepadShareResponse
+}
+
+export async function getPublicWorkflowAgent(token: string): Promise<WorkflowAgentPublicInfo> {
+  const response = await fetch(verxioApiUrl(`/api/public/workflow-agents/${encodeURIComponent(token)}`), {
+    credentials: 'omit'
+  })
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { detail?: string }
+
+    throw new Error(body.detail || `${response.status} ${response.statusText}`)
+  }
+
+  return (await response.json()) as WorkflowAgentPublicInfo
+}
+
+export async function runPublicWorkflowAgent(token: string, message: string): Promise<{ run: WorkflowRun }> {
+  let visitorId = ''
+
+  if (typeof window !== 'undefined') {
+    visitorId = window.localStorage.getItem('verxio.public.visitor_id') || ''
+
+    if (!visitorId) {
+      visitorId = crypto.randomUUID()
+      window.localStorage.setItem('verxio.public.visitor_id', visitorId)
+    }
+  }
+
+  const response = await fetch(verxioApiUrl(`/api/public/workflow-agents/${encodeURIComponent(token)}/runs`), {
+    body: JSON.stringify({
+      message,
+      page_url: typeof window === 'undefined' ? '' : window.location.href,
+      visitor_id: visitorId
+    }),
+    credentials: 'omit',
+    headers: { 'content-type': 'application/json' },
+    method: 'POST'
+  })
+
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { detail?: string }
+
+    throw new Error(body.detail || `${response.status} ${response.statusText}`)
+  }
+
+  return (await response.json()) as { run: WorkflowRun }
 }
 
 export function listComposioConnections(): Promise<ComposioConnectionsResponse> {
@@ -764,6 +1271,12 @@ export function listComposioApps(): Promise<ComposioAppsResponse> {
 export function listComposioAppTools(appSlug: string, limit = 4): Promise<ComposioAppToolsResponse> {
   return verxioFetch<ComposioAppToolsResponse>(
     `/api/composio/connections/apps/${encodeURIComponent(appSlug)}/tools?limit=${limit}`
+  )
+}
+
+export function listComposioTriggerTypes(appSlug: string): Promise<ComposioTriggerTypesResponse> {
+  return verxioFetch<ComposioTriggerTypesResponse>(
+    `/api/composio/connections/apps/${encodeURIComponent(appSlug)}/triggers`
   )
 }
 
@@ -827,123 +1340,4 @@ export function listVerxioTranscriptionCatalog(refresh = false): Promise<VerxioT
       timeoutMs: 12_000
     }
   )
-}
-
-export function listPulseChannels(): Promise<PulseChannelsResponse> {
-  return verxioFetch<PulseChannelsResponse>('/api/pulse/channels')
-}
-
-export function connectPulseChannel(
-  channelType: PulseChannelType,
-  input: {
-    callbackUrl?: string
-    credentials?: Record<string, string>
-    display_name?: string
-    external_id?: string
-  } = {}
-): Promise<PulseChannelConnectResponse> {
-  return verxioFetch<PulseChannelConnectResponse>('/api/pulse/channels/connect', {
-    body: JSON.stringify({ channel_type: channelType, ...input }),
-    method: 'POST'
-  })
-}
-
-export function completePulseMetaOAuth(
-  code: string,
-  redirectUri: string,
-  channelType: PulseChannelType
-): Promise<PulseMetaOAuthCompleteResponse> {
-  return verxioFetch<PulseMetaOAuthCompleteResponse>('/api/pulse/channels/meta/complete', {
-    body: JSON.stringify({ channel_type: channelType, code, redirectUri }),
-    method: 'POST'
-  })
-}
-
-export function deletePulseChannel(channelId: string): Promise<{ ok: boolean }> {
-  return verxioFetch<{ ok: boolean }>(`/api/pulse/channels/${encodeURIComponent(channelId)}`, {
-    method: 'DELETE'
-  })
-}
-
-export function listPulseConversations(): Promise<PulseConversationsResponse> {
-  return verxioFetch<PulseConversationsResponse>('/api/pulse/conversations')
-}
-
-export function getPulseConversation(conversationId: string): Promise<PulseConversationDetailResponse> {
-  return verxioFetch<PulseConversationDetailResponse>(`/api/pulse/conversations/${encodeURIComponent(conversationId)}`)
-}
-
-export function sendPulseMessage(conversationId: string, body: string): Promise<PulseMessage> {
-  return verxioFetch<PulseMessage>(`/api/pulse/conversations/${encodeURIComponent(conversationId)}/messages`, {
-    body: JSON.stringify({ body }),
-    method: 'POST'
-  })
-}
-
-export function updatePulseConversationState(
-  conversationId: string,
-  state: PulseConversationState
-): Promise<PulseConversation> {
-  return verxioFetch<PulseConversation>(`/api/pulse/conversations/${encodeURIComponent(conversationId)}/state`, {
-    body: JSON.stringify({ state }),
-    method: 'POST'
-  })
-}
-
-export function listPulseAutomations(): Promise<PulseAutomationListResponse> {
-  return verxioFetch<PulseAutomationListResponse>('/api/pulse/automations')
-}
-
-export function createPulseAutomation(input: {
-  channel_type: PulseChannelType
-  enabled?: boolean
-  flow?: PulseFlowDefinition
-  name: string
-}): Promise<PulseAutomation> {
-  return verxioFetch<PulseAutomation>('/api/pulse/automations', {
-    body: JSON.stringify(input),
-    method: 'POST'
-  })
-}
-
-export function updatePulseAutomation(automationId: string, input: Partial<PulseAutomation>): Promise<PulseAutomation> {
-  return verxioFetch<PulseAutomation>(`/api/pulse/automations/${encodeURIComponent(automationId)}`, {
-    body: JSON.stringify(input),
-    method: 'PUT'
-  })
-}
-
-export function togglePulseAutomation(automationId: string, enabled: boolean): Promise<PulseAutomation> {
-  return verxioFetch<PulseAutomation>(`/api/pulse/automations/${encodeURIComponent(automationId)}/enable`, {
-    body: JSON.stringify({ enabled }),
-    method: 'POST'
-  })
-}
-
-export function deletePulseAutomation(automationId: string): Promise<{ ok: boolean }> {
-  return verxioFetch<{ ok: boolean }>(`/api/pulse/automations/${encodeURIComponent(automationId)}`, {
-    method: 'DELETE'
-  })
-}
-
-export function generatePulseAutomation(prompt: string, channelType: PulseChannelType): Promise<PulseAutomation> {
-  return verxioFetch<PulseAutomation>('/api/pulse/automations/generate', {
-    body: JSON.stringify({ channel_type: channelType, prompt }),
-    method: 'POST'
-  })
-}
-
-export function simulatePulseAutomation(input: {
-  automation_id?: string
-  flow?: PulseFlowDefinition
-  message?: string
-}): Promise<PulseAutomationSimulateResponse> {
-  return verxioFetch<PulseAutomationSimulateResponse>('/api/pulse/automations/simulate', {
-    body: JSON.stringify(input),
-    method: 'POST'
-  })
-}
-
-export function getPulseAnalytics(): Promise<PulseAnalyticsResponse> {
-  return verxioFetch<PulseAnalyticsResponse>('/api/pulse/analytics')
 }

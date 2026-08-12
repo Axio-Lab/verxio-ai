@@ -54,7 +54,10 @@ export function GlyphSpinner({ ariaLabel = 'Loading', className, spinner = 'brai
   return (
     <span
       aria-label={ariaLabel}
-      className={cn('inline-flex items-center justify-center font-mono leading-none tabular-nums', className)}
+      className={cn(
+        'inline-flex items-center justify-center font-mono leading-none tabular-nums text-primary',
+        className
+      )}
       role="status"
     >
       {spin.frames[frame]}

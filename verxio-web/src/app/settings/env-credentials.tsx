@@ -19,6 +19,45 @@ import { asText, includesQuery, redactedValue, withoutKey } from './helpers'
 import { Pill } from './primitives'
 import type { EnvRowProps } from './types'
 
+const ENV_VARS_CACHE_TTL_MS = 30_000
+let envVarsCache: { at: number; vars: Record<string, EnvVarInfo> } | null = null
+let envVarsCacheGeneration = 0
+let envVarsInflight: Promise<Record<string, EnvVarInfo>> | null = null
+
+function invalidateEnvVarsCache() {
+  envVarsCache = null
+  envVarsCacheGeneration += 1
+  envVarsInflight = null
+}
+
+async function loadEnvVarsCached(): Promise<Record<string, EnvVarInfo>> {
+  const now = Date.now()
+
+  if (envVarsCache && now - envVarsCache.at < ENV_VARS_CACHE_TTL_MS) {
+    return envVarsCache.vars
+  }
+
+  if (!envVarsInflight) {
+    const generation = envVarsCacheGeneration
+    envVarsInflight = getEnvVars()
+      .then(vars => {
+        if (generation === envVarsCacheGeneration) {
+          envVarsCache = { at: Date.now(), vars }
+        }
+
+        envVarsInflight = null
+
+        return vars
+      })
+      .catch(err => {
+        envVarsInflight = null
+        throw err
+      })
+  }
+
+  return envVarsInflight
+}
+
 // Shared filter used by every credential surface (Providers + Keys pages):
 // category gate first, then a free-text match across key name + description.
 export function filterEnv(info: EnvVarInfo, key: string, q: string, cat: string, extra?: string): boolean {
@@ -76,7 +115,7 @@ export function useEnvCredentials(): UseEnvCredentials {
 
     void (async () => {
       try {
-        const next = await getEnvVars()
+        const next = await loadEnvVarsCached()
 
         if (!cancelled) {
           setVars(next)
@@ -90,7 +129,16 @@ export function useEnvCredentials(): UseEnvCredentials {
   }, [t.settings.keys.failedLoad])
 
   function patchVar(key: string, patch: Partial<Pick<EnvVarInfo, 'is_set' | 'redacted_value'>>) {
-    setVars(c => (c ? { ...c, [key]: { ...c[key], ...patch } } : c))
+    setVars(c => {
+      if (!c) {
+        return c
+      }
+
+      const next = { ...c, [key]: { ...c[key], ...patch } }
+      envVarsCache = { at: Date.now(), vars: next }
+
+      return next
+    })
   }
 
   function clearLocalState(key: string) {
@@ -138,6 +186,7 @@ export function useEnvCredentials(): UseEnvCredentials {
 
     try {
       await setEnvVar(key, value)
+      invalidateEnvVarsCache()
       patchVar(key, { is_set: true, redacted_value: redactedValue(value) })
       clearLocalState(key)
       await reloadIfToolCredential(key)
@@ -163,24 +212,30 @@ export function useEnvCredentials(): UseEnvCredentials {
 
     try {
       await setEnvVar(key, trimmed)
-      setVars(c =>
-        c
-          ? {
-              ...c,
-              [key]: c[key] ?? {
-                advanced: false,
-                category: 'tool',
-                custom: true,
-                description: credentials.customToolDescription,
-                is_password: true,
-                is_set: true,
-                redacted_value: redactedValue(trimmed),
-                tools: [],
-                url: null
-              }
-            }
-          : c
-      )
+      invalidateEnvVarsCache()
+      setVars(c => {
+        if (!c) {
+          return c
+        }
+
+        const next = {
+          ...c,
+          [key]: c[key] ?? {
+            advanced: false,
+            category: 'tool',
+            custom: true,
+            description: credentials.customToolDescription,
+            is_password: true,
+            is_set: true,
+            redacted_value: redactedValue(trimmed),
+            tools: [],
+            url: null
+          }
+        }
+        envVarsCache = { at: Date.now(), vars: next }
+
+        return next
+      })
       patchVar(key, { is_set: true, redacted_value: redactedValue(trimmed) })
       clearLocalState(key)
       await reloadIfToolCredential(key)
@@ -203,9 +258,19 @@ export function useEnvCredentials(): UseEnvCredentials {
 
     try {
       await deleteEnvVar(key)
+      invalidateEnvVarsCache()
 
       if (removeRow) {
-        setVars(c => (c ? withoutKey(c, key) : c))
+        setVars(c => {
+          if (!c) {
+            return c
+          }
+
+          const next = withoutKey(c, key)
+          envVarsCache = { at: Date.now(), vars: next }
+
+          return next
+        })
       } else {
         patchVar(key, { is_set: false, redacted_value: null })
       }

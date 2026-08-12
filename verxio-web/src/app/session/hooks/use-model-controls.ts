@@ -3,30 +3,45 @@ import { useCallback } from 'react'
 
 import { getGlobalModelInfo, setGlobalModel } from '@/hermes'
 import { useI18n } from '@/i18n'
-import { isSelectableModel, resolveHostedDefaultModel, resolveStatusbarModel } from '@/lib/hosted-default-model'
-import { getInferenceCatalog, getInferenceSettings, verxioApiEnabled } from '@/lib/verxio-api'
+import {
+  resolveHostedDefaultModel,
+  resolveHostedStatusbarCorrection,
+  resolveStatusbarModel,
+  shouldClearStaleStatusbarModel
+} from '@/lib/hosted-default-model'
+import {
+  getInferenceCatalog,
+  getInferenceSettings,
+  verxioApiEnabled,
+  type VerxioInferenceCatalogResponse,
+  type VerxioInferenceSettings
+} from '@/lib/verxio-api'
 import { getScopedModelOptions } from '@/lib/verxio-model-options'
 import { notifyError } from '@/store/notifications'
 import { $currentModel, $currentProvider, setCurrentModel, setCurrentProvider } from '@/store/session'
 import type { ModelOptionsResponse } from '@/types/hermes'
 
 async function loadInferenceModeAndHostedDefault(): Promise<{
+  catalog: Pick<VerxioInferenceCatalogResponse, 'defaultModelId' | 'models'> | null
   hostedDefault: Awaited<ReturnType<typeof resolveHostedDefaultModel>>
   mode: 'byok' | 'hosted' | null
+  settings: VerxioInferenceSettings | null
 }> {
   if (!verxioApiEnabled()) {
-    return { hostedDefault: null, mode: null }
+    return { catalog: null, hostedDefault: null, mode: null, settings: null }
   }
 
   try {
     const [settings, catalog] = await Promise.all([getInferenceSettings(), getInferenceCatalog()])
 
     return {
+      catalog,
       hostedDefault: resolveHostedDefaultModel(settings, catalog),
-      mode: settings.mode
+      mode: settings.mode,
+      settings
     }
   } catch {
-    return { hostedDefault: null, mode: null }
+    return { catalog: null, hostedDefault: null, mode: null, settings: null }
   }
 }
 
@@ -73,16 +88,76 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
   )
 
   const refreshCurrentModel = useCallback(async () => {
+    // Live sessions own in-family picks via slash /model + session.info.
+    // Always reconcile a leftover from another hosted family (statusbar still
+    // saying Qwen while Settings default + picker are Gemini).
     try {
-      const [result, options] = await Promise.all([getGlobalModelInfo(), getScopedModelOptions()])
+      // Hosted defaults come from the Verxio control plane and must paint even
+      // when Hermes /api/model/info is wedged (Docker/dashboard stalls).
+      const { catalog, hostedDefault, settings } = await loadInferenceModeAndHostedDefault()
+      const storeModel = $currentModel.get().trim()
+      const storeProvider = $currentProvider.get().trim()
+
+      if (catalog && settings) {
+        const info = await getGlobalModelInfo().catch(() => ({ model: '', provider: '' }))
+
+        const correction = resolveHostedStatusbarCorrection(
+          { model: storeModel, provider: storeProvider },
+          info,
+          settings,
+          catalog,
+          hostedDefault
+        )
+
+        if (correction) {
+          applyModelSelection(correction)
+
+          return
+        }
+
+        if (hostedDefault && !storeModel) {
+          applyModelSelection(hostedDefault)
+
+          return
+        }
+
+        // Valid pin on a live session — leave it (hosted family or BYOK).
+        if (activeSessionId && storeModel) {
+          return
+        }
+      } else if (activeSessionId && storeModel) {
+        return
+      }
+
+      if (hostedDefault && !$currentModel.get().trim()) {
+        applyModelSelection(hostedDefault)
+      }
+
+      if (activeSessionId && $currentModel.get().trim()) {
+        return
+      }
+
+      const optionsPromise = getScopedModelOptions()
+      const infoPromise = getGlobalModelInfo().catch(() => ({ model: '', provider: '' }))
+      const [result, options] = await Promise.all([infoPromise, optionsPromise])
       const hermesModel = typeof result.model === 'string' ? result.model.trim() : ''
       const hermesProvider = typeof result.provider === 'string' ? result.provider.trim() : ''
-      const selectable = isSelectableModel(hermesModel, hermesProvider, options)
-      const { hostedDefault, mode } = await loadInferenceModeAndHostedDefault()
 
-      // Stale config after disconnect/key delete: picker has no match — show No model.
-      if (hermesModel && !selectable) {
-        if (mode === 'hosted' && hostedDefault) {
+      if (activeSessionId && !hermesModel && !$currentModel.get().trim() && hostedDefault) {
+        applyModelSelection(hostedDefault)
+
+        return
+      }
+
+      if (activeSessionId) {
+        return
+      }
+
+      const stale = shouldClearStaleStatusbarModel(hermesModel, hermesProvider, options)
+
+      // Stale config after disconnect/key delete: picker loaded and has no match.
+      if (hermesModel && stale) {
+        if (hostedDefault) {
           applyModelSelection(hostedDefault)
 
           return
@@ -93,17 +168,16 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
         return
       }
 
-      // BYOK with no Hermes main model: show empty statusbar, never seed Qwen.
-      if (mode === 'byok' && !hermesModel) {
-        clearStatusbarModel()
-
-        return
-      }
-
       const next = resolveStatusbarModel(result, $currentModel.get(), hostedDefault)
 
       if (next) {
-        if (!isSelectableModel(next.model, next.provider, options) && mode !== 'hosted') {
+        if (shouldClearStaleStatusbarModel(next.model, next.provider, options)) {
+          if (hostedDefault) {
+            applyModelSelection(hostedDefault)
+
+            return
+          }
+
           clearStatusbarModel()
 
           return
@@ -114,20 +188,14 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
     } catch {
       // The delayed session.info event still updates this once the agent is ready.
       if (!$currentModel.get()) {
-        const { hostedDefault, mode } = await loadInferenceModeAndHostedDefault()
-
-        if (mode === 'byok') {
-          clearStatusbarModel()
-
-          return
-        }
+        const { hostedDefault } = await loadInferenceModeAndHostedDefault()
 
         if (hostedDefault) {
           applyModelSelection(hostedDefault)
         }
       }
     }
-  }, [])
+  }, [activeSessionId])
 
   // Returns whether the switch succeeded so callers can await it before
   // applying follow-up changes (e.g. editing a model's reasoning/fast must land
@@ -147,15 +215,15 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
 
       try {
         if (activeSessionId) {
+          // Hermes defaults /model to persist unless --session is explicit.
+          const scopeFlag = selection.persistGlobal ? ' --global' : ' --session'
           await requestGateway('slash.exec', {
             session_id: activeSessionId,
-            command: `/model ${selection.model} --provider ${selection.provider}${selection.persistGlobal ? ' --global' : ''}`
+            command: `/model ${selection.model} --provider ${selection.provider}${scopeFlag}`
           })
 
-          if (selection.persistGlobal) {
-            void refreshCurrentModel()
-          }
-
+          // Do not refreshCurrentModel while a session is live — session.info
+          // and the optimistic store update already own the statusbar.
           void queryClient.invalidateQueries({
             queryKey: selection.persistGlobal ? ['model-options'] : ['model-options', activeSessionId]
           })

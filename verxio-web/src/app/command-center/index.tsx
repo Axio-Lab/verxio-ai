@@ -362,7 +362,7 @@ function UsagePanel({ error, loading, onRefresh, period, usage }: UsagePanelProp
                 {cc.retry}
               </Button>
             }
-            description={cc.noUsage(period)}
+            description={error || cc.noUsage(period)}
           />
         )}
       </div>

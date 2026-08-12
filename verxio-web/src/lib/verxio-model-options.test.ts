@@ -1,13 +1,35 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { setModelAssignment } from '@/hermes'
 import type { ModelOptionsResponse } from '@/types/hermes'
 
+import type * as verxioApiModule from './verxio-api'
 import type { VerxioInferenceCatalogResponse, VerxioInferenceSettings } from './verxio-api'
 import {
+  ensureByokDefaultModel,
+  getScopedModelOptions,
   hostedModelOptionsFromInference,
   mergeHostedAndRuntimeModelOptions,
   prioritizeLinkedProviders
 } from './verxio-model-options'
+
+vi.mock('@/hermes', () => ({
+  getGlobalModelOptions: vi.fn(),
+  setModelAssignment: vi.fn()
+}))
+
+vi.mock('./verxio-api', async importOriginal => {
+  const actual = (await importOriginal()) as typeof verxioApiModule
+
+  return {
+    ...actual,
+    getInferenceCatalog: vi.fn(),
+    getInferenceSettings: vi.fn(),
+    verxioApiEnabled: vi.fn(() => true)
+  }
+})
+
+const mockedSetModelAssignment = vi.mocked(setModelAssignment)
 
 const catalog: VerxioInferenceCatalogResponse = {
   defaultModelId: 'verxio-qwen',
@@ -48,8 +70,12 @@ const catalog: VerxioInferenceCatalogResponse = {
   ]
 }
 
+beforeEach(() => {
+  mockedSetModelAssignment.mockReset()
+})
+
 describe('hostedModelOptionsFromInference', () => {
-  it('returns the selected Verxio hosted model group when hosted mode is active', () => {
+  it('returns every available Verxio hosted family', () => {
     const settings: VerxioInferenceSettings = {
       defaultModelId: 'verxio-qwen',
       mode: 'hosted',
@@ -62,12 +88,15 @@ describe('hostedModelOptionsFromInference', () => {
 
     expect(result?.provider).toBe('alibaba')
     expect(result?.model).toBe('qwen3.6-plus')
-    expect(result?.providers?.map(provider => provider.slug)).toEqual(['alibaba'])
+    expect(result?.providers?.map(provider => provider.slug)).toEqual(['alibaba', 'gemini'])
     expect(result?.providers?.every(provider => provider.is_verxio_hosted)).toBe(true)
-    expect(result?.providers?.flatMap(provider => provider.models ?? [])).toEqual(['qwen3.6-plus', 'qwen3.6-coder'])
+    expect(result?.providers?.find(provider => provider.slug === 'alibaba')?.models).toEqual([
+      'qwen3.6-plus',
+      'qwen3.6-coder'
+    ])
   })
 
-  it('switches the selected Verxio hosted model group', () => {
+  it('marks the selected Verxio hosted family as current', () => {
     const result = hostedModelOptionsFromInference(
       {
         defaultModelId: 'verxio-gemini',
@@ -81,32 +110,33 @@ describe('hostedModelOptionsFromInference', () => {
 
     expect(result?.provider).toBe('gemini')
     expect(result?.model).toBe('gemini-flash-lite-latest')
-    expect(result?.providers?.map(provider => provider.slug)).toEqual(['gemini'])
-    expect(result?.providers?.[0]?.models).toEqual([
+    expect(result?.providers?.map(provider => provider.slug)).toEqual(['alibaba', 'gemini'])
+    expect(result?.providers?.find(provider => provider.slug === 'gemini')?.is_current).toBe(true)
+    expect(result?.providers?.find(provider => provider.slug === 'gemini')?.models).toEqual([
       'gemini-flash-lite-latest',
       'gemini-3.1-flash-lite',
       'gemini-2.5-pro'
     ])
   })
 
-  it('lets BYOK mode use the runtime model catalog', () => {
-    expect(
-      hostedModelOptionsFromInference(
-        {
-          defaultModelId: 'verxio-qwen',
-          mode: 'byok',
-          monthlyCreditUsd: 0,
-          overageEnabled: false,
-          spendingLimitUsd: null
-        },
-        catalog
-      )
-    ).toBeNull()
+  it('still lists hosted families when settings.mode is legacy byok', () => {
+    const result = hostedModelOptionsFromInference(
+      {
+        defaultModelId: 'verxio-qwen',
+        mode: 'byok',
+        monthlyCreditUsd: 0,
+        overageEnabled: false,
+        spendingLimitUsd: null
+      },
+      catalog
+    )
+
+    expect(result?.providers?.map(provider => provider.slug)).toEqual(['alibaba', 'gemini'])
   })
 })
 
 describe('mergeHostedAndRuntimeModelOptions', () => {
-  it('keeps the hosted default selected while appending configured runtime providers', () => {
+  it('keeps the runtime selection when present and appends configured runtime providers', () => {
     const settings: VerxioInferenceSettings = {
       defaultModelId: 'verxio-qwen',
       mode: 'hosted',
@@ -138,14 +168,43 @@ describe('mergeHostedAndRuntimeModelOptions', () => {
 
     const result = mergeHostedAndRuntimeModelOptions(hosted!, runtime)
 
-    expect(result.provider).toBe('alibaba')
-    expect(result.model).toBe('qwen3.6-plus')
-    expect(result.providers?.map(provider => provider.slug)).toEqual(['alibaba', 'openai'])
+    expect(result.provider).toBe('openai')
+    expect(result.model).toBe('gpt-5-mini')
+    expect(result.providers?.map(provider => provider.slug)).toEqual(['alibaba', 'gemini', 'openai'])
     expect(result.providers?.flatMap(provider => provider.models ?? [])).toEqual([
       'qwen3.6-plus',
       'qwen3.6-coder',
+      'gemini-flash-lite-latest',
+      'gemini-3.1-flash-lite',
+      'gemini-2.5-pro',
       'gpt-5-mini'
     ])
+  })
+
+  it('falls back to the hosted default when runtime has no selection', () => {
+    const settings: VerxioInferenceSettings = {
+      defaultModelId: 'verxio-qwen',
+      mode: 'hosted',
+      monthlyCreditUsd: 0,
+      overageEnabled: false,
+      spendingLimitUsd: null
+    }
+
+    const hosted = hostedModelOptionsFromInference(settings, catalog)
+
+    const result = mergeHostedAndRuntimeModelOptions(hosted!, {
+      providers: [
+        {
+          authenticated: true,
+          models: ['gpt-5-mini'],
+          name: 'OpenAI',
+          slug: 'openai'
+        }
+      ]
+    })
+
+    expect(result.provider).toBe('alibaba')
+    expect(result.model).toBe('qwen3.6-plus')
   })
 
   it('dedupes runtime models that already exist in the hosted catalog', () => {
@@ -205,8 +264,8 @@ describe('mergeHostedAndRuntimeModelOptions', () => {
       ]
     })
 
-    expect(result.providers?.map(provider => provider.slug)).toEqual(['gemini', 'groq'])
-    expect(result.providers?.[0]).toMatchObject({
+    expect(result.providers?.map(provider => provider.slug)).toEqual(['alibaba', 'gemini', 'groq'])
+    expect(result.providers?.find(provider => provider.slug === 'gemini')).toMatchObject({
       is_current: true,
       is_verxio_hosted: true,
       models: [
@@ -218,7 +277,7 @@ describe('mergeHostedAndRuntimeModelOptions', () => {
       ],
       name: 'Verxio Gemini'
     })
-    expect(result.providers?.[1]).toMatchObject({
+    expect(result.providers?.find(provider => provider.slug === 'groq')).toMatchObject({
       models: ['llama-3.3-70b-versatile'],
       name: 'Groq'
     })
@@ -290,5 +349,63 @@ describe('prioritizeLinkedProviders', () => {
     })
 
     expect(result.providers?.map(provider => provider.slug)).toEqual(['alibaba', 'openai'])
+  })
+})
+
+describe('getScopedModelOptions', () => {
+  it('returns hosted Gemini/Qwen options without waiting forever on a hung runtime catalog', async () => {
+    const { getInferenceCatalog, getInferenceSettings } = await import('./verxio-api')
+    vi.mocked(getInferenceSettings).mockResolvedValue({
+      defaultModelId: 'verxio-gemini',
+      mode: 'hosted',
+      monthlyCreditUsd: 0,
+      overageEnabled: false,
+      spendingLimitUsd: null
+    })
+    vi.mocked(getInferenceCatalog).mockResolvedValue(catalog)
+
+    const never = new Promise<ModelOptionsResponse>(() => undefined)
+    const result = await getScopedModelOptions(() => never)
+
+    expect(result.model).toBe('gemini-flash-lite-latest')
+    expect(result.provider).toBe('gemini')
+    expect(result.providers?.find(provider => provider.slug === 'gemini')).toMatchObject({
+      is_verxio_hosted: true,
+      name: 'Verxio Gemini',
+      slug: 'gemini'
+    })
+  })
+})
+
+describe('ensureByokDefaultModel', () => {
+  it('persists the first authenticated provider model when BYOK has no selected model', async () => {
+    mockedSetModelAssignment.mockResolvedValue({
+      gateway_tools: [],
+      model_info: null,
+      ok: true,
+      provider: 'openai-codex',
+      model: 'gpt-5.6-sol'
+    })
+
+    const result = await ensureByokDefaultModel({
+      providers: [
+        {
+          authenticated: true,
+          models: ['gpt-5.6-sol', 'gpt-5-mini'],
+          name: 'ChatGPT',
+          slug: 'openai-codex'
+        }
+      ]
+    })
+
+    expect(result).toMatchObject({
+      model: 'gpt-5.6-sol',
+      provider: 'openai-codex'
+    })
+    expect(mockedSetModelAssignment).toHaveBeenCalledWith({
+      model: 'gpt-5.6-sol',
+      provider: 'openai-codex',
+      scope: 'main'
+    })
   })
 })

@@ -47,11 +47,6 @@ services:
       COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:-}
       COMPOSIO_API_BASE_URL: ${COMPOSIO_API_BASE_URL:-https://backend.composio.dev/api/v3}
       COMPOSIO_TOOLS_API_BASE_URL: ${COMPOSIO_TOOLS_API_BASE_URL:-https://backend.composio.dev/api/v3.1}
-      META_APP_ID: ${META_APP_ID:-}
-      META_APP_SECRET: ${META_APP_SECRET:-}
-      META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN:-}
-      META_GRAPH_VERSION: ${META_GRAPH_VERSION:-v20.0}
-      VERXIO_PULSE_SECRET: ${VERXIO_PULSE_SECRET:-}
       VERXIO_HERMES_REPO: /opt/hermes-agent
     volumes:
       - ${VERXIO_STATE_DIR:-./.verxio}:/app/.verxio
@@ -72,6 +67,17 @@ services:
       - verxio-api
     ports:
       - '127.0.0.1:8080:80'
+
+  # Marketing site for verxio.xyz / www — auth + dashboard stay on app.verxio.xyz (verxio-web).
+  verxio-landing:
+    build:
+      context: ./verxio-landing
+      args:
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-https://www.verxio.xyz}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-https://app.verxio.xyz}
+    image: verxio-landing:local
+    ports:
+      - '127.0.0.1:8081:80'
 
   hermes-runtime-image:
     build:

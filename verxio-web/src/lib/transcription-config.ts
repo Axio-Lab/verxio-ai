@@ -3,6 +3,7 @@ import type { HermesConfigRecord } from '@/types/hermes'
 
 export const STT_MODEL_CONFIG_PATHS: Partial<Record<CloudTranscriptionProviderId, string>> = {
   elevenlabs: 'stt.elevenlabs.model_id',
+  fishaudio: 'stt.fishaudio.model',
   groq: 'stt.groq.model',
   mistral: 'stt.mistral.model',
   openai: 'stt.openai.model'

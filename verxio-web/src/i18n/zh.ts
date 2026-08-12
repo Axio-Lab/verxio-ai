@@ -271,7 +271,6 @@ export const zh: Translations = {
       providers: '提供方',
       providerAccounts: '账号',
       providerApiKeys: 'API 密钥',
-      gateway: '网关',
       apiKeys: '工具与密钥',
       keysTools: '工具',
       keysTranscription: 'Transcription',
@@ -279,44 +278,19 @@ export const zh: Translations = {
       mcp: 'MCP',
       archivedChats: '已归档对话',
       about: '关于',
-      notifications: '通知',
-      runtime: '运行时'
+      notifications: '通知'
     },
     runtime: {
-      title: 'Runtime',
-      intro:
-        'After changing providers, models, API keys, or custom endpoints, reload credentials or restart the agent so changes take effect.',
-      statusTitle: 'Container status',
-      statusDescription: '你的隔离 Verxio 运行时。',
-      statusConnected: 'Connected',
-      statusStarting: 'Starting…',
-      statusStopped: 'Stopped',
-      statusError: 'Unavailable',
-      statusUnknown: 'Unknown',
-      reloadTitle: 'Reload credentials',
-      reloadDescription: '重新加载保存的运行时凭据，无需重启。适合在粘贴 API key 或环境变量变更后使用。',
-      reloadAction: 'Reload',
       reloadDoneTitle: 'Credentials reloaded',
       reloadDoneMessage: 'Start a new chat if the model or provider still looks stale.',
       reloadFailed: 'Could not reload credentials',
-      agentRestartTitle: 'Restart agent',
-      agentRestartDescription:
-        'Reload .env and restart the gateway process. Use after model/provider or config.yaml changes.',
-      agentRestartAction: 'Restart agent',
       agentRestartDoneTitle: 'Agent restarting',
       agentRestartDoneMessage: 'Verxio reconnects automatically. Start a new chat when the status bar is live again.',
       agentRestartFailed: 'Agent restart failed',
-      containerRestartTitle: 'Restart runtime container',
-      containerRestartDescription:
-        'Full Docker restart of your Verxio runtime. Use when hosted inference env or mounts changed.',
-      containerRestartAction: 'Restart container',
       containerRestartDoneTitle: 'Runtime restarted',
       containerRestartDoneMessage: 'Your agent container is back online.',
       containerRestartFailed: 'Runtime restart failed',
-      restartTimeout: 'Runtime did not come back online in time. Refresh the page or try again.',
-      gatewayRestartTitle: 'Restart messaging gateway',
-      gatewayRestartDescription: 'Reconnect WhatsApp, Telegram, and other messaging platforms after channel setup.',
-      gatewayRestartAction: 'Restart gateway'
+      restartTimeout: 'Runtime did not come back online in time. Refresh the page or try again.'
     },
     notifications: {
       title: '通知',
@@ -368,7 +342,6 @@ export const zh: Translations = {
     searchPlaceholder: {
       about: '关于 Verxio',
       config: '搜索设置…',
-      gateway: '网关连接…',
       keys: '搜索 API 密钥…',
       mcp: '搜索 MCP 服务器…',
       sessions: '搜索已归档会话…'
@@ -476,6 +449,11 @@ export const zh: Translations = {
         elevenlabs: {
           voiceId: 'ElevenLabs 语音',
           modelId: 'ElevenLabs 模型'
+        },
+        fishaudio: {
+          model: 'Fish Audio TTS 模型',
+          referenceId: 'Fish Audio 语音',
+          format: 'Fish Audio 格式'
         }
       },
       memory: {
@@ -564,29 +542,7 @@ export const zh: Translations = {
     }),
     about: {
       heading: 'Verxio',
-      version: value => `版本 ${value}`,
-      versionUnavailable: '版本不可用',
-      updates: '更新',
-      checkNow: '立即检查',
-      checking: '检查中…',
-      seeWhatsNew: '查看新增内容',
-      releaseNotes: '发行说明',
-      onLatest: '你已是最新版本。',
-      installing: '正在安装更新。',
-      cantUpdate: '此版本无法在应用内自我更新。',
-      cantReach: '无法连接更新服务器。',
-      tapCheck: '点击"立即检查"以查找更新。',
-      updateReady: count => `已准备好新更新 (包含 ${count} 项更改)。`,
-      lastChecked: age => `上次检查:${age}`,
-      justNowSuffix: ' · 刚刚',
-      automaticUpdates: '自动更新',
-      automaticUpdatesDesc: 'Verxio 会在后台自动检查更新，并在有可用更新时通知你。',
-      branchCommit: (branch, commit) => `分支 ${branch} · 提交 ${commit}`,
-      never: '从未',
-      justNow: '刚刚',
-      minAgo: count => `${count} 分钟前`,
-      hoursAgo: count => `${count} 小时前`,
-      daysAgo: count => `${count} 天前`
+      description: 'Verxio 是一款自我改进的 AI 智能体，可在聊天、消息和已连接应用中为团队完成工作。'
     },
     config: {
       none: '无',
@@ -624,70 +580,6 @@ export const zh: Translations = {
       replace: '替换',
       set: '设置',
       clear: '清除'
-    },
-    gateway: {
-      loading: '正在加载网关设置...',
-      unavailableTitle: '网关设置不可用',
-      unavailableDesc: '桌面 IPC 桥未暴露网关设置。',
-      title: '网关连接',
-      envOverride: '环境变量覆盖',
-      intro:
-        'Verxio 默认会启动自己的本地网关。当你希望此应用控制另一台机器上或可信代理后的现有 Verxio 后端时，可以使用远程网关。下面可按 profile 指定各自的远程主机。',
-      appliesTo: '应用于',
-      allProfiles: '所有 profile',
-      defaultConnection: '默认连接会用于所有没有自定义覆盖的 profile。',
-      profileConnection: profile => `仅当“${profile}”是当前 profile 时使用此连接。设为本地即可继承默认连接。`,
-      envOverrideTitle: '环境变量正在控制此桌面会话。',
-      envOverrideDesc: '取消设置 HERMES_DESKTOP_REMOTE_URL 和 HERMES_DESKTOP_REMOTE_TOKEN 后才会使用下面保存的设置。',
-      localTitle: '本地网关',
-      localDesc: '在 localhost 启动私有 Verxio 后端。这是默认方式，并且可离线工作。',
-      remoteTitle: '远程网关',
-      remoteDesc:
-        '将此桌面外壳连接到远程 Verxio 后端。托管网关使用 OAuth 或用户名密码；自托管网关也可能使用会话 token。',
-      remoteUrlTitle: '远程 URL',
-      remoteUrlDesc: '远程 dashboard 后端的基础 URL。支持路径前缀。',
-      probing: '正在检查此网关的认证方式…',
-      probeError: '暂时无法访问此网关。请检查 URL；网关响应后会显示认证方式。',
-      signedIn: '已登录',
-      signIn: '登录',
-      signOut: '退出登录',
-      signInWith: provider => `使用 ${provider} 登录`,
-      authTitle: '认证',
-      authSignedInPassword: '此网关使用用户名和密码。你已登录，会话会自动刷新。',
-      authSignedInOauth: '此网关使用 OAuth。你已登录，会话会自动刷新。',
-      authNeedsPassword: '此网关使用用户名和密码。请登录以授权此桌面应用。',
-      authNeedsOauth: provider => `此网关使用 OAuth。请使用 ${provider} 登录以授权此桌面应用。`,
-      tokenTitle: '会话 token',
-      tokenDesc: '用于 REST 和 WebSocket 访问的 dashboard 会话 token。留空则保留已保存的 token。',
-      existingToken: value => `现有 token ${value}`,
-      savedToken: '已保存',
-      pasteSessionToken: '粘贴会话 token',
-      testRemote: '测试远程',
-      saveForRestart: '保存到下次重启',
-      saveAndReconnect: '保存并重连',
-      diagnostics: '诊断',
-      diagnosticsDesc: '在文件管理器中显示 desktop.log，网关启动失败时很有用。',
-      openLogs: '打开日志',
-      incompleteTitle: '远程网关配置不完整',
-      incompleteSignIn: '切换到远程前，请输入远程 URL 并完成登录。',
-      incompleteToken: '切换到远程前，请输入远程 URL 和会话 token。',
-      incompleteSignInTest: '测试前，请输入远程 URL 并完成登录。',
-      incompleteTokenTest: '测试前，请输入远程 URL 和会话 token。',
-      enterUrlFirst: '请先输入远程 URL。',
-      restartingTitle: '网关连接正在重启',
-      savedTitle: '网关设置已保存',
-      restartingMessage: 'Verxio 将使用已保存设置重新连接。',
-      savedMessage: '已保存，下一次重启生效。',
-      connectedTo: (baseUrl, version) => `已连接到 ${baseUrl}${version ? ` · Verxio ${version}` : ''}`,
-      reachableTitle: '远程网关可访问',
-      signedOutTitle: '已退出登录',
-      signedOutMessage: '已清除远程网关会话。',
-      failedLoad: '网关设置加载失败',
-      signInFailed: '登录失败',
-      signOutFailed: '退出登录失败',
-      testFailed: '远程网关测试失败',
-      applyFailed: '无法应用网关设置',
-      saveFailed: '无法保存网关设置'
     },
     keys: {
       loading: '正在加载 API 密钥和凭据...',
@@ -768,6 +660,7 @@ export const zh: Translations = {
       otherProviders: '其他提供方',
       noProviderKeys: '没有可用的提供方 API 密钥。',
       loading: '正在加载提供方...',
+      switching: '正在切换提供方模式...',
       accountLabel: '账户',
       disconnect: '断开连接',
       reconnect: '重新连接',
@@ -820,7 +713,12 @@ export const zh: Translations = {
       failedLoad: '工具配置加载失败',
       noProviderOptions: '此工具集没有提供方选项；启用后即可使用当前配置。',
       noProviders: '此工具集当前没有可用提供方。',
-      ready: '就绪',
+      ready: '密钥已设',
+      active: '使用中',
+      useProvider: '使用此提供方',
+      usingProvider: (provider, model) => (model ? `当前使用 ${provider} · ${model}` : `当前使用 ${provider}`),
+      usingProviderHint:
+        '聊天只会使用标记为「使用中」的提供方。点击一行可查看密钥；点击「使用此提供方」进行切换。「密钥已设」表示凭据已保存。',
       nousIncluded: '包含在 Verxio 订阅中；登录 Subscription portal 即可激活。',
       noApiKeyRequired: '不需要 API 密钥。',
       postSetup: step => `此提供方需要额外设置步骤 (${step})。请在 Verxio 工具设置中完成。`,
@@ -877,6 +775,12 @@ export const zh: Translations = {
       saving: '保存中…',
       saveChanges: '保存更改',
       createSkill: '创建技能',
+      deleteSkill: '删除技能',
+      deleteTitle: name => `删除 ${name}？`,
+      deleteDesc: name => `将从此配置中永久删除「${name}」技能，且无法撤销。`,
+      deleteConfirm: '删除技能',
+      deleting: '删除中…',
+      deleted: '技能已删除',
       importPackage: '导入包',
       importing: '正在解压…',
       importHint: 'Zip 或 SKILL.md — 在浏览器本地解压后创建技能。',
@@ -941,7 +845,6 @@ export const zh: Translations = {
       settings: { title: '设置', detail: '配置 Verxio 桌面端' },
       skills: { title: '技能与工具', detail: '启用技能、工具集与提供方' },
       messaging: { title: '消息平台', detail: '配置 Telegram、Slack、Discord 等' },
-      pulse: { title: 'Pulse', detail: '用流程和 AI 自动化社交私信' },
       artifacts: { title: '产物', detail: '浏览生成的输出' }
     },
     sectionEntries: {
@@ -1286,67 +1189,6 @@ export const zh: Translations = {
     }
   },
 
-  pulse: {
-    title: 'Pulse',
-    subtitle: '通过可视化流程和 Verxio AI 节点提升销售、互动和受众增长。',
-    search: '搜索 Pulse',
-    loading: '正在加载 Pulse…',
-    loadFailed: 'Pulse 加载失败。',
-    tabs: {
-      overview: '概览',
-      inbox: '收件箱',
-      automations: '自动化',
-      builder: '构建器',
-      channels: '渠道',
-      settings: '设置'
-    },
-    stats: {
-      channels: '渠道',
-      contacts: '联系人',
-      conversations: '会话',
-      automations: '自动化'
-    },
-    empty: {
-      title: '暂无 Pulse 活动',
-      description: '连接 Instagram、Messenger 或 WhatsApp，让社交对话进入自动化流程。',
-      action: '连接渠道'
-    },
-    channels: {
-      title: '渠道',
-      connect: '连接',
-      connected: '已连接',
-      gated: '受限',
-      docs: '文档'
-    },
-    inbox: {
-      title: '统一收件箱',
-      noConversation: '未选择会话',
-      takeover: '人工接管',
-      resume: '恢复自动化',
-      messagePlaceholder: '以人工身份回复…'
-    },
-    automations: {
-      title: '自动化',
-      newAutomation: '新建自动化',
-      enabled: '已启用',
-      disabled: '已禁用',
-      simulate: '模拟',
-      generate: '生成'
-    },
-    builder: {
-      title: 'AI 流程构建器',
-      promptPlaceholder: '描述你想让 Pulse 构建的私信自动化…',
-      generate: '生成流程',
-      simulator: '模拟器'
-    },
-    settings: {
-      title: 'Pulse 设置',
-      businessProfile: '业务资料',
-      brandVoice: '品牌语气',
-      guardrails: '规则边界'
-    }
-  },
-
   profiles: {
     close: '关闭配置档案',
     nameHint: '小写字母、数字、连字符和下划线。必须以字母或数字开头。',
@@ -1550,6 +1392,20 @@ export const zh: Translations = {
     deleteConfirm: '删除产物',
     deleting: '正在删除',
     deleted: '产物已删除',
+    selectAll: '全选可见产物',
+    selectHint: '选择要批量删除的项目',
+    selectItem: label => `选择 ${label}`,
+    selectedCount: count => `已选 ${count} 项`,
+    deleteSelected: count => `删除 ${count} 项`,
+    batchDeleteTitle: count => `删除 ${count} 个产物？`,
+    batchDeleteDescription: count => `将永久删除所选的 ${count} 个产物。此操作无法撤销。`,
+    batchDeleted: count => `已删除 ${count} 个产物`,
+    batchDeleteFailed: '部分产物删除失败',
+    batchDeletePartial: (deleted, failed) => `已删除 ${deleted}，失败 ${failed}`,
+    previewDescription: '预览生成的产物内容',
+    downloadAction: '下载',
+    downloadStarted: '开始下载',
+    downloadFailed: '下载失败',
     itemsImage: '张图片',
     itemsLink: '个链接',
     itemsFile: '个文件',
@@ -1577,7 +1433,6 @@ export const zh: Translations = {
       'new-session': '新建会话',
       skills: '技能与工具',
       messaging: '消息平台',
-      pulse: 'Pulse',
       artifacts: '产物',
       notepad: 'Notepad'
     },
@@ -1730,6 +1585,9 @@ export const zh: Translations = {
     themeTryPre: '试试 ',
     themeTryPost: '。',
     attachLabel: '附加',
+    audio: '音频样本…',
+    audioAttachFailed: '无法附加音频样本',
+    audioNeedsUpload: '请从“音频样本”中选择文件，以便 Verxio 安全上传。',
     files: '文件…',
     folder: '文件夹…',
     images: '图片…',
@@ -2232,11 +2090,19 @@ export const zh: Translations = {
     sudoPlaceholder: 'sudo 密码',
     secretTitle: '需要密钥',
     secretDesc: 'Verxio 需要一个凭据才能继续。',
-    secretPlaceholder: '密钥值'
+    secretPlaceholder: '密钥值',
+    fishAudioTitle: '确认 Fish Audio 操作',
+    fishAudioDescription: '继续前请检查服务器授权的语音操作。',
+    fishAudioAction: '操作',
+    fishAudioExpires: '授权到期时间',
+    fishAudioWorking: '正在应用 Fish Audio 语音操作',
+    fishAudioConfirmationFailed: '无法提交 Fish Audio 确认'
   },
 
   desktop: {
     audioReadFailed: '无法读取录制的音频',
+    audioAttachmentExpired: '此音频附件已不可用。请重新附加后重试。',
+    useAttachedAudio: '使用附加的音频样本。',
     sessionUnavailable: '会话不可用',
     createSessionFailed: '无法创建新会话',
     promptFailed: '提示词发送失败',
@@ -2302,61 +2168,6 @@ export const zh: Translations = {
     boundaryDesc: '此视图遇到意外错误。你的对话和设置是安全的。',
     reloadWindow: '重新加载窗口',
     openLogs: '打开日志'
-  },
-
-  leash: {
-    banner: {
-      title: 'Give your agent a Leash identity',
-      body: 'Register an on-chain agent identity so your assistant can pay, earn, and be discovered. Keys stay on this device only.',
-      setup: 'Set up',
-      dismiss: 'Dismiss',
-      never: "Don't show again"
-    },
-    panel: {
-      title: 'Leash identity (MCP)',
-      subtitle: 'Identity layer for AI agents — mint, pay, and verify on Solana via @leashmarket/mcp.',
-      custodyNotice:
-        'Your executive keypair and private keys are stored only on this device (secure desktop storage when available; browser local storage on web). Export a backup and keep it somewhere safe. Verxio does not store your keys and cannot recover them if you lose this device or clear site data.',
-      statusNone: 'Not configured',
-      statusPendingFunding: 'Funding required',
-      statusRegistered: 'Registered',
-      mintLabel: 'Agent mint',
-      treasuryLabel: 'Treasury',
-      executiveLabel: 'Executive public key',
-      networkLabel: 'Network',
-      networkDevnet: 'Solana devnet',
-      networkMainnet: 'Solana mainnet',
-      rpcLabel: 'RPC URL (optional, recommended)',
-      rpcPlaceholder: 'https://devnet.helius-rpc.com/?api-key=…',
-      generateKeypair: 'Generate new keypair on this device',
-      importLabel: 'Or import executive private key (base58)',
-      importPlaceholder: 'Paste 64-byte Solana secret key (base58)',
-      importKeypair: 'Import keypair',
-      pendingFundingHint:
-        'Fund the executive public key with ~0.01 SOL, then ask your agent in chat to continue Leash registration (leash_register_agent).',
-      registeredHint:
-        'Your agent identity is registered. Use Leash MCP tools in chat for payments, discovery, and treasury actions.',
-      exportJson: 'Export backup',
-      importJson: 'Import backup',
-      pullFromRuntime: 'Sync from runtime',
-      removeIdentity: 'Remove identity from this device',
-      removeConfirm:
-        'Remove Leash identity from this device and disable the Leash MCP server? Export a backup first — this cannot be undone.',
-      chatHint: 'After saving, reload MCP below if tools do not appear on the next turn.',
-      savedTitle: 'Leash identity saved',
-      savedMessage: 'Identity synced to your runtime. Reload MCP if tools are missing.',
-      saveFailed: 'Could not save Leash identity',
-      generateFailed: 'Could not generate keypair',
-      importFailed: 'Could not import keypair',
-      pullEmptyTitle: 'Nothing to sync',
-      pullEmptyMessage: 'No Leash agent file found in the runtime yet.',
-      pullSavedTitle: 'Synced from runtime',
-      pullSavedMessage: 'Updated the copy stored on this device.',
-      pullFailed: 'Could not sync from runtime',
-      removedTitle: 'Leash identity removed',
-      removedMessage: 'Local keys cleared and Leash MCP disabled.',
-      removeFailed: 'Could not remove Leash identity'
-    }
   },
 
   ui: {

@@ -1,4 +1,4 @@
-export type CloudTranscriptionProviderId = 'elevenlabs' | 'groq' | 'mistral' | 'openai' | 'xai'
+export type CloudTranscriptionProviderId = 'elevenlabs' | 'fishaudio' | 'groq' | 'mistral' | 'openai' | 'xai'
 
 export interface CloudTranscriptionProvider {
   catalogError?: string | null
@@ -74,6 +74,15 @@ export const FALLBACK_CLOUD_TRANSCRIPTION_PROVIDERS: CloudTranscriptionProvider[
     models: ['scribe_v2', 'scribe_v1'],
     docsUrl: 'https://elevenlabs.io/app/settings/api-keys',
     description: 'Scribe transcription and premium voice features. Create an API key in ElevenLabs settings.'
+  },
+  {
+    id: 'fishaudio',
+    label: 'Fish Audio',
+    envKey: 'FISH_AUDIO_API_KEY',
+    recommendedModel: 'fish-audio-asr-beta',
+    models: ['fish-audio-asr-beta'],
+    docsUrl: 'https://fish.audio/app/api-keys',
+    description: 'Fish Audio whole-file ASR (not live streaming). Uses Fish credits; fall back to Local STT if needed.'
   },
   {
     id: 'xai',

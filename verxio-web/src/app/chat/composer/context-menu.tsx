@@ -12,7 +12,16 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { useI18n } from '@/i18n'
-import { Clipboard, FileText, FolderOpen, type IconComponent, ImageIcon, Link, MessageSquareText } from '@/lib/icons'
+import {
+  AudioLines,
+  Clipboard,
+  FileText,
+  FolderOpen,
+  type IconComponent,
+  ImageIcon,
+  Link,
+  MessageSquareText
+} from '@/lib/icons'
 import { cn } from '@/lib/utils'
 
 import { GHOST_ICON_BTN } from './controls'
@@ -25,6 +34,7 @@ export function ContextMenu({
   onInsertText,
   onOpenUrlDialog,
   onPasteClipboardImage,
+  onPickAudio,
   onPickFiles,
   onPickFolders,
   onPickImages
@@ -68,6 +78,9 @@ export function ContextMenu({
           </ContextMenuItem>
           <ContextMenuItem disabled={!onPickImages} icon={ImageIcon} onSelect={onPickImages}>
             {c.images}
+          </ContextMenuItem>
+          <ContextMenuItem disabled={!onPickAudio} icon={AudioLines} onSelect={onPickAudio}>
+            {c.audio}
           </ContextMenuItem>
           <ContextMenuItem disabled={!onPasteClipboardImage} icon={Clipboard} onSelect={onPasteClipboardImage}>
             {c.pasteImage}
@@ -159,6 +172,7 @@ interface ContextMenuProps {
   onInsertText: (text: string) => void
   onOpenUrlDialog: () => void
   onPasteClipboardImage?: () => void
+  onPickAudio?: () => void
   onPickFiles?: () => void
   onPickFolders?: () => void
   onPickImages?: () => void

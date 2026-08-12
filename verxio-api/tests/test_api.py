@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
+import hmac
 import json
 import os
+import sqlite3
+import time
 from pathlib import Path
 from subprocess import CompletedProcess
 
@@ -11,10 +15,45 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from app import composio_catalog, control_plane, db, emailer, inference, main, runtime_manager, transcription_catalog
+from app import composio_catalog, control_plane, db, emailer, inference, main, runtime_manager, transcription_catalog, workflow_agents
 from app.auth import SESSION_COOKIE
 from app.main import app
 from app.models import ComposioConnectedAccount, ComposioToolBridgeStatus, RuntimeInstance
+
+
+def test_migrations_upgrade_legacy_workflow_trigger_schedule_columns(monkeypatch, tmp_path):
+    database_path = tmp_path / "legacy-control.sqlite3"
+    with sqlite3.connect(database_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE workflow_triggers (
+                id TEXT PRIMARY KEY,
+                tenant_id TEXT NOT NULL,
+                workspace_id TEXT NOT NULL,
+                workflow_agent_id TEXT NOT NULL,
+                trigger_type TEXT NOT NULL,
+                event_name TEXT NOT NULL DEFAULT '',
+                name TEXT NOT NULL DEFAULT '',
+                enabled INTEGER NOT NULL DEFAULT 1,
+                secret TEXT NOT NULL DEFAULT '',
+                config_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+
+    monkeypatch.setenv("VERXIO_DATABASE_MODE", "sqlite")
+    monkeypatch.setenv("VERXIO_DATABASE_PATH", str(database_path))
+
+    db.run_migrations()
+
+    with sqlite3.connect(database_path) as conn:
+        columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(workflow_triggers)")}
+        indexes = {str(row[1]) for row in conn.execute("PRAGMA index_list(workflow_triggers)")}
+
+    assert {"next_run_at", "last_run_at", "claim_token", "claimed_at"} <= columns
+    assert "idx_workflow_triggers_schedule_due" in indexes
 
 
 @pytest.fixture()
@@ -22,6 +61,7 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setenv("VERXIO_DATABASE_MODE", "sqlite")
     monkeypatch.setenv("VERXIO_DATABASE_PATH", str(tmp_path / "verxio-control.sqlite3"))
     monkeypatch.setenv("VERXIO_RUNTIME_MODE", "demo")
+    monkeypatch.setenv("VERXIO_WORKFLOW_SCHEDULER_ENABLED", "0")
     monkeypatch.setenv("VERXIO_AUTH_CODE_SECRET", "test-auth-code-secret")
     monkeypatch.delenv("VERXIO_SMTP_HOST", raising=False)
     monkeypatch.delenv("VERXIO_SMTP_FROM", raising=False)
@@ -116,6 +156,1288 @@ def test_unknown_agent_returns_404(client):
     )
 
     assert response.status_code == 404
+
+
+def test_workflow_agent_crud_is_workspace_scoped(client):
+    _payload, token = signup(client, "workflow-agent@example.com")
+
+    create = client.post(
+        "/api/workflow-agents",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={
+            "name": "Lead Research Agent",
+            "role": "Research and qualify new leads",
+            "description": "Checks fit and drafts next steps.",
+            "instructions": "Research the company and produce a concise qualification summary.",
+            "skills": ["lead-scoring"],
+            "knowledge": ["saas-playbook"],
+            "tools": ["web_search"],
+            "integrations": ["hubspot"],
+            "approval_policy": "ask_before_external_actions",
+        },
+    )
+
+    assert create.status_code == 200
+    agent = create.json()
+    assert agent["name"] == "Lead Research Agent"
+    assert agent["enabled"] is True
+    assert agent["skills"] == ["lead-scoring"]
+    assert agent["knowledge"] == ["saas-playbook"]
+    assert agent["tools"] == ["web_search"]
+    assert agent["integrations"] == ["hubspot"]
+
+    listed = client.get("/api/workflow-agents", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()["agents"]] == [agent["id"]]
+
+    update = client.put(
+        f"/api/workflow-agents/{agent['id']}",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"enabled": False, "tools": ["web_search", "gmail"]},
+    )
+    assert update.status_code == 200
+    assert update.json()["enabled"] is False
+    assert update.json()["tools"] == ["web_search", "gmail"]
+
+    other_payload, other_token = signup(client, "workflow-agent-other@example.com")
+    assert other_payload["workspace"]["id"] != agent["workspace_id"]
+    blocked = client.get(f"/api/workflow-agents/{agent['id']}", headers={"Cookie": f"{SESSION_COOKIE}={other_token}"})
+    assert blocked.status_code == 404
+
+
+def test_workflow_agent_setup_draft_stages_risky_actions(client):
+    _payload, token = signup(client, "workflow-setup-draft@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    response = client.post(
+        "/api/workflow-agents/draft",
+        headers=headers,
+        json={
+            "prompt": (
+                "Create a payment delivery agent. Trigger it when Paystack payment succeeds, "
+                "send WhatsApp to the customer, notify Slack ops, and use our delivery policy KB."
+            ),
+            "source": "web",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    draft = body["draft"]
+    assert draft["source"] == "web"
+    assert draft["draft"]["agent"]["name"] == "Payment Delivery Agent"
+    assert draft["draft"]["agent"]["enabled"] is False
+    assert "paystack" in draft["draft"]["agent"]["integrations"]
+    assert "whatsapp" in draft["draft"]["agent"]["integrations"]
+    assert "needs-knowledge-base" in draft["draft"]["agent"]["knowledge"]
+    assert any(trigger["trigger_type"] == "webhook" for trigger in draft["draft"]["triggers"])
+    assert any(delivery["delivery_type"] == "reply_to_source" for delivery in draft["draft"]["deliveries"])
+    assert "external_delivery" in draft["approvals_required"]
+    assert "broad_messaging_trigger" in draft["approvals_required"]
+    assert body["approvals"]
+    assert all(approval["status"] == "pending" for approval in body["approvals"])
+
+    approve = client.post(
+        "/api/workflow-agents/setup-actions/approve",
+        headers=headers,
+        json={"approval_ids": [body["approvals"][0]["id"]], "status": "approved"},
+    )
+    assert approve.status_code == 200
+    assert approve.json()["approvals"][0]["status"] == "approved"
+
+
+def test_workflow_agent_setup_draft_does_not_treat_team_lead_as_sales_lead(client):
+    _payload, token = signup(client, "workflow-micro-manager-draft@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+    prompt = (
+        "Create a micro-manager agent that follows up with team members and ensures everyone does their task in Slack, "
+        "and notifies the team lead if there's any bottleneck\n"
+        "Use only configured skills, tools, integrations, and knowledge sources."
+    )
+
+    response = client.post(
+        "/api/workflow-agents/draft",
+        headers=headers,
+        json={"prompt": prompt, "source": "web"},
+    )
+
+    assert response.status_code == 200
+    agent = response.json()["draft"]["draft"]["agent"]
+    assert agent["name"] == "Micro-Manager Agent"
+    assert agent["role"] == "Follow up on team tasks, identify bottlenecks, and escalate them to the team lead"
+    assert agent["description"] == (
+        "Follows up with team members, tracks task bottlenecks, and alerts the team lead when work is blocked."
+    )
+    assert "lead-scoring" not in agent["skills"]
+    assert "slack" in agent["integrations"]
+
+
+def test_workflow_agent_list_includes_setup_drafts(client):
+    _payload, token = signup(client, "workflow-setup-list-drafts@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    response = client.post(
+        "/api/workflow-agents/draft",
+        headers=headers,
+        json={
+            "prompt": "Create a lead agent that researches a Google Form submission before a strategy call.",
+            "source": "web",
+        },
+    )
+    assert response.status_code == 200
+    draft = response.json()["draft"]
+
+    listed = client.get("/api/workflow-agents", headers=headers)
+    assert listed.status_code == 200
+    body = listed.json()
+    assert body["agents"] == []
+    assert [item["id"] for item in body["setup_drafts"]] == [draft["id"]]
+    assert body["setup_drafts"][0]["draft"]["agent"]["name"] == "Lead Research Agent"
+
+
+def test_workflow_agent_and_setup_draft_can_be_deleted(client):
+    _payload, token = signup(client, "workflow-agent-delete@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    draft_response = client.post(
+        "/api/workflow-agents/draft",
+        headers=headers,
+        json={
+            "prompt": "Create a lead agent that researches a Google Form submission before a strategy call.",
+            "source": "web",
+        },
+    )
+    assert draft_response.status_code == 200
+    draft_id = draft_response.json()["draft"]["id"]
+
+    delete_draft = client.delete(f"/api/workflow-agents/setup-drafts/{draft_id}", headers=headers)
+    assert delete_draft.status_code == 200
+    assert delete_draft.json()["ok"] is True
+
+    listed_after_draft = client.get("/api/workflow-agents", headers=headers)
+    assert listed_after_draft.status_code == 200
+    assert listed_after_draft.json()["setup_drafts"] == []
+
+    created = client.post(
+        "/api/workflow-agents",
+        headers=headers,
+        json={
+            "name": "Delete Me Agent",
+            "role": "ops",
+            "description": "Temporary agent",
+            "instructions": "Delete after create.",
+            "enabled": True,
+        },
+    )
+    assert created.status_code == 200
+    agent_id = created.json()["id"]
+
+    deleted = client.delete(f"/api/workflow-agents/{agent_id}", headers=headers)
+    assert deleted.status_code == 200
+    assert deleted.json()["ok"] is True
+
+    listed = client.get("/api/workflow-agents", headers=headers)
+    assert listed.status_code == 200
+    assert listed.json()["agents"] == []
+    missing = client.delete(f"/api/workflow-agents/setup-drafts/{draft_id}", headers=headers)
+    assert missing.status_code == 404
+
+
+def test_workflow_agent_setup_apply_creates_agent_triggers_and_deliveries(client):
+    _payload, token = signup(client, "workflow-setup-apply@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    response = client.post(
+        "/api/workflow-agents/draft",
+        headers=headers,
+        json={
+            "prompt": "Create a WhatsApp support agent that replies when customers message about delivery status.",
+            "source": "gateway",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    draft_id = body["draft"]["id"]
+    approval_ids = [approval["id"] for approval in body["approvals"]]
+
+    blocked = client.post(
+        "/api/workflow-agents/setup-actions/apply",
+        headers=headers,
+        json={"setup_draft_id": draft_id, "enable_created_records": True},
+    )
+    assert blocked.status_code == 409
+
+    approve = client.post(
+        "/api/workflow-agents/setup-actions/approve",
+        headers=headers,
+        json={"approval_ids": approval_ids, "status": "approved"},
+    )
+    assert approve.status_code == 200
+
+    applied = client.post(
+        "/api/workflow-agents/setup-actions/apply",
+        headers=headers,
+        json={"setup_draft_id": draft_id, "enable_created_records": True},
+    )
+    assert applied.status_code == 200
+    applied_body = applied.json()
+    assert applied_body["agent"]["name"] == "Customer Support Agent"
+    assert applied_body["agent"]["enabled"] is False
+    assert applied_body["triggers"][0]["trigger_type"] == "chat"
+    assert applied_body["deliveries"][0]["delivery_type"] == "reply_to_source"
+
+
+def test_workflow_agent_setup_update_draft_is_workspace_scoped(client):
+    _payload, token = signup(client, "workflow-setup-update@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+    agent = client.post("/api/workflow-agents", headers=headers, json={"name": "Support Agent"}).json()
+
+    response = client.post(
+        f"/api/workflow-agents/{agent['id']}/draft-update",
+        headers=headers,
+        json={"prompt": "Update this to answer support questions from a policy KB and reply on Telegram.", "source": "session"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["draft"]["workflow_agent_id"] == agent["id"]
+    assert body["draft"]["source"] == "session"
+    assert body["draft"]["draft"]["agent"]["name"] == "Support Agent"
+    assert "telegram" in body["draft"]["draft"]["agent"]["integrations"]
+
+    _other_payload, other_token = signup(client, "workflow-setup-update-other@example.com")
+    blocked = client.post(
+        f"/api/workflow-agents/{agent['id']}/draft-update",
+        headers={"Cookie": f"{SESSION_COOKIE}={other_token}"},
+        json={"prompt": "Try to change another workspace agent.", "source": "session"},
+    )
+    assert blocked.status_code == 404
+
+
+def test_workflow_delivery_crud_and_run_events(client, monkeypatch):
+    _payload, token = signup(client, "workflow-delivery@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    async def fake_oneshot(workspace, profile, user_input, *, instructions=None):
+        return "Delivery output ready."
+
+    sent_messages = []
+    composio_calls = []
+
+    async def fake_send_message(workspace, profile, **payload):
+        sent_messages.append(payload)
+        return {"success": True, "message_id": "msg_1"}
+
+    monkeypatch.setattr(workflow_agents, "run_agent_via_dashboard", fake_oneshot)
+    monkeypatch.setattr(workflow_agents, "send_message_via_dashboard", fake_send_message)
+    monkeypatch.setattr(
+        workflow_agents,
+        "execute_composio_tool",
+        lambda action, **payload: composio_calls.append({"action": action, **payload}) or {"successful": True},
+    )
+
+    agent = client.post("/api/workflow-agents", headers=headers, json={"name": "Delivery Agent"}).json()
+    save_only = client.post(
+        f"/api/workflow-agents/{agent['id']}/deliveries",
+        headers=headers,
+        json={"delivery_type": "save_only", "name": "Store output"},
+    )
+    assert save_only.status_code == 200
+
+    whatsapp = client.post(
+        f"/api/workflow-agents/{agent['id']}/deliveries",
+        headers=headers,
+        json={
+            "delivery_type": "send_message",
+            "name": "WhatsApp customer",
+            "channel": "whatsapp",
+            "destination": "+15551234567",
+            "require_approval": True,
+        },
+    )
+    assert whatsapp.status_code == 200
+    assert whatsapp.json()["require_approval"] is True
+    composio_delivery = client.post(
+        f"/api/workflow-agents/{agent['id']}/deliveries",
+        headers=headers,
+        json={
+            "delivery_type": "composio_action",
+            "name": "Slack ops action",
+            "channel": "slack",
+            "config": {
+                "action": "SLACK_SENDS_A_MESSAGE_TO_A_SLACK_CHANNEL",
+                "appSlug": "slack",
+                "connectedAccountId": "ca_slack",
+                "arguments": {"message": "{{agent.output}}"},
+            },
+        },
+    )
+    assert composio_delivery.status_code == 200
+
+    listed = client.get(f"/api/workflow-agents/{agent['id']}/deliveries", headers=headers)
+    assert listed.status_code == 200
+    assert len(listed.json()["deliveries"]) == 3
+
+    updated = client.put(
+        f"/api/workflow-agents/{agent['id']}/deliveries/{whatsapp.json()['id']}",
+        headers=headers,
+        json={"destination": "+15557654321", "require_approval": False},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["destination"] == "+15557654321"
+    assert updated.json()["require_approval"] is False
+
+    run = client.post(
+        f"/api/workflow-agents/{agent['id']}/runs",
+        headers=headers,
+        json={"input": {"customer": "Ada"}},
+    )
+    assert run.status_code == 200
+    events = client.get(f"/api/workflow-agents/{agent['id']}/runs/{run.json()['id']}/events", headers=headers)
+    assert events.status_code == 200
+    event_types = [event["event_type"] for event in events.json()["events"]]
+    assert event_types.count("delivery_saved") == 1
+    assert event_types.count("delivery_sent") == 2
+    assert sent_messages[0]["platform"] == "whatsapp"
+    assert sent_messages[0]["destination"] == "+15557654321"
+    assert sent_messages[0]["message"] == "Delivery output ready."
+    assert composio_calls[0]["arguments"]["message"] == "Delivery output ready."
+    composio_event = next(event for event in events.json()["events"] if event["metadata"].get("delivery_id") == composio_delivery.json()["id"])
+    assert composio_event["metadata"]["appSlug"] == "slack"
+    assert composio_event["metadata"]["action"] == "SLACK_SENDS_A_MESSAGE_TO_A_SLACK_CHANNEL"
+
+    _other_payload, other_token = signup(client, "workflow-delivery-other@example.com")
+    blocked = client.get(
+        f"/api/workflow-agents/{agent['id']}/deliveries",
+        headers={"Cookie": f"{SESSION_COOKIE}={other_token}"},
+    )
+    assert blocked.status_code == 404
+
+    deleted = client.delete(f"/api/workflow-agents/{agent['id']}/deliveries/{save_only.json()['id']}", headers=headers)
+    assert deleted.status_code == 200
+    assert deleted.json()["ok"] is True
+
+
+def test_workflow_agent_executes_selected_custom_tool(client, monkeypatch):
+    _payload, token = signup(client, "workflow-custom-tool-run@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+    monkeypatch.setenv("YOUCAM_API_KEY", "secret-youcam-key")
+
+    calls: list[dict[str, str]] = []
+
+    async def fake_oneshot(workspace, profile, user_input, *, instructions=None):
+        calls.append({"input": user_input, "instructions": instructions or ""})
+        if len(calls) == 1:
+            assert "Selected custom API tools" in (instructions or "")
+            return json.dumps(
+                {
+                    "custom_tool_calls": [
+                        {
+                            "tool": custom_tool_name,
+                            "arguments": {"image_url": "https://example.test/skin.jpg"},
+                        }
+                    ]
+                }
+            )
+        assert "custom_tool_results" in user_input
+        return "Skin analysis completed with hydration score 88."
+
+    class FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"hydration_score": 88}
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            return None
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def request(self, method, url, *, json=None, headers=None):
+            assert method == "POST"
+            assert url == "https://api.youcam.example/analyze"
+            assert json == {"image_url": "https://example.test/skin.jpg"}
+            assert headers["Authorization"] == "Bearer secret-youcam-key"
+            return FakeResponse()
+
+    monkeypatch.setattr(workflow_agents, "run_agent_via_dashboard", fake_oneshot)
+    monkeypatch.setattr(workflow_agents.httpx, "AsyncClient", FakeAsyncClient)
+
+    tool = client.post(
+        "/api/workflow-agents/custom-tools",
+        headers=headers,
+        json={
+            "name": "YouCam Skin Analysis",
+            "method": "POST",
+            "url": "https://api.youcam.example/analyze",
+            "auth_type": "bearer",
+            "api_key_env": "YOUCAM_API_KEY",
+            "request_schema": {"image_url": "string"},
+        },
+    )
+    assert tool.status_code == 200
+    custom_tool_name = f"custom:{tool.json()['id']}"
+
+    agent = client.post(
+        "/api/workflow-agents",
+        headers=headers,
+        json={"name": "Cosmetic Consultant", "tools": [custom_tool_name]},
+    )
+    assert agent.status_code == 200
+
+    run = client.post(
+        f"/api/workflow-agents/{agent.json()['id']}/runs",
+        headers=headers,
+        json={"input": {"image_url": "https://example.test/skin.jpg"}},
+    )
+    assert run.status_code == 200
+    assert run.json()["output_text"] == "Skin analysis completed with hydration score 88."
+    assert len(calls) == 2
+
+    events = client.get(f"/api/workflow-agents/{agent.json()['id']}/runs/{run.json()['id']}/events", headers=headers)
+    event_types = [event["event_type"] for event in events.json()["events"]]
+    assert "custom_tool_started" in event_types
+    assert "custom_tool_completed" in event_types
+
+
+def test_workflow_agent_manual_and_webhook_runs(client, monkeypatch):
+    _payload, token = signup(client, "workflow-run@example.com")
+
+    async def fake_oneshot(workspace, profile, user_input, *, instructions=None):
+        assert workspace.id
+        assert profile.id
+        assert "Payment Delivery Agent" in str(instructions)
+        assert "Allowed integrations: paystack" in str(instructions)
+        assert "payment.succeeded" in user_input or "manual" in user_input
+        return "Sent the delivery confirmation and logged the result."
+
+    monkeypatch.setattr(workflow_agents, "run_agent_via_dashboard", fake_oneshot)
+
+    create = client.post(
+        "/api/workflow-agents",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={
+            "name": "Payment Delivery Agent",
+            "role": "Notify customers after successful payment",
+            "instructions": "When payment succeeds, send delivery instructions through the available channel.",
+            "tools": ["send_whatsapp"],
+            "integrations": ["paystack"],
+        },
+    )
+    assert create.status_code == 200
+    agent = create.json()
+
+    manual = client.post(
+        f"/api/workflow-agents/{agent['id']}/runs",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"input": {"customer": "Ada", "amount": 12000}},
+    )
+    assert manual.status_code == 200
+    assert manual.json()["status"] == "completed"
+    assert "delivery confirmation" in manual.json()["output_text"]
+    events = client.get(
+        f"/api/workflow-agents/{agent['id']}/runs/{manual.json()['id']}/events",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+    )
+    assert events.status_code == 200
+    assert [event["event_type"] for event in events.json()["events"]] == [
+        "queued",
+        "running",
+        "completed",
+        "delivery_saved",
+    ]
+
+    trigger = client.post(
+        f"/api/workflow-agents/{agent['id']}/triggers",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"trigger_type": "webhook", "event_name": "payment.succeeded", "name": "Paystack payment"},
+    )
+    assert trigger.status_code == 200
+    trigger_body = trigger.json()
+    assert trigger_body["secret"]
+    assert trigger_body["webhook_url"].endswith(f"/api/workflow-webhooks/{trigger_body['id']}")
+
+    rejected = client.post(
+        f"/api/workflow-webhooks/{trigger_body['id']}",
+        headers={"X-Verxio-Webhook-Secret": "wrong"},
+        json={"customer": "Ada"},
+    )
+    assert rejected.status_code == 403
+
+    webhook = client.post(
+        f"/api/workflow-webhooks/{trigger_body['id']}",
+        headers={"X-Verxio-Webhook-Secret": trigger_body["secret"]},
+        json={"customer": "Ada", "status": "successful"},
+    )
+    assert webhook.status_code == 200
+    assert webhook.json()["run"]["trigger_type"] == "webhook"
+    assert webhook.json()["run"]["status"] == "completed"
+
+    runs = client.get(f"/api/workflow-agents/{agent['id']}/runs", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+    assert runs.status_code == 200
+    assert len(runs.json()["runs"]) == 2
+
+
+def test_workflow_agent_uses_attached_knowledge_context(client, monkeypatch):
+    _payload, token = signup(client, "workflow-knowledge@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+    seen: dict[str, str] = {}
+
+    async def fake_oneshot(workspace, profile, user_input, *, instructions=None):
+        seen["input"] = user_input
+        seen["instructions"] = str(instructions)
+        return "Used the return policy knowledge."
+
+    monkeypatch.setattr(workflow_agents, "run_agent_via_dashboard", fake_oneshot)
+
+    knowledge_base = client.post(
+        "/api/knowledge-bases",
+        headers=headers,
+        json={"name": "Retail Returns", "description": "Store return policy"},
+    )
+    assert knowledge_base.status_code == 200
+    kb = knowledge_base.json()
+
+    document = client.post(
+        f"/api/knowledge-bases/{kb['id']}/documents",
+        headers=headers,
+        json={
+            "title": "Return policy",
+            "source": "manual",
+            "content": "VIP customers can return damaged shoes within 45 days with free pickup.",
+        },
+    )
+    assert document.status_code == 200
+
+    create = client.post(
+        "/api/workflow-agents",
+        headers=headers,
+        json={
+            "name": "Support Research Agent",
+            "instructions": "Answer from approved retail policy.",
+            "knowledge": [kb["id"]],
+        },
+    )
+    assert create.status_code == 200
+    agent = create.json()
+
+    run = client.post(
+        f"/api/workflow-agents/{agent['id']}/runs",
+        headers=headers,
+        json={"input": {"question": "Can a VIP return damaged shoes?"}},
+    )
+    assert run.status_code == 200
+    assert run.json()["status"] == "completed"
+    assert "damaged shoes" in seen["instructions"]
+    assert "knowledge_context" in seen["input"]
+
+    events = client.get(
+        f"/api/workflow-agents/{agent['id']}/runs/{run.json()['id']}/events",
+        headers=headers,
+    )
+    assert events.status_code == 200
+    event_types = [event["event_type"] for event in events.json()["events"]]
+    assert event_types == ["queued", "running", "knowledge_retrieved", "completed", "delivery_saved"]
+
+
+def test_workflow_trigger_validation(client, monkeypatch):
+    _payload, token = signup(client, "workflow-trigger-validation@example.com")
+    create = client.post(
+        "/api/workflow-agents",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"name": "Ops Agent"},
+    )
+    assert create.status_code == 200
+    agent_id = create.json()["id"]
+
+    webhook = client.post(
+        f"/api/workflow-agents/{agent_id}/triggers",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"trigger_type": "webhook", "event_name": ""},
+    )
+    assert webhook.status_code == 422
+
+    schedule = client.post(
+        f"/api/workflow-agents/{agent_id}/triggers",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"trigger_type": "schedule", "event_name": "daily"},
+    )
+    assert schedule.status_code == 422
+
+    app_event = client.post(
+        f"/api/workflow-agents/{agent_id}/triggers",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"trigger_type": "app_event", "event_name": "new_record", "config": {"appSlug": "airtable"}},
+    )
+    assert app_event.status_code == 422
+
+    monkeypatch.setenv("VERXIO_PUBLIC_WEB_URL", "https://verxio.example")
+    monkeypatch.setattr(workflow_agents, "list_composio_accounts", lambda _user_id: [
+        ComposioConnectedAccount(id="ca_airtable", appSlug="airtable", status="ACTIVE")
+    ])
+    monkeypatch.setattr(workflow_agents, "ensure_composio_webhook_subscription", lambda _url: {})
+    monkeypatch.setattr(workflow_agents, "create_composio_trigger_instance", lambda *_args, **_kwargs: "ti_1")
+    valid_app_event = client.post(
+        f"/api/workflow-agents/{agent_id}/triggers",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={
+            "trigger_type": "app_event",
+            "event_name": "AIRTABLE_NEW_RECORD",
+            "config": {
+                "appSlug": "airtable",
+                "connectedAccountId": "ca_airtable",
+                "triggerSlug": "AIRTABLE_NEW_RECORD",
+                "triggerConfig": {"base_id": "base_1"},
+            },
+        },
+    )
+    assert valid_app_event.status_code == 200
+    status_updates: list[tuple[str, bool]] = []
+    deleted_instances: list[str] = []
+    monkeypatch.setattr(
+        workflow_agents,
+        "set_composio_trigger_instance_enabled",
+        lambda trigger_id, enabled: status_updates.append((trigger_id, enabled)),
+    )
+    monkeypatch.setattr(
+        workflow_agents,
+        "delete_composio_trigger_instance",
+        lambda trigger_id: deleted_instances.append(trigger_id),
+    )
+    trigger_id = valid_app_event.json()["id"]
+    disabled = client.put(
+        f"/api/workflow-agents/{agent_id}/triggers/{trigger_id}",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"enabled": False},
+    )
+    assert disabled.status_code == 200
+    assert status_updates == [("ti_1", False)]
+    deleted = client.delete(
+        f"/api/workflow-agents/{agent_id}/triggers/{trigger_id}",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+    )
+    assert deleted.status_code == 200
+    assert deleted_instances == ["ti_1"]
+
+
+def test_workflow_api_chat_app_and_schedule_triggers_run(client, monkeypatch):
+    _payload, token = signup(client, "workflow-trigger-runner@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    async def fake_oneshot(workspace, profile, user_input, *, instructions=None):
+        assert workspace.id
+        assert profile.id
+        return f"handled {user_input}"
+
+    monkeypatch.setattr(workflow_agents, "run_agent_via_dashboard", fake_oneshot)
+    monkeypatch.setenv("VERXIO_PUBLIC_WEB_URL", "https://verxio.example")
+    monkeypatch.setenv("COMPOSIO_WEBHOOK_SECRET", "test-composio-secret")
+    monkeypatch.setattr(
+        workflow_agents,
+        "list_composio_accounts",
+        lambda _user_id: [
+            ComposioConnectedAccount(id="ca_airtable", appSlug="airtable", status="ACTIVE"),
+            ComposioConnectedAccount(id="ca_slack", appSlug="slack", status="ACTIVE"),
+        ],
+    )
+    monkeypatch.setattr(workflow_agents, "ensure_composio_webhook_subscription", lambda _url: {})
+    monkeypatch.setattr(
+        workflow_agents,
+        "create_composio_trigger_instance",
+        lambda _slug, *, connected_account_id, **_kwargs: f"ti_{connected_account_id}",
+    )
+    agent = client.post("/api/workflow-agents", headers=headers, json={"name": "Trigger Agent"}).json()
+    schedule_trigger_id = ""
+
+    for trigger_type, event_name, config in [
+        ("api", "lead.created", {}),
+        ("chat", "lead.question", {}),
+        (
+            "app_event",
+            "new_record",
+            {
+                "appSlug": "airtable",
+                "connectedAccountId": "ca_airtable",
+                "triggerSlug": "new_record",
+                "triggerConfig": {},
+            },
+        ),
+        (
+            "app_event",
+            "new_record",
+            {
+                "appSlug": "slack",
+                "connectedAccountId": "ca_slack",
+                "triggerSlug": "new_record",
+                "triggerConfig": {},
+            },
+        ),
+        ("schedule", "daily.digest", {"everyMinutes": 1}),
+    ]:
+        response = client.post(
+            f"/api/workflow-agents/{agent['id']}/triggers",
+            headers=headers,
+            json={"trigger_type": trigger_type, "event_name": event_name, "config": config},
+        )
+        assert response.status_code == 200
+        if trigger_type == "schedule":
+            schedule_trigger_id = response.json()["id"]
+
+    cron_trigger = client.post(
+        f"/api/workflow-agents/{agent['id']}/triggers",
+        headers=headers,
+        json={
+            "trigger_type": "schedule",
+            "event_name": "weekday.digest",
+            "config": {"cron": "0 9 * * 1-5"},
+        },
+    )
+    assert cron_trigger.status_code == 200
+    assert db.fetch_one(
+        "SELECT next_run_at FROM workflow_triggers WHERE id = ?",
+        (cron_trigger.json()["id"],),
+    )["next_run_at"]
+    invalid_cron = client.post(
+        f"/api/workflow-agents/{agent['id']}/triggers",
+        headers=headers,
+        json={
+            "trigger_type": "schedule",
+            "event_name": "invalid.schedule",
+            "config": {"cron": "not-a-cron"},
+        },
+    )
+    assert invalid_cron.status_code == 422
+
+    api_run = client.post(
+        "/api/workflow-agents/triggers/api",
+        headers=headers,
+        json={"event_name": "lead.created", "input": {"lead": "Ada"}},
+    )
+    assert api_run.status_code == 200
+    assert api_run.json()["runs"][0]["trigger_type"] == "api"
+
+    chat_run = client.post(
+        "/api/workflow-agents/triggers/chat",
+        headers=headers,
+        json={"event_name": "lead.question", "input": {"message": "Can you qualify this lead?"}},
+    )
+    assert chat_run.status_code == 200
+    assert chat_run.json()["runs"][0]["trigger_type"] == "chat"
+
+    app_payload = {
+        "type": "composio.trigger.message",
+        "metadata": {
+            "trigger_id": "ti_ca_airtable",
+            "trigger_slug": "new_record",
+            "connected_account_id": "ca_airtable",
+        },
+        "data": {"recordId": "rec_1"},
+    }
+    app_body = json.dumps(app_payload, separators=(",", ":")).encode()
+    webhook_id = "msg_1"
+    webhook_timestamp = str(int(time.time()))
+    webhook_signature = base64.b64encode(
+        hmac.new(
+            b"test-composio-secret",
+            f"{webhook_id}.{webhook_timestamp}.".encode() + app_body,
+            hashlib.sha256,
+        ).digest()
+    ).decode()
+    app_run = client.post(
+        "/api/composio/webhooks",
+        content=app_body,
+        headers={
+            "content-type": "application/json",
+            "webhook-id": webhook_id,
+            "webhook-timestamp": webhook_timestamp,
+            "webhook-signature": f"v1,{webhook_signature}",
+        },
+    )
+    assert app_run.status_code == 200
+    assert len(app_run.json()["runs"]) == 1
+    assert app_run.json()["runs"][0]["trigger_type"] == "app_event"
+    duplicate_app_run = client.post(
+        "/api/composio/webhooks",
+        content=app_body,
+        headers={
+            "content-type": "application/json",
+            "webhook-id": webhook_id,
+            "webhook-timestamp": webhook_timestamp,
+            "webhook-signature": f"v1,{webhook_signature}",
+        },
+    )
+    assert duplicate_app_run.status_code == 200
+    assert duplicate_app_run.json()["runs"] == []
+
+    db.execute(
+        "UPDATE workflow_triggers SET next_run_at = ? WHERE id = ?",
+        ("2000-01-01T00:00:00+00:00", schedule_trigger_id),
+    )
+    schedule_run = client.post("/api/workflow-agents/triggers/schedules/tick", headers=headers)
+    assert schedule_run.status_code == 200
+    assert schedule_run.json()["runs"][0]["trigger_type"] == "schedule"
+
+    schedule_again = client.post("/api/workflow-agents/triggers/schedules/tick", headers=headers)
+    assert schedule_again.status_code == 200
+    assert schedule_again.json()["runs"] == []
+
+    db.execute(
+        "UPDATE workflow_triggers SET next_run_at = ? WHERE id = ?",
+        ("2000-01-01T00:00:00+00:00", schedule_trigger_id),
+    )
+    background_tick = asyncio.run(workflow_agents.tick_due_schedule_triggers())
+    assert background_tick.runs[0].trigger_type == "schedule"
+
+
+def test_workflow_messaging_gateway_triggers_match_channel_and_reply_context(client, monkeypatch):
+    _payload, token = signup(client, "workflow-messaging-trigger@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+    seen: list[dict[str, str]] = []
+
+    async def fake_oneshot(workspace, profile, user_input, *, instructions=None):
+        seen.append({"workspace": workspace.id, "profile": profile.id, "input": user_input})
+        return "WhatsApp reply drafted."
+
+    monkeypatch.setattr(workflow_agents, "run_agent_via_dashboard", fake_oneshot)
+    agent = client.post("/api/workflow-agents", headers=headers, json={"name": "WhatsApp Support Agent"}).json()
+    trigger = client.post(
+        f"/api/workflow-agents/{agent['id']}/triggers",
+        headers=headers,
+        json={
+            "trigger_type": "chat",
+            "event_name": "message.received",
+            "name": "WhatsApp inbound",
+            "config": {"channel": "whatsapp", "connectionId": "conn_support", "keyword": "delivery"},
+        },
+    )
+    assert trigger.status_code == 200
+
+    ignored = client.post(
+        "/api/workflow-agents/triggers/messaging",
+        headers=headers,
+        json={"channel": "telegram", "message": "delivery status", "sender_id": "tg_1"},
+    )
+    assert ignored.status_code == 200
+    assert ignored.json()["runs"] == []
+
+    wrong_connection = client.post(
+        "/api/workflow-agents/triggers/messaging",
+        headers=headers,
+        json={
+            "channel": "whatsapp",
+            "connection_id": "default",
+            "message": "delivery status",
+            "sender_id": "wa_123",
+        },
+    )
+    assert wrong_connection.status_code == 200
+    assert wrong_connection.json()["runs"] == []
+
+    runtime_token = "workflow-runtime-token"
+    db.execute(
+        "UPDATE runtime_instances SET dashboard_token = ? WHERE agent_id = ?",
+        (runtime_token, agent["runtime_agent_id"]),
+    )
+    matched = client.post(
+        "/api/workflow-agents/triggers/messaging",
+        headers={"Authorization": f"Bearer {runtime_token}"},
+        json={
+            "channel": "whatsapp",
+            "connection_id": "conn_support",
+            "message": "Need my delivery status",
+            "sender_id": "wa_123",
+            "sender_name": "Ada",
+            "thread_id": "thread_1",
+            "conversation_id": "conv_1",
+            "message_id": "msg_1",
+            "input": {"order_id": "ord_1"},
+        },
+    )
+    assert matched.status_code == 200
+    body = matched.json()
+    assert body["runs"][0]["trigger_type"] == "chat"
+    assert body["runs"][0]["trigger_id"] == trigger.json()["id"]
+    assert seen
+    assert '"channel":"whatsapp"' in seen[0]["input"]
+    assert '"connection_id":"conn_support"' in seen[0]["input"]
+    assert '"reply_to_source":{"channel":"whatsapp","connection_id":"conn_support","conversation_id":"conv_1","sender_id":"wa_123","thread_id":"thread_1"}' in seen[0]["input"]
+
+
+def test_telegram_trigger_delivers_agent_report_back_through_same_gateway(client, monkeypatch):
+    _payload, token = signup(client, "workflow-telegram-delivery@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+    sent: list[dict[str, str]] = []
+
+    async def fake_oneshot(workspace, profile, user_input, *, instructions=None):
+        return "## Daily report\n\nAll assigned work is on track."
+
+    async def fake_send_message(workspace, profile, **payload):
+        sent.append(payload)
+        return {"success": True, "platform": "telegram", "message_id": "tg_report_1"}
+
+    monkeypatch.setattr(workflow_agents, "run_agent_via_dashboard", fake_oneshot)
+    monkeypatch.setattr(workflow_agents, "send_message_via_dashboard", fake_send_message)
+    agent = client.post("/api/workflow-agents", headers=headers, json={"name": "Team Reporter"}).json()
+    trigger = client.post(
+        f"/api/workflow-agents/{agent['id']}/triggers",
+        headers=headers,
+        json={
+            "trigger_type": "chat",
+            "event_name": "message.received",
+            "name": "Telegram reports",
+            "config": {"channel": "telegram", "connectionId": "conn_reports"},
+        },
+    )
+    assert trigger.status_code == 200
+    delivery = client.post(
+        f"/api/workflow-agents/{agent['id']}/deliveries",
+        headers=headers,
+        json={
+            "delivery_type": "reply_to_source",
+            "name": "Reply with report",
+            "channel": "telegram",
+            "destination": "trigger.source",
+            "template": "Report complete\n\n{{agent.output}}",
+        },
+    )
+    assert delivery.status_code == 200
+
+    runtime_token = "telegram-delivery-runtime-token"
+    db.execute(
+        "UPDATE runtime_instances SET dashboard_token = ? WHERE agent_id = ?",
+        (runtime_token, agent["runtime_agent_id"]),
+    )
+    response = client.post(
+        "/api/workflow-agents/triggers/messaging",
+        headers={"Authorization": f"Bearer {runtime_token}"},
+        json={
+            "channel": "telegram",
+            "connection_id": "conn_reports",
+            "conversation_id": "-100123456",
+            "thread_id": "77",
+            "message": "Send the daily report",
+            "sender_id": "1234",
+        },
+    )
+
+    assert response.status_code == 200
+    assert sent == [
+        {
+            "platform": "telegram",
+            "connection_id": "conn_reports",
+            "destination": "-100123456:77",
+            "message": "Report complete\n\n## Daily report\n\nAll assigned work is on track.",
+        }
+    ]
+    events = client.get(
+        f"/api/workflow-agents/{agent['id']}/runs/{response.json()['runs'][0]['id']}/events",
+        headers=headers,
+    )
+    assert any(event["event_type"] == "delivery_sent" for event in events.json()["events"])
+
+
+def test_workflow_agent_embed_config_asset_and_public_run(client, monkeypatch):
+    _payload, token = signup(client, "workflow-embed@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+    monkeypatch.setenv("VERXIO_PUBLIC_WEB_URL", "http://127.0.0.1:8080")
+
+    async def fake_oneshot(workspace, profile, user_input, *, instructions=None):
+        assert workspace.id
+        assert profile.id
+        return f"embed handled {user_input}"
+
+    monkeypatch.setattr(workflow_agents, "run_agent_via_dashboard", fake_oneshot)
+    agent = client.post(
+        "/api/workflow-agents",
+        headers=headers,
+        json={"name": "Website Consultant", "description": "Answers visitor questions."},
+    ).json()
+
+    config = client.get(f"/api/workflow-agents/{agent['id']}/embed", headers=headers)
+    assert config.status_code == 200
+    assert config.json()["enabled"] is False
+    assert config.json()["share_url"].startswith("http://127.0.0.1:8080/agent/")
+    assert 'src="http://127.0.0.1:8080/api/public/workflow-agent-embed.js"' in config.json()["embed_script"]
+    assert "data-agent-token" in config.json()["embed_script"]
+    public_info = client.get(f"/api/public/workflow-agents/{config.json()['public_token']}")
+    assert public_info.status_code == 200
+    assert public_info.json()["display_name"] == "Website Consultant"
+    public_run_disabled = client.post(
+        f"/api/public/workflow-agents/{config.json()['public_token']}/runs",
+        json={"message": "Hello"},
+    )
+    assert public_run_disabled.status_code == 404
+
+    updated = client.put(
+        f"/api/workflow-agents/{agent['id']}/embed",
+        headers=headers,
+        json={
+            "enabled": True,
+            "display_name": "Cosmetic Consultant",
+            "primary_color": "#12a0ff",
+            "allowed_origins": ["http://example.com"],
+        },
+    )
+    assert updated.status_code == 200
+    public_token = updated.json()["public_token"]
+
+    uploaded = client.post(
+        f"/api/workflow-agents/{agent['id']}/embed/asset",
+        headers=headers,
+        json={
+            "file_name": "logo.png",
+            "data_url": "data:image/png;base64,iVBORw0KGgo=",
+        },
+    )
+    assert uploaded.status_code == 200
+    assert "/static/agent-assets/" in uploaded.json()["asset_url"]
+
+    info = client.get(f"/api/public/workflow-agents/{public_token}")
+    assert info.status_code == 200
+    assert info.json()["display_name"] == "Cosmetic Consultant"
+    assert info.json()["powered_by"] == "Verxio"
+
+    blocked = client.post(
+        f"/api/public/workflow-agents/{public_token}/runs",
+        headers={"Origin": "http://blocked.example"},
+        json={"message": "What shade should I use?"},
+    )
+    assert blocked.status_code == 403
+
+    run = client.post(
+        f"/api/public/workflow-agents/{public_token}/runs",
+        headers={"Origin": "http://example.com"},
+        json={"message": "What shade should I use?", "visitor_id": "visitor_1", "page_url": "http://example.com/shop"},
+    )
+    assert run.status_code == 200
+    assert run.json()["run"]["trigger_type"] == "api"
+    assert "embed handled" in run.json()["run"]["output_text"]
+
+    script = client.get("/api/public/workflow-agent-embed.js")
+    assert script.status_code == 200
+    assert "Powered by Verxio" in script.text
+
+
+def test_workflow_skill_capabilities_use_runtime_metadata(client, monkeypatch):
+    _payload, token = signup(client, "workflow-skills@example.com")
+
+    class FakeAdapter:
+        async def metadata(self):
+            return type(
+                "Metadata",
+                (),
+                {
+                    "skills": [
+                        {
+                            "name": "lead-scoring",
+                            "description": "Score leads against the ICP.",
+                            "category": "sales",
+                            "enabled": True,
+                        }
+                    ],
+                    "errors": [],
+                },
+            )()
+
+    monkeypatch.setattr(workflow_agents, "HermesRuntimeAdapter", FakeAdapter)
+    response = client.get("/api/workflow-agents/capabilities/skills", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+
+    assert response.status_code == 200
+    assert response.json()["skills"] == [
+        {
+            "name": "lead-scoring",
+            "description": "Score leads against the ICP.",
+            "category": "sales",
+            "enabled": True,
+        }
+    ]
+
+
+def test_workflow_tool_capabilities_use_runtime_metadata(client, monkeypatch):
+    _payload, token = signup(client, "workflow-tools@example.com")
+
+    async def fake_toolsets(_workspace, _profile):
+        return [
+            {
+                "name": "messaging",
+                "tools": [
+                    {"name": "send_whatsapp", "description": "Send WhatsApp messages.", "enabled": True},
+                    {"name": "send_email", "description": "Send email.", "enabled": True},
+                ],
+            }
+        ]
+
+    monkeypatch.setattr(workflow_agents, "list_toolsets_via_dashboard", fake_toolsets)
+    response = client.get("/api/workflow-agents/capabilities/tools", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["tools"] == [
+        {
+            "name": "messaging",
+            "display_name": "messaging",
+            "description": "",
+            "category": "toolset",
+            "source": "hermes_toolset",
+            "tools": ["send_whatsapp", "send_email"],
+            "enabled": True,
+            "id": None,
+            "auth_type": "",
+            "api_key_env": "",
+            "configured": True,
+            "method": "",
+            "url": "",
+        }
+    ]
+
+
+def test_workflow_tool_capabilities_include_custom_tools(client, monkeypatch):
+    _payload, token = signup(client, "workflow-tools-custom@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    async def fake_toolsets(_workspace, _profile):
+        return []
+
+    monkeypatch.setattr(workflow_agents, "list_toolsets_via_dashboard", fake_toolsets)
+    created = client.post(
+        "/api/workflow-agents/custom-tools",
+        headers=headers,
+        json={
+            "name": "YouCam Skin Analysis",
+            "url": "https://api.youcam.example/v1/skin/analyze",
+            "auth_type": "api_key",
+            "api_key_env": "YOUCAM_API_KEY",
+        },
+    ).json()
+
+    response = client.get("/api/workflow-agents/capabilities/tools", headers=headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["tools"] == [
+        {
+            "id": created["id"],
+            "name": f"custom:{created['id']}",
+            "display_name": "YouCam Skin Analysis",
+            "description": "",
+            "category": "custom api",
+            "source": "custom",
+            "tools": [],
+            "enabled": True,
+            "auth_type": "api_key",
+            "api_key_env": "YOUCAM_API_KEY",
+            "configured": True,
+            "method": "POST",
+            "url": "https://api.youcam.example/v1/skin/analyze",
+        }
+    ]
+
+
+def test_workflow_custom_tools_round_trip(client):
+    _payload, token = signup(client, "custom-tools@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    created = client.post(
+        "/api/workflow-agents/custom-tools",
+        headers=headers,
+        json={
+            "name": "YouCam Skin Analysis",
+            "description": "Analyze customer face images for cosmetic recommendations.",
+            "method": "POST",
+            "url": "https://api.youcam.example/v1/skin/analyze",
+            "auth_type": "bearer",
+            "api_key_env": "YOUCAM_API_KEY",
+            "headers": {"X-Client": "verxio"},
+            "request_schema": {"type": "object", "properties": {"image_url": {"type": "string"}}},
+            "response_hint": "Return skin concerns, confidence, and suggested product category.",
+        },
+    )
+
+    assert created.status_code == 200
+    tool = created.json()
+    assert tool["name"] == "YouCam Skin Analysis"
+    assert tool["api_key_env"] == "YOUCAM_API_KEY"
+    assert tool["headers"] == {"X-Client": "verxio"}
+
+    listed = client.get("/api/workflow-agents/custom-tools", headers=headers)
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()["tools"]] == [tool["id"]]
+
+    updated = client.put(
+        f"/api/workflow-agents/custom-tools/{tool['id']}",
+        headers=headers,
+        json={"enabled": False, "method": "PATCH"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["enabled"] is False
+    assert updated.json()["method"] == "PATCH"
+
+    deleted = client.delete(f"/api/workflow-agents/custom-tools/{tool['id']}", headers=headers)
+    assert deleted.status_code == 200
+    assert deleted.json() == {"ok": True}
+    assert client.get("/api/workflow-agents/custom-tools", headers=headers).json()["tools"] == []
+
+
+def test_workflow_custom_tools_reject_inline_secrets(client):
+    _payload, token = signup(client, "custom-tool-secrets@example.com")
+
+    response = client.post(
+        "/api/workflow-agents/custom-tools",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={
+            "name": "Unsafe Tool",
+            "url": "https://api.example.com",
+            "auth_type": "none",
+            "headers": {"Authorization": "Bearer secret"},
+        },
+    )
+
+    assert response.status_code == 422
+    assert "Do not store raw secrets" in response.json()["detail"]
+
+
+def test_workflow_integration_capabilities_include_connected_composio_accounts(client, monkeypatch):
+    payload, token = signup(client, "workflow-integrations@example.com")
+
+    monkeypatch.setattr(workflow_agents, "is_composio_configured", lambda: True)
+    monkeypatch.setattr(workflow_agents, "get_composio_catalog_error", lambda: None)
+    monkeypatch.setattr(
+        workflow_agents,
+        "list_composio_accounts",
+        lambda user_id: [ComposioConnectedAccount(id="acct_1", appSlug="slack", status="ACTIVE")],
+    )
+    monkeypatch.setattr(
+        workflow_agents,
+        "list_composio_apps",
+        lambda: [
+            composio_catalog.ComposioApp(
+                categories=["team"],
+                description="Post updates.",
+                name="Slack",
+                slug="slack",
+            )
+        ],
+    )
+
+    response = client.get(
+        "/api/workflow-agents/capabilities/integrations",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+    )
+
+    assert payload["user"]["id"]
+    assert response.status_code == 200
+    body = response.json()
+    assert body["configured"] is True
+    assert body["integrations"][0]["slug"] == "slack"
+    assert body["integrations"][0]["connected"] is True
 
 
 def test_protected_runtime_endpoint_rejects_anonymous_users(client):
@@ -308,12 +1630,164 @@ def test_transcription_catalog_rejects_anonymous_users(client):
     assert response.status_code == 401
 
 
-def test_dashboard_env_mutations_reassert_hosted_inference_env():
+def test_dashboard_env_mutations_mark_hosted_inference_reassert_paths():
+    """Env writes are flagged, but the proxy must not docker-restart on them."""
     assert main._dashboard_path_needs_inference_env_reassert("api/env/reload", "POST")
     assert main._dashboard_path_needs_inference_env_reassert("api/env", "PUT")
     assert main._dashboard_path_needs_inference_env_reassert("api/tools/toolsets/tts/env", "PUT")
     assert not main._dashboard_path_needs_inference_env_reassert("api/model/options", "GET")
     assert not main._dashboard_path_needs_inference_env_reassert("api/status", "GET")
+
+
+def test_dashboard_toolset_paths_use_fast_proxy_path():
+    """Provider/env/config toolset routes must skip the start_runtime lock."""
+    assert main._dashboard_path_is_toolset_fast_path("api/tools/toolsets")
+    assert main._dashboard_path_is_toolset_fast_path("api/tools/toolsets/image_gen/config")
+    assert main._dashboard_path_is_toolset_fast_path("api/tools/toolsets/image_gen/provider")
+    assert main._dashboard_path_is_toolset_fast_path("api/tools/toolsets/video_gen/env")
+    assert not main._dashboard_path_is_toolset_fast_path("api/config")
+    assert not main._dashboard_path_is_toolset_fast_path("api/model/info")
+
+
+def test_dashboard_session_mutations_use_fast_proxy_path():
+    """Session delete/rename must skip awaited bridge sync + start_runtime."""
+    assert main._dashboard_path_is_session_mutation_fast_path(
+        "api/sessions/20260803_112520_46b5fa", "DELETE"
+    )
+    assert main._dashboard_path_is_session_mutation_fast_path(
+        "api/sessions/20260803_112520_46b5fa", "PATCH"
+    )
+    assert main._dashboard_path_is_session_mutation_fast_path("api/sessions/bulk-delete", "POST")
+    assert main._dashboard_path_is_session_mutation_fast_path("api/sessions/empty", "DELETE")
+    assert not main._dashboard_path_is_session_mutation_fast_path("api/sessions", "GET")
+    assert not main._dashboard_path_is_session_mutation_fast_path(
+        "api/sessions/20260803_112520_46b5fa/messages", "GET"
+    )
+    assert not main._dashboard_path_is_session_mutation_fast_path(
+        "api/sessions/20260803_112520_46b5fa", "GET"
+    )
+
+
+def test_dashboard_model_options_uses_catalog_fast_path():
+    """GET model/options must skip awaited bridge sync + start_runtime."""
+    assert main._dashboard_path_is_model_options("api/model/options")
+    assert main._dashboard_path_is_model_options("/api/model/options")
+    assert not main._dashboard_path_is_model_options("api/model/info")
+    assert not main._dashboard_path_is_lightweight("api/model/options")
+
+
+def test_dashboard_analytics_uses_medium_read_path():
+    """Command Center usage must skip start_runtime and get a longer budget."""
+    for path in (
+        "api/analytics/usage",
+        "api/analytics/usage?days=30",
+        "/api/analytics/usage",
+        "api/analytics/models",
+    ):
+        # Query strings are not part of the FastAPI path param, but keep the
+        # bare analytics prefixes covered either way.
+        bare = path.split("?", 1)[0]
+        assert main._dashboard_path_is_medium_read(bare), bare
+        assert main._dashboard_path_is_model_options(bare), bare
+        assert not main._dashboard_path_is_lightweight(bare), bare
+
+
+def test_dashboard_settings_reads_use_lightweight_path():
+    """Settings hydrate GETs must skip start_runtime lock (env/config schema)."""
+    for path in (
+        "api/env",
+        "api/config",
+        "api/config/defaults",
+        "api/config/schema",
+        "api/model/auxiliary",
+        "api/providers/oauth",
+        "/api/env",
+        "/api/config/defaults",
+        "/api/providers/oauth",
+        "/api/model/auxiliary",
+    ):
+        assert main._dashboard_path_is_lightweight(path), path
+
+    assert not main._dashboard_path_is_lightweight("api/env/reload")
+    # OAuth start/disconnect still need the full proxy path (writes).
+    assert not main._dashboard_path_is_lightweight("api/providers/oauth/openai-codex/start")
+
+
+def test_dashboard_env_put_does_not_restart_runtime(client, monkeypatch):
+    payload, token = signup(client, "env-save-no-restart@example.com")
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    db.execute(
+        """
+        UPDATE runtime_instances
+        SET status = 'running',
+            container_name = ?,
+            dashboard_url = 'http://127.0.0.1:19119',
+            dashboard_token = 'token'
+        WHERE id = ?
+        """,
+        ("verxio-test-runtime", runtime_row["id"]),
+    )
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE id = ?",
+        (runtime_row["id"],),
+    )
+    runtime = control_plane.runtime_from_row(runtime_row)
+
+    restarted: list[str] = []
+
+    async def fake_restart(rt, extra_env=None):
+        restarted.append(rt.id)
+        return rt
+
+    async def fake_start(rt, extra_env=None, wait_ready=True):
+        return rt
+
+    async def fake_token(*_a, **_k):
+        return "token"
+
+    async def fake_bridge(*_a, **_k):
+        return None
+
+    class _FakeUpstream:
+        status_code = 200
+        content = b'{"ok":true}'
+        headers = {"content-type": "application/json"}
+
+    class _FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def request(self, *args, **kwargs):
+            return _FakeUpstream()
+
+    monkeypatch.setattr(main, "restart_runtime", fake_restart)
+    monkeypatch.setattr(main, "start_runtime", fake_start)
+    monkeypatch.setattr(main, "get_runtime_for_user", lambda _user, fresh=False: runtime)
+    monkeypatch.setattr(main, "runtime_env_for_user", lambda _user_id: {"GEMINI_API_KEY": "hosted"})
+    monkeypatch.setattr(main, "runtime_dashboard_base_url", lambda _runtime, ensure_network=False: "http://127.0.0.1:19119")
+    monkeypatch.setattr(main, "_runtime_dashboard_token_async", fake_token)
+    monkeypatch.setattr(main, "_sync_composio_bridge_for_user", fake_bridge)
+    monkeypatch.setattr(main, "_sync_inference_bridge_for_user", fake_bridge)
+    monkeypatch.setattr(main.httpx, "AsyncClient", _FakeClient)
+
+    response = client.put(
+        "/api/runtime/dashboard/api/env",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"key": "DASHSCOPE_API_KEY", "value": "user-dashscope"},
+    )
+
+    assert response.status_code == 200
+    assert restarted == []
 
 
 def test_transcription_catalog_uses_fallback_without_keys(client):
@@ -329,6 +1803,40 @@ def test_transcription_catalog_uses_fallback_without_keys(client):
     assert groq["source"] == "fallback"
     assert groq["recommendedModel"] == "whisper-large-v3-turbo"
     assert [model["id"] for model in groq["models"]][:2] == ["whisper-large-v3-turbo", "whisper-large-v3"]
+    fishaudio = next(provider for provider in body["providers"] if provider["id"] == "fishaudio")
+    assert fishaudio["configured"] is False
+    assert fishaudio["envKey"] == "FISH_AUDIO_API_KEY"
+    assert fishaudio["docsUrl"] == "https://fish.audio/app/api-keys"
+    assert fishaudio["recommendedModel"] == "fish-audio-asr-beta"
+    assert [model["id"] for model in fishaudio["models"]] == ["fish-audio-asr-beta"]
+
+
+def test_transcription_catalog_keeps_fishaudio_models_static(client, monkeypatch):
+    payload, token = signup(client, "transcription-fishaudio@example.com")
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    env_path = Path(str(runtime_row["hermes_home_path"])) / ".env"
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    env_path.write_text("FISH_AUDIO_API_KEY=fish-secret\n", encoding="utf-8")
+
+    async def fail_for_fishaudio(_client, spec, _api_key, _env):
+        if spec.id == "fishaudio":
+            raise AssertionError("Fish Audio does not expose a models API")
+        return []
+
+    monkeypatch.setattr(transcription_catalog, "_fetch_provider_models", fail_for_fishaudio)
+
+    response = client.get("/api/transcription/catalog?refresh=true", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+
+    assert response.status_code == 200
+    fishaudio = next(provider for provider in response.json()["providers"] if provider["id"] == "fishaudio")
+    assert fishaudio["configured"] is True
+    assert fishaudio["source"] == "fallback"
+    assert fishaudio["error"] is None
+    assert "fish-secret" not in response.text
 
 
 def test_transcription_catalog_fetches_live_models_with_runtime_key(client, monkeypatch):
@@ -363,7 +1871,8 @@ def test_transcription_catalog_fetches_live_models_with_runtime_key(client, monk
 
 def test_dashboard_model_paths_need_inference_sync():
     assert main._dashboard_path_needs_inference_sync("api/model/info") is True
-    assert main._dashboard_path_needs_inference_sync("/api/model/options") is True
+    # Catalog reads must not trigger bridge sync (docker.sock thrash).
+    assert main._dashboard_path_needs_inference_sync("/api/model/options") is False
     assert main._dashboard_path_needs_inference_sync("api/status") is False
     assert main._dashboard_path_needs_inference_sync("api/config") is False
     assert main._dashboard_path_needs_inference_sync("api/sessions") is False
@@ -474,7 +1983,61 @@ def test_inference_bridge_preserves_openai_tool_credentials(client, monkeypatch)
     assert "DASHSCOPE_API_KEY=keep" in env_text
     auth = json.loads((hermes_home / "auth.json").read_text(encoding="utf-8"))
     assert "openai-api" in auth.get("credential_pool", {})
-    assert auth.get("active_provider") == "openai-api"
+    # Hosted sync must not leave a BYOK/OAuth active_provider pointer that
+    # steals resolve_provider('auto') when config.yaml model is briefly empty.
+    assert not str(auth.get("active_provider") or "").strip()
+    assert "openai-codex" in auth.get("credential_pool", {})
+
+
+def test_inference_bridge_clears_openai_codex_active_provider(client, monkeypatch):
+    monkeypatch.setenv("VERXIO_HOSTED_GEMINI_API_KEY", "verxio-gemini-key")
+    payload, token = signup(client, "inference-clear-codex@example.com")
+    response = client.put(
+        "/api/inference/settings",
+        headers={"Cookie": f"{SESSION_COOKIE}={token}"},
+        json={"mode": "hosted", "defaultModelId": "verxio-gemini"},
+    )
+    assert response.status_code == 200
+
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ?",
+        (payload["workspace"]["id"],),
+    )
+    assert runtime_row
+    runtime = control_plane.runtime_from_row(runtime_row)
+    hermes_home = Path(runtime.hermes_home_path)
+    hermes_home.mkdir(parents=True, exist_ok=True)
+    (hermes_home / "auth.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "providers": {},
+                "active_provider": "openai-codex",
+                "credential_pool": {
+                    "openai-codex": [
+                        {
+                            "id": "keep",
+                            "label": "device_code",
+                            "auth_type": "oauth",
+                            "source": "device_code",
+                        }
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status = inference.sync_inference_runtime_bridge(runtime, payload["user"]["id"])
+
+    assert status.enabled is True
+    assert status.changed is True
+    assert status.defaultModelId == "verxio-gemini"
+    config = yaml.safe_load((hermes_home / "config.yaml").read_text(encoding="utf-8"))
+    assert config["model"]["provider"] == "gemini"
+    assert config["model"]["default"] == "gemini-flash-lite-latest"
+    auth = json.loads((hermes_home / "auth.json").read_text(encoding="utf-8"))
+    assert not str(auth.get("active_provider") or "").strip()
     assert "openai-codex" in auth.get("credential_pool", {})
 
 
@@ -543,7 +2106,10 @@ def test_inference_bridge_writes_hosted_verxio_gemini_model_config(client, monke
     assert status.configured is True
     assert status.enabled is True
     assert status.defaultModelId == "verxio-gemini"
-    assert inference.runtime_env_for_user(payload["user"]["id"]) == {"GEMINI_API_KEY": "verxio-gemini-key"}
+    assert inference.runtime_env_for_user(payload["user"]["id"]) == {
+        "GEMINI_API_KEY": "verxio-gemini-key",
+        "GOOGLE_API_KEY": "verxio-gemini-key",
+    }
     config = (Path(runtime.hermes_home_path) / "config.yaml").read_text(encoding="utf-8")
     assert "provider: gemini" in config
     assert "default: gemini-flash-lite-latest" in config
@@ -640,10 +2206,12 @@ def test_inference_bridge_preserves_user_env_credentials_for_gemini(client, monk
     auth = json.loads((hermes_home / "auth.json").read_text(encoding="utf-8"))
     assert "alibaba" in auth.get("credential_pool", {})
     assert "gemini" in auth.get("credential_pool", {})
-    assert auth.get("active_provider") == "alibaba"
+    # Hosted Gemini must not leave a non-gemini active_provider pointer that
+    # can steal resolve_provider('auto') when config.yaml model is briefly empty.
+    assert not str(auth.get("active_provider") or "").strip()
 
 
-def test_inference_bridge_byok_strips_hosted_model_assignment(client, monkeypatch):
+def test_inference_bridge_keeps_byok_selection_in_hybrid_mode(client, monkeypatch):
     monkeypatch.setenv("VERXIO_HOSTED_QWEN_API_KEY", "verxio-qwen-key")
     payload, token = signup(client, "inference-byok@example.com")
 
@@ -653,70 +2221,30 @@ def test_inference_bridge_byok_strips_hosted_model_assignment(client, monkeypatc
     )
     assert runtime_row
     runtime = control_plane.runtime_from_row(runtime_row)
-
-    # Seed hosted leftovers the way a prior Hosted session would leave them.
-    hosted = inference.sync_inference_runtime_bridge(runtime, payload["user"]["id"])
-    assert hosted.enabled is True
     hermes_home = Path(runtime.hermes_home_path)
-    (hermes_home / ".env").write_text(
-        "OPENAI_API_KEY=user-byok-openai\nDASHSCOPE_API_KEY=keep-user-or-stale\n",
-        encoding="utf-8",
-    )
-    (hermes_home / "auth.json").write_text(
-        json.dumps(
-            {
-                "version": 1,
-                "providers": {},
-                "active_provider": "alibaba",
-                "credential_pool": {
-                    "alibaba": [
-                        {
-                            "id": "hosted",
-                            "label": "DASHSCOPE_API_KEY",
-                            "auth_type": "api_key",
-                            "source": "env:DASHSCOPE_API_KEY",
-                        }
-                    ],
-                    "openai-api": [
-                        {
-                            "id": "user",
-                            "label": "OPENAI_API_KEY",
-                            "auth_type": "api_key",
-                            "source": "env:OPENAI_API_KEY",
-                        }
-                    ],
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
+    hermes_home.mkdir(parents=True, exist_ok=True)
 
-    # Flip mode in DB without the route sync so we can assert the bridge clear.
-    db.execute(
-        "UPDATE user_inference_settings SET mode = ? WHERE user_id = ?",
-        ("byok", payload["user"]["id"]),
+    # User selected a connected OpenAI model — bridge must not overwrite it.
+    (hermes_home / "config.yaml").write_text(
+        "model:\n  provider: openai\n  default: gpt-5-mini\n",
+        encoding="utf-8",
     )
+    (hermes_home / ".env").write_text("OPENAI_API_KEY=user-byok-openai\n", encoding="utf-8")
 
     status = inference.sync_inference_runtime_bridge(runtime, payload["user"]["id"])
 
-    assert status.enabled is False
-    assert status.changed is True
-    assert status.message == "BYOK mode uses Hermes provider settings."
-    assert inference.runtime_env_for_user(payload["user"]["id"]) == {}
+    assert status.enabled is True
+    assert status.message == "Hybrid mode keeps the connected provider selection."
+    assert inference.runtime_env_for_user(payload["user"]["id"]) == {
+        "DASHSCOPE_API_KEY": "verxio-qwen-key"
+    }
 
     config = (hermes_home / "config.yaml").read_text(encoding="utf-8")
+    assert "provider: openai" in config
+    assert "default: gpt-5-mini" in config
     assert "provider: alibaba" not in config
-    assert "default: qwen3.6-plus" not in config
-    assert not (hermes_home / ".verxio" / "inference-runtime-bridge.json").exists()
 
-    # User-owned Tools & Keys credentials stay on disk; hosted auth pool is cleared.
-    env_text = (hermes_home / ".env").read_text(encoding="utf-8")
-    assert "OPENAI_API_KEY=user-byok-openai" in env_text
-    auth = json.loads((hermes_home / "auth.json").read_text(encoding="utf-8"))
-    assert "alibaba" not in auth.get("credential_pool", {})
-    assert "openai-api" in auth.get("credential_pool", {})
-
-    # Settings PUT still accepts byok once leftovers are gone.
+    # Legacy mode field still accepted for API compatibility.
     response = client.put(
         "/api/inference/settings",
         headers={"Cookie": f"{SESSION_COOKIE}={token}"},
@@ -911,11 +2439,18 @@ def test_artifacts_are_indexed_from_runtime_workspace_and_isolated(client):
     assert runtime_one
     artifact_path = Path(str(runtime_one["artifact_path"]))
     artifact_path.mkdir(parents=True, exist_ok=True)
-    (artifact_path / "daily-sales-dashboard.html").write_text("<html><body>Daily sales</body></html>", encoding="utf-8")
+    older = artifact_path / "daily-sales-dashboard.html"
+    older.write_text("<html><body>Daily sales</body></html>", encoding="utf-8")
     png_bytes = base64.b64decode(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
     )
-    (artifact_path / "man_in_pool_nano_banana.png").write_bytes(png_bytes)
+    newer = artifact_path / "man_in_pool_nano_banana.png"
+    newer.write_bytes(png_bytes)
+    # Distinct mtimes so listing is latest-first and reindex keeps file times.
+    older_mtime = time.time() - 7 * 24 * 3600
+    newer_mtime = time.time() - 3600
+    os.utime(older, (older_mtime, older_mtime))
+    os.utime(newer, (newer_mtime, newer_mtime))
 
     user_one_response = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
     user_two_response = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_two}"})
@@ -927,9 +2462,38 @@ def test_artifacts_are_indexed_from_runtime_workspace_and_isolated(client):
         "daily-sales-dashboard.html",
         "man_in_pool_nano_banana.png",
     }
+    assert [artifact["file_name"] for artifact in user_one_artifacts] == [
+        "man_in_pool_nano_banana.png",
+        "daily-sales-dashboard.html",
+    ]
     image_artifact = next(artifact for artifact in user_one_artifacts if artifact["file_name"].endswith(".png"))
     assert image_artifact["content_type"] == "image/png"
+    first_updated = image_artifact["updated_at"]
+    # Reindex must not stamp every row with "now" (that made last week's files
+    # all show today's date in the Artifacts UI).
+    reindex = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
+    assert reindex.status_code == 200
+    reindexed_image = next(
+        artifact for artifact in reindex.json()["artifacts"] if artifact["file_name"].endswith(".png")
+    )
+    assert reindexed_image["updated_at"] == first_updated
     assert user_two_response.json()["artifacts"] == []
+
+    # Byte-identical copies (renamed workspace file + runtime-home mirror) must
+    # collapse to a single Artifacts row so the UI is not cluttered.
+    (artifact_path / "man_in_pool_nano_banana-FINAL.png").write_bytes(png_bytes)
+    os.utime(artifact_path / "man_in_pool_nano_banana-FINAL.png", (newer_mtime, newer_mtime))
+    hermes_artifacts = Path(str(runtime_one["hermes_home_path"])) / "artifacts"
+    hermes_artifacts.mkdir(parents=True, exist_ok=True)
+    (hermes_artifacts / "man_in_pool_nano_banana.png").write_bytes(png_bytes)
+    os.utime(hermes_artifacts / "man_in_pool_nano_banana.png", (newer_mtime, newer_mtime))
+
+    deduped = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
+    assert deduped.status_code == 200
+    deduped_artifacts = deduped.json()["artifacts"]
+    png_names = [artifact["file_name"] for artifact in deduped_artifacts if artifact["file_name"].endswith(".png")]
+    assert png_names == ["man_in_pool_nano_banana-FINAL.png"]
+    image_artifact = next(artifact for artifact in deduped_artifacts if artifact["file_name"].endswith(".png"))
 
     artifact_id = image_artifact["id"]
     preview = client.get(f"/api/artifacts/{artifact_id}/preview", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
@@ -950,11 +2514,16 @@ def test_artifacts_are_indexed_from_runtime_workspace_and_isolated(client):
     assert blocked_delete.status_code == 404
     assert deleted.status_code == 200
     assert deleted.json() == {"ok": True}
-    assert not (artifact_path / "man_in_pool_nano_banana.png").exists()
+    assert not (artifact_path / "man_in_pool_nano_banana-FINAL.png").exists()
 
     after_delete = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
     assert after_delete.status_code == 200
-    assert [artifact["file_name"] for artifact in after_delete.json()["artifacts"]] == ["daily-sales-dashboard.html"]
+    # Delete removes only the preferred path; an identical workspace copy remains
+    # and still collapses with the runtime-home mirror to one row.
+    assert [artifact["file_name"] for artifact in after_delete.json()["artifacts"]] == [
+        "man_in_pool_nano_banana.png",
+        "daily-sales-dashboard.html",
+    ]
 
 
 def test_notepad_recording_upload_saves_audio_as_artifact(client):
@@ -1051,6 +2620,75 @@ def test_notepad_notes_folders_and_public_shares(client):
     assert client.get(f"/api/public/notepad/{share_payload['token']}").status_code == 404
 
 
+def test_notepad_content_update_mirrors_summary_when_summary_was_content(client):
+    """Agent-style content-only PATCH should refresh a mirrored summary pane."""
+    _payload, token = signup(client, "notes-mirror@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    note = client.post(
+        "/api/notepad/notes",
+        json={
+            "title": "Playbook",
+            "content": "Version one body.",
+            "summary": "Version one body.",
+        },
+        headers=headers,
+    )
+    assert note.status_code == 200
+    note_id = note.json()["id"]
+
+    updated = client.patch(
+        f"/api/notepad/notes/{note_id}",
+        json={"content": "Version two body with edits."},
+        headers=headers,
+    )
+    assert updated.status_code == 200
+    assert updated.json()["content"] == "Version two body with edits."
+    assert updated.json()["summary"] == "Version two body with edits."
+
+    # Independently authored summaries must not be clobbered by content-only PATCH.
+    authored = client.patch(
+        f"/api/notepad/notes/{note_id}",
+        json={"summary": "Deep authored summary about version two."},
+        headers=headers,
+    )
+    assert authored.status_code == 200
+    preserved = client.patch(
+        f"/api/notepad/notes/{note_id}",
+        json={"content": "Version three body."},
+        headers=headers,
+    )
+    assert preserved.status_code == 200
+    assert preserved.json()["content"] == "Version three body."
+    assert preserved.json()["summary"] == "Deep authored summary about version two."
+
+
+def test_notepad_share_promotes_content_into_empty_summary(client):
+    _payload, token = signup(client, "share-fallback@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+
+    note = client.post(
+        "/api/notepad/notes",
+        json={
+            "title": "Playbook only in notes",
+            "content": "# Hook\n\nShip daily. Own the audience.",
+            "summary": "",
+        },
+        headers=headers,
+    )
+    assert note.status_code == 200
+    note_id = note.json()["id"]
+    assert note.json()["summary"] == ""
+
+    share = client.post(f"/api/notepad/notes/{note_id}/share", headers=headers)
+    assert share.status_code == 200
+    assert "Ship daily" in share.json()["note"]["summary"]
+
+    public = client.get(f"/api/public/notepad/{share.json()['token']}")
+    assert public.status_code == 200
+    assert "Ship daily" in public.json()["note"]["summary"]
+
+
 def test_notepad_runtime_bearer_token_can_list_and_share(client):
     """Hermes containers auth to Notepad with the runtime dashboard token."""
     payload, token = signup(client, "runtime-notes@example.com")
@@ -1097,7 +2735,10 @@ def test_notepad_summarize_uses_runtime_dashboard(client, monkeypatch):
 
     async def fake_run_agent_via_dashboard(workspace, profile, user_input, *, instructions=None):
         assert "Acme discovery call" in user_input
-        return "Summary\n\nDecisions\n- Follow up on SOC2."
+        assert "in-depth summary" in user_input.lower()
+        assert "concise" not in user_input.lower()
+        assert "Detailed walkthrough" in user_input
+        return "## Overview\n\nBuyer needs SOC2.\n\n## Decisions\n- Follow up on SOC2."
 
     monkeypatch.setattr("app.notepad.run_agent_via_dashboard", fake_run_agent_via_dashboard)
 
@@ -1269,6 +2910,80 @@ def test_composio_accounts_use_current_api_and_parse_auth_config_toolkit(monkeyp
             {"user_ids": ["user_123"], "statuses": ["ACTIVE"], "limit": 1000},
         )
     ]
+
+
+def test_composio_trigger_catalog_uses_current_api_and_preserves_config_schema(monkeypatch):
+    monkeypatch.setenv("COMPOSIO_API_KEY", "test-key")
+    calls: list[tuple[str, str, dict]] = []
+
+    def fake_get(base_url: str, path: str, params=None, timeout: int = 30):
+        calls.append((base_url, path, params or {}))
+        return {
+            "items": [
+                {
+                    "slug": "GITHUB_COMMIT_EVENT",
+                    "name": "New commit",
+                    "description": "Runs when a commit is pushed.",
+                    "instructions": "Choose a repository.",
+                    "type": "webhook",
+                    "toolkit": {"slug": "github"},
+                    "config": {
+                        "type": "object",
+                        "properties": {"owner": {"type": "string", "title": "Owner"}},
+                        "required": ["owner"],
+                    },
+                    "payload": {"type": "object"},
+                }
+            ]
+        }
+
+    monkeypatch.setattr(composio_catalog, "_get", fake_get)
+
+    result = composio_catalog.list_composio_trigger_types("github")
+
+    assert result.configured is True
+    assert result.triggers[0].slug == "GITHUB_COMMIT_EVENT"
+    assert result.triggers[0].config["required"] == ["owner"]
+    assert calls == [
+        (
+            "https://backend.composio.dev/api/v3.1",
+            "/triggers_types",
+            {"limit": 100, "toolkit_slugs": ["github"]},
+        )
+    ]
+
+
+def test_composio_delivery_tools_preserve_input_schema(monkeypatch):
+    monkeypatch.setenv("COMPOSIO_API_KEY", "test-key")
+
+    def fake_get(base_url: str, path: str, params=None, timeout: int = 30):
+        assert base_url == "https://backend.composio.dev/api/v3.1"
+        assert path == "/tools"
+        return {
+            "items": [
+                {
+                    "slug": "GMAIL_SEND_EMAIL",
+                    "name": "Send email",
+                    "description": "Send a Gmail message.",
+                    "input_parameters": {
+                        "type": "object",
+                        "required": ["recipient_email"],
+                        "properties": {
+                            "recipient_email": {"type": "string", "title": "Recipient email"},
+                            "subject": {"type": "string", "title": "Subject"},
+                        },
+                    },
+                }
+            ]
+        }
+
+    monkeypatch.setattr(composio_catalog, "_get", fake_get)
+
+    tools = composio_catalog.list_composio_app_tools("gmail", limit=100)
+
+    assert tools[0].slug == "GMAIL_SEND_EMAIL"
+    assert tools[0].inputParameters["required"] == ["recipient_email"]
+    assert tools[0].inputParameters["properties"]["subject"]["type"] == "string"
 
 
 def test_composio_accounts_fall_back_to_legacy_api(monkeypatch):
@@ -1814,32 +3529,6 @@ def test_runtime_health_waits_until_gateway_is_running(monkeypatch):
 
     assert connected is False
     assert "gateway is starting" in detail
-
-
-def test_leash_agent_config_is_runtime_local_not_db(client):
-    payload, token = signup(client, "leash@example.com")
-    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
-    config = {"version": 1, "agent_mint": "Agnt123", "executive_keypair": "secret"}
-
-    missing = client.get("/api/leash/agent-config", headers=headers)
-    assert missing.status_code == 404
-
-    saved = client.put("/api/leash/agent-config", headers=headers, json=config)
-    assert saved.status_code == 200
-    assert saved.json() == {"ok": True}
-
-    loaded = client.get("/api/leash/agent-config", headers=headers)
-    assert loaded.status_code == 200
-    assert loaded.json()["config"] == config
-
-    rows = db.fetch_all("SELECT * FROM runtime_instances WHERE workspace_id = ?", (payload["workspace"]["id"],))
-    assert rows
-    agent_path = Path(rows[0]["hermes_home_path"]) / ".config" / "leash" / "agent.json"
-    assert agent_path.is_file()
-
-    deleted = client.delete("/api/leash/agent-config", headers=headers)
-    assert deleted.status_code == 200
-    assert not agent_path.is_file()
 
 
 def test_slack_manifest_endpoint_returns_socket_mode_manifest(client):

@@ -25,19 +25,56 @@ import {
   mediaOptionFields,
   type MediaToolset
 } from '@/lib/media-tool-options'
+import { mediaToolsetActiveSummary } from '@/lib/media-toolset-summary'
 import { configValue, setConfigValue } from '@/lib/transcription-config'
 
 function imageGenProviderId(providerName: string | null | undefined): string | null {
+  const name = (providerName || '').trim().toLowerCase()
+
+  if (isDashScopeProvider(providerName)) {
+    return 'dashscope'
+  }
+
   if (isGoogleImageProvider(providerName)) {
     return 'google'
+  }
+
+  if (name.includes('codex')) {
+    return 'openai-codex'
   }
 
   if (isOpenAIImageProvider(providerName)) {
     return 'openai'
   }
 
+  if (name.includes('fal')) {
+    return 'fal'
+  }
+
+  if (name.includes('krea')) {
+    return 'krea'
+  }
+
+  if (name.includes('xai') || name.includes('grok')) {
+    return 'xai'
+  }
+
+  return null
+}
+
+function videoGenProviderId(providerName: string | null | undefined): string | null {
+  const name = (providerName || '').trim().toLowerCase()
+
   if (isDashScopeProvider(providerName)) {
     return 'dashscope'
+  }
+
+  if (name.includes('fal')) {
+    return 'fal'
+  }
+
+  if (name.includes('xai') || name.includes('grok')) {
+    return 'xai'
   }
 
   return null
@@ -220,64 +257,70 @@ function EnvVarField({ envVar, isSet, onSaved, onCleared }: EnvVarFieldProps) {
   )
 }
 
-function MediaModelFields({ toolset, providerName }: { toolset: MediaToolset; providerName: string | null }) {
+function MediaModelFields({
+  toolset,
+  providerName,
+  isActiveProvider,
+  onModelSaved
+}: {
+  toolset: MediaToolset
+  providerName: string | null
+  /** Only the active provider may edit/persist model defaults. */
+  isActiveProvider: boolean
+  onModelSaved?: (config: HermesConfigRecord) => void
+}) {
   const { t } = useI18n()
   const copy = t.settings.toolsets
-  const fields = mediaOptionFields(toolset, providerName)
+  // Stable identity — a fresh array each render re-fired the load effect and
+  // stampeded GET/PUT /api/config (which also raced provider switches).
+  const fields = useMemo(() => mediaOptionFields(toolset, providerName), [providerName, toolset])
   const [config, setConfig] = useState<HermesConfigRecord | null>(null)
   const [savingPath, setSavingPath] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!isActiveProvider || fields.length === 0) {
+      setConfig(null)
+
+      return
+    }
+
     let cancelled = false
 
     void getHermesConfigRecord()
       .then(async next => {
-        if (cancelled || !fields.length) {
-          if (!cancelled) {
-            setConfig(next)
-          }
-
+        if (cancelled) {
           return
         }
 
         let seeded = next
         let changed = false
 
+        // Never change image_gen/video_gen provider here — selecting a provider
+        // is an explicit user action. Auto-writing the expanded row used to race
+        // and overwrite OpenAI with DashScope after a switch.
         if (toolset === 'image_gen') {
           const providerId = imageGenProviderId(providerName)
+          const savedProvider = String(configValue(seeded, 'image_gen.provider') ?? '')
 
-          if (providerId && configValue(seeded, 'image_gen.provider') !== providerId) {
-            seeded = setConfigValue(seeded, 'image_gen.provider', providerId)
-            changed = true
-          }
+          if (providerId && savedProvider === providerId) {
+            const modelOptions = fields.find(field => field.path === 'image_gen.model')?.options ?? []
+            const currentModel = String(configValue(seeded, 'image_gen.model') ?? '')
 
-          const modelOptions = fields.find(field => field.path === 'image_gen.model')?.options ?? []
-          const currentModel = String(configValue(seeded, 'image_gen.model') ?? '')
-
-          if (!currentModel || (modelOptions.length > 0 && !modelOptions.includes(currentModel))) {
-            seeded = setConfigValue(seeded, 'image_gen.model', defaultMediaModel('image_gen', providerName))
-            changed = true
+            if (!currentModel || (modelOptions.length > 0 && !modelOptions.includes(currentModel))) {
+              seeded = setConfigValue(seeded, 'image_gen.model', defaultMediaModel('image_gen', providerName))
+              changed = true
+            }
           }
         }
 
-        if (toolset === 'video_gen') {
-          if (!configValue(seeded, 'video_gen.provider')) {
-            seeded = setConfigValue(seeded, 'video_gen.provider', 'dashscope')
-            changed = true
-          }
-
+        if (toolset === 'video_gen' && isDashScopeProvider(providerName)) {
           if (!configValue(seeded, 'video_gen.model')) {
             seeded = setConfigValue(seeded, 'video_gen.model', defaultMediaModel('video_gen'))
             changed = true
           }
         }
 
-        if (toolset === 'tts') {
-          if (configValue(seeded, 'tts.provider') !== 'dashscope') {
-            seeded = setConfigValue(seeded, 'tts.provider', 'dashscope')
-            changed = true
-          }
-
+        if (toolset === 'tts' && isDashScopeProvider(providerName)) {
           if (!configValue(seeded, 'tts.dashscope.model')) {
             seeded = setConfigValue(seeded, 'tts.dashscope.model', defaultMediaModel('tts'))
             changed = true
@@ -289,7 +332,7 @@ function MediaModelFields({ toolset, providerName }: { toolset: MediaToolset; pr
           }
         }
 
-        if (changed) {
+        if (changed && !cancelled) {
           try {
             await saveHermesConfig(seeded)
           } catch {
@@ -301,14 +344,28 @@ function MediaModelFields({ toolset, providerName }: { toolset: MediaToolset; pr
           setConfig(seeded)
         }
       })
-      .catch(err => notifyError(err, copy.failedLoad))
+      .catch(err => {
+        if (!cancelled) {
+          notifyError(err, copy.failedLoad)
+        }
+      })
 
     return () => {
       cancelled = true
     }
-  }, [copy.failedLoad, fields, providerName, toolset])
+    // `fields` is memoized on toolset+providerName. Do not depend on unstable
+    // parent callbacks — that retriggered a GET /api/config stampede.
+  }, [copy.failedLoad, fields, isActiveProvider, providerName, toolset])
 
-  if (!fields.length || !config) {
+  if (!fields.length) {
+    return null
+  }
+
+  if (!isActiveProvider) {
+    return <p className="text-[0.72rem] text-muted-foreground">{copy.usingProviderHint}</p>
+  }
+
+  if (!config) {
     return null
   }
 
@@ -323,16 +380,22 @@ function MediaModelFields({ toolset, providerName }: { toolset: MediaToolset; pr
       }
 
       if (toolset === 'image_gen' && path === 'image_gen.model') {
-        const providerId = imageGenProviderId(providerName) ?? 'dashscope'
-        next = setConfigValue(next, 'image_gen.provider', providerId)
+        const providerId = imageGenProviderId(providerName)
+        if (providerId) {
+          next = setConfigValue(next, 'image_gen.provider', providerId)
+        }
       }
 
       if (toolset === 'video_gen' && path === 'video_gen.model') {
-        next = setConfigValue(next, 'video_gen.provider', 'dashscope')
+        const providerId = videoGenProviderId(providerName)
+        if (providerId) {
+          next = setConfigValue(next, 'video_gen.provider', providerId)
+        }
       }
 
       await saveHermesConfig(next)
       setConfig(next)
+      onModelSaved?.(next)
       notify({ kind: 'success', title: copy.modelSavedTitle, message: copy.modelSavedMessage(value) })
     } catch (err) {
       notifyError(err, copy.failedModelSave)
@@ -381,31 +444,49 @@ export function ToolsetConfigPanel({ toolset, onConfiguredChange }: ToolsetConfi
   const [cfg, setCfg] = useState<ToolsetConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const [selecting, setSelecting] = useState<string | null>(null)
-  const [activeProvider, setActiveProvider] = useState<string | null>(null)
+  /** Row currently expanded for viewing keys — not necessarily the active backend. */
+  const [expandedProvider, setExpandedProvider] = useState<string | null>(null)
+  const [hermesConfig, setHermesConfig] = useState<HermesConfigRecord | null>(null)
   // Live per-key set/unset state, seeded from the endpoint then patched locally.
   const [envState, setEnvState] = useState<Record<string, boolean>>({})
 
-  const refresh = useCallback(async () => {
-    setLoading(true)
-
-    try {
-      const next = await getToolsetConfig(toolset)
-      setCfg(next)
-      const seeded: Record<string, boolean> = {}
-
-      for (const provider of next.providers) {
-        for (const ev of provider.env_vars) {
-          seeded[ev.key] = ev.is_set
-        }
+  const refresh = useCallback(
+    async ({ quiet = false }: { quiet?: boolean } = {}) => {
+      if (!quiet) {
+        setLoading(true)
       }
 
-      setEnvState(seeded)
-    } catch (err) {
-      notifyError(err, copy.failedLoad)
-    } finally {
-      setLoading(false)
-    }
-  }, [copy.failedLoad, toolset])
+      try {
+        const [next, hermes] = await Promise.all([getToolsetConfig(toolset), getHermesConfigRecord().catch(() => null)])
+        setCfg(next)
+        if (hermes) {
+          setHermesConfig(hermes)
+        }
+        const seeded: Record<string, boolean> = {}
+
+        for (const provider of next.providers) {
+          for (const ev of provider.env_vars) {
+            seeded[ev.key] = ev.is_set
+          }
+        }
+
+        setEnvState(seeded)
+
+        const serverActive =
+          next.providers.find(p => p.is_active && !isNousSubscriptionProvider(p))?.name ?? next.active_provider ?? null
+        if (serverActive) {
+          setExpandedProvider(current => current ?? serverActive)
+        }
+      } catch (err) {
+        notifyError(err, copy.failedLoad)
+      } finally {
+        if (!quiet) {
+          setLoading(false)
+        }
+      }
+    },
+    [copy.failedLoad, toolset]
+  )
 
   useEffect(() => {
     void refresh()
@@ -416,27 +497,32 @@ export function ToolsetConfigPanel({ toolset, onConfiguredChange }: ToolsetConfi
     [cfg]
   )
 
-  // Default the expanded provider to the one actually active in config
-  // (`is_active` / `cfg.active_provider`, mirroring the CLI picker), then the
-  // first fully-configured provider, else the first provider. Prefer DashScope
-  // for media toolsets so Verxio Qwen Cloud is the obvious default.
+  // Default the expanded row to the active provider, then first configured, else first.
   useEffect(() => {
-    if (activeProvider || providers.length === 0) {
+    if (expandedProvider || providers.length === 0) {
       return
     }
 
     const selected =
-      providers.find(p => p.is_active && !isNousSubscriptionProvider(p)) ??
+      providers.find(p => p.is_active) ??
       (cfg?.active_provider ? providers.find(p => p.name === cfg.active_provider) : undefined) ??
-      (isMediaToolset(toolset) ? providers.find(p => isDashScopeProvider(p.name)) : undefined) ??
       providers.find(p => providerConfigured(p, envState)) ??
       providers[0]
 
-    setActiveProvider(selected.name)
-  }, [activeProvider, providers, envState, cfg, toolset])
+    setExpandedProvider(selected.name)
+  }, [expandedProvider, providers, envState, cfg])
+
+  const activeSummary = useMemo(() => {
+    if (!isMediaToolset(toolset)) {
+      const name = cfg?.active_provider ?? providers.find(p => p.is_active)?.name
+      return name ? { provider: name, model: null as string | null } : null
+    }
+
+    return mediaToolsetActiveSummary(toolset, hermesConfig)
+  }, [cfg?.active_provider, hermesConfig, providers, toolset])
 
   async function handleSelect(provider: ToolProvider) {
-    setActiveProvider(provider.name)
+    setExpandedProvider(provider.name)
     setSelecting(provider.name)
 
     try {
@@ -444,46 +530,52 @@ export function ToolsetConfigPanel({ toolset, onConfiguredChange }: ToolsetConfi
 
       if (isMediaToolset(toolset)) {
         try {
+          // Provider pin is already written by selectToolsetProvider. Only fill
+          // missing model defaults — never re-PUT a stale full config that could
+          // race another writer and wipe the selection.
           const current = await getHermesConfigRecord()
           let next = current
           let changed = false
 
           if (toolset === 'image_gen') {
             const providerId = imageGenProviderId(provider.name)
+            const savedProvider = String(configValue(current, 'image_gen.provider') ?? '')
+            const modelOptions =
+              mediaOptionFields(toolset, provider.name).find(field => field.path === 'image_gen.model')?.options ?? []
+            const currentModel = String(configValue(current, 'image_gen.model') ?? '')
 
-            if (providerId) {
-              next = setConfigValue(next, 'image_gen.provider', providerId)
-              next = setConfigValue(next, 'image_gen.model', defaultMediaModel('image_gen', provider.name))
-              changed = true
+            if (providerId && savedProvider === providerId) {
+              if (!currentModel || (modelOptions.length > 0 && !modelOptions.includes(currentModel))) {
+                next = setConfigValue(next, 'image_gen.model', defaultMediaModel('image_gen', provider.name))
+                changed = true
+              }
             }
           }
 
           if (toolset === 'video_gen' && isDashScopeProvider(provider.name)) {
-            next = setConfigValue(next, 'video_gen.provider', 'dashscope')
-
-            if (!configValue(next, 'video_gen.model')) {
+            if (!configValue(current, 'video_gen.model')) {
               next = setConfigValue(next, 'video_gen.model', defaultMediaModel('video_gen'))
+              changed = true
             }
-
-            changed = true
           }
 
           if (toolset === 'tts' && isDashScopeProvider(provider.name)) {
-            next = setConfigValue(next, 'tts.provider', 'dashscope')
-
-            if (!configValue(next, 'tts.dashscope.model')) {
+            if (!configValue(current, 'tts.dashscope.model')) {
               next = setConfigValue(next, 'tts.dashscope.model', defaultMediaModel('tts'))
+              changed = true
             }
 
             if (!configValue(next, 'tts.dashscope.voice')) {
               next = setConfigValue(next, 'tts.dashscope.voice', 'Cherry')
+              changed = true
             }
-
-            changed = true
           }
 
           if (changed) {
             await saveHermesConfig(next)
+            setHermesConfig(next)
+          } else {
+            setHermesConfig(current)
           }
         } catch {
           // Provider selection already succeeded; model defaults are best-effort.
@@ -491,6 +583,7 @@ export function ToolsetConfigPanel({ toolset, onConfiguredChange }: ToolsetConfi
       }
 
       notify({ kind: 'success', title: copy.selectedTitle, message: copy.selectedMessage(provider.name) })
+      await refresh({ quiet: true })
       onConfiguredChange?.()
     } catch (err) {
       notifyError(err, copy.failedSelect(provider.name))
@@ -530,37 +623,64 @@ export function ToolsetConfigPanel({ toolset, onConfiguredChange }: ToolsetConfi
 
   return (
     <div className="mt-3 grid gap-2">
+      {activeSummary && (
+        <div className="rounded-lg border border-primary/25 bg-primary/5 px-3 py-2">
+          <p className="text-xs font-medium text-foreground">
+            {copy.usingProvider(activeSummary.provider, activeSummary.model)}
+          </p>
+          <p className="mt-0.5 text-[0.7rem] text-muted-foreground">{copy.usingProviderHint}</p>
+        </div>
+      )}
       {providers.map(provider => {
-        const isActive = activeProvider === provider.name
+        const isExpanded = expandedProvider === provider.name
+        const isActive = selecting
+          ? selecting === provider.name
+          : Boolean(provider.is_active) || cfg?.active_provider === provider.name
         const configured = providerConfigured(provider, envState)
 
         return (
-          <div className="overflow-hidden rounded-xl bg-background/60" key={provider.name}>
+          <div
+            className={cn('overflow-hidden rounded-xl bg-background/60', isActive && 'ring-1 ring-primary/35')}
+            key={provider.name}
+          >
             <button
-              aria-pressed={isActive}
+              aria-expanded={isExpanded}
               className={cn(
                 'flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition hover:bg-accent/50',
-                isActive && 'bg-accent/40'
+                isActive && 'bg-primary/8'
               )}
-              onClick={() => void handleSelect(provider)}
+              onClick={() => setExpandedProvider(current => (current === provider.name ? null : provider.name))}
               type="button"
             >
-              <span className="flex min-w-0 items-center gap-2">
+              <span className="flex min-w-0 flex-wrap items-center gap-2">
                 <span className="truncate text-sm font-medium">{provider.name}</span>
                 {provider.badge && <Pill>{provider.badge}</Pill>}
-                {configured && (
+                {isActive && (
                   <Pill tone="primary">
                     <Check className="size-3" />
-                    {copy.ready}
+                    {copy.active}
                   </Pill>
                 )}
+                {configured && <Pill>{copy.ready}</Pill>}
               </span>
               {selecting === provider.name && <Loader2 className="size-3.5 shrink-0 animate-spin" />}
             </button>
 
-            {isActive && (
+            {isExpanded && (
               <div className="grid gap-2 bg-muted/20 p-3">
                 {provider.tag && <p className="text-[0.72rem] text-muted-foreground">{provider.tag}</p>}
+                {!isActive && (
+                  <Button
+                    className="w-fit"
+                    disabled={selecting === provider.name}
+                    onClick={() => void handleSelect(provider)}
+                    size="sm"
+                    type="button"
+                  >
+                    {selecting === provider.name ? <Loader2 className="size-3.5 animate-spin" /> : null}
+                    {copy.useProvider}
+                  </Button>
+                )}
                 {provider.env_vars.length === 0 ? (
                   <p className="text-[0.72rem] text-muted-foreground">{copy.noApiKeyRequired}</p>
                 ) : (
@@ -574,7 +694,14 @@ export function ToolsetConfigPanel({ toolset, onConfiguredChange }: ToolsetConfi
                     />
                   ))
                 )}
-                {isMediaToolset(toolset) && <MediaModelFields providerName={provider.name} toolset={toolset} />}
+                {isMediaToolset(toolset) && (
+                  <MediaModelFields
+                    isActiveProvider={isActive}
+                    onModelSaved={next => setHermesConfig(next)}
+                    providerName={provider.name}
+                    toolset={toolset}
+                  />
+                )}
                 {provider.post_setup && (
                   <p className="text-[0.72rem] text-muted-foreground">{copy.postSetup(provider.post_setup)}</p>
                 )}

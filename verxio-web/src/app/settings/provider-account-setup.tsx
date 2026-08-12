@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { ConnectedTag, providerTitle } from '@/components/desktop-onboarding-overlay'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
+import { writeClipboardText } from '@/components/ui/copy-button'
 import { disconnectOAuthProvider } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { ChevronLeft, Loader2 } from '@/lib/icons'
@@ -63,7 +64,7 @@ export function ProviderAccountSetup({ onBack, onUpdated, provider, requestGatew
     }
 
     try {
-      await navigator.clipboard.writeText(provider.cli_command)
+      await writeClipboardText(provider.cli_command)
       setCopied(true)
       window.setTimeout(() => setCopied(false), 2_000)
     } catch {

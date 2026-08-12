@@ -11,6 +11,7 @@ import { Pane, PaneMain } from '@/components/pane-shell'
 import { RemoteDisplayBanner } from '@/components/remote-display-banner'
 import { readVerxioAuthScope } from '@/lib/auth-scope'
 import { clearModelOptionsQueries, refreshModelOptionsQueries } from '@/lib/model-options-cache'
+import { cn } from '@/lib/utils'
 import { useSkinCommand } from '@/themes/use-skin-command'
 
 import { formatRefValue } from '../components/assistant-ui/directive-text'
@@ -87,7 +88,6 @@ import { useGatewayBoot } from './gateway/hooks/use-gateway-boot'
 import { useGatewayRequest } from './gateway/hooks/use-gateway-request'
 import { useDesktopWorkspace } from './hooks/use-desktop-workspace'
 import { useKeybinds } from './hooks/use-keybinds'
-import { useLeashHydration } from './hooks/use-leash-hydration'
 import { ModelPickerOverlay } from './model-picker-overlay'
 import { ModelVisibilityOverlay } from './model-visibility-overlay'
 import { RightSidebarPane } from './right-sidebar'
@@ -123,15 +123,15 @@ import { useGroupRegistry } from './shell/use-group-registry'
 import { UpdatesOverlay } from './updates-overlay'
 
 const AgentsView = lazy(async () => ({ default: (await import('./agents')).AgentsView }))
+const ActivityView = lazy(async () => ({ default: (await import('./activity')).ActivityView }))
 const ArtifactsView = lazy(async () => ({ default: (await import('./artifacts')).ArtifactsView }))
 const CommandCenterView = lazy(async () => ({ default: (await import('./command-center')).CommandCenterView }))
 const CronView = lazy(async () => ({ default: (await import('./cron')).CronView }))
 const MessagingView = lazy(async () => ({ default: (await import('./messaging')).MessagingView }))
 const NotepadView = lazy(async () => ({ default: (await import('./notepad')).NotepadView }))
-const PulseView = lazy(async () => ({ default: (await import('./pulse')).PulseView }))
 const ProfilesView = lazy(async () => ({ default: (await import('./profiles')).ProfilesView }))
-const SettingsView = lazy(async () => ({ default: (await import('./settings')).SettingsView }))
 const SkillsView = lazy(async () => ({ default: (await import('./skills')).SkillsView }))
+const SettingsView = lazy(async () => ({ default: (await import('./settings')).SettingsView }))
 const SESSIONS_CACHE_KEY = 'verxio.sessions.cache.v1'
 
 function sessionsCacheKey(): string {
@@ -219,20 +219,22 @@ export function DesktopController() {
   const getRouteToken = useCallback(() => routeTokenRef.current, [])
 
   const {
-    agentsOpen,
+    activityOpen,
     chatOpen,
     closeOverlayToPreviousRoute,
     commandCenterInitialSection,
     commandCenterOpen,
     cronOpen,
     currentView,
-    openAgents,
+    openActivity,
+    overlayOpen,
     profilesOpen,
     settingsOpen,
     toggleCommandCenter
   } = useOverlayRouting()
 
   const terminalTakeoverActive = chatOpen && terminalTakeover
+  const keepChatMounted = chatOpen || overlayOpen
 
   const titlebarToolGroups = useGroupRegistry<TitlebarTool>()
   const statusbarItemGroups = useGroupRegistry<StatusbarItem>()
@@ -343,14 +345,21 @@ export function DesktopController() {
     }
   }, [])
 
-  const refreshSessions = useCallback(async () => {
+  const refreshSessions = useCallback(async (options?: { force?: boolean }) => {
     const now = Date.now()
+    const force = options?.force === true
 
     if (refreshSessionsInFlightRef.current) {
-      return refreshSessionsInFlightRef.current
+      if (!force) {
+        return refreshSessionsInFlightRef.current
+      }
+
+      // Load-more bumps the page size; wait out the stale in-flight fetch that
+      // still has the old limit, then issue a fresh request.
+      await refreshSessionsInFlightRef.current.catch(() => undefined)
     }
 
-    if ($sessions.get().length > 0 && now - lastSessionsRefreshAtRef.current < 2_000) {
+    if (!force && $sessions.get().length > 0 && now - lastSessionsRefreshAtRef.current < 2_000) {
       return
     }
 
@@ -393,7 +402,7 @@ export function DesktopController() {
 
   const loadMoreSessions = useCallback(() => {
     bumpSessionsLimit()
-    void refreshSessions()
+    void refreshSessions({ force: true })
   }, [refreshSessions])
 
   // Another tab mutated the shared session list — re-pull so the sidebar reflects it.
@@ -728,7 +737,6 @@ export function DesktopController() {
     refreshSessions
   })
 
-  useLeashHydration()
   useDesktopWorkspace()
 
   useEffect(() => {
@@ -808,12 +816,12 @@ export function DesktopController() {
   })
 
   const { leftStatusbarItems, statusbarItems } = useStatusbarItems({
-    agentsOpen,
+    activityOpen,
     commandCenterOpen,
     extraLeftItems: statusbarItemGroups.flat.left,
     extraRightItems: statusbarItemGroups.flat.right,
     modelMenuContent,
-    openAgents,
+    openActivity,
     toggleCommandCenter
   })
 
@@ -896,9 +904,9 @@ export function DesktopController() {
         </Suspense>
       )}
 
-      {agentsOpen && (
+      {activityOpen && (
         <Suspense fallback={null}>
-          <AgentsView onClose={closeOverlayToPreviousRoute} />
+          <ActivityView onClose={closeOverlayToPreviousRoute} />
         </Suspense>
       )}
 
@@ -933,6 +941,7 @@ export function DesktopController() {
       }}
       onEdit={editMessage}
       onPasteClipboardImage={() => void composer.pasteClipboardImage()}
+      onPickAudio={composer.pickAudio}
       onPickFiles={() => void composer.pickContextPaths('file')}
       onPickFolders={() => void composer.pickContextPaths('folder')}
       onPickImages={() => void composer.pickImages()}
@@ -1015,10 +1024,25 @@ export function DesktopController() {
       >
         {sidebar}
       </Pane>
-      <PaneMain>
+      <PaneMain className="relative">
+        {/*
+          Keep chat mounted under modal overlays so /settings (etc.) never blanks
+          the main pane while the overlay card is open.
+        */}
+        {keepChatMounted ? (
+          <div
+            aria-hidden={overlayOpen || undefined}
+            className={cn(
+              'min-h-0',
+              overlayOpen ? 'pointer-events-none absolute inset-0 overflow-hidden' : 'flex h-full flex-col'
+            )}
+          >
+            {terminalTakeoverActive ? takeoverTerminalView : chatView}
+          </div>
+        ) : null}
         <Routes>
-          <Route element={terminalTakeoverActive ? takeoverTerminalView : chatView} index />
-          <Route element={terminalTakeoverActive ? takeoverTerminalView : chatView} path=":sessionId" />
+          <Route element={null} index />
+          <Route element={null} path=":sessionId" />
           <Route
             element={
               <Suspense fallback={null}>
@@ -1038,18 +1062,18 @@ export function DesktopController() {
           <Route
             element={
               <Suspense fallback={null}>
-                <PulseView setStatusbarItemGroup={setStatusbarItemGroup} />
-              </Suspense>
-            }
-            path="pulse"
-          />
-          <Route
-            element={
-              <Suspense fallback={null}>
                 <ArtifactsView setStatusbarItemGroup={setStatusbarItemGroup} />
               </Suspense>
             }
             path="artifacts"
+          />
+          <Route
+            element={
+              <Suspense fallback={null}>
+                <AgentsView />
+              </Suspense>
+            }
+            path="agents/*"
           />
           <Route
             element={
@@ -1063,7 +1087,7 @@ export function DesktopController() {
           <Route element={null} path="profiles" />
           <Route element={null} path="settings" />
           <Route element={null} path="command-center" />
-          <Route element={null} path="agents" />
+          <Route element={null} path="activity" />
           <Route element={<Navigate replace to={`${SKILLS_ROUTE}?tab=toolsets`} />} path="toolset" />
           <Route element={<Navigate replace to={`${SKILLS_ROUTE}?tab=toolsets`} />} path="toolsets" />
           <Route element={<Navigate replace to={NEW_CHAT_ROUTE} />} path="login" />

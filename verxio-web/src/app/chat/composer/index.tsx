@@ -149,6 +149,7 @@ export function ChatBar({
   onAttachDroppedItems,
   onAttachImageBlob,
   onPasteClipboardImage,
+  onPickAudio,
   onPickFiles,
   onPickFolders,
   onPickImages,
@@ -1189,6 +1190,12 @@ export function ChatBar({
       return false
     }
 
+    // Browser File objects cannot survive queue persistence. Keep the draft in
+    // place until file.attach has replaced it with a session-bound fishatt_ ref.
+    if (attachments.some(attachment => attachment.kind === 'audio' && !attachment.refText)) {
+      return false
+    }
+
     if (!enqueueQueuedPrompt(activeQueueSessionKey, { text: draft, attachments })) {
       return false
     }
@@ -1444,6 +1451,7 @@ export function ChatBar({
         setUrlOpen(true)
       }}
       onPasteClipboardImage={onPasteClipboardImage}
+      onPickAudio={onPickAudio}
       onPickFiles={onPickFiles}
       onPickFolders={onPickFolders}
       onPickImages={onPickImages}

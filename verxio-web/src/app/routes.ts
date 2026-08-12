@@ -9,15 +9,16 @@ export const SKILLS_ROUTE = '/skills'
 export const TOOLSET_ROUTE = '/toolset'
 export const TOOLSETS_ROUTE = '/toolsets'
 export const MESSAGING_ROUTE = '/messaging'
-export const PULSE_ROUTE = '/pulse'
 export const ARTIFACTS_ROUTE = '/artifacts'
 export const NOTEPAD_ROUTE = '/notepad'
 export const CRON_ROUTE = '/cron'
 export const PROFILES_ROUTE = '/profiles'
 export const AGENTS_ROUTE = '/agents'
+export const ACTIVITY_ROUTE = '/activity'
 export const NOT_FOUND_ROUTE = '/404'
 
 export type AppView =
+  | 'activity'
   | 'agents'
   | 'artifacts'
   | 'chat'
@@ -25,12 +26,12 @@ export type AppView =
   | 'cron'
   | 'messaging'
   | 'notepad'
-  | 'pulse'
   | 'profiles'
   | 'settings'
   | 'skills'
 
 export type AppRouteId =
+  | 'activity'
   | 'agents'
   | 'artifacts'
   | 'command-center'
@@ -38,7 +39,6 @@ export type AppRouteId =
   | 'messaging'
   | 'notepad'
   | 'new'
-  | 'pulse'
   | 'profiles'
   | 'settings'
   | 'skills'
@@ -55,11 +55,11 @@ export const APP_ROUTES = [
   { id: 'command-center', path: COMMAND_CENTER_ROUTE, view: 'command-center' },
   { id: 'skills', path: SKILLS_ROUTE, view: 'skills' },
   { id: 'messaging', path: MESSAGING_ROUTE, view: 'messaging' },
-  { id: 'pulse', path: PULSE_ROUTE, view: 'pulse' },
   { id: 'artifacts', path: ARTIFACTS_ROUTE, view: 'artifacts' },
   { id: 'notepad', path: NOTEPAD_ROUTE, view: 'notepad' },
   { id: 'cron', path: CRON_ROUTE, view: 'cron' },
   { id: 'profiles', path: PROFILES_ROUTE, view: 'profiles' },
+  { id: 'activity', path: ACTIVITY_ROUTE, view: 'activity' },
   { id: 'agents', path: AGENTS_ROUTE, view: 'agents' }
 ] as const satisfies readonly AppRoute[]
 
@@ -78,7 +78,13 @@ const RESERVED_PATHS: ReadonlySet<string> = new Set([
 // Views that render as a full-screen modal card (OverlayView) over the shell.
 // While one is open the app's titlebar control clusters must hide so they don't
 // bleed over the overlay (they sit at a higher z-index than the overlay card).
-export const OVERLAY_VIEWS: ReadonlySet<AppView> = new Set(['agents', 'command-center', 'cron', 'profiles', 'settings'])
+export const OVERLAY_VIEWS: ReadonlySet<AppView> = new Set([
+  'activity',
+  'command-center',
+  'cron',
+  'profiles',
+  'settings'
+])
 
 export function isOverlayView(view: AppView): boolean {
   return OVERLAY_VIEWS.has(view)
@@ -105,6 +111,10 @@ export function sessionRoute(sessionId: string): string {
 export function appViewForPath(pathname: string): AppView {
   if (isNewChatRoute(pathname) || routeSessionId(pathname)) {
     return 'chat'
+  }
+
+  if (pathname.startsWith(`${AGENTS_ROUTE}/`)) {
+    return 'agents'
   }
 
   return APP_VIEW_BY_PATH.get(pathname) ?? 'chat'

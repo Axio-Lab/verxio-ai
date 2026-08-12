@@ -30,22 +30,22 @@ import { CRON_ROUTE } from '../../routes'
 import type { StatusbarItem } from '../statusbar-controls'
 
 interface StatusbarItemsOptions {
-  agentsOpen: boolean
+  activityOpen: boolean
   commandCenterOpen: boolean
   extraLeftItems: readonly StatusbarItem[]
   extraRightItems: readonly StatusbarItem[]
   modelMenuContent?: ReactNode
-  openAgents: () => void
+  openActivity: () => void
   toggleCommandCenter: () => void
 }
 
 export function useStatusbarItems({
-  agentsOpen,
+  activityOpen,
   commandCenterOpen,
   extraLeftItems,
   extraRightItems,
   modelMenuContent,
-  openAgents,
+  openActivity,
   toggleCommandCenter
 }: StatusbarItemsOptions) {
   const { t } = useI18n()
@@ -127,7 +127,7 @@ export function useStatusbarItems({
       },
       {
         className: cn(
-          agentsOpen && 'bg-accent/55 text-foreground',
+          activityOpen && 'bg-accent/55 text-foreground',
           bgFailed > 0 && 'text-destructive hover:text-destructive'
         ),
         detail:
@@ -146,10 +146,10 @@ export function useStatusbarItems({
           ) : (
             <Sparkles className="size-3" />
           ),
-        id: 'agents',
+        id: 'activity',
         label: copy.agents,
-        onSelect: openAgents,
-        title: agentsOpen ? copy.closeAgents : copy.openAgents,
+        onSelect: openActivity,
+        title: copy.openAgents,
         variant: 'action'
       },
       {
@@ -162,13 +162,13 @@ export function useStatusbarItems({
       }
     ],
     [
-      agentsOpen,
+      activityOpen,
       bgFailed,
       bgRunning,
       commandCenterOpen,
       copy,
       gatewayRestarting,
-      openAgents,
+      openActivity,
       serverConnected,
       serverConnecting,
       subagentsRunning,

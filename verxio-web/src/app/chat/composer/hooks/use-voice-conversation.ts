@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { useI18n } from '@/i18n'
-import { playSpeechText, stopVoicePlayback } from '@/lib/voice-playback'
+import type { GatewayTtsStreamPlayer } from '@/lib/tts-stream-playback'
+import {
+  appendStreamedSpeech,
+  beginStreamedSpeech,
+  finishStreamedSpeech,
+  playSpeechText,
+  stopVoicePlayback
+} from '@/lib/voice-playback'
 import { notify, notifyError } from '@/store/notifications'
 
 import { useMicRecorder } from './use-mic-recorder'
@@ -45,6 +52,9 @@ export function useVoiceConversation({
   const responseIdRef = useRef<string | null>(null)
   const spokenSourceLengthRef = useRef(0)
   const speechBufferRef = useRef('')
+  const streamPlayerRef = useRef<GatewayTtsStreamPlayer | null>(null)
+  const streamOpeningRef = useRef(false)
+  const preferStreamRef = useRef(true)
   const enabledRef = useRef(enabled)
   const mutedRef = useRef(muted)
   const busyRef = useRef(busy)
@@ -225,20 +235,76 @@ export function useVoiceConversation({
       setStatus('speaking')
 
       try {
+        if (preferStreamRef.current) {
+          if (!streamPlayerRef.current && !streamOpeningRef.current) {
+            streamOpeningRef.current = true
+
+            try {
+              const player = await beginStreamedSpeech({ source: 'voice-conversation' })
+
+              if (player) {
+                streamPlayerRef.current = player
+              } else {
+                preferStreamRef.current = false
+              }
+            } finally {
+              streamOpeningRef.current = false
+            }
+          }
+
+          let spins = 0
+
+          while (!streamPlayerRef.current && streamOpeningRef.current && spins < 100) {
+            await new Promise(resolve => window.setTimeout(resolve, 20))
+            spins += 1
+          }
+
+          const player = streamPlayerRef.current
+
+          if (player) {
+            await appendStreamedSpeech(player, text)
+
+            return
+          }
+        }
+
         await playSpeechText(text, { source: 'voice-conversation' })
       } catch (error) {
         notifyError(error, voiceCopy.playbackFailed)
       } finally {
-        if (enabledRef.current) {
+        if (!streamPlayerRef.current && enabledRef.current) {
           pendingStartRef.current = true
           setStatus('idle')
-        } else {
+        } else if (!streamPlayerRef.current) {
           setStatus('idle')
         }
       }
     },
     [voiceCopy.playbackFailed]
   )
+
+  const finishCurrentStream = useCallback(async () => {
+    const player = streamPlayerRef.current
+    streamPlayerRef.current = null
+
+    if (!player) {
+      return
+    }
+
+    setStatus('speaking')
+
+    try {
+      await finishStreamedSpeech(player, false)
+    } catch (error) {
+      notifyError(error, voiceCopy.playbackFailed)
+    } finally {
+      if (enabledRef.current) {
+        pendingStartRef.current = true
+      }
+
+      setStatus('idle')
+    }
+  }, [voiceCopy.playbackFailed])
 
   const start = useCallback(async () => {
     if (!onTranscribeAudio) {
@@ -254,6 +320,8 @@ export function useVoiceConversation({
 
     setMuted(false)
     awaitingSpokenResponseRef.current = false
+    preferStreamRef.current = true
+    streamPlayerRef.current = null
     resetSpeechBuffer()
     consumePendingResponse()
     pendingStartRef.current = true
@@ -270,10 +338,18 @@ export function useVoiceConversation({
   const end = useCallback(async () => {
     pendingStartRef.current = false
     clearTurnTimeout()
+    const player = streamPlayerRef.current
+    streamPlayerRef.current = null
+
+    if (player) {
+      void finishStreamedSpeech(player, true)
+    }
+
     stopVoicePlayback()
     handle.cancel()
     turnClosingRef.current = false
     awaitingSpokenResponseRef.current = false
+    preferStreamRef.current = true
     resetSpeechBuffer()
     consumePendingResponse()
     setMuted(false)
@@ -293,6 +369,14 @@ export function useVoiceConversation({
       if (next) {
         clearTurnTimeout()
         handle.cancel()
+        const player = streamPlayerRef.current
+        streamPlayerRef.current = null
+
+        if (player) {
+          void finishStreamedSpeech(player, true)
+        }
+
+        stopVoicePlayback()
         setStatus('idle')
       } else if (enabledRef.current && !busyRef.current && statusRef.current === 'idle') {
         pendingStartRef.current = true
@@ -332,13 +416,17 @@ export function useVoiceConversation({
       return
     }
 
-    if (awaitingSpokenResponseRef.current && status !== 'speaking') {
+    const streamingActive = Boolean(streamPlayerRef.current) || streamOpeningRef.current
+    const canFeedSpeech = status !== 'speaking' || streamingActive
+
+    if (awaitingSpokenResponseRef.current && canFeedSpeech) {
       const response = pendingResponse()
 
       if (response) {
         if (response.id !== responseIdRef.current) {
           resetSpeechBuffer()
           responseIdRef.current = response.id
+          preferStreamRef.current = true
         }
 
         if (response.text.length > spokenSourceLengthRef.current) {
@@ -358,6 +446,13 @@ export function useVoiceConversation({
           awaitingSpokenResponseRef.current = false
           consumePendingResponse()
           resetSpeechBuffer()
+
+          if (streamPlayerRef.current) {
+            void finishCurrentStream()
+
+            return
+          }
+
           pendingStartRef.current = true
           setStatus('idle')
 
@@ -368,6 +463,13 @@ export function useVoiceConversation({
       if (!busy && status === 'thinking') {
         awaitingSpokenResponseRef.current = false
         resetSpeechBuffer()
+
+        if (streamPlayerRef.current) {
+          void finishCurrentStream()
+
+          return
+        }
+
         pendingStartRef.current = true
         setStatus('idle')
 
@@ -382,7 +484,17 @@ export function useVoiceConversation({
     if (pendingStartRef.current) {
       void startListening()
     }
-  }, [busy, consumePendingResponse, enabled, muted, pendingResponse, speak, startListening, status])
+  }, [
+    busy,
+    consumePendingResponse,
+    enabled,
+    finishCurrentStream,
+    muted,
+    pendingResponse,
+    speak,
+    startListening,
+    status
+  ])
 
   useEffect(() => {
     if (enabled && !wasEnabledRef.current) {

@@ -1041,6 +1041,45 @@ canvas {
   }
 }
 
+/*
+  Session-intro wordmark adapted for white footers.
+  Keeps VerxioCollapse, tracking, glow, and sheen. Drops plus-lighter blend
+  (invisible on white) and the dark foreground stop that only works with that blend.
+*/
+.verxio-wordmark--brand {
+  mix-blend-mode: normal;
+  filter: drop-shadow(0 0.25rem 0.9rem color-mix(in srgb, var(--theme-primary) 28%, transparent));
+}
+
+@supports (((-webkit-background-clip: text) or (background-clip: text)) and (color: color-mix(in srgb, white, black))) {
+  .verxio-wordmark--brand .verxio-wordmark__text {
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    background: linear-gradient(
+      96deg,
+      color-mix(in srgb, var(--theme-primary) 88%, white) 0%,
+      var(--theme-primary) 34%,
+      color-mix(in srgb, var(--theme-primary) 78%, var(--ui-blue)) 62%,
+      var(--theme-primary) 100%
+    );
+    background-size: 240% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    text-shadow: none;
+  }
+}
+
+@supports not (((-webkit-background-clip: text) or (background-clip: text)) and (color: color-mix(in srgb, white, black))) {
+  .verxio-wordmark--brand .verxio-wordmark__text {
+    color: var(--theme-primary);
+    -webkit-text-fill-color: var(--theme-primary);
+  }
+}
+
+.verxio-wordmark--brand .verxio-wordmark__text::after {
+  color: color-mix(in srgb, var(--theme-primary) 34%, transparent);
+}
+
 .verxio-wordmark--solid {
   color: var(--ui-accent);
   filter: none;

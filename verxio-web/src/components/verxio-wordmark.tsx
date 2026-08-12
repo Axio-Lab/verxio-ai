@@ -6,7 +6,13 @@ export const VERXIO_WORDMARK = 'VERXIO'
 
 type VerxioWordmarkProps = ComponentProps<'span'> & {
   textClassName?: string
-  variant?: 'animated' | 'solid'
+  /**
+   * animated — session intro (plus-lighter blend on tinted canvas).
+   * brand — same type/sheen/glow as animated, but mix-blend normal so it stays
+   *         visible on white share/agent footers.
+   * solid — flat fill, no sheen.
+   */
+  variant?: 'animated' | 'brand' | 'solid'
 }
 
 export function VerxioWordmark({
@@ -22,6 +28,7 @@ export function VerxioWordmark({
       className={cn(
         'fit-text verxio-wordmark font-bold uppercase leading-[0.9] tracking-[0.08em] text-midground',
         variant === 'animated' && 'mix-blend-plus-lighter dark:text-foreground/90',
+        variant === 'brand' && 'verxio-wordmark--brand',
         variant === 'solid' && 'verxio-wordmark--solid',
         className
       )}

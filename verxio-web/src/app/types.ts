@@ -15,6 +15,16 @@ export interface ImageAttachResponse {
   message?: string
 }
 
+export interface FileAttachResponse {
+  attached?: boolean
+  message?: string
+  name?: string
+  path?: string
+  ref_path?: string
+  ref_text?: string
+  uploaded?: boolean
+}
+
 export interface ImageDetachResponse {
   detached?: boolean
   count?: number
@@ -75,12 +85,12 @@ export type CommandDispatchResponse =
   | PrefillCommandDispatchResponse
 
 export type SidebarNavId =
+  | 'agents'
   | 'artifacts'
   | 'command-center'
   | 'messaging'
   | 'new-session'
   | 'notepad'
-  | 'pulse'
   | 'settings'
   | 'skills'
 

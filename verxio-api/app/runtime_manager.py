@@ -8,6 +8,7 @@ import secrets
 import socket
 import subprocess
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -26,6 +27,7 @@ _NETWORK_CACHE_LOADED = False
 _NETWORK_ATTACHED_CACHE: set[str] = set()
 _CONTAINER_IP_CACHE: dict[str, tuple[float, str]] = {}
 _LIVE_TOKEN_CACHE: dict[str, tuple[float, str]] = {}
+_CONTAINER_ENV_CACHE: dict[str, tuple[float, dict[str, str]]] = {}
 _HEALTHY_UNTIL: dict[str, float] = {}
 _START_LOCKS: dict[str, asyncio.Lock] = {}
 _CACHE_TTL_SECONDS = 60.0
@@ -237,6 +239,69 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _file_mtime_iso(stat_result: os.stat_result) -> str:
+    """Stable artifact timestamps from disk mtime (not index wall-clock)."""
+    return datetime.fromtimestamp(stat_result.st_mtime, tz=timezone.utc).isoformat()
+
+
+_ARTIFACT_SOURCE_RANK = {
+    "workspace": 3,
+    "workspace_root": 2,
+    "runtime_home": 1,
+}
+
+
+def _artifact_list_preference(row: dict[str, Any]) -> tuple:
+    """Higher tuple wins when collapsing byte-identical artifact rows."""
+    source = str(row.get("source") or "")
+    name = str(row.get("file_name") or "")
+    relative = str(row.get("relative_path") or "")
+    return (
+        _ARTIFACT_SOURCE_RANK.get(source, 0),
+        0 if relative.startswith(_RUNTIME_HOME_ARTIFACT_PREFIX) else 1,
+        1 if "final" in name.lower() else 0,
+        str(row.get("updated_at") or ""),
+        str(row.get("created_at") or ""),
+        # Stable tie-break so preference is deterministic across runs.
+        str(row.get("id") or ""),
+    )
+
+
+def _dedupe_artifact_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collapse byte-identical files (same sha256) for the Artifacts UI.
+
+    Keeps one preferred row per digest so workspace↔runtime-home mirrors and
+    renamed copies of the same bytes do not clutter the list. Near-identical
+    regenerations with different hashes are intentionally kept (those were
+    separate paid gens).
+    """
+    best_by_digest: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        digest = str(row.get("sha256") or "").strip()
+        if not digest:
+            continue
+        current = best_by_digest.get(digest)
+        if current is None or _artifact_list_preference(row) > _artifact_list_preference(current):
+            best_by_digest[digest] = row
+
+    seen: set[str] = set()
+    deduped: list[dict[str, Any]] = []
+    for row in rows:
+        digest = str(row.get("sha256") or "").strip()
+        if not digest:
+            public = {key: value for key, value in row.items() if key != "sha256"}
+            deduped.append(public)
+            continue
+        if digest in seen:
+            continue
+        winner = best_by_digest[digest]
+        if winner.get("id") != row.get("id"):
+            continue
+        seen.add(digest)
+        deduped.append({key: value for key, value in winner.items() if key != "sha256"})
+    return deduped
+
+
 def _artifact_path_is_skipped(relative: Path) -> bool:
     return any(part in _WORKSPACE_ARTIFACT_SKIP_DIRS for part in relative.parts)
 
@@ -337,7 +402,40 @@ def invalidate_runtime_caches(runtime: RuntimeInstance) -> None:
     name = _container_name(runtime)
     _CONTAINER_IP_CACHE.pop(name, None)
     _LIVE_TOKEN_CACHE.pop(name, None)
+    _CONTAINER_ENV_CACHE.pop(name, None)
     _HEALTHY_UNTIL.pop(name, None)
+
+
+def _runtime_container_env_map(runtime: RuntimeInstance) -> dict[str, str] | None:
+    """Read all container env vars once (cached) — avoids repeated docker inspect."""
+
+    name = _container_name(runtime)
+    cached = _CONTAINER_ENV_CACHE.get(name)
+    if cached:
+        expires_at, env_map = cached
+        if time.monotonic() < expires_at:
+            return env_map
+        _CONTAINER_ENV_CACHE.pop(name, None)
+
+    result = _run_docker(
+        [
+            "inspect",
+            "-f",
+            "{{range .Config.Env}}{{println .}}{{end}}",
+            name,
+        ]
+    )
+    if result.returncode != 0:
+        return None
+
+    env_map: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        env_map[key] = value
+    _CONTAINER_ENV_CACHE[name] = (time.monotonic() + _CACHE_TTL_SECONDS, env_map)
+    return env_map
 
 
 def runtime_container_env_value(runtime: RuntimeInstance, key: str) -> str | None:
@@ -346,22 +444,10 @@ def runtime_container_env_value(runtime: RuntimeInstance, key: str) -> str | Non
     if not key:
         return None
 
-    result = _run_docker(
-        [
-            "inspect",
-            "-f",
-            "{{range .Config.Env}}{{println .}}{{end}}",
-            _container_name(runtime),
-        ]
-    )
-    if result.returncode != 0:
+    env_map = _runtime_container_env_map(runtime)
+    if env_map is None:
         return None
-
-    prefix = f"{key}="
-    for line in result.stdout.splitlines():
-        if line.startswith(prefix):
-            return line[len(prefix) :]
-    return None
+    return env_map.get(key)
 
 
 def runtime_container_env_matches(runtime: RuntimeInstance, key: str, expected_value: str) -> bool:
@@ -1178,16 +1264,39 @@ def index_artifacts(runtime: RuntimeInstance) -> list[ArtifactRecord]:
     # is not bind-mounted leaves an empty ghost directory that hides real files.
     if _path_is_under_managed_runtime(artifact_root):
         artifact_root.mkdir(parents=True, exist_ok=True)
-    now = now_iso()
 
     for resolved, relative, source in _workspace_artifact_candidates(runtime):
         stat = resolved.stat()
         content_type = mimetypes.guess_type(str(resolved))[0] or "application/octet-stream"
+        # Use file mtime — stamping updated_at=now on every index made every
+        # artifact look like it was created "today" and scrambled sort order.
+        mtime_iso = _file_mtime_iso(stat)
         existing = db.fetch_one(
-            "SELECT id FROM artifacts WHERE workspace_id = ? AND agent_id = ? AND relative_path = ?",
+            """
+            SELECT id, size_bytes, sha256, absolute_path, content_type, source, updated_at
+            FROM artifacts
+            WHERE workspace_id = ? AND agent_id = ? AND relative_path = ?
+            """,
             (runtime.workspace_id, runtime.agent_id, relative),
         )
         if existing:
+            # Skip re-hashing / rewriting unchanged files — full SHA + UPDATE of
+            # hundreds of images was regularly aborting the web client's 60s
+            # artifacts timeout and also restamped every row with wall-clock "now".
+            unchanged = (
+                int(existing.get("size_bytes") or 0) == stat.st_size
+                and str(existing.get("absolute_path") or "") == str(resolved)
+                and str(existing.get("content_type") or "") == content_type
+                and str(existing.get("source") or "") == source
+                and str(existing.get("updated_at") or "") == mtime_iso
+                and existing.get("sha256")
+            )
+            if unchanged:
+                continue
+            if int(existing.get("size_bytes") or 0) == stat.st_size and existing.get("sha256"):
+                digest = str(existing["sha256"])
+            else:
+                digest = _sha256_file(resolved)
             db.execute(
                 """
                 UPDATE artifacts
@@ -1199,9 +1308,9 @@ def index_artifacts(runtime: RuntimeInstance) -> list[ArtifactRecord]:
                     str(resolved),
                     content_type,
                     stat.st_size,
-                    _sha256_file(resolved),
+                    digest,
                     source,
-                    now,
+                    mtime_iso,
                     existing["id"],
                 ),
             )
@@ -1226,8 +1335,8 @@ def index_artifacts(runtime: RuntimeInstance) -> list[ArtifactRecord]:
                     stat.st_size,
                     _sha256_file(resolved),
                     source,
-                    now,
-                    now,
+                    mtime_iso,
+                    mtime_iso,
                 ),
             )
 
@@ -1236,14 +1345,14 @@ def index_artifacts(runtime: RuntimeInstance) -> list[ArtifactRecord]:
     rows = db.fetch_all(
         """
         SELECT id, tenant_id, workspace_id, agent_id, file_name, relative_path,
-               content_type, size_bytes, source, created_at, updated_at
+               content_type, size_bytes, source, sha256, created_at, updated_at
         FROM artifacts
         WHERE workspace_id = ? AND agent_id = ?
-        ORDER BY updated_at DESC
+        ORDER BY updated_at DESC, created_at DESC, file_name ASC
         """,
         (runtime.workspace_id, runtime.agent_id),
     )
-    return [ArtifactRecord(**row) for row in rows]
+    return [ArtifactRecord(**row) for row in _dedupe_artifact_rows(list(rows))]
 
 
 def artifact_file(runtime: RuntimeInstance, artifact_id: str) -> tuple[ArtifactRecord, Path]:

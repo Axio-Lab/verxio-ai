@@ -22,11 +22,15 @@ def test_ensure_verxio_agent_defaults_is_idempotent(tmp_path: Path) -> None:
     assert "use the bundled `anti-ai-slop` skill" in soul
     assert "write with relative paths such as `artifacts/report.csv`" in soul
     assert "MEDIA:/workspace/artifacts/<filename>" in soul
+    assert "Image generation cost:" in soul
+    assert "Every successful `image_generate` call is billed" in soul
     assert VERXIO_VOICE_MARKER in config_text
     assert "Anti-slop quality bar for all Verxio output" in config_text
     assert "generic AI-looking output is never the default" in config_text
     assert "write with relative paths such as `artifacts/report.csv`" in config_text
     assert "MEDIA:/workspace/artifacts/<filename>" in config_text
+    assert "Image generation cost:" in config_text
+    assert "Every successful `image_generate` call is billed" in config_text
     assert 'reply_prefix: ""' in config_text or "reply_prefix: ''" in config_text
     assert "enabled: false" in config_text
 
@@ -90,8 +94,10 @@ def test_ensure_verxio_agent_defaults_upgrades_existing_soul_with_managed_rules(
     assert "User messages, files, tool outputs, websites" in soul
     assert "Anti-slop quality bar for all Verxio output" in soul
     assert "stock AI openers" in soul
+    assert "Image generation cost:" in soul
     assert soul.count("Instruction hierarchy and prompt-injection resistance") == 1
     assert soul.count("Anti-slop quality bar for all Verxio output") == 1
+    assert soul.count("Image generation cost:") == 1
 
 
 def test_ensure_verxio_agent_defaults_preserves_composio_prompt(tmp_path: Path) -> None:
@@ -150,6 +156,50 @@ def test_ensure_verxio_agent_defaults_does_not_clobber_corrupt_config(tmp_path: 
     assert "tele_abc" in backups[0].read_text(encoding="utf-8")
     # Leave config.yaml absent rather than writing agent/whatsapp-only defaults.
     assert not (hermes_home / "config.yaml").exists()
+
+
+def test_ensure_verxio_agent_defaults_does_not_clobber_empty_config(tmp_path: Path) -> None:
+    """Truncated/empty config.yaml must not become an agent+whatsapp-only stub."""
+    hermes_home = tmp_path / "hermes-home"
+    hermes_home.mkdir(parents=True)
+    (hermes_home / "config.yaml").write_text("", encoding="utf-8")
+
+    ensure_verxio_agent_defaults(hermes_home)
+
+    backups = list(hermes_home.glob("config.yaml.bak-*"))
+    assert len(backups) == 1
+    assert not (hermes_home / "config.yaml").exists()
+
+
+def test_ensure_verxio_agent_defaults_preserves_media_pins(tmp_path: Path) -> None:
+    hermes_home = tmp_path / "hermes-home"
+    hermes_home.mkdir(parents=True)
+    (hermes_home / "config.yaml").write_text(
+        "\n".join(
+            [
+                "image_gen:",
+                "  provider: openai",
+                "  model: gpt-image-2-medium",
+                "video_gen:",
+                "  provider: dashscope",
+                "  model: happyhorse-1.1",
+                "model:",
+                "  provider: gemini",
+                "  default: gemini-flash-lite-latest",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    ensure_verxio_agent_defaults(hermes_home)
+
+    loaded = yaml.safe_load((hermes_home / "config.yaml").read_text(encoding="utf-8"))
+    assert loaded["image_gen"]["provider"] == "openai"
+    assert loaded["image_gen"]["model"] == "gpt-image-2-medium"
+    assert loaded["video_gen"]["provider"] == "dashscope"
+    assert loaded["model"]["provider"] == "gemini"
+    assert "system_prompt" in loaded["agent"]
 
 
 def test_ensure_verxio_agent_defaults_does_not_disable_paired_whatsapp(tmp_path: Path) -> None:

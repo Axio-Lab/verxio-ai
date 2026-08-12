@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { writeClipboardText } from '@/components/ui/copy-button'
 import { getSlackManifest } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { Check, Copy, ExternalLink } from '@/lib/icons'
@@ -35,7 +36,7 @@ export function SlackManifestPanel() {
     }
 
     try {
-      await navigator.clipboard.writeText(manifestJson)
+      await writeClipboardText(manifestJson)
       setCopied(true)
       window.setTimeout(() => setCopied(false), 2000)
     } catch (err) {

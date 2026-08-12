@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useI18n } from '@/i18n'
 import { Loader2, Plus } from '@/lib/icons'
-import { looksLikeToolCredentialEnv } from '@/lib/tool-credentials'
+import { looksLikeToolCredentialEnv, normalizeToolEnvKey } from '@/lib/tool-credentials'
 import { cn } from '@/lib/utils'
 
 import { CONTROL_TEXT } from './constants'
@@ -24,7 +24,8 @@ export function CustomToolKeyForm({ busy, existingKeys, onSave }: CustomToolKeyF
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const normalized = name.trim().toUpperCase()
+  // Map pretty labels like "DASHSCOPE" → DASHSCOPE_API_KEY before save.
+  const normalized = normalizeToolEnvKey(name)
 
   async function handleSubmit() {
     setError('')

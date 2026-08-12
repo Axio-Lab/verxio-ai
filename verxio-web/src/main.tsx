@@ -9,6 +9,7 @@ import { lazy, StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 
+import { PublicAgentShareView } from './app/agents'
 import { PublicNotepadShareView } from './app/notepad'
 import { ErrorBoundary } from './components/error-boundary'
 import { HapticsProvider } from './components/haptics-provider'
@@ -17,9 +18,12 @@ import { VerxioAuthGate } from './components/verxio-auth-gate'
 import { I18nProvider } from './i18n'
 import { installClipboardShim } from './lib/clipboard'
 import { queryClient } from './lib/query-client'
+import { installStaleChunkReload } from './lib/stale-chunk'
 import { ThemeProvider } from './themes/context'
 
 installClipboardShim()
+// After a web redeploy, open tabs may 404 old Vite lazy chunks — reload once.
+installStaleChunkReload()
 
 // Defer the chat/shell bundle until after auth so first paint (login) stays small.
 const App = lazy(() => import('./app'))
@@ -40,6 +44,10 @@ function isPublicNotepadShareRoute() {
   return window.location.pathname.startsWith('/share/notepad/')
 }
 
+function isPublicAgentShareRoute() {
+  return window.location.pathname.startsWith('/agent/')
+}
+
 // Dev-only: install __PERF_DRIVE__ + __PERF_PROBE__ on window so the
 // scripts/ harnesses can drive a synthetic stream + record render cost.
 // Tree-shaken out of production builds. (Uses MODE rather than DEV because
@@ -57,7 +65,9 @@ createRoot(document.getElementById('root')!).render(
           <ThemeProvider>
             <HapticsProvider>
               <BrowserRouter>
-                {isPublicNotepadShareRoute() ? (
+                {isPublicAgentShareRoute() ? (
+                  <PublicAgentShareView />
+                ) : isPublicNotepadShareRoute() ? (
                   <PublicNotepadShareView />
                 ) : (
                   <VerxioAuthGate>

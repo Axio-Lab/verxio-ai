@@ -275,7 +275,6 @@ export const en: Translations = {
       providers: 'Providers',
       providerAccounts: 'Accounts',
       providerApiKeys: 'API keys',
-      gateway: 'Gateway',
       apiKeys: 'Tools & Keys',
       keysTools: 'Tools',
       keysTranscription: 'Transcription',
@@ -283,45 +282,19 @@ export const en: Translations = {
       mcp: 'MCP',
       archivedChats: 'Archived Chats',
       about: 'About',
-      notifications: 'Notifications',
-      runtime: 'Runtime'
+      notifications: 'Notifications'
     },
     runtime: {
-      title: 'Runtime',
-      intro:
-        'After changing providers, models, API keys, or custom endpoints, reload credentials or restart the agent so changes take effect.',
-      statusTitle: 'Container status',
-      statusDescription: 'Your isolated Verxio runtime.',
-      statusConnected: 'Connected',
-      statusStarting: 'Starting…',
-      statusStopped: 'Stopped',
-      statusError: 'Unavailable',
-      statusUnknown: 'Unknown',
-      reloadTitle: 'Reload credentials',
-      reloadDescription:
-        'Reload saved runtime credentials without restarting. Use after pasting API keys or env changes.',
-      reloadAction: 'Reload',
       reloadDoneTitle: 'Credentials updated',
       reloadDoneMessage: 'Model and tool credentials are refreshed.',
       reloadFailed: 'Could not reload credentials',
-      agentRestartTitle: 'Restart agent',
-      agentRestartDescription:
-        'Reload .env and restart the gateway process. Use after model/provider or config.yaml changes.',
-      agentRestartAction: 'Restart agent',
       agentRestartDoneTitle: 'Agent restarting',
       agentRestartDoneMessage: 'Verxio reconnects automatically. Start a new chat when the status bar is live again.',
       agentRestartFailed: 'Agent restart failed',
-      containerRestartTitle: 'Restart runtime container',
-      containerRestartDescription:
-        'Full Docker restart of your Verxio runtime. Use when hosted inference env or mounts changed.',
-      containerRestartAction: 'Restart container',
       containerRestartDoneTitle: 'Runtime restarted',
       containerRestartDoneMessage: 'Your agent container is back online.',
       containerRestartFailed: 'Runtime restart failed',
-      restartTimeout: 'Runtime did not come back online in time. Refresh the page or try again.',
-      gatewayRestartTitle: 'Restart messaging gateway',
-      gatewayRestartDescription: 'Reconnect WhatsApp, Telegram, and other messaging platforms after channel setup.',
-      gatewayRestartAction: 'Restart gateway'
+      restartTimeout: 'Runtime did not come back online in time. Refresh the page or try again.'
     },
     notifications: {
       title: 'Notifications',
@@ -374,7 +347,6 @@ export const en: Translations = {
     searchPlaceholder: {
       about: 'About Verxio',
       config: 'Search settings...',
-      gateway: 'Gateway connection...',
       keys: 'Search API keys...',
       mcp: 'Search MCP servers...',
       sessions: 'Search archived sessions...'
@@ -405,30 +377,8 @@ export const en: Translations = {
     fieldDescriptions: FIELD_DESCRIPTIONS,
     about: {
       heading: 'Verxio',
-      version: value => `Version ${value}`,
-      versionUnavailable: 'Version unavailable',
-      updates: 'Updates',
-      checkNow: 'Check now',
-      checking: 'Checking…',
-      seeWhatsNew: "See what's new",
-      releaseNotes: 'Release notes',
-      onLatest: "You're on the latest version.",
-      installing: 'An update is currently installing.',
-      cantUpdate: "This build can't update itself from inside the app.",
-      cantReach: "We couldn't reach the update server.",
-      tapCheck: 'Tap "Check now" to look for updates.',
-      updateReady: count => `A new update is ready (${count} change${count === 1 ? '' : 's'} included).`,
-      lastChecked: age => `Last checked ${age}`,
-      justNowSuffix: ' · just now',
-      automaticUpdates: 'Automatic updates',
-      automaticUpdatesDesc:
-        'Verxio checks for updates automatically in the background and lets you know when one is ready.',
-      branchCommit: (branch, commit) => `Branch ${branch} · Commit ${commit}`,
-      never: 'never',
-      justNow: 'just now',
-      minAgo: count => `${count} min ago`,
-      hoursAgo: count => `${count} hours ago`,
-      daysAgo: count => `${count} days ago`
+      description:
+        'Verxio is a self-improving AI agent that gets work done for your team across chat, messaging, and connected apps.'
     },
     config: {
       none: 'None',
@@ -466,73 +416,6 @@ export const en: Translations = {
       replace: 'Replace',
       set: 'Set',
       clear: 'Clear'
-    },
-    gateway: {
-      loading: 'Loading gateway settings...',
-      unavailableTitle: 'Gateway settings unavailable',
-      unavailableDesc: 'The desktop IPC bridge does not expose gateway settings.',
-      title: 'Gateway Connection',
-      envOverride: 'env override',
-      intro:
-        'Verxio starts its own local gateway by default. Use a remote gateway when you want this app to control an already-running Verxio backend on another machine or behind a trusted proxy. Pick a profile below to give it its own remote host.',
-      appliesTo: 'Applies to',
-      allProfiles: 'All profiles',
-      defaultConnection: 'Default connection for every profile that has no override of its own.',
-      profileConnection: profile =>
-        `Connection used only when “${profile}” is the active profile. Set it to Local to inherit the default.`,
-      envOverrideTitle: 'Environment variables are controlling this desktop session.',
-      envOverrideDesc:
-        'Unset HERMES_DESKTOP_REMOTE_URL and HERMES_DESKTOP_REMOTE_TOKEN to use the saved setting below.',
-      localTitle: 'Local gateway',
-      localDesc: 'Start a private Verxio backend on localhost. This is the default and works offline.',
-      remoteTitle: 'Remote gateway',
-      remoteDesc:
-        'Connect this desktop shell to a remote Verxio backend. Hosted gateways use OAuth or a username and password; self-hosted ones may use a session token.',
-      remoteUrlTitle: 'Remote URL',
-      remoteUrlDesc: 'Base URL for the remote dashboard backend. Path prefixes are supported.',
-      probing: 'Checking how this gateway authenticates…',
-      probeError: 'Could not reach this gateway yet. Check the URL — the auth method will appear once it responds.',
-      signedIn: 'Signed in',
-      signIn: 'Sign in',
-      signOut: 'Sign out',
-      signInWith: provider => `Sign in with ${provider}`,
-      authTitle: 'Authentication',
-      authSignedInPassword:
-        'This gateway uses a username and password. You are signed in; the session refreshes automatically.',
-      authSignedInOauth: 'This gateway uses OAuth. You are signed in; the session refreshes automatically.',
-      authNeedsPassword: 'This gateway uses a username and password. Sign in to authorize this desktop app.',
-      authNeedsOauth: provider => `This gateway uses OAuth. Sign in with ${provider} to authorize this desktop app.`,
-      tokenTitle: 'Session token',
-      tokenDesc: 'The dashboard session token used for REST and WebSocket access. Leave blank to keep the saved token.',
-      existingToken: value => `Existing token ${value}`,
-      savedToken: 'saved',
-      pasteSessionToken: 'Paste session token',
-      testRemote: 'Test remote',
-      saveForRestart: 'Save for next restart',
-      saveAndReconnect: 'Save and reconnect',
-      diagnostics: 'Diagnostics',
-      diagnosticsDesc: 'Reveal desktop.log in your file manager — useful when the gateway fails to start.',
-      openLogs: 'Open logs',
-      incompleteTitle: 'Remote gateway incomplete',
-      incompleteSignIn: 'Enter a remote URL and sign in before switching to remote.',
-      incompleteToken: 'Enter a remote URL and session token before switching to remote.',
-      incompleteSignInTest: 'Enter a remote URL and sign in before testing.',
-      incompleteTokenTest: 'Enter a remote URL and session token before testing.',
-      enterUrlFirst: 'Enter a remote URL first.',
-      restartingTitle: 'Gateway connection restarting',
-      savedTitle: 'Gateway settings saved',
-      restartingMessage: 'Verxio will reconnect using the saved settings.',
-      savedMessage: 'Saved for the next restart.',
-      connectedTo: (baseUrl, version) => `Connected to ${baseUrl}${version ? ` · Verxio ${version}` : ''}`,
-      reachableTitle: 'Remote gateway reachable',
-      signedOutTitle: 'Signed out',
-      signedOutMessage: 'Cleared the remote gateway session.',
-      failedLoad: 'Gateway settings failed to load',
-      signInFailed: 'Sign-in failed',
-      signOutFailed: 'Sign-out failed',
-      testFailed: 'Remote gateway test failed',
-      applyFailed: 'Could not apply gateway settings',
-      saveFailed: 'Could not save gateway settings'
     },
     keys: {
       loading: 'Loading API keys and credentials...',
@@ -615,6 +498,7 @@ export const en: Translations = {
       otherProviders: 'Other providers',
       noProviderKeys: 'No provider API keys available.',
       loading: 'Loading providers...',
+      switching: 'Switching provider mode...',
       accountLabel: 'Account',
       disconnect: 'Disconnect',
       reconnect: 'Reconnect',
@@ -669,7 +553,12 @@ export const en: Translations = {
       failedLoad: 'Tool configuration failed to load',
       noProviderOptions: 'This toolset has no provider options — enable it and it works with your current setup.',
       noProviders: 'No providers are available for this toolset right now.',
-      ready: 'Ready',
+      ready: 'Keys set',
+      active: 'Active',
+      useProvider: 'Use this provider',
+      usingProvider: (provider, model) => (model ? `Using ${provider} · ${model}` : `Using ${provider}`),
+      usingProviderHint:
+        'Only the Active provider is used in chat. Click a row to view keys; press “Use this provider” to switch. Keys set means credentials are saved.',
       nousIncluded: 'Included with a Verxio subscription — sign in to Subscription portal to activate.',
       noApiKeyRequired: 'No API key required.',
       postSetup: step => `This provider needs an extra setup step (${step}). Complete it in Verxio tools setup.`,
@@ -727,6 +616,12 @@ export const en: Translations = {
       saving: 'Saving…',
       saveChanges: 'Save changes',
       createSkill: 'Create skill',
+      deleteSkill: 'Delete skill',
+      deleteTitle: name => `Delete ${name}?`,
+      deleteDesc: name => `This permanently removes the “${name}” skill from this profile. This cannot be undone.`,
+      deleteConfirm: 'Delete skill',
+      deleting: 'Deleting…',
+      deleted: 'Skill deleted',
       importPackage: 'Import package',
       importing: 'Extracting…',
       importHint: 'Zip or SKILL.md — extracted locally, then you create the skill.',
@@ -791,7 +686,6 @@ export const en: Translations = {
       settings: { title: 'Settings', detail: 'Configure Verxio desktop' },
       skills: { title: 'Skills & Tools', detail: 'Enable skills, toolsets, and providers' },
       messaging: { title: 'Messaging', detail: 'Set up Telegram, Slack, Discord, and more' },
-      pulse: { title: 'Pulse', detail: 'Automate social DMs with flows and AI' },
       artifacts: { title: 'Artifacts', detail: 'Browse generated outputs' }
     },
     sectionEntries: {
@@ -1205,67 +1099,6 @@ export const en: Translations = {
     platformIntro: {}
   },
 
-  pulse: {
-    title: 'Pulse',
-    subtitle: 'Sell more, engage better, and grow your audience with visual flows and Verxio AI nodes.',
-    search: 'Search Pulse',
-    loading: 'Loading Pulse…',
-    loadFailed: 'Could not load Pulse.',
-    tabs: {
-      overview: 'Overview',
-      inbox: 'Inbox',
-      automations: 'Automations',
-      builder: 'Builder',
-      channels: 'Channels',
-      settings: 'Settings'
-    },
-    stats: {
-      channels: 'Channels',
-      contacts: 'Contacts',
-      conversations: 'Conversations',
-      automations: 'Automations'
-    },
-    empty: {
-      title: 'No Pulse activity yet',
-      description: 'Connect Instagram, Messenger, or WhatsApp to start routing social conversations through flows.',
-      action: 'Connect a channel'
-    },
-    channels: {
-      title: 'Channels',
-      connect: 'Connect',
-      connected: 'Connected',
-      gated: 'Gated',
-      docs: 'Docs'
-    },
-    inbox: {
-      title: 'Unified inbox',
-      noConversation: 'No conversation selected',
-      takeover: 'Take over',
-      resume: 'Resume automation',
-      messagePlaceholder: 'Reply as a human…'
-    },
-    automations: {
-      title: 'Automations',
-      newAutomation: 'New automation',
-      enabled: 'Enabled',
-      disabled: 'Disabled',
-      simulate: 'Simulate',
-      generate: 'Generate'
-    },
-    builder: {
-      title: 'AI flow builder',
-      promptPlaceholder: 'Describe the DM automation you want Pulse to build…',
-      generate: 'Generate flow',
-      simulator: 'Simulator'
-    },
-    settings: {
-      title: 'Pulse settings',
-      businessProfile: 'Business profile',
-      brandVoice: 'Brand voice',
-      guardrails: 'Guardrails'
-    }
-  },
-
   profiles: {
     close: 'Close profiles',
     nameHint: 'Lowercase letters, digits, hyphens, and underscores. Must start with a letter or digit.',
@@ -1470,6 +1303,21 @@ export const en: Translations = {
     deleteConfirm: 'Delete artifact',
     deleting: 'Deleting',
     deleted: 'Artifact deleted',
+    selectAll: 'Select all visible artifacts',
+    selectHint: 'Select items to delete in batch',
+    selectItem: label => `Select ${label}`,
+    selectedCount: count => `${count} selected`,
+    deleteSelected: count => `Delete ${count}`,
+    batchDeleteTitle: count => `Delete ${count} artifact${count === 1 ? '' : 's'}?`,
+    batchDeleteDescription: count =>
+      `This permanently removes ${count} selected artifact${count === 1 ? '' : 's'}. This cannot be undone.`,
+    batchDeleted: count => `Deleted ${count} artifact${count === 1 ? '' : 's'}`,
+    batchDeleteFailed: 'Some artifacts could not be deleted',
+    batchDeletePartial: (deleted, failed) => `Deleted ${deleted}, failed ${failed}`,
+    previewDescription: 'Preview generated artifact contents',
+    downloadAction: 'Download',
+    downloadStarted: 'Download started',
+    downloadFailed: 'Download failed',
     itemsImage: 'images',
     itemsLink: 'links',
     itemsFile: 'files',
@@ -1495,9 +1343,9 @@ export const en: Translations = {
   sidebar: {
     nav: {
       'new-session': 'New session',
+      agents: 'Agents',
       skills: 'Skills & Tools',
       messaging: 'Messaging',
-      pulse: 'Pulse',
       artifacts: 'Artifacts',
       notepad: 'Notepad'
     },
@@ -1652,6 +1500,9 @@ export const en: Translations = {
     themeTryPre: 'Try ',
     themeTryPost: '.',
     attachLabel: 'Attach',
+    audio: 'Audio sample…',
+    audioAttachFailed: 'Could not attach audio sample',
+    audioNeedsUpload: 'Choose the audio file from Audio sample so Verxio can upload it safely.',
     files: 'Files…',
     folder: 'Folder…',
     images: 'Images…',
@@ -1925,10 +1776,10 @@ export const en: Translations = {
       gatewayOffline: 'offline',
       gatewayTitle: 'Verxio gateway status',
       gatewayRestarting: 'restarting…',
-      agents: 'Agents',
-      closeAgents: 'Close agents',
-      openAgents: 'Open agents',
-      subagents: count => `${count} subagent${count === 1 ? '' : 's'}`,
+      agents: 'Activity',
+      closeAgents: 'Close activity',
+      openAgents: 'Background activity and live subagents',
+      subagents: count => `${count} live subagent${count === 1 ? '' : 's'}`,
       failed: count => `${count} failed`,
       running: count => `${count} running`,
       cron: 'Cron',
@@ -2163,11 +2014,19 @@ export const en: Translations = {
     sudoPlaceholder: 'sudo password',
     secretTitle: 'Secret required',
     secretDesc: 'Verxio needs a credential to continue.',
-    secretPlaceholder: 'secret value'
+    secretPlaceholder: 'secret value',
+    fishAudioTitle: 'Confirm Fish Audio action',
+    fishAudioDescription: 'Review this server-authorized voice action before continuing.',
+    fishAudioAction: 'Action',
+    fishAudioExpires: 'Authorization expires',
+    fishAudioWorking: 'Applying Fish Audio voice action',
+    fishAudioConfirmationFailed: 'Could not submit Fish Audio confirmation'
   },
 
   desktop: {
     audioReadFailed: 'Could not read recorded audio',
+    audioAttachmentExpired: 'This audio attachment is no longer available. Attach it again and retry.',
+    useAttachedAudio: 'Use the attached audio sample.',
     sessionUnavailable: 'Session unavailable',
     createSessionFailed: 'Could not create a new session',
     promptFailed: 'Prompt failed',
@@ -2234,61 +2093,6 @@ export const en: Translations = {
     boundaryDesc: 'The view hit an unexpected error. Your chats and settings are safe.',
     reloadWindow: 'Reload window',
     openLogs: 'Open logs'
-  },
-
-  leash: {
-    banner: {
-      title: 'Give your agent a Leash identity',
-      body: 'Register an on-chain agent identity so your assistant can pay, earn, and be discovered. Keys stay on this device only.',
-      setup: 'Set up',
-      dismiss: 'Dismiss',
-      never: "Don't show again"
-    },
-    panel: {
-      title: 'Leash identity (MCP)',
-      subtitle: 'Identity layer for AI agents — mint, pay, and verify on Solana via @leashmarket/mcp.',
-      custodyNotice:
-        'Your executive keypair and private keys are stored only on this device (secure desktop storage when available; browser local storage on web). Export a backup and keep it somewhere safe. Verxio does not store your keys and cannot recover them if you lose this device or clear site data.',
-      statusNone: 'Not configured',
-      statusPendingFunding: 'Funding required',
-      statusRegistered: 'Registered',
-      mintLabel: 'Agent mint',
-      treasuryLabel: 'Treasury',
-      executiveLabel: 'Executive public key',
-      networkLabel: 'Network',
-      networkDevnet: 'Solana devnet',
-      networkMainnet: 'Solana mainnet',
-      rpcLabel: 'RPC URL (optional, recommended)',
-      rpcPlaceholder: 'https://devnet.helius-rpc.com/?api-key=…',
-      generateKeypair: 'Generate new keypair on this device',
-      importLabel: 'Or import executive private key (base58)',
-      importPlaceholder: 'Paste 64-byte Solana secret key (base58)',
-      importKeypair: 'Import keypair',
-      pendingFundingHint:
-        'Fund the executive public key with ~0.01 SOL, then ask your agent in chat to continue Leash registration (leash_register_agent).',
-      registeredHint:
-        'Your agent identity is registered. Use Leash MCP tools in chat for payments, discovery, and treasury actions.',
-      exportJson: 'Export backup',
-      importJson: 'Import backup',
-      pullFromRuntime: 'Sync from runtime',
-      removeIdentity: 'Remove identity from this device',
-      removeConfirm:
-        'Remove Leash identity from this device and disable the Leash MCP server? Export a backup first — this cannot be undone.',
-      chatHint: 'After saving, reload MCP below if tools do not appear on the next turn.',
-      savedTitle: 'Leash identity saved',
-      savedMessage: 'Identity synced to your runtime. Reload MCP if tools are missing.',
-      saveFailed: 'Could not save Leash identity',
-      generateFailed: 'Could not generate keypair',
-      importFailed: 'Could not import keypair',
-      pullEmptyTitle: 'Nothing to sync',
-      pullEmptyMessage: 'No Leash agent file found in the runtime yet.',
-      pullSavedTitle: 'Synced from runtime',
-      pullSavedMessage: 'Updated the copy stored on this device.',
-      pullFailed: 'Could not sync from runtime',
-      removedTitle: 'Leash identity removed',
-      removedMessage: 'Local keys cleared and Leash MCP disabled.',
-      removeFailed: 'Could not remove Leash identity'
-    }
   },
 
   ui: {

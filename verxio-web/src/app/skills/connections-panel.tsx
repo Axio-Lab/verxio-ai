@@ -3,11 +3,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PageLoader } from '@/components/page-loader'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { writeClipboardText } from '@/components/ui/copy-button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { PaginationControl } from '@/components/ui/pagination'
 import { SearchField } from '@/components/ui/search-field'
-import { AlertTriangle, ExternalLink, Loader2, PlugOff } from '@/lib/icons'
+import { AlertTriangle, Check, Copy, ExternalLink, Loader2, PlugOff } from '@/lib/icons'
 import { isVerxioDesktop } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import {
@@ -649,7 +650,9 @@ export function ConnectionsPanel({
 
     try {
       const result = await completeComposioConnection(connectDialogApp.slug, connectValues)
-      const needsOAuthLink = connectSetup?.authMode === 'requires_oauth_app'
+      // OAuth app credentials only save an auth config; account linking still needs Composio redirect.
+      const needsOAuthLink = result.status === 'AUTH_CONFIG_READY' || connectSetup?.authMode === 'requires_oauth_app'
+      const appToAuthorize = connectDialogApp
       setConnectDialogApp(null)
       setConnectSetup(null)
       setConnectValues({})
@@ -659,9 +662,9 @@ export function ConnectionsPanel({
         notify({
           kind: 'info',
           message: 'OAuth app saved. Finish authorization to connect your account.',
-          title: `${connectDialogApp.name} authorization`
+          title: `${appToAuthorize.name} authorization`
         })
-        await openConnectLink(connectDialogApp)
+        await openConnectLink(appToAuthorize)
 
         return
       }
@@ -669,7 +672,7 @@ export function ConnectionsPanel({
       onSearchChange('')
       notify({
         kind: 'success',
-        message: `${connectDialogApp.name} is connected. Agent tools were refreshed.`,
+        message: `${appToAuthorize.name} is connected. Agent tools were refreshed.`,
         title: 'Connection ready'
       })
     } catch (err) {
@@ -1048,6 +1051,14 @@ function ConnectionToolsDialog({
   )
 }
 
+const COMPOSIO_OAUTH_REDIRECT_URI = 'https://backend.composio.dev/api/v3.1/toolkits/auth/callback'
+
+function isCustomOAuthCredentialField(field: ComposioAuthInputField): boolean {
+  const name = field.name.trim().toLowerCase()
+
+  return name === 'client_id' || name === 'client_secret' || name === 'clientid' || name === 'clientsecret'
+}
+
 function ConnectionConnectDialog({
   app,
   error,
@@ -1075,6 +1086,14 @@ function ConnectionConnectDialog({
   submitting: boolean
   values: Record<string, string>
 }) {
+  const [redirectUriCopied, setRedirectUriCopied] = useState(false)
+
+  useEffect(() => {
+    if (!open) {
+      setRedirectUriCopied(false)
+    }
+  }, [open])
+
   if (!app) {
     return null
   }
@@ -1083,7 +1102,23 @@ function ConnectionConnectDialog({
   const canSubmitInline = setup?.supportsInline && fields.length > 0
   const requiredMissing = fields.some(field => field.required && !values[field.name]?.trim())
   const needsOAuthApp = setup?.authMode === 'requires_oauth_app'
+  const showsCustomOAuthCredentials = fields.some(isCustomOAuthCredentialField)
   const composioDashboardUrl = 'https://app.composio.dev'
+
+  async function copyRedirectUri() {
+    try {
+      await writeClipboardText(COMPOSIO_OAUTH_REDIRECT_URI)
+      setRedirectUriCopied(true)
+      window.setTimeout(() => setRedirectUriCopied(false), 1600)
+      notify({
+        kind: 'success',
+        message: 'Redirect URI copied to clipboard.',
+        title: 'Copied'
+      })
+    } catch (err) {
+      notifyError(err, 'Could not copy redirect URI')
+    }
+  }
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
@@ -1146,6 +1181,35 @@ function ConnectionConnectDialog({
                   ) : null}
                 </div>
               ))}
+              {showsCustomOAuthCredentials ? (
+                <div className="space-y-2 rounded-[6px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-3 py-2 text-[0.68rem] leading-5 text-muted-foreground">
+                  <p>
+                    Using your own OAuth client? Add this Composio redirect URI in the provider console (Google, Slack,
+                    etc.):
+                  </p>
+                  <div className="flex items-start gap-2">
+                    <button
+                      className="min-w-0 flex-1 break-all rounded-[4px] border border-(--ui-stroke-secondary) bg-background px-2 py-1.5 text-left font-medium text-foreground transition-colors hover:bg-(--ui-bg-secondary)"
+                      onClick={() => void copyRedirectUri()}
+                      title="Click to copy redirect URI"
+                      type="button"
+                    >
+                      {COMPOSIO_OAUTH_REDIRECT_URI}
+                    </button>
+                    <Button
+                      aria-label={redirectUriCopied ? 'Redirect URI copied' : 'Copy redirect URI'}
+                      className="shrink-0"
+                      onClick={() => void copyRedirectUri()}
+                      size="icon-sm"
+                      title={redirectUriCopied ? 'Copied' : 'Copy redirect URI'}
+                      type="button"
+                      variant="outline"
+                    >
+                      {redirectUriCopied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">

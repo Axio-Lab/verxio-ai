@@ -30,6 +30,7 @@ export interface ChatBarProps {
   onAttachImageBlob?: (blob: Blob) => Promise<boolean | void> | boolean | void
   onAttachDroppedItems?: (candidates: DroppedFile[]) => Promise<boolean | void> | boolean | void
   onPasteClipboardImage?: () => void
+  onPickAudio?: () => void
   onPickFiles?: () => void
   onPickFolders?: () => void
   onPickImages?: () => void

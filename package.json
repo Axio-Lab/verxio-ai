@@ -23,11 +23,15 @@
     "format:check": "prettier --check README.md package.json 'verxio-web/src/**/*.{ts,tsx}' 'verxio-web/packages/shared/**/*.{ts,tsx}' 'verxio-web/vite.config.ts' 'verxio-desktop/electron/**/*.{js,cjs}' 'verxio-desktop/scripts/**/*.{js,cjs}' 'verxio-desktop/package.json' 'verxio-desktop/README.md'",
     "install:desktop": "npm ci --prefix verxio-desktop",
     "install:web": "npm ci --prefix verxio-web",
+    "install:landing": "npm ci --prefix verxio-landing",
     "preci:web": "npm run install:web",
+    "preci:landing": "npm run install:landing",
     "ci:api": "npm run api:test",
     "ci:desktop": "npm run ci --prefix verxio-desktop",
     "ci:web": "npm run ci --prefix verxio-web",
-    "ci": "npm run fmt && npm run format:check && npm run ci:api && npm run ci:web && npm run ci:desktop",
+    "ci:landing": "npm run ci --prefix verxio-landing",
+    "ci:hermes-fish": "cd hermes-agent && ./scripts/run_tests.sh tests/plugins/tts/test_fishaudio_provider.py tests/plugins/tts/test_fishaudio_tools.py tests/plugins/tts/test_fishaudio_transcription.py tests/plugins/tts/test_fishaudio_stream.py tests/plugins/tts/test_fishaudio_usage.py tests/plugins/tts/test_fishaudio_audit.py tests/plugins/tts/test_fishaudio_common_security.py tests/plugins/tts/test_fishaudio_gc.py",
+    "ci": "npm run fmt && npm run format:check && npm run ci:api && npm run ci:web && npm run ci:landing && npm run ci:desktop",
     "prepare": "node scripts/install-git-hooks.mjs"
   },
   "devDependencies": {

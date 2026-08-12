@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
-import { isSelectableModel, resolveHostedDefaultModel, resolveStatusbarModel } from './hosted-default-model'
+import {
+  isSelectableModel,
+  isSelectedHostedFamilyModel,
+  isVerxioHostedDefaultSelection,
+  resolveHostedDefaultModel,
+  resolveHostedStatusbarCorrection,
+  resolveStatusbarModel,
+  shouldClearStaleStatusbarModel,
+  shouldShowByokStatusbarModel
+} from './hosted-default-model'
 
 const catalog = {
   defaultModelId: 'verxio-qwen',
@@ -19,6 +28,21 @@ const catalog = {
       requiredEnvVars: [],
       tier: 'standard',
       upstreamModelId: 'qwen3.6-plus'
+    },
+    {
+      byokAvailable: true,
+      capabilities: [],
+      default: false,
+      description: 'Hosted Gemini',
+      displayName: 'Verxio Gemini',
+      hostedAvailable: true,
+      id: 'verxio-gemini',
+      availableModelIds: ['gemini-flash-lite-latest'],
+      pricing: { currency: 'USD', inputPerMillion: 0.1, outputPerMillion: 0.4 },
+      providerSlug: 'gemini',
+      requiredEnvVars: [],
+      tier: 'fast',
+      upstreamModelId: 'gemini-flash-lite-latest'
     }
   ]
 }
@@ -31,8 +55,11 @@ describe('resolveHostedDefaultModel', () => {
     })
   })
 
-  it('ignores BYOK mode', () => {
-    expect(resolveHostedDefaultModel({ defaultModelId: 'verxio-qwen', mode: 'byok' }, catalog)).toBeNull()
+  it('still resolves a hosted default when settings.mode is legacy byok', () => {
+    expect(resolveHostedDefaultModel({ defaultModelId: 'verxio-qwen', mode: 'byok' }, catalog)).toEqual({
+      model: 'qwen3.6-plus',
+      provider: 'alibaba'
+    })
   })
 })
 
@@ -52,6 +79,120 @@ describe('isSelectableModel', () => {
         providers: [{ authenticated: true, models: ['gpt-5.3-codex'], name: 'ChatGPT', slug: 'openai-codex' }]
       })
     ).toBe(true)
+  })
+
+  it('never treats Verxio Hosted rows as selectable', () => {
+    expect(
+      isSelectableModel('qwen3.6-plus', 'alibaba', {
+        providers: [
+          {
+            authenticated: true,
+            is_verxio_hosted: true,
+            models: ['qwen3.6-plus'],
+            name: 'Verxio Qwen',
+            slug: 'alibaba'
+          }
+        ]
+      })
+    ).toBe(false)
+  })
+})
+
+describe('shouldClearStaleStatusbarModel', () => {
+  it('does not clear while the picker catalog is empty (refresh race)', () => {
+    expect(shouldClearStaleStatusbarModel('gpt-5.6-sol', 'openai-codex', { providers: [] })).toBe(false)
+    expect(shouldClearStaleStatusbarModel('gpt-5.6-sol', 'openai-codex', { providers: undefined })).toBe(false)
+  })
+
+  it('clears only after a loaded catalog proves the model is gone', () => {
+    expect(
+      shouldClearStaleStatusbarModel('gpt-5.6-sol', 'openai-codex', {
+        providers: [{ authenticated: true, models: ['llama-3.3-70b-versatile'], name: 'Groq', slug: 'groq' }]
+      })
+    ).toBe(true)
+
+    expect(
+      shouldClearStaleStatusbarModel('gpt-5.6-sol', 'openai-codex', {
+        providers: [{ authenticated: true, models: ['gpt-5.6-sol'], name: 'ChatGPT', slug: 'openai-codex' }]
+      })
+    ).toBe(false)
+  })
+
+  it('keeps Verxio Hosted picker models (does not snap back to flash lite)', () => {
+    expect(
+      shouldClearStaleStatusbarModel('gemini-3.1-pro-preview', 'gemini', {
+        providers: [
+          {
+            authenticated: true,
+            is_verxio_hosted: true,
+            models: ['gemini-flash-lite-latest', 'gemini-3.1-pro-preview'],
+            name: 'Verxio Gemini',
+            slug: 'gemini'
+          }
+        ]
+      })
+    ).toBe(false)
+  })
+})
+
+describe('isVerxioHostedDefaultSelection', () => {
+  it('matches hosted Qwen/Gemini catalog entries', () => {
+    expect(isVerxioHostedDefaultSelection('qwen3.6-plus', 'alibaba', catalog)).toBe(true)
+    expect(isVerxioHostedDefaultSelection('gemini-flash-lite-latest', 'gemini', catalog)).toBe(true)
+    expect(isVerxioHostedDefaultSelection('gpt-5.6-sol', 'openai-codex', catalog)).toBe(false)
+  })
+})
+
+describe('shouldShowByokStatusbarModel', () => {
+  it('never shows Verxio Hosted defaults in BYOK', () => {
+    expect(shouldShowByokStatusbarModel('qwen3.6-plus', 'alibaba', { providers: [] }, catalog)).toBe(false)
+    expect(
+      shouldShowByokStatusbarModel(
+        'qwen3.6-plus',
+        'alibaba',
+        {
+          providers: [
+            {
+              authenticated: true,
+              is_verxio_hosted: true,
+              models: ['qwen3.6-plus'],
+              name: 'Verxio Qwen',
+              slug: 'alibaba'
+            }
+          ]
+        },
+        catalog
+      )
+    ).toBe(false)
+  })
+
+  it('keeps ChatGPT/Claude pins while options are still empty', () => {
+    expect(shouldShowByokStatusbarModel('gpt-5.6-sol', 'openai-codex', { providers: [] }, catalog)).toBe(true)
+    expect(shouldShowByokStatusbarModel('claude-opus-4', 'anthropic', { providers: [] }, catalog)).toBe(true)
+  })
+
+  it('requires a selectable BYOK provider once options have loaded', () => {
+    expect(
+      shouldShowByokStatusbarModel(
+        'gpt-5.6-sol',
+        'openai-codex',
+        {
+          providers: [{ authenticated: true, models: ['gpt-5.6-sol'], name: 'ChatGPT', slug: 'openai-codex' }]
+        },
+        catalog
+      )
+    ).toBe(true)
+
+    expect(
+      shouldShowByokStatusbarModel(
+        'gpt-5.6-sol',
+        'openai-codex',
+        {
+          providers: [{ authenticated: true, models: ['grok-3'], name: 'xAI', slug: 'xai' }]
+        },
+        catalog
+      )
+    ).toBe(false)
   })
 })
 
@@ -81,5 +222,55 @@ describe('resolveStatusbarModel', () => {
         provider: 'alibaba'
       })
     ).toEqual({ model: 'qwen3.6-plus', provider: 'alibaba' })
+  })
+})
+
+describe('isSelectedHostedFamilyModel', () => {
+  it('accepts models from the Settings hosted family only', () => {
+    const geminiSettings = { defaultModelId: 'verxio-gemini', mode: 'hosted' as const }
+
+    expect(isSelectedHostedFamilyModel('gemini-flash-lite-latest', 'gemini', geminiSettings, catalog)).toBe(true)
+    expect(isSelectedHostedFamilyModel('qwen3.6-plus', 'alibaba', geminiSettings, catalog)).toBe(false)
+  })
+})
+
+describe('resolveHostedStatusbarCorrection', () => {
+  const geminiSettings = { defaultModelId: 'verxio-gemini', mode: 'hosted' as const }
+  const hostedDefault = { model: 'gemini-flash-lite-latest', provider: 'gemini' }
+
+  it('snaps a leftover Qwen pin to the live Gemini assignment', () => {
+    expect(
+      resolveHostedStatusbarCorrection(
+        { model: 'qwen3.6-plus', provider: 'alibaba' },
+        { model: 'gemini-flash-lite-latest', provider: 'gemini' },
+        geminiSettings,
+        catalog,
+        hostedDefault
+      )
+    ).toEqual({ model: 'gemini-flash-lite-latest', provider: 'gemini' })
+  })
+
+  it('keeps an in-family Gemini pick', () => {
+    expect(
+      resolveHostedStatusbarCorrection(
+        { model: 'gemini-flash-lite-latest', provider: 'gemini' },
+        { model: 'gemini-flash-lite-latest', provider: 'gemini' },
+        geminiSettings,
+        catalog,
+        hostedDefault
+      )
+    ).toBeNull()
+  })
+
+  it('falls back to the hosted default when Hermes is also wrong-family', () => {
+    expect(
+      resolveHostedStatusbarCorrection(
+        { model: 'qwen3.6-plus', provider: 'alibaba' },
+        { model: 'qwen3.6-plus', provider: 'alibaba' },
+        geminiSettings,
+        catalog,
+        hostedDefault
+      )
+    ).toEqual(hostedDefault)
   })
 })

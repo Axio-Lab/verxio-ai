@@ -213,7 +213,6 @@ export interface Translations {
       providers: string
       providerAccounts: string
       providerApiKeys: string
-      gateway: string
       apiKeys: string
       keysTools: string
       keysTranscription: string
@@ -222,40 +221,18 @@ export interface Translations {
       archivedChats: string
       about: string
       notifications: string
-      runtime: string
     }
     runtime: {
-      title: string
-      intro: string
-      statusTitle: string
-      statusDescription: string
-      statusConnected: string
-      statusStarting: string
-      statusStopped: string
-      statusError: string
-      statusUnknown: string
-      reloadTitle: string
-      reloadDescription: string
-      reloadAction: string
       reloadDoneTitle: string
       reloadDoneMessage: string
       reloadFailed: string
-      agentRestartTitle: string
-      agentRestartDescription: string
-      agentRestartAction: string
       agentRestartDoneTitle: string
       agentRestartDoneMessage: string
       agentRestartFailed: string
-      containerRestartTitle: string
-      containerRestartDescription: string
-      containerRestartAction: string
       containerRestartDoneTitle: string
       containerRestartDoneMessage: string
       containerRestartFailed: string
       restartTimeout: string
-      gatewayRestartTitle: string
-      gatewayRestartDescription: string
-      gatewayRestartAction: string
     }
     notifications: {
       title: string
@@ -277,7 +254,7 @@ export interface Translations {
       completionSoundPreview: string
     }
     sections: Record<string, string>
-    searchPlaceholder: Record<'about' | 'config' | 'gateway' | 'keys' | 'mcp' | 'sessions', string>
+    searchPlaceholder: Record<'about' | 'config' | 'keys' | 'mcp' | 'sessions', string>
     modeOptions: Record<'light' | 'dark' | 'system', ModeOptionCopy>
     appearance: {
       title: string
@@ -299,29 +276,7 @@ export interface Translations {
     fieldDescriptions: Record<string, string>
     about: {
       heading: string
-      version: (value: string) => string
-      versionUnavailable: string
-      updates: string
-      checkNow: string
-      checking: string
-      seeWhatsNew: string
-      releaseNotes: string
-      onLatest: string
-      installing: string
-      cantUpdate: string
-      cantReach: string
-      tapCheck: string
-      updateReady: (count: number) => string
-      lastChecked: (age: string) => string
-      justNowSuffix: string
-      automaticUpdates: string
-      automaticUpdatesDesc: string
-      branchCommit: (branch: string, commit: string) => string
-      never: string
-      justNow: string
-      minAgo: (count: number) => string
-      hoursAgo: (count: number) => string
-      daysAgo: (count: number) => string
+      description: string
     }
     config: {
       none: string
@@ -359,68 +314,6 @@ export interface Translations {
       replace: string
       set: string
       clear: string
-    }
-    gateway: {
-      loading: string
-      unavailableTitle: string
-      unavailableDesc: string
-      title: string
-      envOverride: string
-      intro: string
-      appliesTo: string
-      allProfiles: string
-      defaultConnection: string
-      profileConnection: (profile: string) => string
-      envOverrideTitle: string
-      envOverrideDesc: string
-      localTitle: string
-      localDesc: string
-      remoteTitle: string
-      remoteDesc: string
-      remoteUrlTitle: string
-      remoteUrlDesc: string
-      probing: string
-      probeError: string
-      signedIn: string
-      signIn: string
-      signOut: string
-      signInWith: (provider: string) => string
-      authTitle: string
-      authSignedInPassword: string
-      authSignedInOauth: string
-      authNeedsPassword: string
-      authNeedsOauth: (provider: string) => string
-      tokenTitle: string
-      tokenDesc: string
-      existingToken: (value: string) => string
-      savedToken: string
-      pasteSessionToken: string
-      testRemote: string
-      saveForRestart: string
-      saveAndReconnect: string
-      diagnostics: string
-      diagnosticsDesc: string
-      openLogs: string
-      incompleteTitle: string
-      incompleteSignIn: string
-      incompleteToken: string
-      incompleteSignInTest: string
-      incompleteTokenTest: string
-      enterUrlFirst: string
-      restartingTitle: string
-      savedTitle: string
-      restartingMessage: string
-      savedMessage: string
-      connectedTo: (baseUrl: string, version?: string) => string
-      reachableTitle: string
-      signedOutTitle: string
-      signedOutMessage: string
-      failedLoad: string
-      signInFailed: string
-      signOutFailed: string
-      testFailed: string
-      applyFailed: string
-      saveFailed: string
     }
     keys: {
       loading: string
@@ -492,6 +385,7 @@ export interface Translations {
       otherProviders: string
       noProviderKeys: string
       loading: string
+      switching: string
       accountLabel: string
       disconnect: string
       reconnect: string
@@ -545,6 +439,10 @@ export interface Translations {
       noProviderOptions: string
       noProviders: string
       ready: string
+      active: string
+      useProvider: string
+      usingProvider: (provider: string, model?: string | null) => string
+      usingProviderHint: string
       nousIncluded: string
       noApiKeyRequired: string
       postSetup: (step: string) => string
@@ -601,6 +499,12 @@ export interface Translations {
       saving: string
       saveChanges: string
       createSkill: string
+      deleteSkill: string
+      deleteTitle: (name: string) => string
+      deleteDesc: (name: string) => string
+      deleteConfirm: string
+      deleting: string
+      deleted: string
       importPackage: string
       importing: string
       importHint: string
@@ -657,10 +561,7 @@ export interface Translations {
     archivedChats: string
     sections: Record<'sessions' | 'usage', string>
     sectionDescriptions: Record<'sessions' | 'usage', string>
-    nav: Record<
-      'newChat' | 'settings' | 'skills' | 'messaging' | 'pulse' | 'artifacts',
-      { title: string; detail: string }
-    >
+    nav: Record<'newChat' | 'settings' | 'skills' | 'messaging' | 'artifacts', { title: string; detail: string }>
     sectionEntries: Record<'sessions' | 'usage', { title: string; detail: string }>
     providerNavigate: string
     providerSessions: string
@@ -856,55 +757,6 @@ export interface Translations {
     platformIntro: Record<string, string>
   }
 
-  pulse: {
-    title: string
-    subtitle: string
-    search: string
-    loading: string
-    loadFailed: string
-    tabs: Record<'overview' | 'inbox' | 'automations' | 'builder' | 'channels' | 'settings', string>
-    stats: Record<'channels' | 'contacts' | 'conversations' | 'automations', string>
-    empty: {
-      title: string
-      description: string
-      action: string
-    }
-    channels: {
-      title: string
-      connect: string
-      connected: string
-      gated: string
-      docs: string
-    }
-    inbox: {
-      title: string
-      noConversation: string
-      takeover: string
-      resume: string
-      messagePlaceholder: string
-    }
-    automations: {
-      title: string
-      newAutomation: string
-      enabled: string
-      disabled: string
-      simulate: string
-      generate: string
-    }
-    builder: {
-      title: string
-      promptPlaceholder: string
-      generate: string
-      simulator: string
-    }
-    settings: {
-      title: string
-      businessProfile: string
-      brandVoice: string
-      guardrails: string
-    }
-  }
-
   profiles: {
     close: string
     nameHint: string
@@ -1069,6 +921,20 @@ export interface Translations {
     deleteConfirm: string
     deleting: string
     deleted: string
+    selectAll: string
+    selectHint: string
+    selectItem: (label: string) => string
+    selectedCount: (count: number) => string
+    deleteSelected: (count: number) => string
+    batchDeleteTitle: (count: number) => string
+    batchDeleteDescription: (count: number) => string
+    batchDeleted: (count: number) => string
+    batchDeleteFailed: string
+    batchDeletePartial: (deleted: number, failed: number) => string
+    previewDescription: string
+    downloadAction: string
+    downloadStarted: string
+    downloadFailed: string
     itemsImage: string
     itemsLink: string
     itemsFile: string
@@ -1210,6 +1076,9 @@ export interface Translations {
     themeTryPre: string
     themeTryPost: string
     attachLabel: string
+    audio: string
+    audioAttachFailed: string
+    audioNeedsUpload: string
     files: string
     folder: string
     images: string
@@ -1664,10 +1533,18 @@ export interface Translations {
     secretTitle: string
     secretDesc: string
     secretPlaceholder: string
+    fishAudioTitle: string
+    fishAudioDescription: string
+    fishAudioAction: string
+    fishAudioExpires: string
+    fishAudioWorking: string
+    fishAudioConfirmationFailed: string
   }
 
   desktop: {
     audioReadFailed: string
+    audioAttachmentExpired: string
+    useAttachedAudio: string
     sessionUnavailable: string
     createSessionFailed: string
     promptFailed: string
@@ -1733,57 +1610,6 @@ export interface Translations {
     boundaryDesc: string
     reloadWindow: string
     openLogs: string
-  }
-
-  leash: {
-    banner: {
-      title: string
-      body: string
-      setup: string
-      dismiss: string
-      never: string
-    }
-    panel: {
-      title: string
-      subtitle: string
-      custodyNotice: string
-      statusNone: string
-      statusPendingFunding: string
-      statusRegistered: string
-      mintLabel: string
-      treasuryLabel: string
-      executiveLabel: string
-      networkLabel: string
-      networkDevnet: string
-      networkMainnet: string
-      rpcLabel: string
-      rpcPlaceholder: string
-      generateKeypair: string
-      importLabel: string
-      importPlaceholder: string
-      importKeypair: string
-      pendingFundingHint: string
-      registeredHint: string
-      exportJson: string
-      importJson: string
-      pullFromRuntime: string
-      removeIdentity: string
-      removeConfirm: string
-      chatHint: string
-      savedTitle: string
-      savedMessage: string
-      saveFailed: string
-      generateFailed: string
-      importFailed: string
-      pullEmptyTitle: string
-      pullEmptyMessage: string
-      pullSavedTitle: string
-      pullSavedMessage: string
-      pullFailed: string
-      removedTitle: string
-      removedMessage: string
-      removeFailed: string
-    }
   }
 
   ui: {

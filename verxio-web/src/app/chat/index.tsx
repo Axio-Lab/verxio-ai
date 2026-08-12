@@ -65,6 +65,7 @@ interface ChatViewProps extends Omit<React.ComponentProps<'div'>, 'onSubmit'> {
   onAttachImageBlob: (blob: Blob) => Promise<boolean | void> | boolean | void
   onAttachDroppedItems: (candidates: DroppedFile[]) => Promise<boolean | void> | boolean | void
   onPasteClipboardImage: () => void
+  onPickAudio: () => void
   onPickFiles: () => void
   onPickFolders: () => void
   onPickImages: () => void
@@ -159,6 +160,7 @@ export function ChatView({
   onBranchInNewChat,
   maxVoiceRecordingSeconds,
   onPasteClipboardImage,
+  onPickAudio,
   onPickFiles,
   onPickFolders,
   onPickImages,
@@ -192,10 +194,11 @@ export function ChatView({
     freshDraftReady && !isRoutedSessionView && !selectedSessionId && !activeSessionId && messages.length === 0
 
   // Session is still loading if the route references a session we haven't
-  // resumed yet. Once `activeSessionId` is set (runtime has resumed), the
-  // session exists — even if it has zero messages (a brand-new routed
-  // session). The flicker where `busy` flips true briefly during hydrate
-  // is handled by `threadLoadingState`'s last-visible-user gate.
+  // painted yet. Cross-session switches clear `$messages` first so this gate
+  // shows the spinner instead of the previous transcript. REST/memory hydrate
+  // can fill messages before `activeSessionId` exists (gateway still waking) —
+  // once messages arrive, drop the spinner so the transcript is readable.
+  // Zero-message sessions still need `activeSessionId` so we don't spin forever.
   const loadingSession = isRoutedSessionView && messages.length === 0 && !activeSessionId
   const threadLoading = threadLoadingState(loadingSession, busy, awaitingResponse, lastVisibleMessageIsUser(messages))
   const showChatBar = !loadingSession
@@ -339,6 +342,7 @@ export function ChatView({
                 onAttachImageBlob={onAttachImageBlob}
                 onCancel={onCancel}
                 onPasteClipboardImage={onPasteClipboardImage}
+                onPickAudio={onPickAudio}
                 onPickFiles={onPickFiles}
                 onPickFolders={onPickFolders}
                 onPickImages={onPickImages}

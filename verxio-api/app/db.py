@@ -231,169 +231,6 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     )
     """,
     """
-    CREATE TABLE IF NOT EXISTS pulse_channels (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        workspace_id TEXT NOT NULL,
-        agent_id TEXT NOT NULL,
-        channel_type TEXT NOT NULL,
-        external_id TEXT NOT NULL,
-        display_name TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'draft',
-        capabilities_json TEXT NOT NULL DEFAULT '{}',
-        credentials_encrypted TEXT NOT NULL DEFAULT '',
-        webhook_secret TEXT NOT NULL DEFAULT '',
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        UNIQUE (workspace_id, agent_id, channel_type, external_id),
-        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
-        FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS pulse_contacts (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        workspace_id TEXT NOT NULL,
-        agent_id TEXT NOT NULL,
-        channel_id TEXT NOT NULL,
-        external_user_id TEXT NOT NULL,
-        username TEXT,
-        display_name TEXT NOT NULL,
-        fields_json TEXT NOT NULL DEFAULT '{}',
-        consent_state TEXT NOT NULL DEFAULT 'unknown',
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        UNIQUE (channel_id, external_user_id),
-        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
-        FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE,
-        FOREIGN KEY (channel_id) REFERENCES pulse_channels(id) ON DELETE CASCADE
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS pulse_conversations (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        workspace_id TEXT NOT NULL,
-        agent_id TEXT NOT NULL,
-        channel_id TEXT NOT NULL,
-        contact_id TEXT NOT NULL,
-        state TEXT NOT NULL DEFAULT 'automated',
-        window_expires_at TEXT,
-        last_inbound_at TEXT,
-        last_outbound_at TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        UNIQUE (channel_id, contact_id),
-        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
-        FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE,
-        FOREIGN KEY (channel_id) REFERENCES pulse_channels(id) ON DELETE CASCADE,
-        FOREIGN KEY (contact_id) REFERENCES pulse_contacts(id) ON DELETE CASCADE
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS pulse_messages (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        workspace_id TEXT NOT NULL,
-        agent_id TEXT NOT NULL,
-        conversation_id TEXT NOT NULL,
-        direction TEXT NOT NULL,
-        body TEXT NOT NULL DEFAULT '',
-        media_json TEXT NOT NULL DEFAULT '[]',
-        provider_message_id TEXT,
-        status TEXT NOT NULL DEFAULT 'received',
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
-        FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE,
-        FOREIGN KEY (conversation_id) REFERENCES pulse_conversations(id) ON DELETE CASCADE
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS pulse_automations (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        workspace_id TEXT NOT NULL,
-        agent_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        channel_type TEXT NOT NULL,
-        enabled INTEGER NOT NULL DEFAULT 0,
-        flow_json TEXT NOT NULL DEFAULT '{}',
-        version INTEGER NOT NULL DEFAULT 1,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
-        FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS pulse_runs (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        workspace_id TEXT NOT NULL,
-        agent_id TEXT NOT NULL,
-        automation_id TEXT NOT NULL,
-        conversation_id TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'queued',
-        cursor_node_id TEXT,
-        wait_until TEXT,
-        context_json TEXT NOT NULL DEFAULT '{}',
-        error TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
-        FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE,
-        FOREIGN KEY (automation_id) REFERENCES pulse_automations(id) ON DELETE CASCADE,
-        FOREIGN KEY (conversation_id) REFERENCES pulse_conversations(id) ON DELETE CASCADE
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS pulse_tags (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT NOT NULL,
-        workspace_id TEXT NOT NULL,
-        agent_id TEXT NOT NULL,
-        name TEXT NOT NULL,
-        color TEXT NOT NULL DEFAULT 'primary',
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        UNIQUE (workspace_id, agent_id, name),
-        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
-        FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS pulse_contact_tags (
-        contact_id TEXT NOT NULL,
-        tag_id TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        PRIMARY KEY (contact_id, tag_id),
-        FOREIGN KEY (contact_id) REFERENCES pulse_contacts(id) ON DELETE CASCADE,
-        FOREIGN KEY (tag_id) REFERENCES pulse_tags(id) ON DELETE CASCADE
-    )
-    """,
-    """
-    CREATE TABLE IF NOT EXISTS pulse_events (
-        id TEXT PRIMARY KEY,
-        tenant_id TEXT,
-        workspace_id TEXT,
-        agent_id TEXT,
-        channel_id TEXT,
-        channel_type TEXT NOT NULL,
-        provider_event_id TEXT,
-        signature_ok INTEGER NOT NULL DEFAULT 0,
-        processed INTEGER NOT NULL DEFAULT 0,
-        payload_json TEXT NOT NULL DEFAULT '{}',
-        error TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE SET NULL,
-        FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE SET NULL,
-        FOREIGN KEY (channel_id) REFERENCES pulse_channels(id) ON DELETE SET NULL
-    )
-    """,
-    """
     CREATE TABLE IF NOT EXISTS user_inference_settings (
         user_id TEXT PRIMARY KEY,
         mode TEXT NOT NULL DEFAULT 'hosted',
@@ -433,6 +270,251 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         UNIQUE (user_id, session_id, turn_id, verxio_model_id)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS workflow_agents (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        runtime_agent_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT '',
+        description TEXT NOT NULL DEFAULT '',
+        instructions TEXT NOT NULL DEFAULT '',
+        model_id TEXT NOT NULL DEFAULT '',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        skills_json TEXT NOT NULL DEFAULT '[]',
+        knowledge_json TEXT NOT NULL DEFAULT '[]',
+        tools_json TEXT NOT NULL DEFAULT '[]',
+        integrations_json TEXT NOT NULL DEFAULT '[]',
+        approval_policy TEXT NOT NULL DEFAULT 'default',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+        FOREIGN KEY (runtime_agent_id) REFERENCES agents(id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS workflow_custom_tools (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        method TEXT NOT NULL DEFAULT 'POST',
+        url TEXT NOT NULL,
+        auth_type TEXT NOT NULL DEFAULT 'api_key',
+        api_key_env TEXT NOT NULL DEFAULT '',
+        headers_json TEXT NOT NULL DEFAULT '{}',
+        request_schema_json TEXT NOT NULL DEFAULT '{}',
+        response_hint TEXT NOT NULL DEFAULT '',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS workflow_triggers (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        workflow_agent_id TEXT NOT NULL,
+        trigger_type TEXT NOT NULL,
+        event_name TEXT NOT NULL DEFAULT '',
+        name TEXT NOT NULL DEFAULT '',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        secret TEXT NOT NULL DEFAULT '',
+        config_json TEXT NOT NULL DEFAULT '{}',
+        next_run_at TEXT,
+        last_run_at TEXT,
+        claim_token TEXT NOT NULL DEFAULT '',
+        claimed_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+        FOREIGN KEY (workflow_agent_id) REFERENCES workflow_agents(id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS workflow_deliveries (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        workflow_agent_id TEXT NOT NULL,
+        delivery_type TEXT NOT NULL,
+        name TEXT NOT NULL DEFAULT '',
+        channel TEXT NOT NULL DEFAULT '',
+        destination TEXT NOT NULL DEFAULT '',
+        template TEXT NOT NULL DEFAULT '',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        require_approval INTEGER NOT NULL DEFAULT 0,
+        config_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+        FOREIGN KEY (workflow_agent_id) REFERENCES workflow_agents(id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS workflow_agent_embed_configs (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        runtime_agent_id TEXT NOT NULL,
+        workflow_agent_id TEXT NOT NULL UNIQUE,
+        public_token TEXT NOT NULL UNIQUE,
+        enabled INTEGER NOT NULL DEFAULT 0,
+        display_name TEXT NOT NULL DEFAULT '',
+        welcome_message TEXT NOT NULL DEFAULT '',
+        primary_color TEXT NOT NULL DEFAULT '#0ea5e9',
+        logo_url TEXT NOT NULL DEFAULT '',
+        asset_url TEXT NOT NULL DEFAULT '',
+        allowed_origins_json TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+        FOREIGN KEY (runtime_agent_id) REFERENCES agents(id) ON DELETE CASCADE,
+        FOREIGN KEY (workflow_agent_id) REFERENCES workflow_agents(id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS workflow_runs (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        runtime_agent_id TEXT NOT NULL,
+        workflow_agent_id TEXT NOT NULL,
+        trigger_id TEXT,
+        trigger_type TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'queued',
+        input_json TEXT NOT NULL DEFAULT '{}',
+        output_text TEXT NOT NULL DEFAULT '',
+        error TEXT,
+        started_at TEXT,
+        completed_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+        FOREIGN KEY (runtime_agent_id) REFERENCES agents(id) ON DELETE CASCADE,
+        FOREIGN KEY (workflow_agent_id) REFERENCES workflow_agents(id) ON DELETE CASCADE,
+        FOREIGN KEY (trigger_id) REFERENCES workflow_triggers(id) ON DELETE SET NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS workflow_run_events (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        workflow_agent_id TEXT NOT NULL,
+        workflow_run_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        message TEXT NOT NULL DEFAULT '',
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+        FOREIGN KEY (workflow_agent_id) REFERENCES workflow_agents(id) ON DELETE CASCADE,
+        FOREIGN KEY (workflow_run_id) REFERENCES workflow_runs(id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS workflow_agent_setup_drafts (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        runtime_agent_id TEXT NOT NULL,
+        workflow_agent_id TEXT,
+        source TEXT NOT NULL DEFAULT 'web',
+        prompt TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'draft',
+        draft_json TEXT NOT NULL DEFAULT '{}',
+        approvals_required_json TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+        FOREIGN KEY (runtime_agent_id) REFERENCES agents(id) ON DELETE CASCADE,
+        FOREIGN KEY (workflow_agent_id) REFERENCES workflow_agents(id) ON DELETE SET NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS workflow_agent_setup_approvals (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        runtime_agent_id TEXT NOT NULL,
+        workflow_agent_id TEXT,
+        setup_draft_id TEXT,
+        risk_type TEXT NOT NULL,
+        action TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+        FOREIGN KEY (runtime_agent_id) REFERENCES agents(id) ON DELETE CASCADE,
+        FOREIGN KEY (workflow_agent_id) REFERENCES workflow_agents(id) ON DELETE SET NULL,
+        FOREIGN KEY (setup_draft_id) REFERENCES workflow_agent_setup_drafts(id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS knowledge_bases (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (workspace_id, name),
+        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS knowledge_documents (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        knowledge_base_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT 'manual',
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+        FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS knowledge_chunks (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        knowledge_base_id TEXT NOT NULL,
+        knowledge_document_id TEXT NOT NULL,
+        chunk_index INTEGER NOT NULL,
+        content TEXT NOT NULL,
+        search_text TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+        FOREIGN KEY (knowledge_base_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE,
+        FOREIGN KEY (knowledge_document_id) REFERENCES knowledge_documents(id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS composio_webhook_subscription (
+        id TEXT PRIMARY KEY,
+        webhook_url TEXT NOT NULL,
+        secret TEXT NOT NULL,
+        version TEXT NOT NULL DEFAULT 'V3',
+        updated_at TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS composio_webhook_receipts (
+        webhook_id TEXT PRIMARY KEY,
+        received_at TEXT NOT NULL,
+        completed_at TEXT
+    )
+    """,
     "CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash)",
     "CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON workspace_members(user_id)",
     "CREATE INDEX IF NOT EXISTS idx_agents_workspace ON agents(workspace_id)",
@@ -444,16 +526,20 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_notepad_notes_folder ON notepad_notes(folder_id)",
     "CREATE INDEX IF NOT EXISTS idx_notepad_shares_token ON notepad_shares(token)",
     "CREATE INDEX IF NOT EXISTS idx_notepad_shares_note ON notepad_shares(note_id, revoked_at)",
-    "CREATE INDEX IF NOT EXISTS idx_pulse_channels_agent ON pulse_channels(workspace_id, agent_id)",
-    "CREATE INDEX IF NOT EXISTS idx_pulse_channels_external ON pulse_channels(channel_type, external_id)",
-    "CREATE INDEX IF NOT EXISTS idx_pulse_contacts_channel ON pulse_contacts(channel_id, external_user_id)",
-    "CREATE INDEX IF NOT EXISTS idx_pulse_conversations_agent ON pulse_conversations(workspace_id, agent_id, updated_at)",
-    "CREATE INDEX IF NOT EXISTS idx_pulse_messages_conversation ON pulse_messages(conversation_id, created_at)",
-    "CREATE INDEX IF NOT EXISTS idx_pulse_automations_agent ON pulse_automations(workspace_id, agent_id, enabled)",
-    "CREATE INDEX IF NOT EXISTS idx_pulse_runs_wait ON pulse_runs(status, wait_until)",
-    "CREATE INDEX IF NOT EXISTS idx_pulse_events_channel ON pulse_events(channel_type, channel_id, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_usage_events_user_created ON usage_events(user_id, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_usage_events_runtime ON usage_events(runtime_id, session_id)",
+    "CREATE INDEX IF NOT EXISTS idx_workflow_agents_workspace ON workflow_agents(workspace_id, runtime_agent_id, updated_at)",
+    "CREATE INDEX IF NOT EXISTS idx_workflow_custom_tools_workspace ON workflow_custom_tools(workspace_id, updated_at)",
+    "CREATE INDEX IF NOT EXISTS idx_workflow_triggers_agent ON workflow_triggers(workspace_id, workflow_agent_id, enabled)",
+    "CREATE INDEX IF NOT EXISTS idx_workflow_deliveries_agent ON workflow_deliveries(workspace_id, workflow_agent_id, enabled)",
+    "CREATE INDEX IF NOT EXISTS idx_workflow_runs_agent ON workflow_runs(workspace_id, workflow_agent_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_workflow_run_events_run ON workflow_run_events(workflow_run_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS idx_workflow_setup_drafts_agent ON workflow_agent_setup_drafts(workspace_id, runtime_agent_id, updated_at)",
+    "CREATE INDEX IF NOT EXISTS idx_workflow_setup_approvals_draft ON workflow_agent_setup_approvals(setup_draft_id, status)",
+    "CREATE INDEX IF NOT EXISTS idx_workflow_setup_approvals_agent ON workflow_agent_setup_approvals(workspace_id, runtime_agent_id, status)",
+    "CREATE INDEX IF NOT EXISTS idx_knowledge_bases_workspace ON knowledge_bases(workspace_id, updated_at)",
+    "CREATE INDEX IF NOT EXISTS idx_knowledge_documents_base ON knowledge_documents(knowledge_base_id, updated_at)",
+    "CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_base ON knowledge_chunks(knowledge_base_id, knowledge_document_id)",
 )
 
 
@@ -579,6 +665,37 @@ def run_migrations() -> None:
         else:
             for statement in SCHEMA_STATEMENTS:
                 conn.execute(statement)
+        _ensure_legacy_columns(conn)
+
+
+def _table_columns(conn: Any, table: str) -> set[str]:
+    cursor = conn.execute(f"PRAGMA table_info({table})")
+    return {str(row[1] if not isinstance(row, sqlite3.Row) else row["name"]) for row in cursor.fetchall()}
+
+
+def _ensure_legacy_columns(conn: Any) -> None:
+    workflow_agent_columns = _table_columns(conn, "workflow_agents")
+
+    if "model_id" not in workflow_agent_columns:
+        conn.execute("ALTER TABLE workflow_agents ADD COLUMN model_id TEXT NOT NULL DEFAULT ''")
+
+    workflow_trigger_columns = _table_columns(conn, "workflow_triggers")
+    workflow_trigger_additions = {
+        "next_run_at": "TEXT",
+        "last_run_at": "TEXT",
+        "claim_token": "TEXT NOT NULL DEFAULT ''",
+        "claimed_at": "TEXT",
+    }
+    for column, definition in workflow_trigger_additions.items():
+        if column not in workflow_trigger_columns:
+            conn.execute(f"ALTER TABLE workflow_triggers ADD COLUMN {column} {definition}")
+
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_workflow_triggers_schedule_due
+        ON workflow_triggers(trigger_type, enabled, next_run_at)
+        """
+    )
 
 
 def _split_sql_script(script: str) -> list[str]:

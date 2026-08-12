@@ -1,5 +1,5 @@
 import type { AppendMessage, ThreadMessage } from '@assistant-ui/react'
-import { type MutableRefObject, useCallback } from 'react'
+import { type MutableRefObject, useCallback, useRef } from 'react'
 
 import { requestComposerFocus } from '@/app/chat/composer/focus'
 import { getProfiles } from '@/hermes'
@@ -14,6 +14,7 @@ import {
   sessionTitle,
   SLASH_COMMAND_RE
 } from '@/lib/chat-runtime'
+import { fileDataUrlFromFile, imageBytesFromFile, isAbsoluteFilesystemPath } from '@/lib/composer-attach'
 import {
   type CommandsCatalogLike,
   desktopSlashUnavailableMessage,
@@ -21,11 +22,12 @@ import {
   isDesktopSlashCommand,
   isModelPickerCommand
 } from '@/lib/desktop-slash-commands'
+import { fishAudioAttachmentRef, uploadFishAudioAttachment } from '@/lib/fishaudio-session'
 import { triggerHaptic } from '@/lib/haptics'
 import { setMutableRef } from '@/lib/mutable-ref'
 import { isVerxioWeb } from '@/lib/platform'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
-import { getInferenceSettings, verxioApiEnabled } from '@/lib/verxio-api'
+import { verxioApiEnabled } from '@/lib/verxio-api'
 import { preprocessWebLocalContextReferences } from '@/lib/web-local-context'
 import { resolveWebLocalWorkspaceCwd } from '@/lib/web-local-fs'
 import { setSessionYolo } from '@/lib/yolo-session'
@@ -60,6 +62,7 @@ import { clearSessionSubagents } from '@/store/subagents'
 
 import type {
   ClientSessionState,
+  FileAttachResponse,
   ImageAttachResponse,
   SessionSteerResponse,
   SessionTitleResponse,
@@ -73,17 +76,12 @@ function isProviderSetupError(error: unknown) {
 }
 
 async function isByokWithoutSelectedModel(): Promise<boolean> {
+  // Hybrid: prompt to pick a model whenever none is selected (hosted or BYOK).
   if (!verxioApiEnabled() || $currentModel.get().trim()) {
     return false
   }
 
-  try {
-    const settings = await getInferenceSettings()
-
-    return settings.mode === 'byok'
-  } catch {
-    return false
-  }
+  return true
 }
 
 function inlineErrorMessage(error: unknown, fallback: string): string {
@@ -99,16 +97,51 @@ function isSessionNotFoundError(error: unknown): boolean {
 }
 
 // The gateway refuses prompt.submit while a turn is running (4009 "session
-// busy"). Edit/restore (revert) can fire mid-turn, so they interrupt first then
-// retry the submit until the cooperative interrupt has wound the turn down.
-const REWIND_INTERRUPT_TIMEOUT_MS = 6_000
-const REWIND_RETRY_INTERVAL_MS = 150
+// busy"). It's a transient concurrency guard, never a user-facing error: a
+// submit racing the settle edge after cancel/interrupt (or a rewind mid-turn)
+// just waits a beat for the turn to wind down, then lands. Bounded so a
+// genuinely stuck turn still surfaces eventually.
+const SESSION_BUSY_RETRY_TIMEOUT_MS = 6_000
+const SESSION_BUSY_RETRY_INTERVAL_MS = 150
 
 function isSessionBusyError(error: unknown): boolean {
   return /session busy/i.test(error instanceof Error ? error.message : String(error))
 }
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+
+// Retry a gateway call across transient "session busy" so it never reaches the
+// user — the turn settles within the deadline and the call lands.
+// `isCurrent` lets cancel/stop abandon a retry loop so a cancelled submit can't
+// land after the UI has already moved on.
+async function withSessionBusyRetry<T>(call: () => Promise<T>, isCurrent?: () => boolean): Promise<T> {
+  const deadline = Date.now() + SESSION_BUSY_RETRY_TIMEOUT_MS
+
+  for (;;) {
+    if (isCurrent && !isCurrent()) {
+      throw new DOMException('Submit cancelled', 'AbortError')
+    }
+
+    try {
+      return await call()
+    } catch (err) {
+      if (isSessionBusyError(err) && Date.now() < deadline && (!isCurrent || isCurrent())) {
+        await sleep(SESSION_BUSY_RETRY_INTERVAL_MS)
+
+        continue
+      }
+
+      throw err
+    }
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    (error instanceof DOMException && error.name === 'AbortError') ||
+    (error instanceof Error && error.name === 'AbortError')
+  )
+}
 
 function isSessionIdCandidate(value: string): boolean {
   const trimmed = value.trim()
@@ -200,6 +233,9 @@ export function usePromptActions({
   const { t } = useI18n()
   const copy = t.desktop
   const statusbarCopy = t.shell.statusbar
+  // Bumped by cancelRun so an in-flight submit (session create / attach / submit)
+  // abandons before it can re-arm busy or hit the gateway after Stop.
+  const submitEpochRef = useRef(0)
 
   const appendSessionTextMessage = useCallback(
     (sessionId: string, role: ChatMessage['role'], text: string) => {
@@ -233,39 +269,188 @@ export function usePromptActions({
       sessionId: string,
       attachments: ComposerAttachment[],
       options: { updateComposerAttachments?: boolean } = {}
-    ) => {
+    ): Promise<ComposerAttachment[]> => {
       const updateComposerAttachments = options.updateComposerAttachments ?? true
-      const images = attachments.filter(attachment => attachment.kind === 'image' && attachment.path)
 
-      for (const attachment of images) {
-        if (attachment.attachedSessionId === sessionId) {
-          continue
-        }
+      return Promise.all(
+        attachments.map(async attachment => {
+          if (attachment.kind !== 'image') {
+            return attachment
+          }
 
-        const result = await requestGateway<ImageAttachResponse>('image.attach', {
-          session_id: sessionId,
-          path: attachment.path
-        })
+          if (
+            attachment.attachedSessionId === sessionId &&
+            attachment.path &&
+            isAbsoluteFilesystemPath(attachment.path)
+          ) {
+            return attachment
+          }
 
-        if (!result.attached) {
           const label = attachment.label || (attachment.path ? pathLabel(attachment.path) : 'image')
-          throw new Error(result.message || `Could not attach ${label}`)
-        }
+          let result: ImageAttachResponse
 
-        const attachedPath = result.path || attachment.path
+          if (attachment.uploadFile) {
+            const payload = await imageBytesFromFile(attachment.uploadFile)
+            result = await requestGateway<ImageAttachResponse>('image.attach_bytes', {
+              session_id: sessionId,
+              content_base64: payload.contentBase64,
+              filename: payload.filename
+            })
+          } else if (attachment.path && isAbsoluteFilesystemPath(attachment.path)) {
+            // Prefer byte upload so remote gateways (web + desktop remote) work.
+            // Fall back to path attach for local desktop where the gateway shares disk.
+            try {
+              const dataUrl = await window.hermesDesktop?.readFileDataUrl(attachment.path)
+              const contentBase64 = dataUrl ? dataUrl.slice(dataUrl.indexOf(',') + 1) : ''
 
-        if (updateComposerAttachments) {
-          addComposerAttachment({
+              if (contentBase64) {
+                result = await requestGateway<ImageAttachResponse>('image.attach_bytes', {
+                  session_id: sessionId,
+                  content_base64: contentBase64,
+                  filename: pathLabel(attachment.path)
+                })
+              } else {
+                result = await requestGateway<ImageAttachResponse>('image.attach', {
+                  session_id: sessionId,
+                  path: attachment.path
+                })
+              }
+            } catch {
+              result = await requestGateway<ImageAttachResponse>('image.attach', {
+                session_id: sessionId,
+                path: attachment.path
+              })
+            }
+          } else {
+            throw new Error(`Could not attach ${label}. Re-add the image from the picker so Verxio can upload it.`)
+          }
+
+          if (!result.attached) {
+            throw new Error(result.message || `Could not attach ${label}`)
+          }
+
+          const attachedPath = result.path || attachment.path
+
+          const synced: ComposerAttachment = {
             ...attachment,
-            id: attachment.id,
+            attachedSessionId: sessionId,
             label: attachedPath ? pathLabel(attachedPath) : attachment.label,
             path: attachedPath,
-            attachedSessionId: sessionId
-          })
-        }
-      }
+            uploadFile: undefined
+          }
+
+          if (updateComposerAttachments) {
+            addComposerAttachment(synced)
+          }
+
+          return synced
+        })
+      )
     },
     [requestGateway]
+  )
+
+  const syncFileAttachmentsForSubmit = useCallback(
+    async (
+      sessionId: string,
+      attachments: ComposerAttachment[],
+      options: { updateComposerAttachments?: boolean } = {}
+    ): Promise<ComposerAttachment[]> => {
+      const updateComposerAttachments = options.updateComposerAttachments ?? true
+
+      return Promise.all(
+        attachments.map(async attachment => {
+          if (attachment.kind !== 'file') {
+            return attachment
+          }
+
+          if (attachment.attachedSessionId === sessionId && attachment.refText?.startsWith('@file:')) {
+            // Already staged on the gateway (has a real upload). Skip name-only refs.
+            if (!attachment.uploadFile) {
+              return attachment
+            }
+          }
+
+          if (!attachment.uploadFile) {
+            // Path-only context refs (project tree) stay as @file: text — no upload.
+            return attachment
+          }
+
+          const label = attachment.label || attachment.uploadFile.name || 'file'
+          const payload = await fileDataUrlFromFile(attachment.uploadFile)
+
+          const result = await requestGateway<FileAttachResponse>('file.attach', {
+            data_url: payload.dataUrl,
+            name: payload.filename,
+            session_id: sessionId
+          })
+
+          if (!result.attached || !result.ref_text) {
+            throw new Error(result.message || `Could not attach ${label}`)
+          }
+
+          const synced: ComposerAttachment = {
+            ...attachment,
+            attachedSessionId: sessionId,
+            label: result.name || label,
+            path: result.path || attachment.path,
+            refText: result.ref_text,
+            uploadFile: undefined
+          }
+
+          if (updateComposerAttachments) {
+            addComposerAttachment(synced)
+          }
+
+          return synced
+        })
+      )
+    },
+    [requestGateway]
+  )
+
+  const syncAudioAttachmentsForSubmit = useCallback(
+    async (
+      sessionId: string,
+      attachments: ComposerAttachment[],
+      options: { updateComposerAttachments?: boolean } = {}
+    ): Promise<ComposerAttachment[]> => {
+      const updateComposerAttachments = options.updateComposerAttachments ?? true
+
+      return Promise.all(
+        attachments.map(async attachment => {
+          if (attachment.kind !== 'audio') {
+            return attachment
+          }
+
+          if (attachment.attachedSessionId === sessionId && attachment.refText) {
+            return attachment
+          }
+
+          if (!attachment.uploadFile) {
+            throw new Error(copy.audioAttachmentExpired)
+          }
+
+          const uploaded = await uploadFishAudioAttachment(attachment.uploadFile, sessionId, requestGateway)
+
+          const synced: ComposerAttachment = {
+            ...attachment,
+            attachedSessionId: sessionId,
+            digest: uploaded.digest,
+            expiresAt: uploaded.expires_at,
+            refText: fishAudioAttachmentRef(uploaded.handle),
+            uploadFile: undefined
+          }
+
+          if (updateComposerAttachments) {
+            addComposerAttachment(synced)
+          }
+
+          return synced
+        })
+      )
+    },
+    [copy.audioAttachmentExpired, requestGateway]
   )
 
   const submitPromptText = useCallback(
@@ -281,11 +466,12 @@ export function usePromptActions({
 
       const terminalContextBlocks = terminalContextBlocksFromDraft(rawText).join('\n\n')
       const hasImage = attachments.some(a => a.kind === 'image')
+      const hasAudio = attachments.some(a => a.kind === 'audio')
       const attachmentRefs = attachments.map(attachmentDisplayText).filter((r): r is string => Boolean(r))
 
       const text =
         [contextRefs, terminalContextBlocks, visibleText].filter(Boolean).join('\n\n') ||
-        (hasImage ? 'What do you see in this image?' : '')
+        (hasImage ? 'What do you see in this image?' : hasAudio ? copy.useAttachedAudio : '')
 
       // Queue drains fire on the busy→false settle edge, where busyRef (synced
       // from $busy by a separate effect) may still read true — honoring it would
@@ -305,6 +491,9 @@ export function usePromptActions({
 
         return false
       }
+
+      const submitEpoch = ++submitEpochRef.current
+      const isCurrentSubmit = () => submitEpochRef.current === submitEpoch
 
       const optimisticId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
@@ -380,9 +569,22 @@ export function usePromptActions({
         try {
           sessionId = await createBackendSessionForSend(visibleText)
         } catch (err) {
+          if (!isCurrentSubmit()) {
+            dropOptimistic(null)
+
+            return false
+          }
+
           dropOptimistic(null)
           releaseBusy()
           notifyError(err, copy.sessionUnavailable)
+
+          return false
+        }
+
+        if (!isCurrentSubmit()) {
+          dropOptimistic(sessionId)
+          // cancelRun already released busy for the live UI; don't re-arm it.
 
           return false
         }
@@ -399,11 +601,52 @@ export function usePromptActions({
       }
 
       try {
-        await syncImageAttachmentsForSubmit(sessionId, attachments, {
+        if (!isCurrentSubmit()) {
+          dropOptimistic(sessionId)
+
+          return false
+        }
+
+        let syncedAttachments = await syncAudioAttachmentsForSubmit(sessionId, attachments, {
           updateComposerAttachments: usingComposerAttachments
         })
 
-        let submitText = text
+        if (!isCurrentSubmit()) {
+          dropOptimistic(sessionId)
+
+          return false
+        }
+
+        syncedAttachments = await syncImageAttachmentsForSubmit(sessionId, syncedAttachments, {
+          updateComposerAttachments: usingComposerAttachments
+        })
+
+        if (!isCurrentSubmit()) {
+          dropOptimistic(sessionId)
+
+          return false
+        }
+
+        syncedAttachments = await syncFileAttachmentsForSubmit(sessionId, syncedAttachments, {
+          updateComposerAttachments: usingComposerAttachments
+        })
+
+        if (!isCurrentSubmit()) {
+          dropOptimistic(sessionId)
+
+          return false
+        }
+
+        // Image attachments are drained by prompt.submit from session.attached_images.
+        // Only include text refs for non-image chips (files/audio/folders/urls).
+        const syncedRefs = syncedAttachments
+          .filter(attachment => attachment.kind !== 'image')
+          .map(attachmentDisplayText)
+          .filter((ref): ref is string => Boolean(ref))
+
+        let submitText =
+          [syncedRefs.join('\n'), terminalContextBlocks, visibleText].filter(Boolean).join('\n\n') ||
+          (hasImage ? 'What do you see in this image?' : hasAudio ? copy.useAttachedAudio : text)
 
         if (isVerxioWeb()) {
           const webLocalCwd = resolveWebLocalWorkspaceCwd($currentCwd.get())
@@ -413,12 +656,29 @@ export function usePromptActions({
           }
         }
 
+        if (!isCurrentSubmit()) {
+          dropOptimistic(sessionId)
+
+          return false
+        }
+
         // After deploy/runtime wipe, reconnect restores the WS but the tab may
         // still hold a dead in-memory runtime session id. Resume the durable
         // stored session once and retry — same recovery as sleep/wake on desktop.
+        // Also ride out transient 4009 "session busy" after a cancel/interrupt
+        // while the previous turn is still winding down.
         try {
-          await requestGateway('prompt.submit', { session_id: sessionId, text: submitText })
+          await withSessionBusyRetry(
+            () => requestGateway('prompt.submit', { session_id: sessionId, text: submitText }),
+            isCurrentSubmit
+          )
         } catch (firstErr) {
+          if (isAbortError(firstErr) || !isCurrentSubmit()) {
+            dropOptimistic(sessionId)
+
+            return false
+          }
+
           if (!isSessionNotFoundError(firstErr) || !selectedStoredSessionIdRef.current) {
             throw firstErr
           }
@@ -430,9 +690,22 @@ export function usePromptActions({
             throw firstErr
           }
 
+          if (!isCurrentSubmit()) {
+            dropOptimistic(sessionId)
+
+            return false
+          }
+
           sessionId = recoveredId
           seedOptimistic(recoveredId)
-          await requestGateway('prompt.submit', { session_id: recoveredId, text: submitText })
+          await withSessionBusyRetry(
+            () => requestGateway('prompt.submit', { session_id: recoveredId, text: submitText }),
+            isCurrentSubmit
+          )
+        }
+
+        if (!isCurrentSubmit()) {
+          return false
         }
 
         if (usingComposerAttachments) {
@@ -441,6 +714,19 @@ export function usePromptActions({
 
         return true
       } catch (err) {
+        if (isAbortError(err) || !isCurrentSubmit()) {
+          return false
+        }
+
+        // A queued drain that raced a not-yet-settled turn gets a transient
+        // "session busy" (4009). Don't surface an error bubble/toast — the entry
+        // stays queued and the composer's bounded auto-drain retries when idle.
+        if (options?.fromQueue && isSessionBusyError(err)) {
+          releaseBusy()
+
+          return false
+        }
+
         const message = inlineErrorMessage(err, copy.promptFailed)
 
         releaseBusy()
@@ -484,6 +770,8 @@ export function usePromptActions({
       selectedStoredSessionIdRef,
       statusbarCopy.switchModel,
       syncImageAttachmentsForSubmit,
+      syncFileAttachmentsForSubmit,
+      syncAudioAttachmentsForSubmit,
       updateSessionState
     ]
   )
@@ -869,6 +1157,10 @@ export function usePromptActions({
   const cancelRun = useCallback(async () => {
     const sessionId = activeSessionId || activeSessionIdRef.current
 
+    // Invalidate any in-flight submitPromptText so session create / attach /
+    // prompt.submit can't re-arm busy after Stop.
+    submitEpochRef.current += 1
+
     const releaseBusy = () => {
       setMutableRef(busyRef, false)
       setBusy(false)
@@ -1065,27 +1357,13 @@ export function usePromptActions({
         }
       }
 
-      const deadline = Date.now() + REWIND_INTERRUPT_TIMEOUT_MS
-
-      for (;;) {
-        try {
-          await requestGateway('prompt.submit', {
-            session_id: sessionId,
-            text,
-            ...(truncateOrdinal !== undefined && { truncate_before_user_ordinal: truncateOrdinal })
-          })
-
-          return
-        } catch (err) {
-          if (isSessionBusyError(err) && Date.now() < deadline) {
-            await sleep(REWIND_RETRY_INTERVAL_MS)
-
-            continue
-          }
-
-          throw err
-        }
-      }
+      await withSessionBusyRetry(() =>
+        requestGateway('prompt.submit', {
+          session_id: sessionId,
+          text,
+          ...(truncateOrdinal !== undefined && { truncate_before_user_ordinal: truncateOrdinal })
+        })
+      )
     },
     [requestGateway]
   )

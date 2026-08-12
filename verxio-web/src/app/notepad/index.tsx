@@ -5,6 +5,7 @@ import { CompactMarkdown } from '@/components/chat/compact-markdown'
 import { PageLoader } from '@/components/page-loader'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
+import { writeClipboardText } from '@/components/ui/copy-button'
 import {
   Dialog,
   DialogContent,
@@ -13,6 +14,17 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tip } from '@/components/ui/tooltip'
@@ -287,10 +299,17 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   const pageStart = (currentPage - 1) * NOTES_PER_PAGE
   const paginatedNotes = filteredNotes.slice(pageStart, pageStart + NOTES_PER_PAGE)
 
-  const selectedNote = useMemo(
-    () => paginatedNotes.find(note => note.id === selectedNoteId) ?? paginatedNotes[0] ?? null,
-    [paginatedNotes, selectedNoteId]
-  )
+  const selectedNote = useMemo(() => {
+    if (selectedNoteId) {
+      const fromAll = notes.find(note => note.id === selectedNoteId)
+
+      if (fromAll) {
+        return fromAll
+      }
+    }
+
+    return paginatedNotes[0] ?? null
+  }, [notes, paginatedNotes, selectedNoteId])
 
   const dirty = Boolean(selectedNote && draft && draftChanged(selectedNote, draft))
 
@@ -315,8 +334,12 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   const pendingDeleteNoteTitle =
     pendingDelete?.kind === 'note' ? pendingDelete.note.title.trim() || 'this note' : 'this note'
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  const load = useCallback(async (options?: { quiet?: boolean }) => {
+    const quiet = Boolean(options?.quiet)
+
+    if (!quiet) {
+      setLoading(true)
+    }
 
     try {
       const response = await listNotepad()
@@ -324,14 +347,39 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       setNotes(response.notes)
       setSelectedNoteId(current => current ?? response.notes[0]?.id ?? null)
     } catch (error) {
-      notifyError(error, 'Could not load notes')
+      if (!quiet) {
+        notifyError(error, 'Could not load notes')
+      }
     } finally {
-      setLoading(false)
+      if (!quiet) {
+        setLoading(false)
+      }
     }
   }, [])
 
   useEffect(() => {
     void load()
+  }, [load])
+
+  // Agent/tool updates write through the API without touching this page's
+  // local draft. Soft-refresh when the tab regains focus so content/summary
+  // catch up without a full navigation.
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === 'hidden') {
+        return
+      }
+
+      void load({ quiet: true })
+    }
+
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
   }, [load])
 
   useEffect(() => {
@@ -380,16 +428,17 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   }, [notePage, pageCount])
 
   useEffect(() => {
-    if (paginatedNotes.length === 0) {
+    if (notes.length === 0) {
       setSelectedNoteId(null)
 
       return
     }
 
-    if (!selectedNoteId || !paginatedNotes.some(note => note.id === selectedNoteId)) {
-      setSelectedNoteId(paginatedNotes[0].id)
+    // Keep selection when a note moves out of the active folder filter.
+    if (!selectedNoteId || !notes.some(note => note.id === selectedNoteId)) {
+      setSelectedNoteId(paginatedNotes[0]?.id ?? notes[0].id)
     }
-  }, [paginatedNotes, selectedNoteId])
+  }, [notes, paginatedNotes, selectedNoteId])
 
   useEffect(() => {
     let cancelled = false
@@ -450,15 +499,47 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     []
   )
 
+  const selectedNoteSnapshotRef = useRef<VerxioNotepadNote | null>(null)
+
   useEffect(() => {
     if (!selectedNote) {
+      selectedNoteSnapshotRef.current = null
       setDraft(null)
 
       return
     }
 
-    setDraft(draftFromNote(selectedNote))
-    setSummaryEditing(false)
+    const previous = selectedNoteSnapshotRef.current
+    selectedNoteSnapshotRef.current = selectedNote
+
+    // Switching notes always remounts the editor from server state.
+    if (!previous || previous.id !== selectedNote.id) {
+      setDraft(draftFromNote(selectedNote))
+      setSummaryEditing(false)
+
+      return
+    }
+
+    // Same note, unchanged server revision — keep the current draft.
+    if (previous.updated_at === selectedNote.updated_at) {
+      return
+    }
+
+    // Server revision changed (e.g. agent update). Adopt it unless the user
+    // still has unsaved edits relative to the previous snapshot.
+    let adoptedServerRevision = false
+    setDraft(current => {
+      if (current && draftChanged(previous, current)) {
+        return current
+      }
+
+      adoptedServerRevision = true
+
+      return draftFromNote(selectedNote)
+    })
+    if (adoptedServerRevision) {
+      setSummaryEditing(false)
+    }
   }, [selectedNote])
 
   useEffect(() => {
@@ -627,6 +708,33 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       await persistDraft(draft, 'Note saved')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleMoveNote(note: VerxioNotepadNote, folderId: string | null) {
+    const nextFolderId = folderId || null
+
+    if ((note.folder_id ?? null) === nextFolderId) {
+      return
+    }
+
+    setBusyAction(`move-${note.id}`)
+
+    try {
+      const updated = await updateNotepadNote(note.id, { folder_id: nextFolderId })
+      setNotes(current => replaceNote(current, updated))
+
+      if (selectedNoteId === note.id) {
+        setDraft(current => (current ? { ...current, folder_id: nextFolderId } : current))
+      }
+
+      const folderName = nextFolderId ? (folderById.get(nextFolderId)?.name ?? 'folder') : DEFAULT_FOLDER_LABEL
+
+      notify({ kind: 'success', message: `Moved to ${folderName}` })
+    } catch (error) {
+      notifyError(error, 'Could not move note')
+    } finally {
+      setBusyAction(null)
     }
   }
 
@@ -1077,7 +1185,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
     try {
       const share = await shareNotepadNote(selectedNote.id)
       setNotes(current => replaceNote(current, share.note))
-      await navigator.clipboard?.writeText(shareUrlFromToken(share.token))
+      await writeClipboardText(shareUrlFromToken(share.token))
       notify({ kind: 'success', message: 'Share URL copied' })
     } catch (error) {
       notifyError(error, 'Could not share note')
@@ -1091,8 +1199,12 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       return
     }
 
-    await navigator.clipboard?.writeText(shareUrlFromToken(selectedNote.share_token))
-    notify({ kind: 'success', message: 'Share URL copied' })
+    try {
+      await writeClipboardText(shareUrlFromToken(selectedNote.share_token))
+      notify({ kind: 'success', message: 'Share URL copied' })
+    } catch (error) {
+      notifyError(error, 'Could not copy share URL')
+    }
   }
 
   async function handleRevokeShare() {
@@ -1216,7 +1328,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
           </div>
         </aside>
 
-        <section className="flex h-80 min-w-0 w-full shrink-0 flex-col overflow-hidden border-b border-(--ui-stroke-secondary) sm:h-[22rem] lg:h-full lg:w-[22rem] lg:border-b-0 lg:border-r">
+        <section className="flex h-80 min-w-0 w-full shrink-0 flex-col overflow-hidden border-b border-(--ui-stroke-secondary) sm:h-88 lg:h-full lg:w-88 lg:border-b-0 lg:border-r">
           <div className="flex h-12 items-center gap-2 border-b border-(--ui-stroke-secondary) px-3">
             <div className="relative min-w-0 flex-1">
               <Codicon
@@ -1239,30 +1351,92 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
               <div className="px-4 py-8 text-sm text-muted-foreground">No notes found.</div>
             ) : (
               paginatedNotes.map(note => (
-                <button
+                <div
                   className={cn(
-                    'block w-full border-b border-(--ui-stroke-secondary) px-3 py-3 text-left hover:bg-(--ui-control-hover-background)',
+                    'group relative flex w-full items-stretch border-b border-(--ui-stroke-secondary) hover:bg-(--ui-control-hover-background)',
                     selectedNote?.id === note.id && 'bg-(--ui-control-active-background)'
                   )}
                   key={note.id}
-                  onClick={() => setSelectedNoteId(note.id)}
-                  type="button"
                 >
-                  <div className="flex items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium">{note.title}</span>
-                    {note.share_token && <Codicon className="text-muted-foreground" name="link" />}
+                  <button
+                    className="min-w-0 flex-1 px-3 py-3 text-left"
+                    onClick={() => {
+                      if (selectedNoteId === note.id) {
+                        void load({ quiet: true })
+
+                        return
+                      }
+
+                      setSelectedNoteId(note.id)
+                    }}
+                    type="button"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">{note.title}</span>
+                      {note.share_token && <Codicon className="text-muted-foreground" name="link" />}
+                    </div>
+                    <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                      <span className="truncate">
+                        {folderById.get(note.folder_id || '')?.name || DEFAULT_FOLDER_LABEL}
+                      </span>
+                      <span aria-hidden="true">·</span>
+                      <span>{noteTime(note.updated_at)}</span>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
+                      {note.summary || noteBody(note) || 'Empty note'}
+                    </p>
+                  </button>
+                  <div className="flex shrink-0 items-start pr-1.5 pt-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          aria-label={`Note actions for ${note.title}`}
+                          disabled={busyAction === `move-${note.id}`}
+                          onClick={event => event.stopPropagation()}
+                          size="icon-xs"
+                          type="button"
+                          variant="ghost"
+                        >
+                          <Codicon
+                            name={busyAction === `move-${note.id}` ? 'loading' : 'ellipsis'}
+                            spinning={busyAction === `move-${note.id}`}
+                          />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="min-w-44" onClick={event => event.stopPropagation()}>
+                        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+                          Organize
+                        </DropdownMenuLabel>
+                        <DropdownMenuSub>
+                          <DropdownMenuSubTrigger>
+                            <Codicon name="folder" />
+                            Move to folder
+                          </DropdownMenuSubTrigger>
+                          <DropdownMenuSubContent className="min-w-40">
+                            <DropdownMenuItem
+                              disabled={!note.folder_id}
+                              onSelect={() => void handleMoveNote(note, null)}
+                            >
+                              <Codicon name={!note.folder_id ? 'check' : 'folder'} />
+                              {DEFAULT_FOLDER_LABEL}
+                            </DropdownMenuItem>
+                            {folders.length > 0 && <DropdownMenuSeparator />}
+                            {folders.map(folder => (
+                              <DropdownMenuItem
+                                disabled={note.folder_id === folder.id}
+                                key={folder.id}
+                                onSelect={() => void handleMoveNote(note, folder.id)}
+                              >
+                                <Codicon name={note.folder_id === folder.id ? 'check' : 'folder'} />
+                                {folder.name}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuSubContent>
+                        </DropdownMenuSub>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
-                  <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                    <span className="truncate">
-                      {folderById.get(note.folder_id || '')?.name || DEFAULT_FOLDER_LABEL}
-                    </span>
-                    <span aria-hidden="true">·</span>
-                    <span>{noteTime(note.updated_at)}</span>
-                  </div>
-                  <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                    {note.summary || noteBody(note) || 'Empty note'}
-                  </p>
-                </button>
+                </div>
               ))
             )}
           </div>
@@ -1324,10 +1498,13 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                   value={draft.title}
                 />
                 <select
-                  className="h-8 min-w-0 flex-1 rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 text-xs outline-none sm:flex-none"
-                  onChange={event =>
-                    setDraft(current => (current ? { ...current, folder_id: event.target.value || null } : current))
-                  }
+                  aria-label="Move note to folder"
+                  className="h-8 min-w-0 flex-1 rounded-[4px] border border-(--ui-stroke-secondary) bg-(--ui-bg-secondary) px-2 text-xs outline-none sm:max-w-48 sm:flex-none"
+                  disabled={busyAction === `move-${selectedNote.id}`}
+                  onChange={event => {
+                    void handleMoveNote(selectedNote, event.target.value || null)
+                  }}
+                  title="Move to folder"
                   value={draft.folder_id ?? ''}
                 >
                   <option value="">{DEFAULT_FOLDER_LABEL}</option>
@@ -1449,6 +1626,22 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                         <Codicon name="link" />
                       </Button>
                     </Tip>
+                    <Tip label="Open public URL">
+                      <Button
+                        aria-label="Open public URL"
+                        onClick={() => {
+                          const url = shareUrlFromToken(selectedNote.share_token)
+                          if (url) {
+                            window.open(url, '_blank', 'noopener,noreferrer')
+                          }
+                        }}
+                        size="icon-sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        <Codicon name="link-external" />
+                      </Button>
+                    </Tip>
                     <Tip label="Revoke public URL">
                       <Button
                         aria-label="Revoke public URL"
@@ -1458,7 +1651,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                         type="button"
                         variant="ghost"
                       >
-                        <Codicon name="link-external" />
+                        <Codicon name="debug-disconnect" />
                       </Button>
                     </Tip>
                   </>
@@ -1900,20 +2093,23 @@ const VERXIO_WEBSITE_URL = 'https://www.verxio.xyz'
 function PoweredByVerxioFooter() {
   return (
     <footer className="fixed inset-x-0 bottom-0 z-10 border-t border-(--ui-stroke-secondary) bg-background py-3 text-center text-xs text-muted-foreground">
-      Powered by{' '}
-      <a
-        aria-label="Verxio"
-        className="inline-flex w-16 align-middle focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none"
-        href={VERXIO_WEBSITE_URL}
-        rel="noopener noreferrer"
-        target="_blank"
-      >
-        <VerxioWordmark
-          className="w-full"
-          style={{ '--fit-text-line-height': '0.9', '--fit-text-min': '0.78rem' } as React.CSSProperties}
-          variant="solid"
-        />
-      </a>
+      <span className="inline-flex items-center justify-center gap-1.5">
+        Powered by
+        <a
+          aria-label="Verxio"
+          className="inline-flex h-5 w-[4.75rem] align-middle focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none"
+          href={VERXIO_WEBSITE_URL}
+          rel="noopener noreferrer"
+          target="_blank"
+        >
+          {/* Same VerxioWordmark as session intro; brand = no mix-blend on white. */}
+          <VerxioWordmark
+            className="w-full"
+            style={{ '--fit-text-line-height': '0.9', '--fit-text-min': '1.05rem' } as React.CSSProperties}
+            variant="brand"
+          />
+        </a>
+      </span>
     </footer>
   )
 }
@@ -1946,7 +2142,10 @@ export function PublicNotepadShareView() {
   if (error) {
     return (
       <>
-        <main className="grid min-h-dvh place-items-center bg-background px-4 pb-14 text-foreground">
+        <main
+          className="grid min-h-dvh place-items-center bg-background px-4 pb-14 text-foreground"
+          data-selectable-text="true"
+        >
           <section className="w-full max-w-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-5">
             <h1 className="text-base font-semibold tracking-normal">Shared note unavailable</h1>
             <p className="mt-2 text-sm text-muted-foreground">{error}</p>
@@ -1969,11 +2168,14 @@ export function PublicNotepadShareView() {
   }
 
   const note = payload.note
-  const summary = note.summary.trim()
+  // Public URL is the shareable document surface. Prefer summary; fall back to
+  // notes/transcript so agent-published playbooks still render when the model
+  // wrote only `content`.
+  const body = note.summary.trim() || note.content.trim() || note.transcript.trim()
 
   return (
     <>
-      <main className="h-dvh overflow-y-auto bg-background pb-14 text-foreground">
+      <main className="h-dvh overflow-y-auto bg-background pb-14 text-foreground" data-selectable-text="true">
         <article className="mx-auto max-w-4xl px-5 py-8">
           <div className="border-b border-(--ui-stroke-secondary) pb-5">
             <p className="text-xs font-medium text-muted-foreground">{payload.workspace_name}</p>
@@ -1985,10 +2187,10 @@ export function PublicNotepadShareView() {
             </div>
           </div>
 
-          {summary ? (
+          {body ? (
             <section className="py-6">
               <h2 className="sr-only">Summary</h2>
-              <NotepadMarkdown text={summary} />
+              <NotepadMarkdown text={body} />
             </section>
           ) : (
             <section className="grid min-h-64 place-items-center py-8 text-center text-sm text-muted-foreground">

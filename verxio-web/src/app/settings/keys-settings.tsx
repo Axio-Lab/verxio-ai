@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { PaginationControl } from '@/components/ui/pagination'
 import { useI18n } from '@/i18n'
+import { MEDIA_PROVIDER_TOOL_ENV_KEYS } from '@/lib/tool-credentials'
 import { CLOUD_TRANSCRIPTION_ENV_KEYS } from '@/lib/transcription-providers'
 import type { EnvVarInfo } from '@/types/hermes'
 
@@ -11,27 +12,29 @@ import { CredentialKeyCard, credentialPlaceholder, credentialRowLabel } from './
 import { CustomToolKeyForm } from './custom-tool-key-form'
 import { useEnvCredentials } from './env-credentials'
 import { asText } from './helpers'
+import { KEYS_VIEWS, type KeysView } from './nav-views'
 import { LoadingState, SettingsContent } from './primitives'
 import { TranscriptionKeySettings } from './transcription-key-settings'
 
-// Sub-views surfaced as sidebar subnav under Tools & Keys (see settings/index.tsx).
-export const KEYS_VIEWS = ['tools', 'transcription', 'settings'] as const
+export type { KeysView } from './nav-views'
+export { KEYS_VIEWS } from './nav-views'
 
-export type KeysView = (typeof KEYS_VIEWS)[number]
+const TOOLS_EXTRA_ENV_KEYS = new Set<string>(MEDIA_PROVIDER_TOOL_ENV_KEYS)
 
 // Providers live on their own page; messaging-platform credentials live on the
-// dedicated Messaging page (and are hidden here via `channel_managed`). This
-// view covers tool API keys plus server/setting env vars (API server, webhook,
-// gateway), which fold into the Settings subnav.
+// dedicated Messaging page (and are hidden here via `channel_managed`). Tools
+// covers tool/skill API keys; Settings covers non-gateway server env vars.
 
-// Backend categories that surface under each subnav. Platform credentials use the
-// `messaging` category but are flagged ``channel_managed`` and configured on
-// the Messaging page; only gateway-wide ``messaging`` rows (e.g. GATEWAY_PROXY)
-// appear here alongside ``setting``.
+// Backend categories that surface under each subnav.
 const VIEW_CATEGORIES: Record<KeysView, readonly string[]> = {
   transcription: [],
-  settings: ['setting', 'messaging'],
+  settings: ['setting'],
   tools: ['tool', 'skill']
+}
+
+/** Gateway connection env vars — removed from Settings UI with the Gateway tab. */
+function isGatewayEnvKey(key: string): boolean {
+  return key === 'GATEWAY_PROXY_KEY' || key.startsWith('GATEWAY_')
 }
 
 export function KeysSettings({ view }: KeysSettingsProps) {
@@ -52,10 +55,23 @@ export function KeysSettings({ view }: KeysSettingsProps) {
       const cats = VIEW_CATEGORIES[v]
 
       const entries = Object.entries(vars)
-        .filter(
-          ([key, info]) =>
-            !info.channel_managed && cats.includes(asText(info.category)) && !CLOUD_TRANSCRIPTION_ENV_KEYS.includes(key)
-        )
+        .filter(([key, info]) => {
+          if (info.channel_managed || CLOUD_TRANSCRIPTION_ENV_KEYS.includes(key) || isGatewayEnvKey(key)) {
+            return false
+          }
+
+          // Messaging/gateway-wide rows belong on Messaging, not Tools & Keys.
+          if (asText(info.category) === 'messaging') {
+            return false
+          }
+
+          if (cats.includes(asText(info.category))) {
+            return true
+          }
+
+          // Also expose DashScope here so AI video/image credentials are easy to find.
+          return v === 'tools' && TOOLS_EXTRA_ENV_KEYS.has(key)
+        })
         .sort(([a], [b]) => a.localeCompare(b))
 
       return entries.length === 0 ? [] : [{ category: v, entries }]
