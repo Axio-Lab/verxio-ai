@@ -1,11 +1,8 @@
-"""Fly.io Machines RuntimeManager (Phase 4).
-
-Uses Fly Machines API when VERXIO_FLY_API_TOKEN is set. Without credentials,
-methods raise RuntimeManagerError — CI can skip live Fly tests.
-"""
+"""Fly.io Machines RuntimeManager (Phase 4) — production path."""
 
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any
 
@@ -34,11 +31,12 @@ class FlyRuntimeManager:
         self.api_base = (api_base or os.getenv("VERXIO_FLY_API_BASE", "https://api.machines.dev/v1")).rstrip("/")
         self.image = (
             image
-            or os.getenv("VERXIO_HERMES_IMAGE")
             or os.getenv("VERXIO_FLY_HERMES_IMAGE")
+            or os.getenv("VERXIO_HERMES_IMAGE")
             or "nousresearch/hermes-agent:latest"
         )
         self.region = (region or os.getenv("VERXIO_FLY_REGION", "iad")).strip()
+        self.ready_timeout = float(os.getenv("VERXIO_FLY_READY_TIMEOUT_SECONDS", "120") or "120")
 
     def _headers(self) -> dict[str, str]:
         if not self.api_token:
@@ -49,19 +47,32 @@ class FlyRuntimeManager:
         }
 
     def _machine_name(self, runtime: RuntimeInstance) -> str:
-        # Fly machine names: lowercase alphanumeric and dashes.
         raw = runtime.container_name or f"verxio-{runtime.workspace_id}-{runtime.agent_id}"
         return raw.lower().replace("_", "-")[:63]
 
+    def _dashboard_url(self, name: str) -> str:
+        # Private IPv6 DNS inside Fly org network.
+        return f"http://{name}.vm.{self.app_name}.internal:9119"
+
     async def _request(self, method: str, path: str, **kwargs: Any) -> httpx.Response:
         async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.request(
+            return await client.request(
                 method,
                 f"{self.api_base}{path}",
                 headers=self._headers(),
                 **kwargs,
             )
-        return response
+
+    async def _wait_ready(self, runtime: RuntimeInstance) -> RuntimeInstance:
+        deadline = asyncio.get_event_loop().time() + self.ready_timeout
+        last_detail = "waiting"
+        while asyncio.get_event_loop().time() < deadline:
+            ok, detail = await self.health(runtime)
+            last_detail = detail
+            if ok:
+                return save_runtime(runtime, status=RuntimeStatus.RUNNING, last_error=None)
+            await asyncio.sleep(2.0)
+        return save_runtime(runtime, status=RuntimeStatus.STARTING, last_error=f"Fly ready timeout: {last_detail}")
 
     async def start(
         self,
@@ -70,8 +81,9 @@ class FlyRuntimeManager:
         extra_env: dict[str, str] | None = None,
         wait_ready: bool = True,
     ) -> RuntimeInstance:
-        assert_transition(runtime.status, RuntimeStatus.STARTING)
-        save_runtime(runtime, status=RuntimeStatus.STARTING, last_error=None)
+        if runtime.status != RuntimeStatus.STARTING:
+            assert_transition(runtime.status, RuntimeStatus.STARTING)
+        save_runtime(runtime, status=RuntimeStatus.STARTING, last_error=None, manager=self.name)
 
         name = self._machine_name(runtime)
         env = {
@@ -91,29 +103,28 @@ class FlyRuntimeManager:
                 "guest": {
                     "cpu_kind": os.getenv("VERXIO_FLY_CPU_KIND", "shared"),
                     "cpus": int(os.getenv("VERXIO_FLY_CPUS", "1") or "1"),
-                    "memory_mb": int(os.getenv("VERXIO_FLY_MEMORY_MB", "1024") or "1024"),
+                    "memory_mb": int(os.getenv("VERXIO_FLY_MEMORY_MB", "2048") or "2048"),
                 },
                 "services": [
                     {
                         "protocol": "tcp",
                         "internal_port": 9119,
-                        "ports": [],
                         "autostart": True,
-                        "autostop": True,
+                        "autostop": False,
+                        "ports": [],
                     }
                 ],
                 "restart": {"policy": "no"},
             },
         }
 
-        # Create or reuse machine.
         list_resp = await self._request("GET", f"/apps/{self.app_name}/machines")
         if list_resp.status_code >= 400:
             raise RuntimeManagerError(
                 f"Fly list machines failed: {list_resp.status_code}",
                 detail={"body": list_resp.text[:500]},
             )
-        machines = list_resp.json()
+        machines = list_resp.json() if isinstance(list_resp.json(), list) else []
         machine = next((m for m in machines if m.get("name") == name), None)
         if machine is None:
             create_resp = await self._request("POST", f"/apps/{self.app_name}/machines", json=payload)
@@ -126,7 +137,10 @@ class FlyRuntimeManager:
                 raise RuntimeManagerError(err.last_error or "Fly create failed", detail={"body": create_resp.text[:500]})
             machine = create_resp.json()
         else:
-            start_resp = await self._request("POST", f"/apps/{self.app_name}/machines/{machine['id']}/start")
+            # Update config then start.
+            mid = machine["id"]
+            await self._request("POST", f"/apps/{self.app_name}/machines/{mid}", json={"config": payload["config"]})
+            start_resp = await self._request("POST", f"/apps/{self.app_name}/machines/{mid}/start")
             if start_resp.status_code >= 400:
                 err = save_runtime(
                     runtime,
@@ -136,11 +150,10 @@ class FlyRuntimeManager:
                 raise RuntimeManagerError(err.last_error or "Fly start failed")
 
         machine_id = str(machine.get("id") or "")
-        # Private DNS form used inside Fly 6PN.
-        dashboard_url = f"http://{name}.vm.{self.app_name}.internal:9119"
+        dashboard_url = self._dashboard_url(name)
         started = save_runtime(
             runtime,
-            status=RuntimeStatus.STARTING if wait_ready else RuntimeStatus.RUNNING,
+            status=RuntimeStatus.STARTING,
             container_id=machine_id,
             container_name=name,
             image=self.image,
@@ -152,14 +165,10 @@ class FlyRuntimeManager:
         )
         if not wait_ready:
             return started
-        # Health wait — reuse HTTP probe against private URL when reachable.
-        ok, detail = await self.health(started)
-        if ok:
-            return save_runtime(started, status=RuntimeStatus.RUNNING, last_error=None)
-        return save_runtime(started, status=RuntimeStatus.STARTING, last_error=detail)
+        return await self._wait_ready(started)
 
     async def stop(self, runtime: RuntimeInstance) -> RuntimeInstance:
-        machine_id = runtime.container_id
+        machine_id = runtime.container_id or runtime.external_ref
         if not machine_id:
             return save_runtime(runtime, status=RuntimeStatus.STOPPED, last_error=None)
         resp = await self._request("POST", f"/apps/{self.app_name}/machines/{machine_id}/stop")
@@ -178,18 +187,6 @@ class FlyRuntimeManager:
 
     async def drain(self, runtime: RuntimeInstance) -> RuntimeInstance:
         draining = save_runtime(runtime, status=RuntimeStatus.DRAINING)
-        try:
-            from pathlib import Path
-
-            from app.runtime_orch.artifacts_store import get_artifact_store
-
-            store = get_artifact_store()
-            key = f"runtimes/{draining.workspace_id}/{draining.agent_id}/hermes-home"
-            home = Path(draining.hermes_home_path)
-            if home.exists():
-                store.put_directory(key, home)
-        except Exception:
-            pass
         return await self.stop(draining)
 
     async def address(self, runtime: RuntimeInstance) -> str | None:

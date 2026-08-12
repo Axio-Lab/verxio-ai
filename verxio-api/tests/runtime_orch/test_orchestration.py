@@ -167,3 +167,45 @@ def test_list_idle_candidates_respects_ttl(monkeypatch):
     monkeypatch.setattr(lifecycle, "runtime_from_row", lambda row: RuntimeInstance(**row))
     cands = lifecycle.list_idle_candidates()
     assert [c.id for c in cands] == ["rt_test"]
+
+
+def test_checkpoint_restore_roundtrip(tmp_path, monkeypatch):
+    from app.runtime_orch import checkpoints
+    from app.runtime_orch.artifacts_store import LocalArtifactStore
+
+    home = tmp_path / "hermes-home"
+    home.mkdir()
+    (home / "USER.md").write_text("prefers concise", encoding="utf-8")
+    store = LocalArtifactStore(root=tmp_path / "snap")
+    monkeypatch.setattr(checkpoints, "get_artifact_store", lambda: store)
+
+    rt = _rt(hermes_home_path=str(home))
+    assert checkpoints.checkpoint_hermes_home(rt)
+    # Simulate wiped node
+    import shutil
+
+    shutil.rmtree(home)
+    assert checkpoints.restore_hermes_home(rt, only_if_missing=True) is True
+    assert (home / "USER.md").read_text(encoding="utf-8") == "prefers concise"
+
+
+def test_sqlite_lease_store_exclusive(tmp_path, monkeypatch):
+    monkeypatch.setenv("VERXIO_DATABASE_MODE", "sqlite")
+    monkeypatch.setenv("VERXIO_DATABASE_PATH", str(tmp_path / "leases.sqlite3"))
+    from app import db
+    from app.runtime_orch.leases import SqliteLeaseStore, reset_lease_store_for_tests
+
+    reset_lease_store_for_tests()
+    db.run_migrations()
+    store = SqliteLeaseStore()
+    a = store.try_acquire("runtime-start:x", ttl_seconds=30)
+    b = store.try_acquire("runtime-start:x", ttl_seconds=30)
+    assert a is not None
+    assert b is None
+    store.release(a)
+    c = store.try_acquire("runtime-start:x", ttl_seconds=30)
+    assert c is not None
+
+
+def test_draining_can_restart():
+    assert assert_transition("draining", "starting") == RuntimeStatus.STARTING

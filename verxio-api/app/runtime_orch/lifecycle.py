@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from app import db
 from app.control_plane import runtime_from_row, save_runtime
 from app.models import RuntimeInstance
+from app.runtime_orch.checkpoints import checkpoint_hermes_home, restore_hermes_home
 from app.runtime_orch.factory import get_runtime_manager
 from app.runtime_orch.idle import idle_enabled, resolve_idle_policy
 from app.runtime_orch.leases import get_lease_store
@@ -43,12 +44,11 @@ async def wake_runtime(
     wait_ready: bool = True,
     reason: str = "api",
 ) -> RuntimeInstance:
-    """Idempotent wake: acquire lease, start if stopped, touch activity."""
+    """Idempotent wake: acquire lease, restore snapshot if needed, start, touch activity."""
     manager = get_runtime_manager()
     store = get_lease_store()
     lease = store.try_acquire(f"runtime-start:{runtime.id}", ttl_seconds=120)
     if lease is None:
-        # Another worker is starting — return current row.
         row = db.fetch_one("SELECT * FROM runtime_instances WHERE id = ?", (runtime.id,))
         return runtime_from_row(row or runtime.model_dump())
 
@@ -58,6 +58,12 @@ async def wake_runtime(
             ok, _ = await manager.health(current)
             if ok:
                 return touch_runtime_activity(current)
+
+        # Ephemeral backends / wiped nodes: restore hermes-home before start.
+        restored = restore_hermes_home(current, only_if_missing=True)
+        if restored:
+            logger.info("Restored hermes-home snapshot for runtime %s", current.id)
+
         logger.info("Waking runtime %s reason=%s manager=%s", runtime.id, reason, manager.name)
         started = await manager.start(current, extra_env=extra_env, wait_ready=wait_ready)
         return touch_runtime_activity(started)
@@ -67,6 +73,8 @@ async def wake_runtime(
 
 async def drain_runtime(runtime: RuntimeInstance) -> RuntimeInstance:
     manager = get_runtime_manager()
+    # Always checkpoint at the lifecycle layer so every backend gets a snapshot.
+    checkpoint_hermes_home(runtime)
     return await manager.drain(runtime)
 
 
@@ -86,7 +94,11 @@ def list_idle_candidates(*, now: datetime | None = None) -> list[RuntimeInstance
         policy = resolve_idle_policy(row.get("idle_policy") if isinstance(row, dict) else None)
         if policy.idle_ttl_seconds <= 0:
             continue
-        anchor = _parse_iso(runtime.last_seen_at) or _parse_iso(runtime.last_started_at)
+        anchor = (
+            _parse_iso(runtime.last_activity_at)
+            or _parse_iso(runtime.last_seen_at)
+            or _parse_iso(runtime.last_started_at)
+        )
         if anchor is None:
             continue
         if now - anchor >= timedelta(seconds=policy.idle_ttl_seconds):

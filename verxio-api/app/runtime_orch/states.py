@@ -22,7 +22,9 @@ ALLOWED_TRANSITIONS: dict[RuntimeStatus, frozenset[RuntimeStatus]] = {
     RuntimeStatus.RUNNING: frozenset(
         {RuntimeStatus.DRAINING, RuntimeStatus.STOPPED, RuntimeStatus.ERROR, RuntimeStatus.STARTING}
     ),
-    RuntimeStatus.DRAINING: frozenset({RuntimeStatus.STOPPED, RuntimeStatus.ERROR, RuntimeStatus.RUNNING}),
+    RuntimeStatus.DRAINING: frozenset(
+        {RuntimeStatus.STOPPED, RuntimeStatus.ERROR, RuntimeStatus.RUNNING, RuntimeStatus.STARTING}
+    ),
     RuntimeStatus.ERROR: frozenset(
         {RuntimeStatus.STOPPED, RuntimeStatus.STARTING, RuntimeStatus.RUNNING, RuntimeStatus.DRAINING}
     ),

@@ -332,9 +332,14 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         "off",
     }
     scheduler_task = asyncio.create_task(_run_workflow_scheduler()) if scheduler_enabled else None
+
+    from app.runtime_orch.workers import start_scale_workers, stop_scale_workers
+
+    scale_tasks = start_scale_workers()
     try:
         yield
     finally:
+        await stop_scale_workers(scale_tasks)
         if scheduler_task is not None:
             scheduler_task.cancel()
             with suppress(asyncio.CancelledError):
@@ -1113,8 +1118,11 @@ async def run_workflow_messaging_gateway_triggers_route(
     request: Request,
 ) -> WorkflowTriggerRunsResponse:
     from app.runtime_auth import get_context_for_request
+    from app.runtime_orch.lifecycle import enqueue_wake
 
-    workspace, profile, _runtime_instance = get_context_for_request(request)
+    workspace, profile, runtime_instance = get_context_for_request(request)
+    # Channel traffic must wake a stopped runtime (scale-to-zero).
+    await enqueue_wake(runtime_instance, reason="messaging.trigger")
     return await run_workflow_messaging_gateway_triggers(workspace, profile, payload)
 
 @app.post("/api/workflow-agents/triggers/app-events", response_model=WorkflowTriggerRunsResponse)

@@ -103,7 +103,7 @@ echo "    hermes-agent @ ${HERMES_SHA}"
 ensure_buildx
 
 echo "==> Building verxio-api + verxio-web + verxio-landing"
-"${COMPOSE[@]}" build --build-arg INSTALL_TURSO=1 verxio-api verxio-web verxio-landing
+"${COMPOSE[@]}" build --build-arg INSTALL_TURSO=1 --build-arg INSTALL_SCALE=1 verxio-api verxio-web verxio-landing
 
 # Recreate control plane before Hermes so a Hermes build failure cannot leave
 # production stuck on yesterday's api/web/landing containers.

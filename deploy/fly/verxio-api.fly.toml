@@ -1,0 +1,30 @@
+# fly.toml for Verxio control plane (optional Fly deploy of verxio-api)
+# App name / region are examples — set via `fly apps create` first.
+
+app = 'verxio-api'
+primary_region = 'iad'
+
+[build]
+  dockerfile = 'verxio-api/Dockerfile'
+  [build.args]
+    INSTALL_TURSO = '1'
+    INSTALL_SCALE = '1'
+
+[env]
+  VERXIO_RUNTIME_MANAGER = 'fly'
+  VERXIO_RUNTIME_IDLE_ENABLED = 'true'
+  VERXIO_IDLE_REAPER_ENABLED = 'true'
+  VERXIO_RUNTIME_RESTART_POLICY = 'no'
+  VERXIO_ARTIFACT_STORE = 's3'
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 2
+
+[[vm]]
+  memory = '2gb'
+  cpu_kind = 'shared'
+  cpus = 2

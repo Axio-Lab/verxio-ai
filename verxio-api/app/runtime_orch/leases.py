@@ -1,4 +1,4 @@
-"""Distributed start leases (Phase 3). Redis when configured; in-process fallback."""
+"""Distributed start leases (Phase 3). Redis when configured; SQLite/Turso otherwise."""
 
 from __future__ import annotations
 
@@ -23,6 +23,8 @@ class LeaseStore:
 
 
 class InMemoryLeaseStore(LeaseStore):
+    """Single-process only — prefer SqliteLeaseStore or Redis in production."""
+
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._leases: dict[str, Lease] = {}
@@ -44,9 +46,74 @@ class InMemoryLeaseStore(LeaseStore):
                 del self._leases[lease.key]
 
 
-class RedisLeaseStore(LeaseStore):
-    """Minimal Redis SET NX lease. Requires redis package at runtime."""
+class SqliteLeaseStore(LeaseStore):
+    """Cross-worker leases via control-plane DB (works with uvicorn --workers N)."""
 
+    _ensured = False
+
+    def _ensure_table(self) -> None:
+        if SqliteLeaseStore._ensured:
+            return
+        from app import db
+
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS runtime_start_leases (
+                lease_key TEXT PRIMARY KEY,
+                token TEXT NOT NULL,
+                expires_at REAL NOT NULL
+            )
+            """
+        )
+        SqliteLeaseStore._ensured = True
+
+    def try_acquire(self, key: str, *, ttl_seconds: float = 90.0) -> Lease | None:
+        from app import db
+
+        self._ensure_table()
+        now = time.time()
+        token = uuid.uuid4().hex
+        expires = now + ttl_seconds
+        db.execute("DELETE FROM runtime_start_leases WHERE expires_at < ?", (now,))
+        existing = db.fetch_one(
+            "SELECT token, expires_at FROM runtime_start_leases WHERE lease_key = ?",
+            (key,),
+        )
+        if existing and float(existing["expires_at"]) > now:
+            return None
+        if existing:
+            db.execute(
+                "UPDATE runtime_start_leases SET token = ?, expires_at = ? WHERE lease_key = ? AND expires_at <= ?",
+                (token, expires, key, now),
+            )
+        else:
+            try:
+                db.execute(
+                    "INSERT INTO runtime_start_leases (lease_key, token, expires_at) VALUES (?, ?, ?)",
+                    (key, token, expires),
+                )
+            except Exception:
+                # Race: another worker inserted first.
+                return None
+        row = db.fetch_one(
+            "SELECT token FROM runtime_start_leases WHERE lease_key = ?",
+            (key,),
+        )
+        if not row or str(row["token"]) != token:
+            return None
+        return Lease(key=key, token=token, expires_at=time.monotonic() + ttl_seconds)
+
+    def release(self, lease: Lease) -> None:
+        from app import db
+
+        self._ensure_table()
+        db.execute(
+            "DELETE FROM runtime_start_leases WHERE lease_key = ? AND token = ?",
+            (lease.key, lease.token),
+        )
+
+
+class RedisLeaseStore(LeaseStore):
     def __init__(self, url: str) -> None:
         import redis  # type: ignore[import-untyped]
 
@@ -61,7 +128,6 @@ class RedisLeaseStore(LeaseStore):
 
     def release(self, lease: Lease) -> None:
         pipe_key = f"verxio:lease:{lease.key}"
-        # Compare-and-delete via Lua would be ideal; GET+DEL is acceptable for MVP.
         current = self._client.get(pipe_key)
         if current == lease.token:
             self._client.delete(pipe_key)
@@ -80,12 +146,15 @@ def get_lease_store() -> LeaseStore:
             _STORE = RedisLeaseStore(url)
             return _STORE
         except Exception:
-            # Fall back so control plane still boots without Redis.
             pass
-    _STORE = InMemoryLeaseStore()
+    try:
+        _STORE = SqliteLeaseStore()
+    except Exception:
+        _STORE = InMemoryLeaseStore()
     return _STORE
 
 
 def reset_lease_store_for_tests() -> None:
     global _STORE
     _STORE = None
+    SqliteLeaseStore._ensured = False
