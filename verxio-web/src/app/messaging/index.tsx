@@ -31,6 +31,7 @@ import { MessagingConnectionsPanel } from './messaging-connections-panel'
 import { PairingRequestsPanel } from './pairing-requests-panel'
 import { PlatformAvatar } from './platform-icon'
 import { SlackManifestPanel } from './slack-manifest-panel'
+import { WebhookRoutesPanel } from './webhook-routes-panel'
 import { WhatsAppCloudSettingsPanel } from './whatsapp-cloud-settings-panel'
 import { WhatsAppPairingPanel } from './whatsapp-pairing-panel'
 import { WhatsAppSettingsPanel } from './whatsapp-settings-panel'
@@ -87,7 +88,9 @@ const FIELD_COPY: Record<string, { advanced?: boolean }> = {
   QQBOT_HOME_CHANNEL: { advanced: true },
   QQBOT_HOME_CHANNEL_NAME: { advanced: true },
   WHATSAPP_ENABLED: { advanced: true },
-  WHATSAPP_MODE: { advanced: true }
+  WHATSAPP_MODE: { advanced: true },
+  WEBHOOK_ENABLED: { advanced: true },
+  WEBHOOK_PORT: { advanced: true }
 }
 
 const DM_PAIRING_PLATFORMS = new Set([
@@ -342,6 +345,7 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
                 onSave={() => void handleSave(selected)}
                 onToggle={enabled => void handleToggle(selected, enabled)}
                 platform={selected}
+                platforms={platforms ?? []}
                 saving={saving}
               />
             )}
@@ -390,6 +394,7 @@ function PlatformDetail({
   onSave,
   onToggle,
   platform,
+  platforms,
   saving
 }: {
   edits: Record<string, string>
@@ -400,6 +405,7 @@ function PlatformDetail({
   onSave: () => void
   onToggle: (enabled: boolean) => void
   platform: MessagingPlatformInfo
+  platforms: MessagingPlatformInfo[]
   saving: string | null
 }) {
   const { t } = useI18n()
@@ -422,8 +428,10 @@ function PlatformDetail({
   const isWhatsApp = platform.id === 'whatsapp'
   const isWhatsAppCloud = platform.id === 'whatsapp_cloud'
   const isSlack = platform.id === 'slack'
+  const isWebhook = platform.id === 'webhook'
   const supportsDmPairing = DM_PAIRING_PLATFORMS.has(platform.id)
   const usesCustomSetup = isWhatsApp || isWhatsAppCloud
+  const hideStandardCredentials = usesCustomSetup || isWebhook
   const multiAccount = Boolean(platform.supports_multiple_connections)
   const hasEdits = Object.keys(trimEdits(edits)).length > 0
   const activeEnvVars =
@@ -468,6 +476,8 @@ function PlatformDetail({
           </header>
 
           {isSlack && <SlackManifestPanel />}
+
+          {isWebhook && <WebhookRoutesPanel onChanged={onRefresh} platform={platform} platforms={platforms} />}
 
           {multiAccount && (
             <MessagingConnectionsPanel
@@ -529,7 +539,7 @@ function PlatformDetail({
             </div>
           )}
 
-          {!usesCustomSetup && (
+          {!hideStandardCredentials && (
             <section>
               <SectionTitle>{m.getCredentials}</SectionTitle>
               <p className="mt-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
@@ -546,7 +556,7 @@ function PlatformDetail({
             </section>
           )}
 
-          {!usesCustomSetup && (
+          {!hideStandardCredentials && (
             <section>
               <SectionTitle>{m.required}</SectionTitle>
               <div className="mt-3 grid gap-1">
@@ -570,7 +580,7 @@ function PlatformDetail({
             </section>
           )}
 
-          {!usesCustomSetup && optionalFields.length > 0 && (
+          {!hideStandardCredentials && optionalFields.length > 0 && (
             <section>
               <SectionTitle>{m.recommended}</SectionTitle>
               <div className="mt-3 grid gap-1">
@@ -628,7 +638,7 @@ function PlatformDetail({
             title={isWhatsApp && !platform.configured ? m.whatsappPairing.scanFirst : undefined}
           />
 
-          {(isWhatsAppCloud || !isWhatsApp || platform.configured) && (
+          {(isWhatsAppCloud || isWebhook || !isWhatsApp || platform.configured) && (
             <div className="ml-auto flex items-center gap-2">
               {hasEdits && <span className="text-xs text-muted-foreground">{m.unsavedChanges}</span>}
               <Button
@@ -712,7 +722,7 @@ const PLATFORM_INTRO: Record<string, string> = {
   api_server:
     'Expose Verxio as an OpenAI-compatible API. Set an auth key, then point Open WebUI / LobeChat / etc. at the host:port.',
   webhook:
-    'Run an HTTP server that other tools (GitHub, GitLab, custom apps) can POST to. Use the secret to verify signatures.'
+    'Give GitHub, GitLab, or your own apps a Verxio URL. Incoming events run your agent and deliver the reply to a messaging channel you already connected.'
 }
 
 const introCopy = (platform: MessagingPlatformInfo, m: Translations['messaging']) =>

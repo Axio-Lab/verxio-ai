@@ -26,6 +26,9 @@ import type {
   MessagingPlatformsResponse,
   MessagingPlatformTestResponse,
   MessagingPlatformUpdate,
+  MessagingWebhookCreate,
+  MessagingWebhookRoute,
+  MessagingWebhooksResponse,
   ModelAssignmentRequest,
   ModelAssignmentResponse,
   ModelInfoResponse,
@@ -682,6 +685,42 @@ export function disconnectWhatsApp(): Promise<WhatsAppPairingApplyResponse & { d
   return window.hermesDesktop.api<WhatsAppPairingApplyResponse & { disconnected?: boolean }>({
     path: '/api/messaging/whatsapp/disconnect',
     method: 'DELETE'
+  })
+}
+
+export function getMessagingWebhooks(): Promise<MessagingWebhooksResponse> {
+  return window.hermesDesktop.api<MessagingWebhooksResponse>({
+    path: '/api/messaging/webhooks'
+  })
+}
+
+export function enableMessagingWebhooks(): Promise<{ enabled: boolean; ok: boolean }> {
+  return window.hermesDesktop.api<{ enabled: boolean; ok: boolean }>({
+    path: '/api/messaging/webhooks/enable',
+    method: 'POST'
+  })
+}
+
+export function createMessagingWebhook(body: MessagingWebhookCreate): Promise<MessagingWebhookRoute> {
+  return window.hermesDesktop.api<MessagingWebhookRoute>({
+    path: '/api/messaging/webhooks',
+    method: 'POST',
+    body
+  })
+}
+
+export function deleteMessagingWebhook(name: string): Promise<{ ok: boolean }> {
+  return window.hermesDesktop.api<{ ok: boolean }>({
+    path: `/api/messaging/webhooks/${encodeURIComponent(name)}`,
+    method: 'DELETE'
+  })
+}
+
+export function setMessagingWebhookEnabled(name: string, enabled: boolean): Promise<{ enabled: boolean; ok: boolean }> {
+  return window.hermesDesktop.api<{ enabled: boolean; ok: boolean }>({
+    path: `/api/messaging/webhooks/${encodeURIComponent(name)}/enabled`,
+    method: 'PUT',
+    body: { enabled }
   })
 }
 

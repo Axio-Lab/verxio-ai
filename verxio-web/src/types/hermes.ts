@@ -230,6 +230,38 @@ export interface MessagingPlatformsResponse {
   platforms: MessagingPlatformInfo[]
 }
 
+export interface MessagingWebhookRoute {
+  created_at?: null | string
+  deliver?: string
+  deliver_only?: boolean
+  description?: string
+  enabled: boolean
+  events?: string[]
+  name: string
+  prompt?: string
+  secret?: string
+  secret_set?: boolean
+  skills?: string[]
+  url: string
+}
+
+export interface MessagingWebhooksResponse {
+  base_url: string
+  enabled: boolean
+  subscriptions: MessagingWebhookRoute[]
+}
+
+export interface MessagingWebhookCreate {
+  deliver: string
+  deliver_chat_id?: string
+  description?: string
+  events?: string[]
+  name: string
+  prompt?: string
+  secret?: string
+  skills?: string[]
+}
+
 export interface MessagingPlatformUpdate {
   clear_env?: string[]
   enabled?: boolean
