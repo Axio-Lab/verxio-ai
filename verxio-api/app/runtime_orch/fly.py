@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import os
+import secrets
 from typing import Any
 
 import httpx
 
+from app import db
 from app.control_plane import now_iso, save_runtime
 from app.models import RuntimeInstance
 from app.runtime_orch.manager import RuntimeManagerError
@@ -86,11 +88,17 @@ class FlyRuntimeManager:
         save_runtime(runtime, status=RuntimeStatus.STARTING, last_error=None, manager=self.name)
 
         name = self._machine_name(runtime)
+        token_row = db.fetch_one("SELECT dashboard_token FROM runtime_instances WHERE id = ?", (runtime.id,))
+        dashboard_token = str(token_row.get("dashboard_token") or "") if token_row else ""
+        if not dashboard_token:
+            dashboard_token = secrets.token_urlsafe(32)
         env = {
             "HERMES_DASHBOARD": "1",
             "HERMES_DASHBOARD_HOST": "0.0.0.0",
             "HERMES_DASHBOARD_PORT": "9119",
             "HERMES_DASHBOARD_INSECURE": "1",
+            "HERMES_DASHBOARD_SESSION_TOKEN": dashboard_token,
+            "VERXIO_RUNTIME_TOKEN": dashboard_token,
             "TERMINAL_CWD": "/workspace",
             **(extra_env or {}),
         }
@@ -158,6 +166,7 @@ class FlyRuntimeManager:
             container_name=name,
             image=self.image,
             dashboard_url=dashboard_url,
+            dashboard_token=dashboard_token,
             last_started_at=now_iso(),
             last_error=None,
             manager=self.name,

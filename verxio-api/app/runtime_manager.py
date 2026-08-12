@@ -689,8 +689,14 @@ def runtime_dashboard_base_url(runtime: RuntimeInstance, *, ensure_network: bool
     (``172.17.0.1:19119``) go through docker-proxy and often hang WS upgrades;
     default-bridge IPs are often unreachable from the compose network.
 
+    For K8s/Fly backends there is no compose DNS name — use ``dashboard_url``.
+
     ``ensure_network`` is for start/WS paths only — never on status polling.
     """
+    manager = (runtime.manager or os.getenv("VERXIO_RUNTIME_MANAGER", "local-docker") or "local-docker").strip().lower()
+    if manager in {"k8s", "fly"}:
+        return runtime.dashboard_url
+
     if ensure_network:
         _ensure_runtime_on_network(runtime)
     # Hot path: env/cache only. Never docker-inspect here.
@@ -704,11 +710,15 @@ def runtime_dashboard_base_url(runtime: RuntimeInstance, *, ensure_network: bool
 
 
 def runtime_dashboard_ws_candidates(runtime: RuntimeInstance) -> list[str]:
-    """Compose-DNS only. Never docker-inspect or docker-proxy on the WS path.
+    """Compose-DNS only for local-docker. K8s/Fly use dashboard_url.
 
     IP inspect + network connect used to wedge docker.sock (and the API worker)
     right when the browser opened the gateway socket.
     """
+    manager = (runtime.manager or os.getenv("VERXIO_RUNTIME_MANAGER", "local-docker") or "local-docker").strip().lower()
+    if manager in {"k8s", "fly"}:
+        return [runtime.dashboard_url] if runtime.dashboard_url else []
+
     candidates: list[str] = []
     # Env/cache only — no allow_docker_probe on the WS hot path.
     network = _runtime_docker_network(allow_docker_probe=False)

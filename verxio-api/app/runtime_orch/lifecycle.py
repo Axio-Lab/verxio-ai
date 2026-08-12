@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
+import time
 from datetime import datetime, timedelta, timezone
 
 from app import db
@@ -49,6 +52,18 @@ async def wake_runtime(
     store = get_lease_store()
     lease = store.try_acquire(f"runtime-start:{runtime.id}", ttl_seconds=120)
     if lease is None:
+        # Another worker is starting this runtime. If the caller needs ready,
+        # poll health instead of returning a stale "starting" row immediately.
+        if wait_ready:
+            deadline = time.monotonic() + float(os.getenv("VERXIO_RUNTIME_READY_TIMEOUT_SECONDS", "180") or "180")
+            while time.monotonic() < deadline:
+                row = db.fetch_one("SELECT * FROM runtime_instances WHERE id = ?", (runtime.id,))
+                current = runtime_from_row(row or runtime.model_dump())
+                if is_warm(current.status):
+                    ok, _ = await manager.health(current)
+                    if ok:
+                        return touch_runtime_activity(current)
+                await asyncio.sleep(2.0)
         row = db.fetch_one("SELECT * FROM runtime_instances WHERE id = ?", (runtime.id,))
         return runtime_from_row(row or runtime.model_dump())
 

@@ -75,12 +75,34 @@ docker compose -f docker-compose.verxio.yml up -d --force-recreate verxio-api
 
 See `deploy/k8s/README.md`.
 
+### Local kind notes
+
+Compose API + kind pods **cannot** use pod IP / ClusterIP DNS from outside the CNI.
+Use hostPort bridging:
+
+```bash
+VERXIO_K8S_CONNECT_MODE=hostPort
+VERXIO_K8S_NODE_HOST=verxio-control-plane
+```
+
+Hermes requires `HERMES_DASHBOARD_SESSION_TOKEN` on non-loopback binds — the K8s
+manager injects this automatically (same as local-docker).
+
 ### Cluster (prod)
+
+**Production K8s requires the control-plane API in-cluster** (or otherwise on the
+pod network). Hybrid “API on ECS/VM + runtimes in K8s” is not supported without
+a dedicated network bridge.
 
 1. Install API with `--extra k8s` / `INSTALL_SCALE=1`
 2. `VERXIO_RUNTIME_MANAGER=k8s`
 3. `VERXIO_K8S_ENABLED=true`
-4. In-cluster SA or kubeconfig with create/delete Pod in `VERXIO_K8S_NAMESPACE`
+4. `VERXIO_K8S_CONNECT_MODE=cluster` (Service DNS)
+5. In-cluster SA with create/delete Pod+Service in `VERXIO_K8S_NAMESPACE`
+6. Persist hermes-home via PVC / snapshot restore (ephemeral pods lose `/opt/data` otherwise)
+7. Use a private registry + `imagePullSecrets` (not `:local` images)
+
+Until those are met, keep ECS on `VERXIO_RUNTIME_MANAGER=local-docker`.
 
 ## Rollback
 

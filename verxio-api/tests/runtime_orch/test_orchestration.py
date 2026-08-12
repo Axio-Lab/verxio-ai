@@ -108,12 +108,24 @@ def test_factory_builds_backends():
 
 def test_k8s_manifest_render():
     mgr = K8sRuntimeManager(namespace="verxio-test")
-    manifest = mgr.render_pod_manifest(_rt(status="stopped"), extra_env={"FOO": "bar"})
+    manifest = mgr.render_pod_manifest(
+        _rt(status="stopped"),
+        extra_env={"FOO": "bar"},
+        dashboard_token="tok_test",
+        host_port=19199,
+    )
     assert manifest["kind"] == "Pod"
     assert manifest["metadata"]["namespace"] == "verxio-test"
     env = {e["name"]: e["value"] for e in manifest["spec"]["containers"][0]["env"]}
     assert env["FOO"] == "bar"
     assert env["HERMES_DASHBOARD_PORT"] == "9119"
+    assert env["HERMES_DASHBOARD_SESSION_TOKEN"] == "tok_test"
+    assert env["VERXIO_RUNTIME_TOKEN"] == "tok_test"
+    port = manifest["spec"]["containers"][0]["ports"][0]
+    assert port["hostPort"] == 19199
+    assert manifest["spec"]["restartPolicy"] == "Always"
+    probe = manifest["spec"]["containers"][0]["readinessProbe"]["httpGet"]
+    assert probe["path"] == "/api/status"
 
 
 def test_wake_queue_dedupes():
