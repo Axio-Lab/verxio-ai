@@ -20,6 +20,7 @@ import {
   type CronJob,
   deleteCronJob,
   getCronJobs,
+  getMessagingPlatforms,
   pauseCronJob,
   resumeCronJob,
   triggerCronJob,
@@ -29,8 +30,17 @@ import { type Translations, useI18n } from '@/i18n'
 import { AlertTriangle, Clock } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
+import type { MessagingPlatformInfo } from '@/types/hermes'
 
 import { useRefreshHotkey } from '../hooks/use-refresh-hotkey'
+import {
+  CRON_LOCAL_DELIVER,
+  cronDeliverPlatformId,
+  cronDeliveryOptions,
+  type MessagingDeliveryOption,
+  MessagingDeliverySelect,
+  withCurrentDeliveryOption
+} from '../messaging/messaging-delivery-select'
 import { OverlayView } from '../overlays/overlay-view'
 import { PageSearchShell } from '../page-search-shell'
 import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
@@ -38,9 +48,7 @@ import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 import { CronJobActionsMenu, CronJobActionsTrigger } from './cron-job-actions-menu'
 import { jobState } from './job-state'
 
-const DEFAULT_DELIVER = 'local'
-
-const DELIVERY_VALUES: readonly string[] = ['local', 'telegram', 'discord', 'slack', 'email']
+const DEFAULT_DELIVER = CRON_LOCAL_DELIVER
 
 const SCHEDULE_OPTIONS: ReadonlyArray<ScheduleOption> = [
   { expr: '0 9 * * *', value: 'daily' },
@@ -112,7 +120,22 @@ function jobScheduleExpr(job: CronJob): string {
 }
 
 function jobDeliver(job: CronJob): string {
-  return asText(job.deliver) || DEFAULT_DELIVER
+  return cronDeliverPlatformId(asText(job.deliver) || DEFAULT_DELIVER)
+}
+
+function cronDeliverOptions(
+  platforms: MessagingPlatformInfo[],
+  localLabel: string,
+  currentId?: string,
+  fallbackLabel?: string
+): MessagingDeliveryOption[] {
+  const options = cronDeliveryOptions(platforms, localLabel)
+
+  return currentId ? withCurrentDeliveryOption(options, currentId, fallbackLabel || currentId) : options
+}
+
+function cronDeliverLabel(deliver: string, options: MessagingDeliveryOption[], labels: Record<string, string>): string {
+  return options.find(option => option.id === deliver)?.name || labels[deliver] || deliver
 }
 
 function cronParts(expr: string): null | string[] {
@@ -265,6 +288,7 @@ export function CronView({ onClose, setStatusbarItemGroup: _setStatusbarItemGrou
   const { t } = useI18n()
   const c = t.cron
   const [jobs, setJobs] = useState<CronJob[] | null>(null)
+  const [platforms, setPlatforms] = useState<MessagingPlatformInfo[]>([])
   const [query, setQuery] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const [busyJobId, setBusyJobId] = useState<null | string>(null)
@@ -277,8 +301,13 @@ export function CronView({ onClose, setStatusbarItemGroup: _setStatusbarItemGrou
     setRefreshing(true)
 
     try {
-      const result = await getCronJobs()
+      const [result, messaging] = await Promise.all([
+        getCronJobs(),
+        getMessagingPlatforms().catch(() => ({ platforms: [] as MessagingPlatformInfo[] }))
+      ])
+
       setJobs(result)
+      setPlatforms(messaging.platforms ?? [])
     } catch (err) {
       notifyError(err, c.failedLoad)
     } finally {
@@ -442,12 +471,18 @@ export function CronView({ onClose, setStatusbarItemGroup: _setStatusbarItemGrou
                   onEdit={() => setEditor({ mode: 'edit', job })}
                   onPauseResume={() => void handlePauseResume(job)}
                   onTrigger={() => void handleTrigger(job)}
+                  platforms={platforms}
                 />
               ))}
             </div>
           </div>
         )}
-        <CronEditorDialog editor={editor} onClose={() => setEditor({ mode: 'closed' })} onSave={handleEditorSave} />
+        <CronEditorDialog
+          editor={editor}
+          onClose={() => setEditor({ mode: 'closed' })}
+          onSave={handleEditorSave}
+          platforms={platforms}
+        />
 
         <Dialog onOpenChange={open => !open && !deleting && setPendingDelete(null)} open={pendingDelete !== null}>
           <DialogContent className="max-w-md">
@@ -485,7 +520,8 @@ function CronJobRow({
   onDelete,
   onEdit,
   onPauseResume,
-  onTrigger
+  onTrigger,
+  platforms
 }: {
   busy: boolean
   c: Translations['cron']
@@ -494,12 +530,15 @@ function CronJobRow({
   onEdit: () => void
   onPauseResume: () => void
   onTrigger: () => void
+  platforms: MessagingPlatformInfo[]
 }) {
   const state = jobState(job)
   const isPaused = state === 'paused'
   const hasName = Boolean(jobName(job))
   const prompt = jobPrompt(job)
   const deliver = jobDeliver(job)
+  const deliverOptions = cronDeliverOptions(platforms, c.deliveryLabels.local, deliver, c.deliveryLabels[deliver])
+  const deliverDisplay = cronDeliverLabel(deliver, deliverOptions, c.deliveryLabels)
 
   return (
     <div className="grid gap-3 px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
@@ -511,9 +550,7 @@ function CronJobRow({
         <div className="flex flex-wrap items-center gap-2">
           <span className="truncate text-sm font-medium">{jobTitle(job)}</span>
           <StatePill tone={STATE_TONE[state] ?? 'muted'}>{c.states[state] ?? state}</StatePill>
-          {deliver && deliver !== DEFAULT_DELIVER && (
-            <StatePill tone="muted">{c.deliveryLabels[deliver] ?? deliver}</StatePill>
-          )}
+          {deliver && deliver !== DEFAULT_DELIVER && <StatePill tone="muted">{deliverDisplay}</StatePill>}
         </div>
         {hasName && prompt && <p className="mt-1 truncate text-xs text-muted-foreground">{truncate(prompt, 120)}</p>}
         <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-[0.68rem] text-muted-foreground">
@@ -597,11 +634,13 @@ function EmptyState({
 function CronEditorDialog({
   editor,
   onClose,
-  onSave
+  onSave,
+  platforms
 }: {
   editor: EditorState
   onClose: () => void
   onSave: (values: EditorValues) => Promise<void>
+  platforms: MessagingPlatformInfo[]
 }) {
   const { t } = useI18n()
   const c = t.cron
@@ -631,6 +670,13 @@ function CronEditorDialog({
     setSaving(false)
   }, [initial, open])
 
+  const deliverOptions = useMemo(
+    () => cronDeliverOptions(platforms, c.deliveryLabels.local, deliver, c.deliveryLabels[deliver] || deliver),
+    [c.deliveryLabels, deliver, platforms]
+  )
+
+  const selectedDeliver = deliverOptions.find(option => option.id === deliver)
+
   const selectedScheduleOption =
     SCHEDULE_OPTIONS.find(candidate => candidate.value === schedulePreset) ?? SCHEDULE_OPTIONS[0]
 
@@ -656,6 +702,12 @@ function CronEditorDialog({
 
     if (!trimmedPrompt || !trimmedSchedule) {
       setError(c.promptScheduleRequired)
+
+      return
+    }
+
+    if (!selectedDeliver || selectedDeliver.status !== 'ready') {
+      setError(c.deliverRequired)
 
       return
     }
@@ -723,18 +775,12 @@ function CronEditorDialog({
             </Field>
 
             <Field htmlFor="cron-deliver" label={c.deliverLabel}>
-              <Select onValueChange={setDeliver} value={deliver}>
-                <SelectTrigger className="h-9 rounded-md" id="cron-deliver">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {DELIVERY_VALUES.map(value => (
-                    <SelectItem key={value} value={value}>
-                      {c.deliveryLabels[value]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <MessagingDeliverySelect
+                onChange={setDeliver}
+                options={deliverOptions}
+                selectId="cron-deliver"
+                value={deliver}
+              />
             </Field>
           </div>
 
