@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, master, verxio/web]
+    branches: [main, master, verxio/web, verxio/architecture]
   pull_request:
-    branches: [main, master, verxio/web]
+    branches: [main, master, verxio/web, verxio/architecture]
 
 jobs:
   verify:
@@ -27,6 +27,28 @@ jobs:
 
       - name: Run CI checks
         run: npm run format:check && npm run ci:web
+
+  api-orchestration:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: verxio-api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Sync verxio-api (dev)
+        run: uv sync --extra dev
+
+      - name: Runtime orchestration tests
+        run: uv run pytest tests/runtime_orch -v
+        env:
+          VERXIO_DATABASE_MODE: sqlite
+          VERXIO_DATABASE_PATH: /tmp/verxio-orch-ci.sqlite3
 
   hermes-fish:
     runs-on: ubuntu-latest

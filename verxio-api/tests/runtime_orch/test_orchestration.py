@@ -1,0 +1,169 @@
+"""Unit + integration tests for runtime orchestration (real FS; docker via script)."""
+
+from __future__ import annotations
+
+import asyncio
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import pytest
+
+from app.models import RuntimeInstance
+from app.runtime_orch.artifacts_store import LocalArtifactStore
+from app.runtime_orch.cells import cell_for_tenant
+from app.runtime_orch.factory import build_runtime_manager, reset_runtime_manager_for_tests
+from app.runtime_orch.idle import resolve_idle_policy
+from app.runtime_orch.k8s import K8sRuntimeManager
+from app.runtime_orch.leases import InMemoryLeaseStore, reset_lease_store_for_tests
+from app.runtime_orch.states import RuntimeStatus, assert_transition, is_warm, normalize_status
+from app.runtime_orch.wake_queue import WakeJob, WakeQueue
+
+
+def _rt(**overrides) -> RuntimeInstance:
+    base = dict(
+        id="rt_test",
+        tenant_id="tenant_1",
+        workspace_id="ws_1",
+        agent_id="agent_1",
+        mode="local-docker",
+        status="stopped",
+        hermes_home_path="/tmp/verxio-test/hermes-home",
+        workspace_path="/tmp/verxio-test/workspace",
+        artifact_path="/tmp/verxio-test/workspace/artifacts",
+    )
+    base.update(overrides)
+    return RuntimeInstance(**base)
+
+
+def test_state_machine_allows_start_path():
+    assert assert_transition("stopped", "starting") == RuntimeStatus.STARTING
+    assert assert_transition("starting", "running") == RuntimeStatus.RUNNING
+    assert assert_transition("running", "draining") == RuntimeStatus.DRAINING
+    assert assert_transition("draining", "stopped") == RuntimeStatus.STOPPED
+
+
+def test_state_machine_rejects_illegal():
+    with pytest.raises(ValueError, match="Illegal"):
+        assert_transition("stopped", "running")
+
+
+def test_normalize_unknown_is_error():
+    assert normalize_status("bogus") == RuntimeStatus.ERROR
+    assert is_warm("running")
+    assert not is_warm("stopped")
+
+
+def test_idle_policies():
+    free = resolve_idle_policy("free")
+    assert free.idle_ttl_seconds == 900
+    pro = resolve_idle_policy("pro")
+    assert pro.cold_start_slo_seconds == 15
+    always = resolve_idle_policy("always_on")
+    assert always.idle_ttl_seconds == 0
+
+
+def test_in_memory_lease_exclusive():
+    reset_lease_store_for_tests()
+    store = InMemoryLeaseStore()
+    a = store.try_acquire("runtime-start:rt1", ttl_seconds=30)
+    b = store.try_acquire("runtime-start:rt1", ttl_seconds=30)
+    assert a is not None
+    assert b is None
+    store.release(a)
+    c = store.try_acquire("runtime-start:rt1", ttl_seconds=30)
+    assert c is not None
+
+
+def test_local_artifact_store_roundtrip(tmp_path: Path):
+    src = tmp_path / "home"
+    src.mkdir()
+    (src / "MEMORY.md").write_text("hello memory", encoding="utf-8")
+    store = LocalArtifactStore(root=tmp_path / "snapshots")
+    key = "runtimes/ws/agent/hermes-home"
+    store.put_directory(key, src)
+    assert store.exists(key)
+    dest = tmp_path / "restored"
+    assert store.restore_directory(key, dest) is True
+    assert (dest / "MEMORY.md").read_text(encoding="utf-8") == "hello memory"
+
+
+def test_cell_assignment_single_and_multi(monkeypatch):
+    monkeypatch.setenv("VERXIO_CELL_COUNT", "1")
+    c1 = cell_for_tenant("tenant_abc")
+    assert c1.id == "cell_default"
+    monkeypatch.setenv("VERXIO_CELL_COUNT", "4")
+    c2 = cell_for_tenant("tenant_abc")
+    assert c2.id.startswith("cell_")
+    assert cell_for_tenant("tenant_abc").id == c2.id
+
+
+def test_factory_builds_backends():
+    reset_runtime_manager_for_tests()
+    assert build_runtime_manager("local-docker").name == "local-docker"
+    assert build_runtime_manager("fly").name == "fly"
+    assert build_runtime_manager("k8s").name == "k8s"
+    with pytest.raises(ValueError):
+        build_runtime_manager("nope")
+
+
+def test_k8s_manifest_render():
+    mgr = K8sRuntimeManager(namespace="verxio-test")
+    manifest = mgr.render_pod_manifest(_rt(status="stopped"), extra_env={"FOO": "bar"})
+    assert manifest["kind"] == "Pod"
+    assert manifest["metadata"]["namespace"] == "verxio-test"
+    env = {e["name"]: e["value"] for e in manifest["spec"]["containers"][0]["env"]}
+    assert env["FOO"] == "bar"
+    assert env["HERMES_DASHBOARD_PORT"] == "9119"
+
+
+def test_wake_queue_dedupes():
+    q = WakeQueue(maxsize=10)
+
+    async def _run():
+        assert await q.enqueue(WakeJob("rt1", "t1", "msg")) is True
+        assert await q.enqueue(WakeJob("rt1", "t1", "msg")) is True
+        assert await q.depth() == 1
+
+    asyncio.run(_run())
+
+
+def test_local_docker_manager_stop_uses_runtime_manager(monkeypatch):
+    from app.runtime_orch.local_docker import LocalDockerRuntimeManager
+
+    calls: list[str] = []
+
+    async def fake_stop(runtime):
+        calls.append(runtime.id)
+        return runtime.model_copy(update={"status": "stopped"})
+
+    monkeypatch.setattr("app.runtime_manager.stop_runtime_async", fake_stop)
+    mgr = LocalDockerRuntimeManager()
+    out = asyncio.run(mgr.stop(_rt(status="running")))
+    assert out.status == "stopped"
+    assert calls == ["rt_test"]
+
+
+def test_list_idle_candidates_respects_ttl(monkeypatch):
+    from app.runtime_orch import lifecycle
+
+    stale = _rt(
+        status="running",
+        last_seen_at=(datetime.now(timezone.utc) - timedelta(hours=2)).isoformat(),
+        idle_policy="free",
+    )
+    fresh = _rt(
+        id="rt_fresh",
+        status="running",
+        last_seen_at=datetime.now(timezone.utc).isoformat(),
+        idle_policy="free",
+    )
+
+    monkeypatch.setattr(lifecycle, "idle_enabled", lambda: True)
+    monkeypatch.setattr(
+        lifecycle.db,
+        "fetch_all",
+        lambda *_a, **_k: [stale.model_dump(), fresh.model_dump()],
+    )
+    monkeypatch.setattr(lifecycle, "runtime_from_row", lambda row: RuntimeInstance(**row))
+    cands = lifecycle.list_idle_candidates()
+    assert [c.id for c in cands] == ["rt_test"]
