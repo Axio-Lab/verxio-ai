@@ -80,7 +80,10 @@ export const zhHant = defineLocale({
       signInFailed: '登入失敗',
       signInToRemoteGateway: '登入遠端閘道',
       signInWithProvider: provider => `使用 ${provider} 登入`,
-      identityProvider: '您的身分提供方'
+      identityProvider: '您的身分提供方',
+      hostedTitle: '正在連線到您的智能體',
+      hostedDescription: '您的獨立智能體正在啟動。本頁會自動重試。聊天和設定不會被刪除。',
+      hostedHint: '您也可以立即重試。修復安裝僅用於桌面應用程式。'
     }
   },
 

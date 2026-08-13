@@ -80,7 +80,10 @@ export const zh: Translations = {
       signInFailed: '登录失败',
       signInToRemoteGateway: '登录远程网关',
       signInWithProvider: provider => `使用 ${provider} 登录`,
-      identityProvider: '你的身份提供方'
+      identityProvider: '你的身份提供方',
+      hostedTitle: '正在连接你的智能体',
+      hostedDescription: '你的独立智能体正在启动。本页会自动重试。聊天和设置不会被删除。',
+      hostedHint: '你也可以立即重试。修复安装仅用于桌面应用。'
     }
   },
 

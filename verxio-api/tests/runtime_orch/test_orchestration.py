@@ -139,7 +139,7 @@ def test_k8s_manifest_render(monkeypatch):
     assert env["VERXIO_HOSTED"] == "1"
     assert manifest["spec"]["restartPolicy"] == "Always"
     probe = manifest["spec"]["containers"][0]["readinessProbe"]["httpGet"]
-    assert probe["path"] == "/api/status"
+    assert probe["path"] == "/api/healthz"
     mounts = {m["name"]: m["mountPath"] for m in manifest["spec"]["containers"][0]["volumeMounts"]}
     assert mounts["hermes-home"] == "/opt/data"
     assert mounts["workspace"] == "/workspace"

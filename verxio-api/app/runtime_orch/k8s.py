@@ -131,12 +131,13 @@ class K8sRuntimeManager:
             webhook_port["hostPort"] = self._webhook_host_port_for(runtime)
             api_server_port["hostPort"] = self._api_server_host_port_for(runtime)
 
-        # Hermes only allowlists /api/status for unauthenticated probes (not /api/health).
+        # /api/healthz is the cheap public liveness path. /api/status can stall
+        # on a cold dashboard and mark a live pod unready.
         readiness = {
-            "httpGet": {"path": "/api/status", "port": 9119},
+            "httpGet": {"path": "/api/healthz", "port": 9119},
             "initialDelaySeconds": int(os.getenv("VERXIO_K8S_READINESS_DELAY", "15") or "15"),
             "periodSeconds": 5,
-            "timeoutSeconds": 3,
+            "timeoutSeconds": 2,
             "failureThreshold": 36,
         }
 

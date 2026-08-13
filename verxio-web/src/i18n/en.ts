@@ -82,7 +82,11 @@ export const en: Translations = {
       signInFailed: 'Sign-in failed',
       signInToRemoteGateway: 'Sign in to remote gateway',
       signInWithProvider: provider => `Sign in with ${provider}`,
-      identityProvider: 'your identity provider'
+      identityProvider: 'your identity provider',
+      hostedTitle: 'Still connecting to your agent',
+      hostedDescription:
+        'Your isolated agent is starting. This page retries automatically. Nothing here deletes your chats or settings.',
+      hostedHint: 'You can retry now. Repair install is for the desktop app only.'
     }
   },
 

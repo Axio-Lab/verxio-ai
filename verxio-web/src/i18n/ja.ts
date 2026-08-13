@@ -83,7 +83,11 @@ export const ja = defineLocale({
       signInFailed: 'サインインに失敗しました',
       signInToRemoteGateway: 'リモートゲートウェイにサインイン',
       signInWithProvider: provider => `${provider} でサインイン`,
-      identityProvider: 'ID プロバイダー'
+      identityProvider: 'ID プロバイダー',
+      hostedTitle: 'エージェントに接続しています',
+      hostedDescription:
+        '専用エージェントを起動しています。このページは自動で再試行します。チャットや設定は削除されません。',
+      hostedHint: '今すぐ再試行することもできます。インストール修復はデスクトップアプリ向けです。'
     }
   },
 

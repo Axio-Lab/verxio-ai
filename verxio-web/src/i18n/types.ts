@@ -96,6 +96,9 @@ export interface Translations {
       signInToRemoteGateway: string
       signInWithProvider: (provider: string) => string
       identityProvider: string
+      hostedTitle: string
+      hostedDescription: string
+      hostedHint: string
     }
   }
 

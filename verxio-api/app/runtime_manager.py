@@ -823,8 +823,17 @@ async def runtime_health(runtime: RuntimeInstance) -> tuple[bool, str]:
     # Keep this short — status polling must not pile up 5s+ waits per request.
     async with httpx.AsyncClient(timeout=_runtime_health_timeout_seconds()) as client:
         for base in candidates:
+            root = base.rstrip("/")
+            healthz_ok = False
             try:
-                response = await client.get(f"{base.rstrip('/')}/api/status")
+                healthz = await client.get(f"{root}/api/healthz")
+                healthz.raise_for_status()
+                healthz_ok = True
+            except Exception as exc:
+                errors.append(f"{root}/api/healthz: {exc}")
+
+            try:
+                response = await client.get(f"{root}/api/status")
                 response.raise_for_status()
                 try:
                     payload = normalize_gateway_status_payload(response.json())
@@ -832,11 +841,17 @@ async def runtime_health(runtime: RuntimeInstance) -> tuple[bool, str]:
                     payload = None
                 if isinstance(payload, dict) and payload.get("gateway_running") is False:
                     state = payload.get("gateway_state") or "not running"
-                    raise RuntimeError(f"runtime dashboard is reachable but gateway is {state}")
+                    errors.append(f"{root}: runtime dashboard is reachable but gateway is {state}")
+                    continue
                 mark_runtime_healthy(runtime)
                 return True, "Verxio runtime is reachable."
-            except Exception as exc:
-                errors.append(f"{base}: {exc}")
+            except Exception as status_exc:
+                errors.append(f"{root}/api/status: {status_exc}")
+                if healthz_ok:
+                    # Dashboard process is accepting HTTP. Do not fail closed
+                    # because /api/status is still assembling on a cold start.
+                    mark_runtime_healthy(runtime)
+                    return True, "Verxio runtime is reachable."
     return False, f"Verxio runtime is not reachable: {'; '.join(errors)}"
 
 

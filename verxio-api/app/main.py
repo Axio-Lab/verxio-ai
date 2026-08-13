@@ -1517,6 +1517,7 @@ def _dashboard_path_is_lightweight(path: str) -> bool:
     # awaiting start_runtime on them made Settings → Providers fall back to
     # API-keys-only (ChatGPT/OAuth missing) and Model settings spin forever.
     return normalized in {
+        "api/healthz",
         "api/status",
         "api/config",
         "api/config/defaults",
