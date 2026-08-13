@@ -776,7 +776,7 @@ export const zhHant = defineLocale({
     required: '必填',
     recommended: '建議',
     advanced: count => `進階 (${count})`,
-    noTokenNeeded: '此平台不需要在此填寫 Token。請按照上方設定指南操作，然後在下方啟用。',
+    noTokenNeeded: '此平台不需要在此填寫 Token。完成設定後，在下方啟用即可。',
     enabled: '已啟用',
     disabled: '已停用',
     unsavedChanges: '有未儲存的變更',
@@ -1029,6 +1029,19 @@ export const zhHant = defineLocale({
       updateFailed: 'Could not update route',
       deliversTo: channel => (channel ? `Delivers to ${channel}` : 'No delivery target'),
       publicUrlHint: 'Public Verxio URL'
+    },
+    apiServer: {
+      title: 'OpenAI-compatible API',
+      description:
+        'Point Open WebUI, LobeChat, or any OpenAI client at this Verxio URL. Use the API key below as a Bearer token.',
+      keyHint: 'Choose a key at least 16 characters long. Verxio will not start the API without it.',
+      baseUrlLabel: 'Base URL',
+      copyUrl: 'Copy URL',
+      copiedTitle: label => `${label} copied`,
+      copiedMessage: 'Ready to paste.',
+      copyFailed: 'Could not copy',
+      authHint: 'Authorization: Bearer <your API key>',
+      loadFailed: 'Could not load the public API URL'
     },
     platformIntro: {}
   },

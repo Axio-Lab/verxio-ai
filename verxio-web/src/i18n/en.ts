@@ -765,7 +765,7 @@ export const en: Translations = {
     required: 'Required',
     recommended: 'Recommended',
     advanced: count => `Advanced (${count})`,
-    noTokenNeeded: 'This platform does not need a token here. Use the setup guide above, then enable it below.',
+    noTokenNeeded: 'This platform does not need a token here. Finish setup, then enable it below.',
     enabled: 'Enabled',
     disabled: 'Disabled',
     unsavedChanges: 'Unsaved changes',
@@ -1162,6 +1162,19 @@ export const en: Translations = {
       updateFailed: 'Could not update route',
       deliversTo: channel => (channel ? `Delivers to ${channel}` : 'No delivery target'),
       publicUrlHint: 'Public Verxio URL'
+    },
+    apiServer: {
+      title: 'OpenAI-compatible API',
+      description:
+        'Point Open WebUI, LobeChat, or any OpenAI client at this Verxio URL. Use the API key below as a Bearer token.',
+      keyHint: 'Choose a key at least 16 characters long. Verxio will not start the API without it.',
+      baseUrlLabel: 'Base URL',
+      copyUrl: 'Copy URL',
+      copiedTitle: label => `${label} copied`,
+      copiedMessage: 'Ready to paste.',
+      copyFailed: 'Could not copy',
+      authHint: 'Authorization: Bearer <your API key>',
+      loadFailed: 'Could not load the public API URL'
     },
     platformIntro: {}
   },

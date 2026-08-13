@@ -805,6 +805,18 @@ export interface Translations {
       deliversTo: (channel: string) => string
       publicUrlHint: string
     }
+    apiServer: {
+      title: string
+      description: string
+      keyHint: string
+      baseUrlLabel: string
+      copyUrl: string
+      copiedTitle: (label: string) => string
+      copiedMessage: string
+      copyFailed: string
+      authHint: string
+      loadFailed: string
+    }
     platformIntro: Record<string, string>
   }
 

@@ -57,6 +57,11 @@ class LocalDockerRuntimeManager:
 
         return runtime_webhook_base_url(runtime, ensure_network=True)
 
+    async def api_server_address(self, runtime: RuntimeInstance) -> str | None:
+        from app.runtime_manager import runtime_api_server_base_url
+
+        return runtime_api_server_base_url(runtime, ensure_network=True)
+
     async def health(self, runtime: RuntimeInstance) -> tuple[bool, str]:
         from app.runtime_manager import runtime_health
 

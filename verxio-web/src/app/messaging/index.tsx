@@ -27,10 +27,12 @@ import { CREDENTIAL_CONTROL_CLASS } from '../settings/credential-key-ui'
 import { ListRow } from '../settings/primitives'
 import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 
+import { ApiServerPanel } from './api-server-panel'
 import { MessagingConnectionsPanel } from './messaging-connections-panel'
 import { PairingRequestsPanel } from './pairing-requests-panel'
 import { PlatformAvatar } from './platform-icon'
 import { SlackManifestPanel } from './slack-manifest-panel'
+import { isVendorSetupUrl } from './vendor-docs'
 import { WebhookRoutesPanel } from './webhook-routes-panel'
 import { WhatsAppCloudSettingsPanel } from './whatsapp-cloud-settings-panel'
 import { WhatsAppPairingPanel } from './whatsapp-pairing-panel'
@@ -223,7 +225,11 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
     setSaving(`enabled:${platform.id}`)
 
     try {
-      await updateMessagingPlatform(platform.id, { enabled })
+      const hostAlreadySet = platform.env_vars.some(field => field.key === 'API_SERVER_HOST' && field.is_set)
+      await updateMessagingPlatform(platform.id, {
+        enabled,
+        ...(enabled && platform.id === 'api_server' && !hostAlreadySet ? { env: { API_SERVER_HOST: '0.0.0.0' } } : {})
+      })
       setPlatforms(
         current =>
           current?.map(row =>
@@ -255,6 +261,14 @@ export function MessagingView({ setStatusbarItemGroup: _setStatusbarItemGroup, .
 
   async function handleSave(platform: MessagingPlatformInfo) {
     const env = trimEdits(edits[platform.id] || {})
+
+    if (platform.id === 'api_server') {
+      const hostAlreadySet = platform.env_vars.some(field => field.key === 'API_SERVER_HOST' && field.is_set)
+
+      if (!env.API_SERVER_HOST && !hostAlreadySet) {
+        env.API_SERVER_HOST = '0.0.0.0'
+      }
+    }
 
     if (Object.keys(env).length === 0) {
       return
@@ -429,15 +443,21 @@ function PlatformDetail({
   const isWhatsAppCloud = platform.id === 'whatsapp_cloud'
   const isSlack = platform.id === 'slack'
   const isWebhook = platform.id === 'webhook'
+  const isApiServer = platform.id === 'api_server'
   const supportsDmPairing = DM_PAIRING_PLATFORMS.has(platform.id)
   const usesCustomSetup = isWhatsApp || isWhatsAppCloud
   const hideStandardCredentials = usesCustomSetup || isWebhook
+  const setupGuideUrl = isVendorSetupUrl(platform.docs_url) ? platform.docs_url : ''
   const multiAccount = Boolean(platform.supports_multiple_connections)
   const hasEdits = Object.keys(trimEdits(edits)).length > 0
   const activeEnvVars =
     multiAccount && selectedConnection?.env_vars?.length ? selectedConnection.env_vars : platform.env_vars
-  const requiredFields = activeEnvVars.filter(field => field.required)
-  const optionalFields = activeEnvVars.filter(field => !field.required && !fieldCopy(field, m).advanced)
+  const requiredFields = activeEnvVars.filter(
+    field => field.required || (isApiServer && field.key === 'API_SERVER_KEY')
+  )
+  const optionalFields = activeEnvVars.filter(
+    field => !field.required && !(isApiServer && field.key === 'API_SERVER_KEY') && !fieldCopy(field, m).advanced
+  )
   const advancedFields = activeEnvVars.filter(field => !field.required && fieldCopy(field, m).advanced)
   const hiddenCount = advancedFields.length
   const isSavingEnv = saving === `env:${platform.id}` || saving === `conn:${platform.id}`
@@ -478,6 +498,8 @@ function PlatformDetail({
           {isSlack && <SlackManifestPanel />}
 
           {isWebhook && <WebhookRoutesPanel onChanged={onRefresh} platform={platform} platforms={platforms} />}
+
+          {isApiServer && <ApiServerPanel platform={platform} />}
 
           {multiAccount && (
             <MessagingConnectionsPanel
@@ -545,14 +567,16 @@ function PlatformDetail({
               <p className="mt-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
                 {introCopy(platform, m)}
               </p>
-              <div className="mt-3">
-                <Button asChild size="sm" variant="textStrong">
-                  <a href={platform.docs_url} rel="noreferrer" target="_blank">
-                    {m.openSetupGuide}
-                    <ExternalLink className="size-3.5" />
-                  </a>
-                </Button>
-              </div>
+              {setupGuideUrl ? (
+                <div className="mt-3">
+                  <Button asChild size="sm" variant="textStrong">
+                    <a href={setupGuideUrl} rel="noreferrer" target="_blank">
+                      {m.openSetupGuide}
+                      <ExternalLink className="size-3.5" />
+                    </a>
+                  </Button>
+                </div>
+              ) : null}
             </section>
           )}
 
@@ -720,7 +744,7 @@ const PLATFORM_INTRO: Record<string, string> = {
     'Sign in to the WeChat Official Account platform, copy the AppID and Token, and point the message callback URL at Verxio.',
   qqbot: 'Register an app on the QQ Open Platform (q.qq.com) and copy the App ID and Client Secret.',
   api_server:
-    'Expose Verxio as an OpenAI-compatible API. Set an auth key, then point Open WebUI / LobeChat / etc. at the host:port.',
+    'Expose Verxio as an OpenAI-compatible API. Set an auth key, then point Open WebUI / LobeChat / etc. at the public Verxio URL shown above.',
   webhook:
     'Give GitHub, GitLab, or your own apps a Verxio URL. Incoming events run your agent and deliver the reply to a messaging channel you already connected.'
 }
@@ -758,7 +782,7 @@ function MessagingField({
             type={field.is_password ? 'password' : 'text'}
             value={edits[field.key] || ''}
           />
-          {field.url && (
+          {field.url && isVendorSetupUrl(field.url) && (
             <Button asChild className="size-8 shrink-0" title={m.openDocs} variant="ghost">
               <a href={field.url} rel="noreferrer" target="_blank">
                 <ExternalLink className="size-3.5" />

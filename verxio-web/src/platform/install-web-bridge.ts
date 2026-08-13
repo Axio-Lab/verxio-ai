@@ -181,6 +181,7 @@ function buildApiUrl(path: string): string {
       path.startsWith('/api/hermes') ||
       path.startsWith('/api/messaging/slack/manifest') ||
       path.startsWith('/api/messaging/webhooks') ||
+      path.startsWith('/api/messaging/api-server') ||
       path === '/api/profile' ||
       path.startsWith('/api/profile?') ||
       path.startsWith('/api/runtime')

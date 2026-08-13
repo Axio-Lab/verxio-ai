@@ -42,6 +42,10 @@ class RuntimeManager(Protocol):
         """Internal base URL for inbound messaging webhook POSTs."""
         ...
 
+    async def api_server_address(self, runtime: RuntimeInstance) -> str | None:
+        """Internal base URL for the OpenAI-compatible API server."""
+        ...
+
     async def health(self, runtime: RuntimeInstance) -> tuple[bool, str]: ...
 
     def supports_publish_ports(self) -> bool:

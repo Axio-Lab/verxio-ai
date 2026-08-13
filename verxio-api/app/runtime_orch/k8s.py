@@ -70,6 +70,13 @@ class K8sRuntimeManager:
     def _webhook_container_port(self) -> int:
         return int(os.getenv("VERXIO_WEBHOOK_PORT", "8644") or "8644")
 
+    def _api_server_host_port_for(self, runtime: RuntimeInstance) -> int:
+        start = int(os.getenv("VERXIO_API_SERVER_PORT_START", "18642") or "18642")
+        return start + self._port_digest(runtime)
+
+    def _api_server_container_port(self) -> int:
+        return int(os.getenv("VERXIO_API_SERVER_PORT", "8642") or "8642")
+
     def _runtime_host_paths(self, runtime: RuntimeInstance) -> tuple[str, str] | None:
         if not self.host_path_root:
             return None
@@ -94,6 +101,7 @@ class K8sRuntimeManager:
             {"name": "TERMINAL_CWD", "value": "/workspace"},
             {"name": "HERMES_WRITE_SAFE_ROOT", "value": ""},
             {"name": "HERMES_MEDIA_ALLOW_DIRS", "value": "/workspace"},
+            {"name": "VERXIO_HOSTED", "value": "1"},
         ]
         for key, value in sorted((extra_env or {}).items()):
             if key in {
@@ -103,6 +111,7 @@ class K8sRuntimeManager:
                 "HERMES_DASHBOARD_INSECURE",
                 "HERMES_DASHBOARD_SESSION_TOKEN",
                 "VERXIO_RUNTIME_TOKEN",
+                "VERXIO_HOSTED",
             }:
                 continue
             env.append({"name": key, "value": value})
@@ -113,9 +122,14 @@ class K8sRuntimeManager:
             "containerPort": self._webhook_container_port(),
             "name": "webhook",
         }
+        api_server_port: dict[str, Any] = {
+            "containerPort": self._api_server_container_port(),
+            "name": "api-server",
+        }
         if self.connect_mode == "hostport" and host_port is not None:
             dashboard_port["hostPort"] = int(host_port)
             webhook_port["hostPort"] = self._webhook_host_port_for(runtime)
+            api_server_port["hostPort"] = self._api_server_host_port_for(runtime)
 
         # Hermes only allowlists /api/status for unauthenticated probes (not /api/health).
         readiness = {
@@ -131,7 +145,7 @@ class K8sRuntimeManager:
             "image": self.image,
             "imagePullPolicy": os.getenv("VERXIO_K8S_IMAGE_PULL_POLICY", "IfNotPresent"),
             "args": ["gateway", "run"],
-            "ports": [dashboard_port, webhook_port],
+            "ports": [dashboard_port, webhook_port, api_server_port],
             "env": env,
             "readinessProbe": readiness,
             "resources": {
@@ -207,6 +221,11 @@ class K8sRuntimeManager:
                         "port": self._webhook_container_port(),
                         "targetPort": self._webhook_container_port(),
                     },
+                    {
+                        "name": "api-server",
+                        "port": self._api_server_container_port(),
+                        "targetPort": self._api_server_container_port(),
+                    },
                 ],
             },
         }
@@ -251,7 +270,7 @@ class K8sRuntimeManager:
             return
 
         port_names = {getattr(port, "name", "") for port in (existing.spec.ports or [])}
-        if "webhook" in port_names:
+        if {"dashboard", "webhook", "api-server"} <= port_names:
             return
         try:
             core.patch_namespaced_service(
@@ -296,6 +315,20 @@ class K8sRuntimeManager:
         mode = self.connect_mode
         if mode == "hostport":
             return f"http://{self._node_ip()}:{self._webhook_host_port_for(runtime)}"
+        if mode == "podip":
+            from urllib.parse import urlparse
+
+            parsed_host = urlparse(dashboard_url or runtime.dashboard_url or "").hostname or ""
+            if parsed_host and "svc.cluster.local" not in parsed_host:
+                return f"http://{parsed_host}:{port}"
+        return f"http://{pod}.{self.namespace}.svc.cluster.local:{port}"
+
+    def _api_server_url(self, runtime: RuntimeInstance, *, dashboard_url: str | None = None) -> str:
+        pod = self.pod_name(runtime)
+        port = self._api_server_container_port()
+        mode = self.connect_mode
+        if mode == "hostport":
+            return f"http://{self._node_ip()}:{self._api_server_host_port_for(runtime)}"
         if mode == "podip":
             from urllib.parse import urlparse
 
@@ -472,6 +505,9 @@ class K8sRuntimeManager:
 
     async def webhook_address(self, runtime: RuntimeInstance) -> str | None:
         return self._webhook_url(runtime)
+
+    async def api_server_address(self, runtime: RuntimeInstance) -> str | None:
+        return self._api_server_url(runtime)
 
     async def health(self, runtime: RuntimeInstance) -> tuple[bool, str]:
         base = await self.address(runtime)

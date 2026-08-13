@@ -70,6 +70,10 @@ from app.knowledge_bases import (
     list_documents as list_knowledge_documents,
     list_knowledge_bases,
 )
+from app.messaging_api_server import (
+    get_api_server_info as get_messaging_api_server,
+    proxy_openai_path,
+)
 from app.messaging_webhooks import (
     MessagingWebhookCreate,
     MessagingWebhookEnabledToggle,
@@ -1166,6 +1170,19 @@ async def ingest_messaging_hook_route(workspace_id: str, route_name: str, reques
     excluded = {"content-encoding", "content-length", "transfer-encoding", "connection"}
     headers = {key: value for key, value in upstream.headers.items() if key.lower() not in excluded}
     return Response(content=upstream.content, status_code=upstream.status_code, headers=headers)
+
+
+@app.get("/api/messaging/api-server")
+async def get_messaging_api_server_route(request: Request) -> dict[str, Any]:
+    return await get_messaging_api_server(request, require_user(request))
+
+
+@app.api_route(
+    "/api/openai/{workspace_id}/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+)
+async def proxy_messaging_openai_route(workspace_id: str, path: str, request: Request) -> Response:
+    return await proxy_openai_path(workspace_id, path, request)
 
 
 @app.get("/api/messaging/webhooks")

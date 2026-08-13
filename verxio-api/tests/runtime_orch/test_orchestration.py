@@ -132,6 +132,11 @@ def test_k8s_manifest_render(monkeypatch):
     assert webhook["name"] == "webhook"
     assert webhook["containerPort"] == 8644
     assert webhook["hostPort"] == mgr._webhook_host_port_for(_rt(status="stopped"))
+    api_server = manifest["spec"]["containers"][0]["ports"][2]
+    assert api_server["name"] == "api-server"
+    assert api_server["containerPort"] == 8642
+    assert api_server["hostPort"] == mgr._api_server_host_port_for(_rt(status="stopped"))
+    assert env["VERXIO_HOSTED"] == "1"
     assert manifest["spec"]["restartPolicy"] == "Always"
     probe = manifest["spec"]["containers"][0]["readinessProbe"]["httpGet"]
     assert probe["path"] == "/api/status"
@@ -151,6 +156,16 @@ def test_k8s_service_includes_webhook_port(monkeypatch):
     assert ports["dashboard"]["port"] == 9119
     assert ports["webhook"]["port"] == 8644
     assert ports["webhook"]["targetPort"] == 8644
+    assert ports["api-server"]["port"] == 8642
+    assert ports["api-server"]["targetPort"] == 8642
+
+
+def test_k8s_api_server_address_uses_service_dns_in_cluster_mode(monkeypatch):
+    monkeypatch.setenv("VERXIO_K8S_CONNECT_MODE", "cluster")
+    monkeypatch.setenv("VERXIO_K8S_NAMESPACE", "verxio-test")
+    mgr = K8sRuntimeManager(namespace="verxio-test")
+    url = asyncio.run(mgr.api_server_address(_rt(status="running", container_name="verxio-ws-1-agent-1")))
+    assert url == "http://verxio-ws-1-agent-1.verxio-test.svc.cluster.local:8642"
 
 
 def test_k8s_webhook_address_uses_service_dns_in_cluster_mode(monkeypatch):

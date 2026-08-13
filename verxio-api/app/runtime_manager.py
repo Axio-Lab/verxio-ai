@@ -685,10 +685,38 @@ def runtime_webhook_container_port() -> int:
     return int(os.getenv("VERXIO_WEBHOOK_PORT", "8644") or "8644")
 
 
+def runtime_api_server_container_port() -> int:
+    return int(os.getenv("VERXIO_API_SERVER_PORT", "8642") or "8642")
+
+
 def runtime_webhook_base_url(runtime: RuntimeInstance, *, ensure_network: bool = False) -> str | None:
     """Private URL the API uses to reach the runtime webhook listener."""
     manager = (runtime.manager or os.getenv("VERXIO_RUNTIME_MANAGER", "local-docker") or "local-docker").strip().lower()
     port = runtime_webhook_container_port()
+    if manager in {"k8s", "kubernetes"}:
+        dashboard = runtime.dashboard_url or ""
+        if dashboard:
+            from urllib.parse import urlparse, urlunparse
+
+            parsed = urlparse(dashboard)
+            host = parsed.hostname or ""
+            if host and parsed.port == 9119:
+                netloc = f"{host}:{port}"
+                return urlunparse(parsed._replace(netloc=netloc))
+        return None
+
+    if ensure_network:
+        _ensure_runtime_on_network(runtime)
+    network = _runtime_docker_network(allow_docker_probe=False)
+    if network:
+        return f"http://{_container_name(runtime)}:{port}"
+    return None
+
+
+def runtime_api_server_base_url(runtime: RuntimeInstance, *, ensure_network: bool = False) -> str | None:
+    """Private URL the API uses to reach the runtime OpenAI-compatible listener."""
+    manager = (runtime.manager or os.getenv("VERXIO_RUNTIME_MANAGER", "local-docker") or "local-docker").strip().lower()
+    port = runtime_api_server_container_port()
     if manager in {"k8s", "kubernetes"}:
         dashboard = runtime.dashboard_url or ""
         if dashboard:

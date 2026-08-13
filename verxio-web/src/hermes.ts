@@ -21,6 +21,7 @@ import type {
   LogsResponse,
   MemoryProviderConfig,
   MemoryProviderOAuthStatus,
+  MessagingApiServerResponse,
   MessagingConnectionInfo,
   MessagingConnectionUpdate,
   MessagingPlatformsResponse,
@@ -691,6 +692,12 @@ export function disconnectWhatsApp(): Promise<WhatsAppPairingApplyResponse & { d
 export function getMessagingWebhooks(): Promise<MessagingWebhooksResponse> {
   return window.hermesDesktop.api<MessagingWebhooksResponse>({
     path: '/api/messaging/webhooks'
+  })
+}
+
+export function getMessagingApiServer(): Promise<MessagingApiServerResponse> {
+  return window.hermesDesktop.api<MessagingApiServerResponse>({
+    path: '/api/messaging/api-server'
   })
 }
 

@@ -795,7 +795,7 @@ export const ja = defineLocale({
     recommended: '推奨',
     advanced: count => `詳細設定 (${count})`,
     noTokenNeeded:
-      'このプラットフォームはここでトークンが必要ありません。上のセットアップガイドを使用してから、以下で有効にしてください。',
+      'このプラットフォームはここでトークンが必要ありません。セットアップを終えてから、以下で有効にしてください。',
     enabled: '有効',
     disabled: '無効',
     unsavedChanges: '未保存の変更',
@@ -1069,6 +1069,19 @@ export const ja = defineLocale({
       updateFailed: 'Could not update route',
       deliversTo: channel => (channel ? `Delivers to ${channel}` : 'No delivery target'),
       publicUrlHint: 'Public Verxio URL'
+    },
+    apiServer: {
+      title: 'OpenAI-compatible API',
+      description:
+        'Point Open WebUI, LobeChat, or any OpenAI client at this Verxio URL. Use the API key below as a Bearer token.',
+      keyHint: 'Choose a key at least 16 characters long. Verxio will not start the API without it.',
+      baseUrlLabel: 'Base URL',
+      copyUrl: 'Copy URL',
+      copiedTitle: label => `${label} copied`,
+      copiedMessage: 'Ready to paste.',
+      copyFailed: 'Could not copy',
+      authHint: 'Authorization: Bearer <your API key>',
+      loadFailed: 'Could not load the public API URL'
     },
     platformIntro: {}
   },

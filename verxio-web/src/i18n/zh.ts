@@ -924,7 +924,7 @@ export const zh: Translations = {
     required: '必填',
     recommended: '推荐',
     advanced: count => `高级 (${count})`,
-    noTokenNeeded: '此平台无需在此填写令牌。请按上方设置指南操作，然后在下方启用。',
+    noTokenNeeded: '此平台无需在此填写令牌。完成设置后，在下方启用即可。',
     enabled: '已启用',
     disabled: '已禁用',
     unsavedChanges: '有未保存的更改',
@@ -1214,6 +1214,19 @@ export const zh: Translations = {
       deliversTo: channel => (channel ? `投递到 ${channel}` : '未设置投递目标'),
       publicUrlHint: '公开 Verxio URL'
     },
+    apiServer: {
+      title: '兼容 OpenAI 的 API',
+      description:
+        '把 Open WebUI、LobeChat 或任何 OpenAI 客户端指向这个 Verxio URL。用下方的 API 密钥作为 Bearer token。',
+      keyHint: '请选择至少 16 个字符的密钥。没有密钥时 Verxio 不会启动该 API。',
+      baseUrlLabel: 'Base URL',
+      copyUrl: '复制 URL',
+      copiedTitle: label => `已复制 ${label}`,
+      copiedMessage: '可以粘贴了。',
+      copyFailed: '无法复制',
+      authHint: 'Authorization: Bearer <你的 API 密钥>',
+      loadFailed: '无法加载公开 API URL'
+    },
     platformIntro: {
       telegram:
         '在 Telegram 中，与 @BotFather 对话，运行 /newbot，复制它给你的令牌。然后从 @userinfobot 获取你的数字用户 ID。',
@@ -1236,7 +1249,7 @@ export const zh: Translations = {
       weixin: '登录微信公众平台，复制 AppID 和 Token，并把消息回调 URL 指向 Verxio。',
       qqbot: '在 QQ 开放平台 (q.qq.com) 注册一个应用，复制 App ID 和 Client Secret。',
       api_server:
-        '把 Verxio 暴露为兼容 OpenAI 的 API。设置一个鉴权密钥，然后把 Open WebUI / LobeChat 等指向 host:port。',
+        '把 Verxio 暴露为兼容 OpenAI 的 API。设置一个鉴权密钥，然后把 Open WebUI / LobeChat 等指向上方显示的公开 Verxio URL。',
       webhook: '给 GitHub、GitLab 或自定义应用一个 Verxio URL。用密钥验证签名，并把回复发到已连接的消息渠道。'
     }
   },

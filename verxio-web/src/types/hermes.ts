@@ -251,6 +251,13 @@ export interface MessagingWebhooksResponse {
   subscriptions: MessagingWebhookRoute[]
 }
 
+export interface MessagingApiServerResponse {
+  base_url: string
+  enabled: boolean
+  example: string
+  model: string
+}
+
 export interface MessagingWebhookCreate {
   connection_id?: string
   deliver: string
