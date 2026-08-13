@@ -168,6 +168,21 @@ def test_k8s_api_server_address_uses_service_dns_in_cluster_mode(monkeypatch):
     assert url == "http://verxio-ws-1-agent-1.verxio-test.svc.cluster.local:8642"
 
 
+def test_k8s_health_uses_runtime_health(monkeypatch):
+    mgr = K8sRuntimeManager(namespace="verxio-test")
+    calls: list[str] = []
+
+    async def fake_health(runtime):
+        calls.append(runtime.id)
+        return True, "ok"
+
+    monkeypatch.setattr("app.runtime_manager.runtime_health", fake_health)
+    ok, detail = asyncio.run(mgr.health(_rt(status="starting")))
+    assert ok is True
+    assert detail == "ok"
+    assert calls == ["rt_test"]
+
+
 def test_k8s_webhook_address_uses_service_dns_in_cluster_mode(monkeypatch):
     monkeypatch.setenv("VERXIO_K8S_CONNECT_MODE", "cluster")
     monkeypatch.setenv("VERXIO_K8S_NAMESPACE", "verxio-test")

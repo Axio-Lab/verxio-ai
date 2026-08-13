@@ -30,6 +30,10 @@ _LIVE_TOKEN_CACHE: dict[str, tuple[float, str]] = {}
 _CONTAINER_ENV_CACHE: dict[str, tuple[float, dict[str, str]]] = {}
 _HEALTHY_UNTIL: dict[str, float] = {}
 _START_LOCKS: dict[str, asyncio.Lock] = {}
+# One Hermes dashboard loop: boot floods of config/sessions freeze healthz.
+DASHBOARD_UPSTREAM_SLOTS = asyncio.Semaphore(
+    max(1, int(os.getenv("VERXIO_DASHBOARD_PROXY_CONCURRENCY", "1") or "1"))
+)
 _CACHE_TTL_SECONDS = 60.0
 _HEALTHY_TTL_SECONDS = 45.0
 _OPTIONAL_UNPAIRED_PLATFORM_ERRORS = {

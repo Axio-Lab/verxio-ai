@@ -177,7 +177,10 @@ function buildApiUrl(path: string): string {
       path.startsWith('/api/auth') ||
       path.startsWith('/api/artifacts') ||
       path.startsWith('/api/bootstrap') ||
-      path.startsWith('/api/health') ||
+      // `/api/healthz` is Hermes liveness. `startsWith('/api/health')` would
+      // steal it and 404 on the control plane, leaving the UI on CONNECTING.
+      path === '/api/health' ||
+      path.startsWith('/api/health?') ||
       path.startsWith('/api/hermes') ||
       path.startsWith('/api/messaging/slack/manifest') ||
       path.startsWith('/api/messaging/webhooks') ||
@@ -413,6 +416,7 @@ function emitBoot(patch: Partial<DesktopBootProgress>) {
 }
 
 let dashboardReadyAt = 0
+let dashboardReadyWait: Promise<void> | null = null
 const DASHBOARD_READY_TTL_MS = 120_000
 
 async function fetchDashboardPath(path: string, timeoutMs = 5_000): Promise<Response> {
@@ -465,6 +469,18 @@ async function runtimeIsStarting(): Promise<boolean> {
 }
 
 async function waitForDashboardReady(): Promise<void> {
+  if (dashboardReadyWait) {
+    return dashboardReadyWait
+  }
+
+  dashboardReadyWait = waitForDashboardReadyInner().finally(() => {
+    dashboardReadyWait = null
+  })
+
+  return dashboardReadyWait
+}
+
+async function waitForDashboardReadyInner(): Promise<void> {
   // Hosted runtimes can take longer after a container/pod start while the
   // dashboard binds. Keep polling so a brief 503 does not surface as
   // "Verxio couldn't start".
@@ -474,7 +490,7 @@ async function waitForDashboardReady(): Promise<void> {
 
   if (hosted && dashboardReadyAt > 0 && Date.now() - dashboardReadyAt < DASHBOARD_READY_TTL_MS) {
     try {
-      const ready = await fetchDashboardPath('/api/healthz', 3_000)
+      const ready = await fetchDashboardPath('/api/healthz', 8_000)
 
       if (ready.ok) {
         dashboardReadyAt = Date.now()
@@ -488,7 +504,7 @@ async function waitForDashboardReady(): Promise<void> {
 
   while (Date.now() < deadline) {
     try {
-      const healthz = await fetchDashboardPath('/api/healthz', 3_000)
+      const healthz = await fetchDashboardPath('/api/healthz', 8_000)
 
       if (healthz.ok) {
         dashboardReadyAt = Date.now()

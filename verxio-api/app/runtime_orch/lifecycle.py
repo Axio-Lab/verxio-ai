@@ -7,6 +7,7 @@ import logging
 import os
 import time
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from app import db
 from app.control_plane import runtime_from_row, save_runtime
@@ -40,6 +41,23 @@ def touch_runtime_activity(runtime: RuntimeInstance) -> RuntimeInstance:
     return save_runtime(runtime, last_seen_at=now_iso(), last_activity_at=now_iso())
 
 
+def remember_runtime_healthy(runtime: RuntimeInstance) -> RuntimeInstance:
+    """Promote a reachable runtime out of 'starting' so boot stops stampeding it."""
+    from app.control_plane import now_iso
+    from app.runtime_manager import mark_runtime_healthy
+    from app.runtime_orch.states import RuntimeStatus, normalize_status
+
+    mark_runtime_healthy(runtime)
+    fields: dict[str, Any] = {
+        "last_seen_at": now_iso(),
+        "last_activity_at": now_iso(),
+        "last_error": None,
+    }
+    if normalize_status(runtime.status) != RuntimeStatus.RUNNING:
+        fields["status"] = RuntimeStatus.RUNNING
+    return save_runtime(runtime, **fields)
+
+
 async def wake_runtime(
     runtime: RuntimeInstance,
     *,
@@ -62,7 +80,7 @@ async def wake_runtime(
                 if is_warm(current.status):
                     ok, _ = await manager.health(current)
                     if ok:
-                        return touch_runtime_activity(current)
+                        return remember_runtime_healthy(current)
                 await asyncio.sleep(2.0)
         row = db.fetch_one("SELECT * FROM runtime_instances WHERE id = ?", (runtime.id,))
         return runtime_from_row(row or runtime.model_dump())
@@ -72,7 +90,7 @@ async def wake_runtime(
         if is_warm(current.status):
             ok, _ = await manager.health(current)
             if ok:
-                return touch_runtime_activity(current)
+                return remember_runtime_healthy(current)
 
         # Ephemeral backends / wiped nodes: restore hermes-home before start.
         restored = restore_hermes_home(current, only_if_missing=True)

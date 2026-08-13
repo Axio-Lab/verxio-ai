@@ -190,6 +190,7 @@ from app.notepad import (
 from app.runtime import HermesRuntimeAdapter, hosted_runtime_status, is_hosted_control_plane
 from app.runtime_dashboard import soft_reload_runtime_mcp
 from app.runtime_manager import (
+    DASHBOARD_UPSTREAM_SLOTS,
     artifact_file,
     index_artifacts,
     mark_runtime_healthy,
@@ -1760,13 +1761,21 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
         timeout = httpx.Timeout(300.0)
     try:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
-            upstream = await client.request(
-                request.method,
-                target,
-                params=request.query_params,
-                content=body,
-                headers=_proxy_headers(request, token),
-            )
+            async def _send() -> httpx.Response:
+                return await client.request(
+                    request.method,
+                    target,
+                    params=request.query_params,
+                    content=body,
+                    headers=_proxy_headers(request, token),
+                )
+
+            # Liveness must not sit behind config/session floods.
+            if path.strip("/") == "api/healthz":
+                upstream = await _send()
+            else:
+                async with DASHBOARD_UPSTREAM_SLOTS:
+                    upstream = await _send()
     except (httpx.ConnectError, httpx.ConnectTimeout, httpx.RemoteProtocolError, httpx.ReadError, httpx.TimeoutException) as exc:
         if skip_start_lock:
             _schedule_runtime_ensure(user)

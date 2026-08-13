@@ -59,8 +59,10 @@ export function WebhookRoutesPanel({
 
   useEffect(() => {
     let cancelled = false
+    let attempt = 0
+    let retryTimer: number | undefined
 
-    void (async () => {
+    const load = async () => {
       try {
         const result = await getMessagingWebhooks()
 
@@ -71,20 +73,34 @@ export function WebhookRoutesPanel({
         setEnabled(result.enabled)
         setBaseUrl(result.base_url)
         setRoutes(result.subscriptions)
+        setLoading(false)
       } catch (err) {
+        attempt += 1
+
+        if (!cancelled && attempt < 5) {
+          retryTimer = window.setTimeout(() => {
+            void load()
+          }, 600 * attempt)
+
+          return
+        }
+
         if (!cancelled) {
           notifyError(err, w.loadFailed)
           setRoutes([])
-        }
-      } finally {
-        if (!cancelled) {
           setLoading(false)
         }
       }
-    })()
+    }
+
+    void load()
 
     return () => {
       cancelled = true
+
+      if (retryTimer) {
+        window.clearTimeout(retryTimer)
+      }
     }
   }, [platform.enabled, w.loadFailed])
 

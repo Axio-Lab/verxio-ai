@@ -10,8 +10,6 @@ import socket
 import time
 from typing import Any
 
-import httpx
-
 from app import db
 from app.control_plane import now_iso, safe_path_part, save_runtime
 from app.models import RuntimeInstance
@@ -137,7 +135,7 @@ class K8sRuntimeManager:
             "httpGet": {"path": "/api/healthz", "port": 9119},
             "initialDelaySeconds": int(os.getenv("VERXIO_K8S_READINESS_DELAY", "15") or "15"),
             "periodSeconds": 5,
-            "timeoutSeconds": 2,
+            "timeoutSeconds": 5,
             "failureThreshold": 36,
         }
 
@@ -511,18 +509,9 @@ class K8sRuntimeManager:
         return self._api_server_url(runtime)
 
     async def health(self, runtime: RuntimeInstance) -> tuple[bool, str]:
-        base = await self.address(runtime)
-        if not base:
-            return False, "No address"
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                # /api/status is in Hermes PUBLIC_API_PATHS; /api/health is gated.
-                resp = await client.get(f"{base.rstrip('/')}/api/status")
-            if resp.status_code < 400:
-                return True, "ok"
-            return False, f"status {resp.status_code}"
-        except Exception as exc:
-            return False, str(exc)
+        from app.runtime_manager import runtime_health
+
+        return await runtime_health(runtime)
 
     def supports_publish_ports(self) -> bool:
         return self.connect_mode == "hostport"
