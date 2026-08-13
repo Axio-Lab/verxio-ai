@@ -458,7 +458,9 @@ function PlatformDetail({
   const optionalFields = activeEnvVars.filter(
     field => !field.required && !(isApiServer && field.key === 'API_SERVER_KEY') && !fieldCopy(field, m).advanced
   )
-  const advancedFields = activeEnvVars.filter(field => !field.required && fieldCopy(field, m).advanced)
+  const advancedFields = activeEnvVars.filter(
+    field => !field.required && !(isApiServer && field.key === 'API_SERVER_KEY') && fieldCopy(field, m).advanced
+  )
   const hiddenCount = advancedFields.length
   const isSavingEnv = saving === `env:${platform.id}` || saving === `conn:${platform.id}`
 

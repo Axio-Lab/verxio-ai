@@ -35,12 +35,15 @@ export function ApiServerPanel({ platform }: { platform: MessagingPlatformInfo }
         setExample(result.example)
       } catch (err) {
         attempt += 1
+
         if (!cancelled && attempt < 5) {
           retryTimer = window.setTimeout(() => {
             void load()
           }, 600 * attempt)
+
           return
         }
+
         if (!cancelled) {
           notifyError(err, copy.loadFailed)
         }
@@ -51,6 +54,7 @@ export function ApiServerPanel({ platform }: { platform: MessagingPlatformInfo }
 
     return () => {
       cancelled = true
+
       if (retryTimer) {
         window.clearTimeout(retryTimer)
       }

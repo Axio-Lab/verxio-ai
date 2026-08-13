@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 
 import { CREDENTIAL_CONTROL_CLASS } from '../settings/credential-key-ui'
 import { ListRow } from '../settings/primitives'
+
 import { isVendorSetupUrl } from './vendor-docs'
 
 export interface EnvSettingsSection {
