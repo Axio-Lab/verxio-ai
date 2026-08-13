@@ -19,7 +19,11 @@ import type { MessagingPlatformInfo, MessagingWebhookRoute } from '@/types/herme
 
 import { ListRow } from '../settings/primitives'
 
-import { messagingDeliveryOptions, MessagingDeliverySelect } from './messaging-delivery-select'
+import {
+  messagingDeliveryOptions,
+  MessagingDeliverySelect,
+  parseMessagingDeliveryId
+} from './messaging-delivery-select'
 
 function SectionTitle({ children }: { children: string }) {
   return <h4 className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{children}</h4>
@@ -50,7 +54,8 @@ export function WebhookRoutesPanel({
   const options = useMemo(() => messagingDeliveryOptions(platforms), [platforms])
   const readyOptions = options.filter(option => option.status === 'ready')
   const selected = options.find(option => option.id === deliver)
-  const selectedPlatform = platforms.find(row => row.id === deliver)
+  const selectedTarget = parseMessagingDeliveryId(deliver)
+  const selectedPlatform = platforms.find(row => row.id === selectedTarget.platformId)
 
   useEffect(() => {
     let cancelled = false
@@ -120,8 +125,9 @@ export function WebhookRoutesPanel({
           .split(',')
           .map(item => item.trim())
           .filter(Boolean),
-        deliver: selected.id,
-        deliver_chat_id: selectedPlatform?.home_channel?.chat_id
+        deliver: selected.platformId,
+        deliver_chat_id: selected.chatId || selectedPlatform?.home_channel?.chat_id,
+        connection_id: selected.connectionId || undefined
       })
 
       setName('')

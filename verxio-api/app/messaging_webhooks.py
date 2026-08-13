@@ -49,8 +49,9 @@ class MessagingWebhookCreate(BaseModel):
     events: list[str] = Field(default_factory=list)
     prompt: str | None = None
     skills: list[str] = Field(default_factory=list)
-    deliver: str = Field(min_length=1, max_length=64)
+    deliver: str = Field(min_length=1, max_length=80)
     deliver_chat_id: str | None = None
+    connection_id: str | None = None
     secret: str | None = None
 
 
@@ -254,8 +255,30 @@ def _home_chat_id(platform: dict[str, Any]) -> str:
     return ""
 
 
-async def assert_deliver_target(runtime: RuntimeInstance, deliver: str, deliver_chat_id: str | None) -> str:
-    target = (deliver or "").strip().lower()
+def parse_deliver_target(deliver: str, connection_id: str | None = None) -> tuple[str, str | None]:
+    raw = (deliver or "").strip().lower()
+    parsed_conn: str | None = None
+    if "::" in raw:
+        platform_id, extra = raw.split("::", 1)
+        raw = platform_id.strip()
+        parsed_conn = extra.strip() or None
+    conn = (connection_id or parsed_conn or "").strip() or None
+    if conn in {"default", ""}:
+        conn = None
+    return raw, conn
+
+
+def _connection_ready(connection: dict[str, Any]) -> bool:
+    return bool(connection.get("configured") and connection.get("enabled") is not False)
+
+
+async def assert_deliver_target(
+    runtime: RuntimeInstance,
+    deliver: str,
+    deliver_chat_id: str | None,
+    connection_id: str | None = None,
+) -> tuple[str, str | None]:
+    target, conn_id = parse_deliver_target(deliver, connection_id)
     if not target or target == "log" or target in _NON_DELIVER_PLATFORMS:
         raise HTTPException(
             status_code=400,
@@ -263,7 +286,20 @@ async def assert_deliver_target(runtime: RuntimeInstance, deliver: str, deliver_
         )
     platforms = await _load_messaging_platforms(runtime)
     platform = next((row for row in platforms if str(row.get("id") or "") == target), None)
-    if not platform or not _platform_connected(platform):
+    if not platform:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No connection for {target}. Connect it in Messaging first.",
+        )
+    connections = [row for row in (platform.get("connections") or []) if isinstance(row, dict)]
+    if conn_id:
+        match = next((row for row in connections if str(row.get("id") or "") == conn_id), None)
+        if not match or not _connection_ready(match):
+            raise HTTPException(
+                status_code=400,
+                detail=f"No connection {conn_id} for {target}. Connect it in Messaging first.",
+            )
+    elif not _platform_connected(platform):
         raise HTTPException(
             status_code=400,
             detail=f"No connection for {target}. Connect it in Messaging first.",
@@ -275,7 +311,7 @@ async def assert_deliver_target(runtime: RuntimeInstance, deliver: str, deliver_
             status_code=400,
             detail=f"Set a home channel for {target} in Messaging before delivering webhooks there.",
         )
-    return chat_id
+    return chat_id, conn_id
 
 
 async def list_webhooks(request: Request, user: dict[str, Any]) -> dict[str, Any]:
@@ -315,16 +351,21 @@ async def create_webhook(request: Request, user: dict[str, Any], body: Messaging
             detail="Invalid name. Use lowercase letters, digits, hyphens, or underscores.",
         )
     runtime = get_runtime_for_user(user)
-    chat_id = await assert_deliver_target(runtime, body.deliver, body.deliver_chat_id)
+    chat_id, conn_id = await assert_deliver_target(
+        runtime, body.deliver, body.deliver_chat_id, body.connection_id
+    )
+    platform_id, _ = parse_deliver_target(body.deliver, body.connection_id)
     payload = {
         "name": name,
         "description": body.description or "",
         "events": [item.strip() for item in body.events if item.strip()],
         "prompt": body.prompt or "",
         "skills": [item.strip() for item in body.skills if item.strip()],
-        "deliver": body.deliver.strip().lower(),
+        "deliver": platform_id,
         "deliver_chat_id": chat_id,
     }
+    if conn_id:
+        payload["connection_id"] = conn_id
     if body.secret:
         payload["secret"] = body.secret
     resp = await _dashboard_request(runtime, "POST", "/api/webhooks", json_body=payload)

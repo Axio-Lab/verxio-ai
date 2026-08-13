@@ -136,7 +136,49 @@ def test_assert_deliver_target_requires_connection_and_home(monkeypatch):
         ]
 
     monkeypatch.setattr("app.messaging_webhooks._load_messaging_platforms", ready)
-    assert asyncio.run(assert_deliver_target(runtime, "telegram", None)) == "123"
+    assert asyncio.run(assert_deliver_target(runtime, "telegram", None)) == ("123", None)
+
+
+def test_assert_deliver_target_accepts_named_connection(monkeypatch):
+    from app.messaging_webhooks import assert_deliver_target
+    from app.models import RuntimeInstance
+
+    runtime = RuntimeInstance(
+        id="rt-1",
+        tenant_id="t1",
+        workspace_id="ws-1",
+        agent_id="a1",
+        mode="local-docker",
+        status="running",
+        hermes_home_path="/tmp/h",
+        workspace_path="/tmp/w",
+        artifact_path="/tmp/a",
+    )
+
+    async def ready(_runtime):
+        return [
+            {
+                "id": "telegram",
+                "state": "connected",
+                "configured": True,
+                "enabled": True,
+                "home_channel": {"chat_id": "123", "name": "Donatus", "platform": "telegram"},
+                "connections": [
+                    {"id": "default", "configured": True, "enabled": True, "identity": "@Support"},
+                    {"id": "conn_sales", "configured": True, "enabled": True, "identity": "@Sales"},
+                ],
+            }
+        ]
+
+    monkeypatch.setattr("app.messaging_webhooks._load_messaging_platforms", ready)
+    assert asyncio.run(assert_deliver_target(runtime, "telegram::conn_sales", None)) == (
+        "123",
+        "conn_sales",
+    )
+    assert asyncio.run(assert_deliver_target(runtime, "telegram", None, "conn_sales")) == (
+        "123",
+        "conn_sales",
+    )
 
 
 def test_ingest_messaging_hook_forwards_to_runtime(client, monkeypatch):

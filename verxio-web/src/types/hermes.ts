@@ -252,6 +252,7 @@ export interface MessagingWebhooksResponse {
 }
 
 export interface MessagingWebhookCreate {
+  connection_id?: string
   deliver: string
   deliver_chat_id?: string
   description?: string
