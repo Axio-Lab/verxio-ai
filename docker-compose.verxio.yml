@@ -22,6 +22,7 @@ services:
       VERXIO_IDLE_REAPER_INTERVAL_SECONDS: ${VERXIO_IDLE_REAPER_INTERVAL_SECONDS:-60}
       VERXIO_REDIS_URL: ${VERXIO_REDIS_URL:-}
       VERXIO_ARTIFACT_STORE: ${VERXIO_ARTIFACT_STORE:-local}
+      VERXIO_RUNTIME_READY_TIMEOUT_SECONDS: ${VERXIO_RUNTIME_READY_TIMEOUT_SECONDS:-180}
       VERXIO_K8S_ENABLED: ${VERXIO_K8S_ENABLED:-false}
       VERXIO_K8S_NAMESPACE: ${VERXIO_K8S_NAMESPACE:-verxio-runtimes}
       VERXIO_K8S_CONNECT_MODE: ${VERXIO_K8S_CONNECT_MODE:-hostPort}
@@ -69,11 +70,8 @@ services:
       # Desktop-synced workspaces live under the host home (e.g. Documents).
       # Without this bind, the API container cannot index generated images there.
       - ${VERXIO_HOST_HOME_BIND:-${HOME}}:${VERXIO_HOST_HOME_BIND:-${HOME}}
-      # kind/K8s kubeconfig for VERXIO_RUNTIME_MANAGER=k8s (see deploy/k8s/setup-kind-local.sh)
+      # kind/K8s kubeconfig — only used with docker-compose.kind.yml overlay
       - ${VERXIO_KUBECONFIG_HOST:-./.verxio/kubeconfig-kind}:/kube/config:ro
-    networks:
-      - default
-      - kind
 
   verxio-web:
     build:
@@ -105,8 +103,3 @@ services:
     profiles:
       - image
     command: ['true']
-
-networks:
-  kind:
-    external: true
-    name: kind

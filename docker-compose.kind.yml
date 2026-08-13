@@ -1,0 +1,17 @@
+# Join the kind Docker network so verxio-api can reach verxio-control-plane.
+# Used by scripts/verxio-up.sh (local Kubernetes). Not used for local-docker.
+#
+#   bash scripts/verxio-up.sh
+#   bash scripts/verxio-down.sh
+name: verxio-ai
+
+services:
+  verxio-api:
+    networks:
+      - default
+      - kind
+
+networks:
+  kind:
+    external: true
+    name: kind

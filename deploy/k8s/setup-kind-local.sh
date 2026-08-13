@@ -85,5 +85,5 @@ echo "  VERXIO_K8S_HOST_PATH_ROOT=${NODE_MOUNT}"
 echo "  VERXIO_HERMES_IMAGE=${HERMES_IMAGE}"
 echo "  VERXIO_KUBECONFIG_HOST=${KUBE_OUT}"
 echo
-echo "  docker compose -f docker-compose.verxio.yml build --build-arg INSTALL_SCALE=1 verxio-api"
-echo "  docker compose -f docker-compose.verxio.yml up -d --force-recreate verxio-api"
+echo "  bash scripts/verxio-up.sh"
+echo "  bash scripts/verxio-down.sh"
