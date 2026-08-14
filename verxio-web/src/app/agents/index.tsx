@@ -24,6 +24,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { VerxioWordmark } from '@/components/verxio-wordmark'
 import { getMessagingPlatforms, type MessagingPlatformInfo } from '@/hermes'
+import { useI18n } from '@/i18n'
 import {
   AlertCircle,
   CheckCircle2,
@@ -1413,58 +1414,65 @@ function CreateAgentTemplateDialog({
   onCreateTemplate: (template: WorkflowAgentTemplateId) => void
   open: boolean
 }) {
+  const { t } = useI18n()
   const creating = Boolean(busyTemplate)
+  const [selectedTemplate, setSelectedTemplate] = useState<WorkflowAgentTemplateId>(AGENT_TEMPLATES[0].id)
+
+  useEffect(() => {
+    if (open) {
+      setSelectedTemplate(AGENT_TEMPLATES[0].id)
+    }
+  }, [open])
 
   return (
-    <Dialog onOpenChange={next => !next && onClose()} open={open}>
-      <DialogContent className="max-w-2xl">
+    <Dialog onOpenChange={next => !next && !creating && onClose()} open={open}>
+      <DialogContent className="max-w-md" showCloseButton={false}>
         <DialogHeader>
           <DialogTitle>Create agent</DialogTitle>
           <DialogDescription>
             Choose Customer Support or SDR. We create it with the default instructions, then you can customize.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {AGENT_TEMPLATES.map(template => (
-            <button
-              className="flex min-h-44 min-w-0 flex-col justify-between rounded-[6px] border border-primary/45 bg-white p-3 text-left text-neutral-950 disabled:opacity-60"
-              disabled={creating}
-              key={template.id}
-              onClick={() => onCreateTemplate(template.id)}
-              type="button"
-            >
-              <div className="min-w-0">
-                <div className="flex items-start gap-2">
-                  <div className="grid size-8 shrink-0 place-items-center rounded-[5px] bg-primary/10 text-[0.68rem] font-semibold text-primary">
-                    {agentInitials(template.name)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">{template.name}</div>
-                    <div className="mt-1 text-xs leading-5">{template.role}</div>
-                  </div>
+        <div className="grid gap-2">
+          {AGENT_TEMPLATES.map(template => {
+            const selected = selectedTemplate === template.id
+
+            return (
+              <button
+                aria-pressed={selected}
+                className={cn(
+                  'flex w-full items-start gap-3 rounded-md border px-3 py-3 text-left transition-colors disabled:opacity-60',
+                  selected ? 'border-primary bg-primary/5' : 'border-(--stroke-nous) hover:bg-(--chrome-action-hover)'
+                )}
+                disabled={creating}
+                key={template.id}
+                onClick={() => setSelectedTemplate(template.id)}
+                type="button"
+              >
+                <div className="grid size-8 shrink-0 place-items-center rounded-md bg-primary/10 text-[0.68rem] font-semibold text-primary">
+                  {agentInitials(template.name)}
                 </div>
-                <p className="mt-3 line-clamp-3 text-xs leading-5 text-muted-foreground">{template.description}</p>
-              </div>
-              <div className="mt-4 flex justify-end">
-                <span className="inline-flex items-center gap-1 rounded-[6px] border border-(--ui-stroke-secondary) px-2 py-0.5 text-[0.6875rem] leading-4">
-                  {busyTemplate === template.id ? (
-                    <Loader
-                      className="size-3 text-primary"
-                      label={`Creating ${template.name}`}
-                      strokeScale={0.7}
-                      type="rose-two"
-                    />
-                  ) : null}
-                  {busyTemplate === template.id ? 'Creating…' : 'Use this default'}
-                </span>
-              </div>
-            </button>
-          ))}
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium">{template.name}</div>
+                  <div className="mt-0.5 text-xs leading-5 text-muted-foreground">{template.role}</div>
+                  <p className="mt-1 text-xs leading-5 text-(--ui-text-tertiary)">{template.description}</p>
+                </div>
+              </button>
+            )
+          })}
         </div>
-        <DialogFooter>
-          <Button disabled={creating} onClick={onCreateScratch} size="sm" type="button" variant="ghost">
+        <DialogFooter className="sm:justify-between">
+          <Button disabled={creating} onClick={onCreateScratch} type="button" variant="ghost">
             Start from scratch
           </Button>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row">
+            <Button disabled={creating} onClick={onClose} type="button" variant="outline">
+              {t.common.cancel}
+            </Button>
+            <Button disabled={creating} onClick={() => onCreateTemplate(selectedTemplate)} type="button">
+              {creating ? 'Creating…' : 'Create agent'}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
