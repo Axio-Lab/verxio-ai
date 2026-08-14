@@ -147,6 +147,56 @@ export interface WorkflowAgent {
   tools: string[]
   integrations: string[]
   approval_policy: string
+  tags?: string[]
+  origin?: 'system' | 'user' | string
+  funnel_rules?: SdrFunnelRules
+  fallback_email?: string
+  campaign_context?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface SdrFunnelBranch {
+  matchKeywords: string[]
+  summary?: string
+  assetUrl?: string
+  assetLabel?: string
+}
+
+export interface SdrFunnelFollowUp {
+  message: string
+  useCustomMessage?: boolean
+  delayMinutes?: number
+  sendAt?: string
+  ctaUrl?: string
+}
+
+export interface SdrFunnelRule {
+  id?: string
+  triggers: string[]
+  questionsEnabled?: boolean
+  questions?: string[]
+  summary: string
+  assetUrl?: string
+  assetLabel?: string
+  maxAgentReplies?: number
+  branches?: SdrFunnelBranch[]
+  followUpEnabled?: boolean
+  followUps?: SdrFunnelFollowUp[]
+}
+
+export interface SdrFunnelRules {
+  rules: SdrFunnelRule[]
+}
+
+export interface SdrContact {
+  id: string
+  channel: string
+  sender_id: string
+  sender_name: string
+  conversation_id: string
+  connection_id: string
+  metadata?: Record<string, unknown>
   created_at: string
   updated_at: string
 }
@@ -163,6 +213,9 @@ export interface WorkflowAgentInput {
   role?: string
   skills?: string[]
   tools?: string[]
+  fallback_email?: string
+  campaign_context?: string
+  funnel_rules?: SdrFunnelRules
 }
 
 export type WorkflowSetupActor = 'gateway' | 'session' | 'web'
@@ -1037,6 +1090,18 @@ export function createWorkflowAgent(input: WorkflowAgentInput & { name: string }
   })
 }
 
+export type WorkflowAgentTemplateId = 'customer-support' | 'sdr'
+
+export function createWorkflowAgentFromTemplate(input: {
+  name?: string
+  template: WorkflowAgentTemplateId
+}): Promise<WorkflowAgent> {
+  return verxioFetch<WorkflowAgent>('/api/workflow-agents/from-template', {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
+}
+
 export function draftWorkflowAgentSetup(input: {
   prompt: string
   source?: WorkflowSetupActor
@@ -1076,6 +1141,22 @@ export function deleteWorkflowAgent(agentId: string): Promise<{ ok: boolean }> {
   return verxioFetch<{ ok: boolean }>(`/api/workflow-agents/${encodeURIComponent(agentId)}`, {
     method: 'DELETE'
   })
+}
+
+export function listSdrContacts(agentId: string, channel = ''): Promise<{ contacts: SdrContact[]; total: number }> {
+  const query = channel ? `?channel=${encodeURIComponent(channel)}` : ''
+
+  return verxioFetch<{ contacts: SdrContact[]; total: number }>(
+    `/api/workflow-agents/${encodeURIComponent(agentId)}/sdr-contacts${query}`
+  )
+}
+
+export function exportSdrContacts(agentId: string, channel = ''): Promise<{ filename: string; vcf: string }> {
+  const query = channel ? `?channel=${encodeURIComponent(channel)}` : ''
+
+  return verxioFetch<{ filename: string; vcf: string }>(
+    `/api/workflow-agents/${encodeURIComponent(agentId)}/sdr-contacts/export${query}`
+  )
 }
 
 export function deleteWorkflowAgentSetupDraft(draftId: string): Promise<{ ok: boolean }> {

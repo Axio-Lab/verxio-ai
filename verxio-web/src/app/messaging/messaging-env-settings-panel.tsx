@@ -13,6 +13,8 @@ import { cn } from '@/lib/utils'
 import { CREDENTIAL_CONTROL_CLASS } from '../settings/credential-key-ui'
 import { ListRow } from '../settings/primitives'
 
+import { isVendorSetupUrl } from './vendor-docs'
+
 export interface EnvSettingsSection {
   advanced?: boolean
   hint?: string
@@ -210,7 +212,7 @@ function EnvField({
               value={value}
             />
           )}
-          {field.url && (
+          {field.url && isVendorSetupUrl(field.url) && (
             <Button asChild className="size-8 shrink-0" title={m.openDocs} variant="ghost">
               <a href={field.url} rel="noreferrer" target="_blank">
                 <ExternalLink className="size-3.5" />

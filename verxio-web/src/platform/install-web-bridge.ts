@@ -177,9 +177,14 @@ function buildApiUrl(path: string): string {
       path.startsWith('/api/auth') ||
       path.startsWith('/api/artifacts') ||
       path.startsWith('/api/bootstrap') ||
-      path.startsWith('/api/health') ||
+      // `/api/healthz` is Hermes liveness. `startsWith('/api/health')` would
+      // steal it and 404 on the control plane, leaving the UI on CONNECTING.
+      path === '/api/health' ||
+      path.startsWith('/api/health?') ||
       path.startsWith('/api/hermes') ||
       path.startsWith('/api/messaging/slack/manifest') ||
+      path.startsWith('/api/messaging/webhooks') ||
+      path.startsWith('/api/messaging/api-server') ||
       path === '/api/profile' ||
       path.startsWith('/api/profile?') ||
       path.startsWith('/api/runtime')
@@ -411,14 +416,15 @@ function emitBoot(patch: Partial<DesktopBootProgress>) {
 }
 
 let dashboardReadyAt = 0
+let dashboardReadyWait: Promise<void> | null = null
 const DASHBOARD_READY_TTL_MS = 120_000
 
-async function fetchDashboardStatus(timeoutMs = 5_000): Promise<Response> {
+async function fetchDashboardPath(path: string, timeoutMs = 5_000): Promise<Response> {
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(), timeoutMs)
 
   try {
-    return await fetch(buildApiUrl('/api/status'), {
+    return await fetch(buildApiUrl(path), {
       credentials: fetchCredentials(),
       headers: authHeaders(),
       signal: controller.signal
@@ -434,18 +440,59 @@ async function fetchDashboardStatus(timeoutMs = 5_000): Promise<Response> {
   }
 }
 
+async function fetchDashboardStatus(timeoutMs = 5_000): Promise<Response> {
+  return fetchDashboardPath('/api/status', timeoutMs)
+}
+
+async function runtimeIsStarting(): Promise<boolean> {
+  if (!verxioApiEnabled()) {
+    return false
+  }
+
+  try {
+    const res = await fetch(verxioApiUrl('/api/runtime'), {
+      credentials: fetchCredentials(),
+      headers: authHeaders()
+    })
+
+    if (!res.ok) {
+      return false
+    }
+
+    const body = (await res.json()) as { runtime?: { status?: string } }
+    const status = body.runtime?.status
+
+    return status === 'starting' || status === 'running'
+  } catch {
+    return false
+  }
+}
+
 async function waitForDashboardReady(): Promise<void> {
-  // Hosted runtimes can take longer after a container start/restart while the
-  // runtime dashboard boots. Keep polling so a brief 503 does not surface as
+  if (dashboardReadyWait) {
+    return dashboardReadyWait
+  }
+
+  dashboardReadyWait = waitForDashboardReadyInner().finally(() => {
+    dashboardReadyWait = null
+  })
+
+  return dashboardReadyWait
+}
+
+async function waitForDashboardReadyInner(): Promise<void> {
+  // Hosted runtimes can take longer after a container/pod start while the
+  // dashboard binds. Keep polling so a brief 503 does not surface as
   // "Verxio couldn't start".
-  const deadline = Date.now() + (verxioApiEnabled() ? 90_000 : 30_000)
+  const hosted = verxioApiEnabled()
+  let deadline = Date.now() + (hosted ? 180_000 : 30_000)
   let delayMs = 250
 
-  if (verxioApiEnabled() && dashboardReadyAt > 0 && Date.now() - dashboardReadyAt < DASHBOARD_READY_TTL_MS) {
+  if (hosted && dashboardReadyAt > 0 && Date.now() - dashboardReadyAt < DASHBOARD_READY_TTL_MS) {
     try {
-      const res = await fetchDashboardStatus(3_000)
+      const ready = await fetchDashboardPath('/api/healthz', 8_000)
 
-      if (res.ok) {
+      if (ready.ok) {
         dashboardReadyAt = Date.now()
 
         return
@@ -457,6 +504,14 @@ async function waitForDashboardReady(): Promise<void> {
 
   while (Date.now() < deadline) {
     try {
+      const healthz = await fetchDashboardPath('/api/healthz', 8_000)
+
+      if (healthz.ok) {
+        dashboardReadyAt = Date.now()
+
+        return
+      }
+
       const res = await fetchDashboardStatus(5_000)
 
       if (res.ok) {
@@ -467,8 +522,9 @@ async function waitForDashboardReady(): Promise<void> {
 
       // 503 while the runtime is restarting is expected — keep waiting.
       if (res.status !== 503 && res.status !== 502) {
-        // Auth/other hard failures should not burn the full timeout.
-        if (res.status === 401 || res.status === 403) {
+        // Auth/other hard failures should not burn the full timeout on desktop.
+        // Hosted cookies can race the first paint — keep polling.
+        if ((res.status === 401 || res.status === 403) && !hosted) {
           break
         }
       }
@@ -476,14 +532,16 @@ async function waitForDashboardReady(): Promise<void> {
       // retry
     }
 
+    if (hosted && (await runtimeIsStarting())) {
+      deadline = Math.max(deadline, Date.now() + 30_000)
+    }
+
     await new Promise(resolve => window.setTimeout(resolve, delayMs))
     delayMs = Math.min(2_000, Math.round(delayMs * 1.4))
   }
 
-  if (verxioApiEnabled()) {
-    throw new Error(
-      'Verxio agent runtime is not reachable. Sign in, then wait for verxio-api to start your isolated agent container (docker ps --filter name=verxio-).'
-    )
+  if (hosted) {
+    throw new Error('Your agent is still starting. Retry — chats and settings are safe.')
   }
 
   throw new Error('Verxio backend is not reachable. Start Verxio again, then retry.')

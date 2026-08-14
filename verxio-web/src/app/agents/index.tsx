@@ -46,6 +46,7 @@ import {
   createKnowledgeBase,
   createKnowledgeDocument,
   createWorkflowAgent,
+  createWorkflowAgentFromTemplate,
   createWorkflowCustomTool,
   createWorkflowDelivery,
   createWorkflowTrigger,
@@ -74,6 +75,7 @@ import {
   listWorkflowTriggers,
   runPublicWorkflowAgent,
   runWorkflowAgent,
+  type SdrFunnelRules,
   updateWorkflowAgent,
   updateWorkflowAgentEmbedConfig,
   updateWorkflowDelivery,
@@ -84,6 +86,7 @@ import {
   type WorkflowAgentPublicInfo,
   type WorkflowAgentSetupDraft,
   type WorkflowAgentSetupDraftResponse,
+  type WorkflowAgentTemplateId,
   type WorkflowDelivery,
   type WorkflowDeliveryType,
   type WorkflowIntegrationCapability,
@@ -99,6 +102,9 @@ import { notify, notifyError } from '@/store/notifications'
 
 import { AGENTS_ROUTE, SETTINGS_ROUTE } from '../routes'
 
+import { SdrContactsPanel } from './sdr-contacts-panel'
+import { SdrFunnelEditor } from './sdr-funnel-editor'
+
 type AgentTab =
   | 'instructions'
   | 'skills'
@@ -107,6 +113,8 @@ type AgentTab =
   | 'tools'
   | 'delivery'
   | 'triggers'
+  | 'funnel'
+  | 'contacts'
   | 'embed'
   | 'runs'
 
@@ -118,9 +126,66 @@ const AGENT_TABS: Array<{ id: AgentTab; label: string }> = [
   { id: 'tools', label: 'Tools' },
   { id: 'delivery', label: 'Delivery' },
   { id: 'triggers', label: 'Triggers' },
+  { id: 'funnel', label: 'Funnel' },
+  { id: 'contacts', label: 'Contacts' },
   { id: 'embed', label: 'Embed' },
   { id: 'runs', label: 'Runs' }
 ]
+
+const AGENT_TEMPLATES: Array<{
+  description: string
+  id: WorkflowAgentTemplateId
+  name: string
+  role: string
+}> = [
+  {
+    description: 'Knowledge-grounded replies for website visitors and messaging channels.',
+    id: 'customer-support',
+    name: 'Customer Support',
+    role: 'Customer support'
+  },
+  {
+    description: 'Keyword funnels, qualification questions, and channel follow-ups.',
+    id: 'sdr',
+    name: 'SDR',
+    role: 'Sales development'
+  }
+]
+
+function isDefaultAgent(agent: WorkflowAgent | null | undefined): boolean {
+  return Boolean(agent?.tags?.includes('default') || agent?.origin === 'system')
+}
+
+function agentInitials(value: string): string {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(part => part[0]?.toUpperCase())
+    .join('')
+}
+
+function AgentListCopy({ description, fallback, role }: { description?: string; fallback: string; role?: string }) {
+  const roleText = role?.trim() || ''
+  const descriptionText = description?.trim() || ''
+
+  if (!roleText && !descriptionText) {
+    return <p className="mt-3 line-clamp-3 text-xs leading-5 text-muted-foreground">{fallback}</p>
+  }
+
+  return (
+    <div className="mt-3 grid gap-1">
+      {roleText ? <p className="text-xs leading-5">{roleText}</p> : null}
+      {descriptionText && descriptionText !== roleText ? (
+        <p className="line-clamp-3 text-xs leading-5 text-muted-foreground">{descriptionText}</p>
+      ) : null}
+    </div>
+  )
+}
+
+function isSdrAgent(agent: WorkflowAgent | null | undefined): boolean {
+  return Boolean(agent?.tags?.includes('sdr'))
+}
 
 type TriggerSourceId = 'app_event' | 'embed' | 'manual' | 'messaging' | 'schedule' | 'webhook'
 
@@ -267,8 +332,11 @@ function connectedAppDisplayName(appSlug: string, apps: ComposioApp[]): string {
 
 interface DraftState {
   approval_policy: string
+  campaign_context: string
   description: string
   enabled: boolean
+  fallback_email: string
+  funnel_rules: SdrFunnelRules
   instructions: string
   integrationsText: string
   knowledgeText: string
@@ -282,8 +350,11 @@ interface DraftState {
 function draftFromAgent(agent?: WorkflowAgent | null): DraftState {
   return {
     approval_policy: agent?.approval_policy ?? 'default',
+    campaign_context: agent?.campaign_context ?? '',
     description: agent?.description ?? '',
     enabled: agent?.enabled ?? true,
+    fallback_email: agent?.fallback_email ?? '',
+    funnel_rules: agent?.funnel_rules?.rules ? agent.funnel_rules : { rules: [] },
     instructions: agent?.instructions ?? '',
     integrationsText: (agent?.integrations ?? []).join('\n'),
     knowledgeText: (agent?.knowledge ?? []).join('\n'),
@@ -300,8 +371,11 @@ function draftFromSetupDraft(setupDraft: WorkflowAgentSetupDraft, defaultModelId
 
   return {
     approval_policy: agent.approval_policy ?? 'default',
+    campaign_context: agent.campaign_context ?? '',
     description: agent.description ?? '',
     enabled: agent.enabled ?? true,
+    fallback_email: agent.fallback_email ?? '',
+    funnel_rules: agent.funnel_rules?.rules ? agent.funnel_rules : { rules: [] },
     instructions: agent.instructions ?? '',
     integrationsText: (agent.integrations ?? []).join('\n'),
     knowledgeText: (agent.knowledge ?? []).join('\n'),
@@ -440,6 +514,8 @@ export function AgentsView() {
   const [setupBusy, setSetupBusy] = useState(false)
 
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; kind: 'agent' | 'draft'; name: string } | null>(null)
+  const [createPickerOpen, setCreatePickerOpen] = useState(false)
+  const [creatingTemplate, setCreatingTemplate] = useState<WorkflowAgentTemplateId | null>(null)
 
   const routeSelection = useMemo(() => parseAgentRoute(location.pathname), [location.pathname])
 
@@ -718,8 +794,11 @@ export function AgentsView() {
 
     const input = {
       approval_policy: draft.approval_policy,
+      campaign_context: draft.campaign_context,
       description: draft.description,
       enabled: draft.enabled,
+      fallback_email: draft.fallback_email,
+      funnel_rules: draft.funnel_rules,
       instructions: draft.instructions,
       integrations: lines(draft.integrationsText),
       knowledge: lines(draft.knowledgeText),
@@ -844,7 +923,37 @@ export function AgentsView() {
   }
 
   const createNew = () => {
+    setCreatePickerOpen(false)
     navigate(`${AGENTS_ROUTE}/new`)
+  }
+
+  const openCreatePicker = () => {
+    setCreatePickerOpen(true)
+  }
+
+  const createFromTemplate = async (template: WorkflowAgentTemplateId) => {
+    setCreatingTemplate(template)
+    setError(null)
+
+    try {
+      const agent = await createWorkflowAgentFromTemplate({ template })
+
+      setAgents(current => [agent, ...current.filter(item => item.id !== agent.id)])
+      setCreatePickerOpen(false)
+      notify({
+        kind: 'success',
+        message: 'Customize instructions, knowledge, and channels next.',
+        title: `${agent.name} created`
+      })
+      navigate(agentDetailRoute(agent.id))
+    } catch (err) {
+      const message = 'Could not create agent'
+
+      setError(err instanceof Error ? err.message : `${message}.`)
+      notifyError(err, message)
+    } finally {
+      setCreatingTemplate(null)
+    }
   }
 
   const closeEditor = () => {
@@ -935,7 +1044,7 @@ export function AgentsView() {
               <RefreshCw className="size-4" />
               Refresh
             </Button>
-            <Button disabled={busy} onClick={createNew} size="sm">
+            <Button disabled={busy || Boolean(creatingTemplate)} onClick={openCreatePicker} size="sm">
               <Plus className="size-4" />
               Create agent
             </Button>
@@ -959,7 +1068,7 @@ export function AgentsView() {
           {!editorOpen ? (
             <AgentList
               items={listItems}
-              onCreate={createNew}
+              onCreate={openCreatePicker}
               onDeleteAgent={agent => setDeleteTarget({ id: agent.id, kind: 'agent', name: agent.name })}
               onDeleteDraft={setupDraft =>
                 setDeleteTarget({
@@ -1047,6 +1156,9 @@ export function AgentsView() {
                       onRefresh={() => refreshDetails(selected.id)}
                     />
                   ) : null}
+                  {tab === 'contacts' && isSdrAgent(selected) ? (
+                    <SdrContactsPanel agentId={selected.id} agentName={selected.name} />
+                  ) : null}
                 </>
               ) : (
                 <AgentSaveRequired tab={tab} />
@@ -1055,6 +1167,17 @@ export function AgentsView() {
           ) : null}
         </div>
       )}
+      <CreateAgentTemplateDialog
+        busyTemplate={creatingTemplate}
+        onClose={() => {
+          if (!creatingTemplate) {
+            setCreatePickerOpen(false)
+          }
+        }}
+        onCreateScratch={createNew}
+        onCreateTemplate={template => void createFromTemplate(template)}
+        open={createPickerOpen}
+      />
       <ConfirmDialog
         busyLabel="Deleting…"
         confirmLabel="Delete"
@@ -1277,6 +1400,77 @@ export function PublicAgentShareView() {
   )
 }
 
+function CreateAgentTemplateDialog({
+  busyTemplate,
+  onClose,
+  onCreateScratch,
+  onCreateTemplate,
+  open
+}: {
+  busyTemplate: WorkflowAgentTemplateId | null
+  onClose: () => void
+  onCreateScratch: () => void
+  onCreateTemplate: (template: WorkflowAgentTemplateId) => void
+  open: boolean
+}) {
+  const creating = Boolean(busyTemplate)
+
+  return (
+    <Dialog onOpenChange={next => !next && onClose()} open={open}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Create agent</DialogTitle>
+          <DialogDescription>
+            Choose Customer Support or SDR. We create it with the default instructions, then you can customize.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {AGENT_TEMPLATES.map(template => (
+            <button
+              className="flex min-h-44 min-w-0 flex-col justify-between rounded-[6px] border border-primary/45 bg-white p-3 text-left text-neutral-950 disabled:opacity-60"
+              disabled={creating}
+              key={template.id}
+              onClick={() => onCreateTemplate(template.id)}
+              type="button"
+            >
+              <div className="min-w-0">
+                <div className="flex items-start gap-2">
+                  <div className="grid size-8 shrink-0 place-items-center rounded-[5px] bg-primary/10 text-[0.68rem] font-semibold text-primary">
+                    {agentInitials(template.name)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">{template.name}</div>
+                    <div className="mt-1 text-xs leading-5">{template.role}</div>
+                  </div>
+                </div>
+                <p className="mt-3 line-clamp-3 text-xs leading-5 text-muted-foreground">{template.description}</p>
+              </div>
+              <div className="mt-4 flex justify-end">
+                <span className="inline-flex items-center gap-1 rounded-[6px] border border-(--ui-stroke-secondary) px-2 py-0.5 text-[0.6875rem] leading-4">
+                  {busyTemplate === template.id ? (
+                    <Loader
+                      className="size-3 text-primary"
+                      label={`Creating ${template.name}`}
+                      strokeScale={0.7}
+                      type="rose-two"
+                    />
+                  ) : null}
+                  {busyTemplate === template.id ? 'Creating…' : 'Use this default'}
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
+        <DialogFooter>
+          <Button disabled={creating} onClick={onCreateScratch} size="sm" type="button" variant="ghost">
+            Start from scratch
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function AgentList({
   items,
   onCreate,
@@ -1310,7 +1504,7 @@ function AgentList({
           <Sparkles className="mx-auto size-6 text-primary" />
           <p className="text-sm font-medium">No agents yet</p>
           <p className="text-xs leading-relaxed text-muted-foreground">
-            Create the first reusable agent for payments, lead research, customer support, or internal ops.
+            Start from Customer Support or SDR, then customize knowledge, channels, and instructions.
           </p>
           <Button onClick={onCreate} size="sm">
             <Plus className="size-4" />
@@ -1323,29 +1517,32 @@ function AgentList({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="grid min-h-0 flex-1 content-start gap-2 overflow-y-auto sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid min-h-0 flex-1 content-start gap-3 overflow-y-auto sm:grid-cols-2 xl:grid-cols-3">
         {visibleItems.map(item => (
           <div
-            className="relative grid min-h-28 content-between gap-3 rounded-md border border-(--stroke-nous) p-4 text-left transition-colors hover:bg-(--chrome-action-hover)"
+            className="relative flex min-h-48 min-w-0 flex-col justify-between rounded-[6px] border border-primary/45 bg-white p-3 text-neutral-950"
             key={`${item.type}:${item.id}`}
           >
-            <button
-              className="absolute inset-0 rounded-md focus-visible:ring-2 focus-visible:ring-primary"
-              onClick={() => (item.type === 'agent' ? onSelectAgent(item.id) : onSelectDraft(item.id))}
-              type="button"
-            >
-              <span className="sr-only">Open {item.agent?.name || item.draft?.draft.agent.name || 'item'}</span>
-            </button>
-            <div className="relative z-10 pointer-events-none grid gap-3">
+            {item.agent && isDefaultAgent(item.agent) ? (
+              <Badge className="absolute top-2 right-2 z-20">(default)</Badge>
+            ) : null}
+            <div className={cn('min-w-0', item.agent && isDefaultAgent(item.agent) && 'pr-16')}>
               {item.agent ? <AgentListAgentCard agent={item.agent} /> : null}
               {item.draft ? <AgentListDraftCard setupDraft={item.draft} /> : null}
             </div>
-            <div className="relative z-10 flex justify-end">
+            <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:items-center sm:justify-end">
               <Button
-                className="pointer-events-auto"
-                onClick={event => {
-                  event.stopPropagation()
-
+                className="w-full min-w-0 sm:w-auto"
+                onClick={() => (item.type === 'agent' ? onSelectAgent(item.id) : onSelectDraft(item.id))}
+                size="xs"
+                type="button"
+                variant="outline"
+              >
+                {item.draft ? 'Review setup' : 'Configure agent'}
+              </Button>
+              <Button
+                className="w-full min-w-0 text-destructive hover:text-destructive sm:w-auto"
+                onClick={() => {
                   if (item.agent) {
                     onDeleteAgent(item.agent)
 
@@ -1356,11 +1553,11 @@ function AgentList({
                     onDeleteDraft(item.draft)
                   }
                 }}
-                size="sm"
+                size="xs"
                 type="button"
-                variant="ghost"
+                variant="outline"
               >
-                <Trash2 className="size-4" />
+                <Trash2 className="size-3" />
                 Delete
               </Button>
             </div>
@@ -1381,42 +1578,52 @@ function AgentList({
 
 function AgentListAgentCard({ agent }: { agent: WorkflowAgent }) {
   return (
-    <>
-      <span className="grid gap-1">
-        <span className="flex items-center gap-2 text-xs font-medium">
-          <span className={cn('size-1.5 rounded-full', agent.enabled ? 'bg-primary' : 'bg-muted-foreground/50')} />
-          {agent.name}
-        </span>
-        <span className="line-clamp-2 text-[0.7rem] leading-relaxed text-muted-foreground">
-          {agent.role || agent.description || 'Reusable workflow agent'}
-        </span>
-      </span>
-      <span className="text-[0.65rem] font-medium text-primary">Configure agent</span>
-    </>
+    <div className="min-w-0">
+      <div className="flex items-start gap-2">
+        <div className="grid size-8 shrink-0 place-items-center rounded-[5px] bg-primary/10 text-[0.68rem] font-semibold text-primary">
+          {agentInitials(agent.name)}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium">{agent.name}</div>
+          <div className="mt-1 flex flex-wrap gap-1">
+            <Badge variant={agent.enabled ? 'default' : 'muted'}>{agent.enabled ? 'Enabled' : 'Disabled'}</Badge>
+          </div>
+        </div>
+      </div>
+      <AgentListCopy description={agent.description} fallback="Reusable workflow agent" role={agent.role} />
+    </div>
   )
 }
 
 function AgentListDraftCard({ setupDraft }: { setupDraft: WorkflowAgentSetupDraft }) {
   const agent = setupDraft.draft.agent
   const missing = setupDraft.draft.missing ?? []
+  const name = agent.name || 'Untitled setup draft'
 
   return (
-    <>
-      <span className="grid gap-1">
-        <span className="flex items-center gap-2 text-xs font-medium">
-          <span className="size-1.5 rounded-full bg-amber-500" />
-          {agent.name || 'Untitled setup draft'}
-        </span>
-        <span className="line-clamp-2 text-[0.7rem] leading-relaxed text-muted-foreground">
-          {agent.role || agent.description || setupDraft.prompt}
-        </span>
-      </span>
-      <span className="flex flex-wrap items-center gap-2 text-[0.65rem] font-medium">
-        <span className="rounded-full border border-amber-500/25 bg-amber-500/8 px-2 py-0.5 text-amber-600">Draft</span>
-        {missing.length > 0 ? <span className="text-muted-foreground">{missing.length} setup item(s)</span> : null}
-        <span className="text-primary">Review setup</span>
-      </span>
-    </>
+    <div className="min-w-0">
+      <div className="flex items-start gap-2">
+        <div className="grid size-8 shrink-0 place-items-center rounded-[5px] bg-primary/10 text-[0.68rem] font-semibold text-primary">
+          {agentInitials(name)}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium">{name}</div>
+          <div className="mt-1 flex flex-wrap gap-1">
+            <Badge variant="warn">Draft</Badge>
+            {missing.length > 0 ? (
+              <Badge variant="outline">
+                {missing.length} setup item{missing.length === 1 ? '' : 's'}
+              </Badge>
+            ) : null}
+          </div>
+        </div>
+      </div>
+      <AgentListCopy
+        description={agent.description}
+        fallback={setupDraft.prompt || 'Reusable workflow agent'}
+        role={agent.role}
+      />
+    </div>
   )
 }
 
@@ -1627,7 +1834,13 @@ function AgentEditor({
       </div>
 
       <nav className="flex gap-1 overflow-x-auto border-b border-(--stroke-nous)">
-        {AGENT_TABS.map(item => (
+        {AGENT_TABS.filter(item => {
+          if (item.id === 'funnel' || item.id === 'contacts') {
+            return isSdrAgent(selected)
+          }
+
+          return true
+        }).map(item => (
           <button
             className={cn(
               'shrink-0 border-b-2 px-3 py-2 text-xs font-medium transition-colors',
@@ -1665,6 +1878,27 @@ function AgentEditor({
               value={draft.approval_policy}
             />
           </label>
+          <label className="grid gap-1.5 text-xs font-medium">
+            Fallback email
+            <Input
+              disabled={busy}
+              onChange={event => patch({ fallback_email: event.target.value })}
+              placeholder="support@example.com"
+              value={draft.fallback_email}
+            />
+          </label>
+          {isSdrAgent(selected) ? (
+            <label className="grid gap-1.5 text-xs font-medium">
+              Campaign context
+              <Textarea
+                className="min-h-24"
+                disabled={busy}
+                onChange={event => patch({ campaign_context: event.target.value })}
+                placeholder="Offer, audience, and talking points the SDR should use after the funnel."
+                value={draft.campaign_context}
+              />
+            </label>
+          ) : null}
         </div>
       ) : null}
       {tab === 'skills' ? (
@@ -1704,6 +1938,13 @@ function AgentEditor({
           onRefresh={onToolsRefresh}
           selected={lines(draft.toolsText)}
           tools={toolCapabilities}
+        />
+      ) : null}
+      {tab === 'funnel' && isSdrAgent(selected) ? (
+        <SdrFunnelEditor
+          disabled={busy}
+          onChange={funnel_rules => patch({ funnel_rules })}
+          value={draft.funnel_rules}
         />
       ) : null}
     </section>
@@ -1802,6 +2043,14 @@ function AgentSaveRequired({ tab }: { tab: AgentTab }) {
       description:
         'Create the agent first so Verxio can issue its public share URL and embed token, then configure branding, allowed websites, and uploaded assets.',
       title: 'Save before publishing'
+    },
+    funnel: {
+      description: 'Create the SDR agent first, then add keyword triggers, qualification questions, and follow-ups.',
+      title: 'Save before editing the funnel'
+    },
+    contacts: {
+      description: 'Create the SDR agent first. Inbound WhatsApp and Telegram chats will show up here.',
+      title: 'Save before viewing contacts'
     },
     runs: {
       description: 'Create the agent first, then test it manually and review its execution history and events here.',

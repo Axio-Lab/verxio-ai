@@ -1,0 +1,26 @@
+# Join the kind Docker network so verxio-api can reach verxio-control-plane.
+# Used by scripts/verxio-up.sh (local Kubernetes). Not used for local-docker.
+#
+# Rebuilds of verxio-api through this overlay must include INSTALL_SCALE=1
+# (kubernetes client). A core-only API image cannot wake kind runtimes, which
+# leaves the web UI on "Reconnecting to Verxio…".
+#
+#   bash scripts/verxio-up.sh
+#   bash scripts/verxio-down.sh
+name: verxio-ai
+
+services:
+  verxio-api:
+    build:
+      context: .
+      dockerfile: verxio-api/Dockerfile
+      args:
+        INSTALL_SCALE: '1'
+    networks:
+      - default
+      - kind
+
+networks:
+  kind:
+    external: true
+    name: kind

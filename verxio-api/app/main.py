@@ -70,6 +70,20 @@ from app.knowledge_bases import (
     list_documents as list_knowledge_documents,
     list_knowledge_bases,
 )
+from app.messaging_api_server import (
+    get_api_server_info as get_messaging_api_server,
+    proxy_openai_path,
+)
+from app.messaging_webhooks import (
+    MessagingWebhookCreate,
+    MessagingWebhookEnabledToggle,
+    create_webhook as create_messaging_webhook,
+    delete_webhook as delete_messaging_webhook,
+    enable_webhooks as enable_messaging_webhooks,
+    ingest_public_hook,
+    list_webhooks as list_messaging_webhooks,
+    set_webhook_enabled as set_messaging_webhook_enabled,
+)
 from app.slack_manifest import build_slack_manifest
 from app.models import (
     ArtifactListResponse,
@@ -120,6 +134,7 @@ from app.models import (
     SignupRequest,
     TranscriptionCatalogResponse,
     WorkflowAgentCreateRequest,
+    WorkflowAgentFromTemplateRequest,
     WorkflowCustomToolCreateRequest,
     WorkflowCustomToolRecord,
     WorkflowCustomToolsResponse,
@@ -140,6 +155,8 @@ from app.models import (
     WorkflowAgentPublicInfo,
     WorkflowAgentPublicRunRequest,
     WorkflowAgentPublicRunResponse,
+    SdrContactsExportResponse,
+    SdrContactsResponse,
     WorkflowDeliveriesResponse,
     WorkflowDeliveryCreateRequest,
     WorkflowDeliveryRecord,
@@ -176,28 +193,31 @@ from app.notepad import (
 from app.runtime import HermesRuntimeAdapter, hosted_runtime_status, is_hosted_control_plane
 from app.runtime_dashboard import soft_reload_runtime_mcp
 from app.runtime_manager import (
+    DASHBOARD_UPSTREAM_SLOTS,
     artifact_file,
     index_artifacts,
     mark_runtime_healthy,
     normalize_gateway_status_content,
-    restart_runtime,
     runtime_container_env_matches,
     runtime_dashboard_base_url,
     runtime_dashboard_ws_candidates,
     runtime_health,
     runtime_live_dashboard_token,
     runtime_live_dashboard_token_async,
-    start_runtime,
-    stop_runtime,
     sync_runtime_workspace,
     wait_for_runtime_ready,
     warm_runtime_docker_network,
 )
+from app.runtime_orch.factory import get_runtime_manager
+from app.runtime_orch.idle import list_idle_policies, resolve_idle_policy
+from app.runtime_orch.lifecycle import drain_runtime, reap_idle_runtimes, touch_runtime_activity, wake_runtime
+from app.runtime_orch.states import RuntimeStatus
 from app.store import AUDIT_LOG, PROFILE, RUNS, WORKSPACE
 from app.transcription_catalog import list_transcription_catalog
 from app.workflow_agents import (
     apply_setup_draft as apply_workflow_setup_draft,
     create_agent as create_workflow_agent,
+    create_agent_from_template as create_workflow_agent_from_template,
     create_custom_tool as create_workflow_custom_tool,
     create_setup_draft as create_workflow_setup_draft,
     create_setup_update_draft as create_workflow_setup_update_draft,
@@ -208,6 +228,7 @@ from app.workflow_agents import (
     delete_delivery as delete_workflow_delivery,
     delete_setup_draft as delete_workflow_setup_draft,
     delete_trigger as delete_workflow_trigger,
+    export_agent_sdr_contacts as export_workflow_sdr_contacts,
     get_agent as get_workflow_agent,
     get_embed_config as get_workflow_embed_config,
     get_public_embed_info as get_workflow_public_embed_info,
@@ -217,6 +238,7 @@ from app.workflow_agents import (
     list_deliveries as list_workflow_deliveries,
     list_run_events as list_workflow_run_events,
     list_runs as list_workflow_runs,
+    list_agent_sdr_contacts as list_workflow_sdr_contacts,
     list_skill_capabilities as list_workflow_skill_capabilities,
     list_tool_capabilities as list_workflow_tool_capabilities,
     list_triggers as list_workflow_triggers,
@@ -328,9 +350,14 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         "off",
     }
     scheduler_task = asyncio.create_task(_run_workflow_scheduler()) if scheduler_enabled else None
+
+    from app.runtime_orch.workers import start_scale_workers, stop_scale_workers
+
+    scale_tasks = start_scale_workers()
     try:
         yield
     finally:
+        await stop_scale_workers(scale_tasks)
         if scheduler_task is not None:
             scheduler_task.cancel()
             with suppress(asyncio.CancelledError):
@@ -475,6 +502,8 @@ async def get_runtime(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
     runtime = get_runtime_for_user(user)
     connected, detail = await runtime_health(runtime)
+    if connected:
+        runtime = touch_runtime_activity(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
 
 @app.post("/api/runtime/start", response_model=RuntimeControlResponse)
@@ -482,14 +511,40 @@ async def start_runtime_route(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
     await _sync_composio_bridge_for_user(user)
     await _sync_inference_bridge_for_user(user, refresh_running=True)
-    runtime = await start_runtime(get_runtime_for_user(user), extra_env=runtime_env_for_user(str(user["id"])))
+    runtime = await wake_runtime(
+        get_runtime_for_user(user),
+        extra_env=runtime_env_for_user(str(user["id"])),
+        reason="api.start",
+    )
+    connected, detail = await runtime_health(runtime)
+    return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
+
+@app.post("/api/runtime/wake", response_model=RuntimeControlResponse)
+async def wake_runtime_route(request: Request) -> RuntimeControlResponse:
+    """Alias of start with explicit wake semantics for channels/cron."""
+    user = require_user(request)
+    await _sync_composio_bridge_for_user(user)
+    await _sync_inference_bridge_for_user(user, refresh_running=True)
+    runtime = await wake_runtime(
+        get_runtime_for_user(user),
+        extra_env=runtime_env_for_user(str(user["id"])),
+        reason="api.wake",
+    )
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
 
 @app.post("/api/runtime/stop", response_model=RuntimeControlResponse)
 async def stop_runtime_route(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
-    runtime = stop_runtime(get_runtime_for_user(user))
+    manager = get_runtime_manager()
+    runtime = await manager.stop(get_runtime_for_user(user))
+    connected, detail = await runtime_health(runtime)
+    return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
+
+@app.post("/api/runtime/drain", response_model=RuntimeControlResponse)
+async def drain_runtime_route(request: Request) -> RuntimeControlResponse:
+    user = require_user(request)
+    runtime = await drain_runtime(get_runtime_for_user(user))
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
 
@@ -498,9 +553,35 @@ async def restart_runtime_route(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
     await _sync_composio_bridge_for_user(user)
     await _sync_inference_bridge_for_user(user, refresh_running=True)
-    runtime = await restart_runtime(get_runtime_for_user(user), extra_env=runtime_env_for_user(str(user["id"])))
+    manager = get_runtime_manager()
+    runtime = await manager.restart(
+        get_runtime_for_user(user),
+        extra_env=runtime_env_for_user(str(user["id"])),
+    )
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
+
+@app.post("/api/runtime/idle/reap")
+async def reap_idle_runtimes_route(request: Request) -> dict[str, object]:
+    """Operator/cron endpoint: drain idle warm runtimes. Auth required."""
+    require_user(request)
+    drained = await reap_idle_runtimes()
+    return {"drained": drained, "count": len(drained)}
+
+@app.get("/api/runtime/idle/policies")
+async def idle_policies_route(request: Request) -> dict[str, object]:
+    require_user(request)
+    policies = [
+        {
+            "name": p.name,
+            "idle_ttl_seconds": p.idle_ttl_seconds,
+            "warm_hold_seconds": p.warm_hold_seconds,
+            "cold_start_slo_seconds": p.cold_start_slo_seconds,
+        }
+        for p in list_idle_policies()
+    ]
+    active = resolve_idle_policy()
+    return {"active": active.name, "policies": policies, "statuses": [s.value for s in RuntimeStatus]}
 
 @app.post("/api/runtime/workspace", response_model=RuntimeControlResponse)
 async def sync_runtime_workspace_route(
@@ -855,6 +936,16 @@ async def create_knowledge_document_route(
     workspace, _profile, _runtime_instance = get_context_for_user(user)
     return create_knowledge_document(workspace, knowledge_base_id, payload)
 
+@app.post("/api/workflow-agents/from-template", response_model=WorkflowAgentRecord)
+async def create_workflow_agent_from_template_route(
+    payload: WorkflowAgentFromTemplateRequest,
+    request: Request,
+) -> WorkflowAgentRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return create_workflow_agent_from_template(workspace, profile, payload)
+
+
 @app.post("/api/workflow-agents", response_model=WorkflowAgentRecord)
 async def create_workflow_agent_route(
     payload: WorkflowAgentCreateRequest,
@@ -916,6 +1007,26 @@ async def delete_workflow_agent_route(agent_id: str, request: Request) -> dict[s
     user = require_user(request)
     workspace, profile, _runtime_instance = get_context_for_user(user)
     return delete_workflow_agent(workspace, profile, agent_id)
+
+@app.get("/api/workflow-agents/{agent_id}/sdr-contacts", response_model=SdrContactsResponse)
+async def list_workflow_sdr_contacts_route(
+    agent_id: str,
+    request: Request,
+    channel: str = "",
+) -> SdrContactsResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return list_workflow_sdr_contacts(workspace, profile, agent_id, channel)
+
+@app.get("/api/workflow-agents/{agent_id}/sdr-contacts/export", response_model=SdrContactsExportResponse)
+async def export_workflow_sdr_contacts_route(
+    agent_id: str,
+    request: Request,
+    channel: str = "",
+) -> SdrContactsExportResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return export_workflow_sdr_contacts(workspace, profile, agent_id, channel)
 
 @app.get("/api/workflow-agents/{agent_id}/triggers", response_model=WorkflowTriggersResponse)
 async def list_workflow_triggers_route(agent_id: str, request: Request) -> WorkflowTriggersResponse:
@@ -1055,8 +1166,11 @@ async def run_workflow_messaging_gateway_triggers_route(
     request: Request,
 ) -> WorkflowTriggerRunsResponse:
     from app.runtime_auth import get_context_for_request
+    from app.runtime_orch.lifecycle import enqueue_wake
 
-    workspace, profile, _runtime_instance = get_context_for_request(request)
+    workspace, profile, runtime_instance = get_context_for_request(request)
+    # Channel traffic must wake a stopped runtime (scale-to-zero).
+    await enqueue_wake(runtime_instance, reason="messaging.trigger")
     return await run_workflow_messaging_gateway_triggers(workspace, profile, payload)
 
 @app.post("/api/workflow-agents/triggers/app-events", response_model=WorkflowTriggerRunsResponse)
@@ -1086,6 +1200,70 @@ async def ingest_workflow_webhook_route(trigger_id: str, request: Request) -> Wo
     run = await run_webhook_trigger(trigger_id, secret, payload)
     return WorkflowWebhookIngestResponse(run=run)
 
+
+@app.post("/api/hooks/{workspace_id}/c/{connection_id}/{route_name}")
+async def ingest_messaging_hook_connection_route(
+    workspace_id: str,
+    connection_id: str,
+    route_name: str,
+    request: Request,
+) -> Response:
+    upstream = await ingest_public_hook(workspace_id, route_name, request, connection_id=connection_id)
+    excluded = {"content-encoding", "content-length", "transfer-encoding", "connection"}
+    headers = {key: value for key, value in upstream.headers.items() if key.lower() not in excluded}
+    return Response(content=upstream.content, status_code=upstream.status_code, headers=headers)
+
+
+@app.post("/api/hooks/{workspace_id}/{route_name}")
+async def ingest_messaging_hook_route(workspace_id: str, route_name: str, request: Request) -> Response:
+    upstream = await ingest_public_hook(workspace_id, route_name, request)
+    excluded = {"content-encoding", "content-length", "transfer-encoding", "connection"}
+    headers = {key: value for key, value in upstream.headers.items() if key.lower() not in excluded}
+    return Response(content=upstream.content, status_code=upstream.status_code, headers=headers)
+
+
+@app.get("/api/messaging/api-server")
+async def get_messaging_api_server_route(request: Request) -> dict[str, Any]:
+    return await get_messaging_api_server(request, require_user(request))
+
+
+@app.api_route(
+    "/api/openai/{workspace_id}/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+)
+async def proxy_messaging_openai_route(workspace_id: str, path: str, request: Request) -> Response:
+    return await proxy_openai_path(workspace_id, path, request)
+
+
+@app.get("/api/messaging/webhooks")
+async def list_messaging_webhooks_route(request: Request) -> dict[str, Any]:
+    return await list_messaging_webhooks(request, require_user(request))
+
+
+@app.post("/api/messaging/webhooks/enable")
+async def enable_messaging_webhooks_route(request: Request) -> dict[str, Any]:
+    return await enable_messaging_webhooks(require_user(request))
+
+
+@app.post("/api/messaging/webhooks")
+async def create_messaging_webhook_route(payload: MessagingWebhookCreate, request: Request) -> dict[str, Any]:
+    return await create_messaging_webhook(request, require_user(request), payload)
+
+
+@app.delete("/api/messaging/webhooks/{name}")
+async def delete_messaging_webhook_route(name: str, request: Request) -> dict[str, Any]:
+    return await delete_messaging_webhook(require_user(request), name)
+
+
+@app.put("/api/messaging/webhooks/{name}/enabled")
+async def set_messaging_webhook_enabled_route(
+    name: str,
+    payload: MessagingWebhookEnabledToggle,
+    request: Request,
+) -> dict[str, Any]:
+    return await set_messaging_webhook_enabled(require_user(request), name, payload.enabled)
+
+
 @app.get("/api/public/workflow-agents/{public_token}", response_model=WorkflowAgentPublicInfo)
 async def get_public_workflow_agent_route(public_token: str) -> WorkflowAgentPublicInfo:
     return get_workflow_public_embed_info(public_token)
@@ -1113,11 +1291,20 @@ async def workflow_agent_embed_script_route() -> Response:
   const panel = root.querySelector('[data-panel]');
   const output = root.querySelector('[data-output]');
   const button = root.querySelector('[data-open]');
+  const visitorKey = `verxio-embed-visitor-${token}`;
+  let visitorId = '';
+  try { visitorId = localStorage.getItem(visitorKey) || ''; } catch (e) {}
+  if (!visitorId) {
+    visitorId = (crypto.randomUUID && crypto.randomUUID()) || String(Date.now());
+    try { localStorage.setItem(visitorKey, visitorId); } catch (e) {}
+  }
   fetch(`/api/public/workflow-agents/${encodeURIComponent(token)}`).then(r => r.ok ? r.json() : null).then(info => {
     if (!info) return;
     root.querySelector('[data-title]').textContent = info.display_name || info.name || 'Verxio Agent';
     button.style.background = info.primary_color || '#0ea5e9';
     panel.querySelector('button[type="submit"]').style.background = info.primary_color || '#0ea5e9';
+    const textarea = panel.querySelector('textarea');
+    if (textarea && info.welcome_message) textarea.placeholder = info.welcome_message;
   }).catch(() => {});
   button.addEventListener('click', () => { panel.hidden = !panel.hidden; });
   panel.addEventListener('submit', async event => {
@@ -1128,7 +1315,7 @@ async def workflow_agent_embed_script_route() -> Response:
     const response = await fetch(`/api/public/workflow-agents/${encodeURIComponent(token)}/runs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ message, page_url: location.href })
+      body: JSON.stringify({ message, page_url: location.href, visitor_id: visitorId })
     });
     const body = await response.json().catch(() => ({}));
     output.textContent = body.run?.output_text || body.detail || 'Agent run queued.';
@@ -1163,9 +1350,10 @@ async def _sync_composio_bridge_for_user(user: dict, *, apply_live: bool = False
     accounts, bridge, runtime_env_changed = await asyncio.to_thread(_prepare)
 
     if allow_restart and runtime.status == "running" and runtime_env_changed:
-        # Env injection requires a new container. Rare — only when the platform
-        # key was added after the runtime was already started.
-        await restart_runtime(runtime, extra_env=runtime_env_for_user(str(user["id"])))
+        # Env injection requires a new runtime process (docker or k8s).
+        await get_runtime_manager().restart(
+            runtime, extra_env=runtime_env_for_user(str(user["id"]))
+        )
     elif apply_live and runtime.status in {"running", "starting"} and (bridge.changed or bridge.enabled):
         # Soft-reload whenever the bridge is live — not only when config bytes
         # changed. Prod sessions often already have the MCP URL on disk but a
@@ -1209,7 +1397,7 @@ async def _sync_inference_bridge_for_user(
     bridge, runtime_env, runtime_env_changed = await asyncio.to_thread(_prepare)
 
     if allow_restart and runtime.status == "running" and (runtime_env_changed or (refresh_running and bridge.changed)):
-        await restart_runtime(runtime, extra_env=runtime_env)
+        await get_runtime_manager().restart(runtime, extra_env=runtime_env)
 
     return bridge
 
@@ -1388,6 +1576,7 @@ def _dashboard_path_is_lightweight(path: str) -> bool:
     # awaiting start_runtime on them made Settings → Providers fall back to
     # API-keys-only (ChatGPT/OAuth missing) and Model settings spin forever.
     return normalized in {
+        "api/healthz",
         "api/status",
         "api/config",
         "api/config/defaults",
@@ -1516,10 +1705,11 @@ def _schedule_runtime_ensure(user: dict) -> None:
 
     async def _run() -> None:
         try:
-            runtime = await start_runtime(
+            runtime = await wake_runtime(
                 get_runtime_for_user(user),
                 extra_env=runtime_env_for_user(str(user["id"])),
                 wait_ready=False,
+                reason="background.ensure",
             )
             # Finish ready-wait in the background so WS can connect once Hermes is up.
             if runtime.status != "running":
@@ -1585,16 +1775,18 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
             ):
                 # Still try to bring the runtime up for a toolset write so the
                 # first-ever select after a cold boot isn't a hard 503.
-                runtime = await start_runtime(
+                runtime = await wake_runtime(
                     runtime,
                     extra_env=runtime_env_for_user(str(user["id"])),
                     wait_ready=False,
+                    reason="dashboard.toolset",
                 )
     else:
-        runtime = await start_runtime(
+        runtime = await wake_runtime(
             get_runtime_for_user(user),
             extra_env=runtime_env_for_user(str(user["id"])),
             wait_ready=False,
+            reason="dashboard.proxy",
         )
 
     base = runtime_dashboard_base_url(runtime, ensure_network=False)
@@ -1627,13 +1819,21 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
         timeout = httpx.Timeout(300.0)
     try:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
-            upstream = await client.request(
-                request.method,
-                target,
-                params=request.query_params,
-                content=body,
-                headers=_proxy_headers(request, token),
-            )
+            async def _send() -> httpx.Response:
+                return await client.request(
+                    request.method,
+                    target,
+                    params=request.query_params,
+                    content=body,
+                    headers=_proxy_headers(request, token),
+                )
+
+            # Liveness must not sit behind config/session floods.
+            if path.strip("/") == "api/healthz":
+                upstream = await _send()
+            else:
+                async with DASHBOARD_UPSTREAM_SLOTS:
+                    upstream = await _send()
     except (httpx.ConnectError, httpx.ConnectTimeout, httpx.RemoteProtocolError, httpx.ReadError, httpx.TimeoutException) as exc:
         if skip_start_lock:
             _schedule_runtime_ensure(user)

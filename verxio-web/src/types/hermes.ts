@@ -205,6 +205,7 @@ export interface MessagingConnectionInfo {
   is_default?: boolean
   label: string
   meta?: Record<string, unknown>
+  secret?: string
   state?: null | string
 }
 
@@ -228,6 +229,49 @@ export interface MessagingPlatformInfo {
 
 export interface MessagingPlatformsResponse {
   platforms: MessagingPlatformInfo[]
+}
+
+export interface MessagingWebhookRoute {
+  created_at?: null | string
+  deliver?: string
+  deliver_connection_id?: null | string
+  deliver_only?: boolean
+  description?: string
+  enabled: boolean
+  events?: string[]
+  name: string
+  prompt?: string
+  secret?: string
+  secret_set?: boolean
+  skills?: string[]
+  url: string
+  webhook_connection_id?: string
+}
+
+export interface MessagingWebhooksResponse {
+  base_url: string
+  enabled: boolean
+  subscriptions: MessagingWebhookRoute[]
+}
+
+export interface MessagingApiServerResponse {
+  base_url: string
+  enabled: boolean
+  example: string
+  model: string
+}
+
+export interface MessagingWebhookCreate {
+  connection_id?: string
+  deliver: string
+  deliver_chat_id?: string
+  description?: string
+  events?: string[]
+  name: string
+  prompt?: string
+  secret?: string
+  skills?: string[]
+  webhook_connection_id?: string
 }
 
 export interface MessagingPlatformUpdate {

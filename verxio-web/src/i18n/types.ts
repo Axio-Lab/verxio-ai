@@ -96,6 +96,9 @@ export interface Translations {
       signInToRemoteGateway: string
       signInWithProvider: (provider: string) => string
       identityProvider: string
+      hostedTitle: string
+      hostedDescription: string
+      hostedHint: string
     }
   }
 
@@ -754,6 +757,72 @@ export interface Translations {
       disconnectFailed: string
       messageYourselfHelp: string
     }
+    webhooks: {
+      title: string
+      description: string
+      enableHint: string
+      listenerOn: string
+      listenerOff: string
+      enabledTitle: string
+      enabledMessage: string
+      enableFailed: string
+      loadFailed: string
+      routesTitle: string
+      loadingRoutes: string
+      emptyRoutes: string
+      createTitle: string
+      createHint: string
+      needConnectedChannel: string
+      nameLabel: string
+      namePlaceholder: string
+      nameRequired: string
+      eventsLabel: string
+      eventsPlaceholder: string
+      promptLabel: string
+      promptPlaceholder: string
+      deliverLabel: string
+      deliverPlaceholder: string
+      deliverRequired: string
+      noConnection: string
+      noHomeChannel: string
+      setHomeChannel: (platform: string) => string
+      connectFirst: (platform: string) => string
+      createAction: string
+      creating: string
+      createdTitle: string
+      createdMessage: (name: string) => string
+      createFailed: string
+      secretOnceTitle: string
+      secretOnceHint: string
+      urlLabel: string
+      secretLabel: string
+      copiedTitle: (label: string) => string
+      copiedMessage: string
+      copyFailed: string
+      copyUrl: string
+      deleteRoute: string
+      deletedTitle: string
+      deletedMessage: (name: string) => string
+      deleteFailed: string
+      updateFailed: string
+      deliversTo: (channel: string) => string
+      publicUrlHint: string
+      scopedEmptyRoutes: string
+      scopedCreateHint: string
+    }
+    apiServer: {
+      title: string
+      description: string
+      keyHint: string
+      baseUrlLabel: string
+      copyUrl: string
+      copiedTitle: (label: string) => string
+      copiedMessage: string
+      copyFailed: string
+      authHint: string
+      loadFailed: string
+      connectionHint: string
+    }
     platformIntro: Record<string, string>
   }
 
@@ -898,6 +967,7 @@ export interface Translations {
     customHint: string
     optional: string
     promptScheduleRequired: string
+    deliverRequired: string
     saveChanges: string
     createAction: string
   }

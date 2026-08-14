@@ -30,6 +30,10 @@ _LIVE_TOKEN_CACHE: dict[str, tuple[float, str]] = {}
 _CONTAINER_ENV_CACHE: dict[str, tuple[float, dict[str, str]]] = {}
 _HEALTHY_UNTIL: dict[str, float] = {}
 _START_LOCKS: dict[str, asyncio.Lock] = {}
+# One Hermes dashboard loop: boot floods of config/sessions freeze healthz.
+DASHBOARD_UPSTREAM_SLOTS = asyncio.Semaphore(
+    max(1, int(os.getenv("VERXIO_DASHBOARD_PROXY_CONCURRENCY", "1") or "1"))
+)
 _CACHE_TTL_SECONDS = 60.0
 _HEALTHY_TTL_SECONDS = 45.0
 _OPTIONAL_UNPAIRED_PLATFORM_ERRORS = {
@@ -681,6 +685,62 @@ def _runtime_container_ip(runtime: RuntimeInstance) -> str | None:
     return ip or None
 
 
+def runtime_webhook_container_port() -> int:
+    return int(os.getenv("VERXIO_WEBHOOK_PORT", "8644") or "8644")
+
+
+def runtime_api_server_container_port() -> int:
+    return int(os.getenv("VERXIO_API_SERVER_PORT", "8642") or "8642")
+
+
+def runtime_webhook_base_url(runtime: RuntimeInstance, *, ensure_network: bool = False) -> str | None:
+    """Private URL the API uses to reach the runtime webhook listener."""
+    manager = (runtime.manager or os.getenv("VERXIO_RUNTIME_MANAGER", "local-docker") or "local-docker").strip().lower()
+    port = runtime_webhook_container_port()
+    if manager in {"k8s", "kubernetes"}:
+        dashboard = runtime.dashboard_url or ""
+        if dashboard:
+            from urllib.parse import urlparse, urlunparse
+
+            parsed = urlparse(dashboard)
+            host = parsed.hostname or ""
+            if host and parsed.port == 9119:
+                netloc = f"{host}:{port}"
+                return urlunparse(parsed._replace(netloc=netloc))
+        return None
+
+    if ensure_network:
+        _ensure_runtime_on_network(runtime)
+    network = _runtime_docker_network(allow_docker_probe=False)
+    if network:
+        return f"http://{_container_name(runtime)}:{port}"
+    return None
+
+
+def runtime_api_server_base_url(runtime: RuntimeInstance, *, ensure_network: bool = False) -> str | None:
+    """Private URL the API uses to reach the runtime OpenAI-compatible listener."""
+    manager = (runtime.manager or os.getenv("VERXIO_RUNTIME_MANAGER", "local-docker") or "local-docker").strip().lower()
+    port = runtime_api_server_container_port()
+    if manager in {"k8s", "kubernetes"}:
+        dashboard = runtime.dashboard_url or ""
+        if dashboard:
+            from urllib.parse import urlparse, urlunparse
+
+            parsed = urlparse(dashboard)
+            host = parsed.hostname or ""
+            if host and parsed.port == 9119:
+                netloc = f"{host}:{port}"
+                return urlunparse(parsed._replace(netloc=netloc))
+        return None
+
+    if ensure_network:
+        _ensure_runtime_on_network(runtime)
+    network = _runtime_docker_network(allow_docker_probe=False)
+    if network:
+        return f"http://{_container_name(runtime)}:{port}"
+    return None
+
+
 def runtime_dashboard_base_url(runtime: RuntimeInstance, *, ensure_network: bool = False) -> str | None:
     """URL the API should use to reach Hermes.
 
@@ -689,8 +749,14 @@ def runtime_dashboard_base_url(runtime: RuntimeInstance, *, ensure_network: bool
     (``172.17.0.1:19119``) go through docker-proxy and often hang WS upgrades;
     default-bridge IPs are often unreachable from the compose network.
 
+    For K8s/Fly backends there is no compose DNS name — use ``dashboard_url``.
+
     ``ensure_network`` is for start/WS paths only — never on status polling.
     """
+    manager = (runtime.manager or os.getenv("VERXIO_RUNTIME_MANAGER", "local-docker") or "local-docker").strip().lower()
+    if manager in {"k8s", "kubernetes"}:
+        return runtime.dashboard_url
+
     if ensure_network:
         _ensure_runtime_on_network(runtime)
     # Hot path: env/cache only. Never docker-inspect here.
@@ -704,11 +770,15 @@ def runtime_dashboard_base_url(runtime: RuntimeInstance, *, ensure_network: bool
 
 
 def runtime_dashboard_ws_candidates(runtime: RuntimeInstance) -> list[str]:
-    """Compose-DNS only. Never docker-inspect or docker-proxy on the WS path.
+    """Compose-DNS only for local-docker. K8s/Fly use dashboard_url.
 
     IP inspect + network connect used to wedge docker.sock (and the API worker)
     right when the browser opened the gateway socket.
     """
+    manager = (runtime.manager or os.getenv("VERXIO_RUNTIME_MANAGER", "local-docker") or "local-docker").strip().lower()
+    if manager in {"k8s", "kubernetes"}:
+        return [runtime.dashboard_url] if runtime.dashboard_url else []
+
     candidates: list[str] = []
     # Env/cache only — no allow_docker_probe on the WS hot path.
     network = _runtime_docker_network(allow_docker_probe=False)
@@ -757,8 +827,21 @@ async def runtime_health(runtime: RuntimeInstance) -> tuple[bool, str]:
     # Keep this short — status polling must not pile up 5s+ waits per request.
     async with httpx.AsyncClient(timeout=_runtime_health_timeout_seconds()) as client:
         for base in candidates:
+            root = base.rstrip("/")
+            healthz_ok = False
             try:
-                response = await client.get(f"{base.rstrip('/')}/api/status")
+                healthz = await client.get(f"{root}/api/healthz")
+                healthz.raise_for_status()
+                # Do not follow with /api/status. That handler shares the
+                # dashboard event loop and a kubelet/API stampede after
+                # rebuild is what wedges the UI on "Reconnecting to Verxio".
+                mark_runtime_healthy(runtime)
+                return True, "Verxio runtime is reachable."
+            except Exception as exc:
+                errors.append(f"{root}/api/healthz: {exc}")
+
+            try:
+                response = await client.get(f"{root}/api/status")
                 response.raise_for_status()
                 try:
                     payload = normalize_gateway_status_payload(response.json())
@@ -766,11 +849,12 @@ async def runtime_health(runtime: RuntimeInstance) -> tuple[bool, str]:
                     payload = None
                 if isinstance(payload, dict) and payload.get("gateway_running") is False:
                     state = payload.get("gateway_state") or "not running"
-                    raise RuntimeError(f"runtime dashboard is reachable but gateway is {state}")
+                    errors.append(f"{root}: runtime dashboard is reachable but gateway is {state}")
+                    continue
                 mark_runtime_healthy(runtime)
                 return True, "Verxio runtime is reachable."
-            except Exception as exc:
-                errors.append(f"{base}: {exc}")
+            except Exception as status_exc:
+                errors.append(f"{root}/api/status: {status_exc}")
     return False, f"Verxio runtime is not reachable: {'; '.join(errors)}"
 
 
@@ -907,13 +991,31 @@ async def _start_runtime_locked(
         "--name",
         container_name,
         "--restart",
-        "unless-stopped",
+        os.getenv("VERXIO_RUNTIME_RESTART_POLICY", "no").strip() or "no",
+        "--label",
+        f"com.docker.compose.project={os.getenv('COMPOSE_PROJECT_NAME', 'verxio-ai').strip() or 'verxio-ai'}",
+        "--label",
+        "com.docker.compose.service=hermes-runtime",
         "-v",
         f"{_docker_mount_path(runtime.hermes_home_path)}:/opt/data",
         "-v",
         f"{_docker_mount_path(runtime.workspace_path)}:/workspace",
-        "-p",
-        f"{_runtime_publish_host()}:{port}:9119",
+    ]
+    publish_ports = os.getenv("VERXIO_RUNTIME_PUBLISH_PORTS", "true").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if publish_ports:
+        cmd.extend(
+            [
+                "-p",
+                f"{_runtime_publish_host()}:{port}:9119",
+            ]
+        )
+    cmd.extend(
+        [
         "-e",
         "HERMES_DASHBOARD=1",
         "-e",
@@ -943,7 +1045,8 @@ async def _start_runtime_locked(
         f"HERMES_UID={os.getenv('VERXIO_RUNTIME_UID', os.getenv('HERMES_UID', '10000'))}",
         "-e",
         f"HERMES_GID={os.getenv('VERXIO_RUNTIME_GID', os.getenv('HERMES_GID', '10000'))}",
-    ]
+        ]
+    )
     # Cache/env only here — never sync-probe docker.sock on the event loop.
     network = _runtime_docker_network(allow_docker_probe=False)
     if not network:

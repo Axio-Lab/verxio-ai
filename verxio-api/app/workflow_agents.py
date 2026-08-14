@@ -21,6 +21,7 @@ from app.knowledge_bases import retrieve_context
 from app.models import (
     AgentProfile,
     WorkflowAgentCreateRequest,
+    WorkflowAgentFromTemplateRequest,
     WorkflowAgentRecord,
     WorkflowAgentSetupApprovalRecord,
     WorkflowAgentSetupApprovalRequest,
@@ -425,6 +426,14 @@ def _agent_from_row(row: dict[str, Any]) -> WorkflowAgentRecord:
     payload["knowledge"] = _json_loads(payload.pop("knowledge_json", "[]"), [])
     payload["tools"] = _json_loads(payload.pop("tools_json", "[]"), [])
     payload["integrations"] = _json_loads(payload.pop("integrations_json", "[]"), [])
+    payload["tags"] = _string_list(_json_loads(payload.pop("tags_json", "[]"), []))
+    funnel_rules = _json_loads(payload.pop("funnel_rules_json", "{}"), {})
+    if isinstance(funnel_rules, list):
+        funnel_rules = {"rules": funnel_rules}
+    payload["funnel_rules"] = funnel_rules if isinstance(funnel_rules, dict) else {"rules": []}
+    payload["origin"] = str(payload.get("origin") or "user")
+    payload["fallback_email"] = str(payload.get("fallback_email") or "")
+    payload["campaign_context"] = str(payload.get("campaign_context") or "")
     return WorkflowAgentRecord(**payload)
 
 
@@ -1298,9 +1307,10 @@ def create_agent(workspace: Workspace, profile: AgentProfile, payload: WorkflowA
         INSERT INTO workflow_agents (
             id, tenant_id, workspace_id, runtime_agent_id, name, role, description,
             instructions, model_id, enabled, skills_json, knowledge_json, tools_json,
-            integrations_json, approval_policy, created_at, updated_at
+            integrations_json, approval_policy, tags_json, origin, funnel_rules_json,
+            fallback_email, campaign_context, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', 'user', ?, ?, ?, ?, ?)
         """,
         (
             agent_id,
@@ -1318,11 +1328,24 @@ def create_agent(workspace: Workspace, profile: AgentProfile, payload: WorkflowA
             _json_dumps(_string_list(payload.tools)),
             _json_dumps(_string_list(payload.integrations)),
             payload.approval_policy.strip() or "default",
+            _json_dumps(_json_object(payload.funnel_rules) or {"rules": []}),
+            payload.fallback_email.strip(),
+            payload.campaign_context.strip(),
             created_at,
             created_at,
         ),
     )
     return get_agent(workspace, profile, agent_id)
+
+
+def create_agent_from_template(
+    workspace: Workspace,
+    profile: AgentProfile,
+    payload: WorkflowAgentFromTemplateRequest,
+) -> WorkflowAgentRecord:
+    from app.default_workflow_agents import create_from_template
+
+    return create_from_template(workspace, profile, payload.template, name=payload.name)
 
 
 def get_agent(workspace: Workspace, profile: AgentProfile, agent_id: str) -> WorkflowAgentRecord:
@@ -1348,12 +1371,14 @@ def update_agent(
     data = current.model_dump()
     updates = payload.model_dump(exclude_unset=True)
     data.update({key: value for key, value in updates.items() if value is not None})
+    funnel_rules = data.get("funnel_rules") if isinstance(data.get("funnel_rules"), dict) else current.funnel_rules
     db.execute(
         """
         UPDATE workflow_agents
         SET name = ?, role = ?, description = ?, instructions = ?, model_id = ?, enabled = ?,
             skills_json = ?, knowledge_json = ?, tools_json = ?, integrations_json = ?,
-            approval_policy = ?, updated_at = ?
+            approval_policy = ?, funnel_rules_json = ?, fallback_email = ?, campaign_context = ?,
+            updated_at = ?
         WHERE id = ? AND workspace_id = ? AND runtime_agent_id = ?
         """,
         (
@@ -1368,6 +1393,9 @@ def update_agent(
             _json_dumps(_string_list(data.get("tools"))),
             _json_dumps(_string_list(data.get("integrations"))),
             str(data.get("approval_policy") or "default").strip(),
+            _json_dumps(funnel_rules or {"rules": []}),
+            str(data.get("fallback_email") or "").strip(),
+            str(data.get("campaign_context") or "").strip(),
             now_iso(),
             agent_id,
             workspace.id,
@@ -1980,6 +2008,7 @@ async def run_public_embed_agent(
                     "page_url": payload.page_url,
                     "public_token": public_token,
                     "visitor_id": payload.visitor_id,
+                    "conversation_id": payload.visitor_id.strip() or f"embed:{public_token}",
                 },
             }
         ),
@@ -2287,10 +2316,11 @@ def _build_instructions(
     ]
     custom_tool_specs = [_custom_tool_public_spec(tool) for tool in custom_tools or []]
     custom_tool_lines = _json_dumps(custom_tool_specs) if custom_tool_specs else "none"
+    instructions = _render_agent_instructions(agent)
     parts = [
         f"You are the Verxio workflow agent named {agent.name}.",
         f"Role: {agent.role or 'Complete the assigned workflow run.'}",
-        agent.instructions or "Complete the task using the provided event/input payload.",
+        instructions or "Complete the task using the provided event/input payload.",
         "Respect the per-agent setup below.",
         "Selected skills:\n" + ("\n".join(skill_lines) if skill_lines else "none"),
         f"Brain model selected for this workflow agent: {agent.model_id or 'workspace default'}",
@@ -2310,6 +2340,155 @@ def _build_instructions(
     return "\n".join(part for part in parts if part.strip())
 
 
+RATING_THANK_YOU = (
+    "Thank you for your feedback. I really appreciate your rating. If you need anything else, just let me know."
+)
+SUGGEST_RATING_MARKER = "[SUGGEST_RATING]"
+
+
+def _agent_has_tag(agent: WorkflowAgentRecord, tag: str) -> bool:
+    return tag in (agent.tags or [])
+
+
+def _run_payload(input_payload: dict[str, Any]) -> dict[str, Any]:
+    payload = input_payload.get("payload") if isinstance(input_payload.get("payload"), dict) else input_payload
+    return payload if isinstance(payload, dict) else {}
+
+
+def _message_from_run_input(input_payload: dict[str, Any]) -> str:
+    payload = _run_payload(input_payload)
+    for key in ("message", "question", "text"):
+        value = str(payload.get(key) or "").strip()
+        if value:
+            return value
+    return str(input_payload.get("message") or "").strip()
+
+
+def _conversation_id_from_input(input_payload: dict[str, Any], trigger_type: str) -> str:
+    payload = _run_payload(input_payload)
+    for key in ("conversation_id", "visitor_id", "sender_id"):
+        value = str(payload.get(key) or "").strip()
+        if value:
+            return value
+    token = str(payload.get("public_token") or "").strip()
+    if token:
+        return f"embed:{token}"
+    if trigger_type:
+        return ""
+    return ""
+
+
+def _render_agent_instructions(agent: WorkflowAgentRecord) -> str:
+    text = agent.instructions or ""
+    email = agent.fallback_email.strip()
+    if email:
+        text = text.replace("{fallback_email}", email)
+    else:
+        text = text.replace(
+            "Please email us at {fallback_email} and our team will get back to you.",
+            "please contact support via email and a human agent will respond.",
+        )
+        text = text.replace(
+            "You can reach our team directly at {fallback_email} and they'll get back to you.",
+            "please reach out to the team directly and they'll get back to you.",
+        )
+        text = text.replace("{fallback_email}", "the team")
+    campaign = agent.campaign_context.strip()
+    if "{campaign_context}" in text:
+        text = text.replace("{campaign_context}", campaign or "No campaign context has been added yet.")
+    elif campaign:
+        text = f"{text.rstrip()}\n\n## Campaign / Post Context\n{campaign}\n"
+    return text
+
+
+def _get_or_create_agent_session(workspace: Workspace, agent_id: str, conversation_id: str) -> dict[str, Any]:
+    row = db.fetch_one(
+        """
+        SELECT * FROM workflow_agent_sessions
+        WHERE workflow_agent_id = ? AND conversation_id = ?
+        """,
+        (agent_id, conversation_id),
+    )
+    if row:
+        return row
+    now = now_iso()
+    session_id = new_id("workflow_session")
+    db.execute(
+        """
+        INSERT INTO workflow_agent_sessions (
+            id, tenant_id, workspace_id, workflow_agent_id, conversation_id,
+            suggest_rating, rating, metadata_json, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, 0, NULL, '{}', ?, ?)
+        """,
+        (session_id, workspace.tenant_id, workspace.id, agent_id, conversation_id, now, now),
+    )
+    return db.fetch_one("SELECT * FROM workflow_agent_sessions WHERE id = ?", (session_id,)) or {}
+
+
+def _maybe_handle_rating(workspace: Workspace, agent_id: str, conversation_id: str, message: str) -> str | None:
+    if not conversation_id or not message.strip():
+        return None
+    session = _get_or_create_agent_session(workspace, agent_id, conversation_id)
+    trimmed = message.strip()
+    first = trimmed[:1]
+    looks_like_rating = bool(session.get("suggest_rating")) and first.isdigit() and 1 <= int(first) <= 5
+    if looks_like_rating:
+        db.execute(
+            """
+            UPDATE workflow_agent_sessions
+            SET rating = ?, suggest_rating = 0, updated_at = ?
+            WHERE id = ?
+            """,
+            (int(first), now_iso(), session["id"]),
+        )
+        return RATING_THANK_YOU
+    if session.get("rating") is not None:
+        from app.sdr_funnel import is_closing_message
+
+        if is_closing_message(trimmed):
+            return ""
+    return None
+
+
+def _capture_rating_suggestion(workspace: Workspace, agent_id: str, conversation_id: str, output: str) -> str:
+    if SUGGEST_RATING_MARKER not in output:
+        return output
+    cleaned = re.sub(r"\n?\[SUGGEST_RATING\]\s*$", "", output.strip(), flags=re.IGNORECASE).replace(SUGGEST_RATING_MARKER, "").strip()
+    if conversation_id:
+        session = _get_or_create_agent_session(workspace, agent_id, conversation_id)
+        db.execute(
+            """
+            UPDATE workflow_agent_sessions
+            SET suggest_rating = 1, updated_at = ?
+            WHERE id = ?
+            """,
+            (now_iso(), session["id"]),
+        )
+    return cleaned
+
+
+async def _complete_run_output(
+    workspace: Workspace,
+    profile: AgentProfile,
+    run: WorkflowRunRecord,
+    output: str,
+    run_input: dict[str, Any],
+    *,
+    event_type: str,
+    message: str,
+    metadata: dict[str, Any] | None = None,
+) -> WorkflowRunRecord:
+    _record_run_event(run, event_type, message, metadata or {})
+    _set_run_status(run.id, "completed", output=output, completed=True)
+    completed = _run_from_row(db.fetch_one("SELECT * FROM workflow_runs WHERE id = ?", (run.id,)) or {})
+    if output.strip():
+        await _record_delivery_events(workspace, profile, completed, output, run_input)
+    else:
+        _record_run_event(completed, "delivery_saved", "Workflow output was saved to the run.", {"delivery_type": "save_only"})
+    return _run_from_row(db.fetch_one("SELECT * FROM workflow_runs WHERE id = ?", (run.id,)) or {})
+
+
 async def run_agent(
     workspace: Workspace,
     profile: AgentProfile,
@@ -2326,6 +2505,41 @@ async def run_agent(
     if agent.model_id:
         _record_run_event(run, "model_selected", "Selected workflow agent brain model.", {"model_id": agent.model_id})
     _set_run_status(run.id, "running")
+    conversation_id = _conversation_id_from_input(payload.input, trigger_type)
+    message = _message_from_run_input(payload.input)
+    rating_reply = _maybe_handle_rating(workspace, agent.id, conversation_id, message)
+    if rating_reply is not None:
+        return await _complete_run_output(
+            workspace,
+            profile,
+            run,
+            rating_reply,
+            payload.input,
+            event_type="rating_recorded" if rating_reply else "rating_closed",
+            message="Stored a customer rating without calling the model." if rating_reply else "Ignored a closing message after a rating.",
+        )
+    if _agent_has_tag(agent, "sdr"):
+        from app.sdr_funnel import maybe_handle_sdr_message
+
+        sdr_reply = await maybe_handle_sdr_message(
+            workspace,
+            profile,
+            agent,
+            message=message,
+            conversation_id=conversation_id,
+            trigger_type=trigger_type,
+            run_input=payload.input,
+        )
+        if sdr_reply is not None:
+            return await _complete_run_output(
+                workspace,
+                profile,
+                run,
+                sdr_reply,
+                payload.input,
+                event_type="sdr_funnel",
+                message="SDR funnel handled this message.",
+            )
     knowledge_context = retrieve_context(workspace, agent.knowledge, payload.input)
     if knowledge_context:
         _record_run_event(
@@ -2383,6 +2597,7 @@ async def run_agent(
     except Exception as exc:
         _set_run_status(run.id, "failed", error=str(exc), completed=True)
         return _run_from_row(db.fetch_one("SELECT * FROM workflow_runs WHERE id = ?", (run.id,)) or {})
+    output = _capture_rating_suggestion(workspace, agent.id, conversation_id, output)
     _set_run_status(run.id, "completed", output=output, completed=True)
     completed_run = _run_from_row(db.fetch_one("SELECT * FROM workflow_runs WHERE id = ?", (run.id,)) or {})
     await _record_delivery_events(workspace, profile, completed_run, output, payload.input)
@@ -2559,6 +2774,10 @@ def _string_matches_filter(actual: str, expected: Any) -> bool:
 
 
 def _trigger_accepts_messaging_event(config: dict[str, Any], payload: WorkflowMessagingTriggerRequest) -> bool:
+    if bool(config.get("requireConnection") or config.get("require_connection")):
+        expected_connection = str(config.get("connectionId") or config.get("connection_id") or "").strip()
+        if not expected_connection:
+            return False
     if not _string_matches_filter(payload.channel, config.get("channel") or config.get("channels")):
         return False
     if not _string_matches_filter(
@@ -2754,4 +2973,31 @@ async def tick_due_schedule_triggers(
         if not claimed:
             continue
         runs.append(await _run_claimed_schedule_trigger(row, claim_token))
+    from app.sdr_funnel import tick_due_sdr_follow_ups
+
+    await tick_due_sdr_follow_ups()
     return WorkflowTriggerRunsResponse(runs=runs)
+
+
+def list_agent_sdr_contacts(
+    workspace: Workspace,
+    profile: AgentProfile,
+    agent_id: str,
+    channel: str = "",
+):
+    get_agent(workspace, profile, agent_id)
+    from app.sdr_funnel import list_sdr_contacts
+
+    return list_sdr_contacts(workspace, agent_id, channel)
+
+
+def export_agent_sdr_contacts(
+    workspace: Workspace,
+    profile: AgentProfile,
+    agent_id: str,
+    channel: str = "",
+):
+    agent = get_agent(workspace, profile, agent_id)
+    from app.sdr_funnel import export_sdr_contacts_vcf
+
+    return export_sdr_contacts_vcf(workspace, agent, channel)

@@ -82,7 +82,11 @@ export const en: Translations = {
       signInFailed: 'Sign-in failed',
       signInToRemoteGateway: 'Sign in to remote gateway',
       signInWithProvider: provider => `Sign in with ${provider}`,
-      identityProvider: 'your identity provider'
+      identityProvider: 'your identity provider',
+      hostedTitle: 'Still connecting to your agent',
+      hostedDescription:
+        'Your isolated agent is starting. This page retries automatically. Nothing here deletes your chats or settings.',
+      hostedHint: 'You can retry now. Repair install is for the desktop app only.'
     }
   },
 
@@ -765,7 +769,7 @@ export const en: Translations = {
     required: 'Required',
     recommended: 'Recommended',
     advanced: count => `Advanced (${count})`,
-    noTokenNeeded: 'This platform does not need a token here. Use the setup guide above, then enable it below.',
+    noTokenNeeded: 'This platform does not need a token here. Finish setup, then enable it below.',
     enabled: 'Enabled',
     disabled: 'Disabled',
     unsavedChanges: 'Unsaved changes',
@@ -799,6 +803,19 @@ export const en: Translations = {
         help: 'Recommended. Comma-separated numeric IDs from @userinfobot. Without this, anyone can DM your bot.'
       },
       TELEGRAM_PROXY: { label: 'Proxy URL', help: 'Only needed on networks where Telegram is blocked.' },
+      WEBHOOK_ENABLED: {
+        label: 'Enable webhooks',
+        help: 'Use the Webhooks toggle. Leave this unless you need to override it.'
+      },
+      WEBHOOK_PORT: {
+        label: 'Listener port',
+        help: 'Internal port Verxio uses inside the runtime. You do not expose this publicly.',
+        placeholder: '8644'
+      },
+      WEBHOOK_SECRET: {
+        label: 'Global signing secret',
+        help: 'Optional fallback secret. Each route also gets its own secret to paste into GitHub or GitLab.'
+      },
       DISCORD_BOT_TOKEN: {
         label: 'Bot token',
         help: 'Create an application in the Discord Developer Portal, add a bot, then paste its token.'
@@ -1096,6 +1113,77 @@ export const en: Translations = {
       messageYourselfHelp:
         'To chat with your agent, open WhatsApp → tap your profile → Message yourself. Do not use a regular chat with your phone number.'
     },
+    webhooks: {
+      title: 'Inbound webhooks',
+      description:
+        'Give GitHub, GitLab, or your own apps a Verxio URL. Incoming events run your agent and send the reply to a messaging channel you already connected.',
+      enableHint: 'Turn Webhooks on with the toggle below, then create a route.',
+      listenerOn: 'Webhooks are on',
+      listenerOff: 'Webhooks are off',
+      enabledTitle: 'Webhooks enabled',
+      enabledMessage: 'Verxio will accept inbound events for this workspace.',
+      enableFailed: 'Could not enable webhooks',
+      loadFailed: 'Could not load webhook routes',
+      routesTitle: 'Routes',
+      loadingRoutes: 'Loading routes…',
+      emptyRoutes: 'No routes yet. Create one to get a public Verxio URL.',
+      createTitle: 'New route',
+      createHint: 'Name the route, optionally filter events, and choose where replies are delivered.',
+      needConnectedChannel:
+        'Connect a messaging channel and set its home chat in Messaging before creating a webhook route.',
+      nameLabel: 'Route name',
+      namePlaceholder: 'github-pr',
+      nameRequired: 'Enter a route name.',
+      eventsLabel: 'Events (optional)',
+      eventsPlaceholder: 'pull_request, push',
+      promptLabel: 'Prompt template (optional)',
+      promptPlaceholder: 'Review this event:\n{__raw__}',
+      deliverLabel: 'Deliver to',
+      deliverPlaceholder: 'Choose a connected channel',
+      deliverRequired: 'Choose a connected messaging channel with a home chat.',
+      noConnection: 'No connection',
+      noHomeChannel: 'No home channel',
+      setHomeChannel: platform => `Set a home channel in Messaging → ${platform} before delivering here.`,
+      connectFirst: platform => `No connection. Set up ${platform} in Messaging first.`,
+      createAction: 'Create route',
+      creating: 'Creating…',
+      createdTitle: 'Route created',
+      createdMessage: name => `Paste this Verxio URL into ${name}.`,
+      createFailed: 'Could not create webhook route',
+      secretOnceTitle: 'Copy this secret now',
+      secretOnceHint:
+        'Verxio shows the signing secret once. Use it as the webhook secret in GitHub, GitLab, or your app.',
+      urlLabel: 'URL',
+      secretLabel: 'Secret',
+      copiedTitle: label => `${label} copied`,
+      copiedMessage: 'Ready to paste.',
+      copyFailed: 'Could not copy',
+      copyUrl: 'Copy URL',
+      deleteRoute: 'Delete route',
+      deletedTitle: 'Route deleted',
+      deletedMessage: name => `${name} will no longer accept events.`,
+      deleteFailed: 'Could not delete route',
+      updateFailed: 'Could not update route',
+      deliversTo: channel => (channel ? `Delivers to ${channel}` : 'No delivery target'),
+      publicUrlHint: 'Public Verxio URL',
+      scopedEmptyRoutes: 'No routes on this connection yet. Create one to get a public Verxio URL.',
+      scopedCreateHint: 'Routes created here belong to the selected webhook connection.'
+    },
+    apiServer: {
+      title: 'OpenAI-compatible API',
+      description:
+        'Point Open WebUI, LobeChat, or any OpenAI client at this Verxio URL. Use the API key below as a Bearer token.',
+      keyHint: 'Choose a key at least 16 characters long. Verxio will not start the API without it.',
+      baseUrlLabel: 'Base URL',
+      copyUrl: 'Copy URL',
+      copiedTitle: label => `${label} copied`,
+      copiedMessage: 'Ready to paste.',
+      copyFailed: 'Could not copy',
+      authHint: 'Authorization: Bearer <your API key>',
+      loadFailed: 'Could not load the public API URL',
+      connectionHint:
+        'Each API connection is a separate Bearer token on this same URL. Add connections for Open WebUI, internal tools, or partners.'
+    },
     platformIntro: {}
   },
 
@@ -1280,6 +1368,7 @@ export const en: Translations = {
     customHint: 'Cron expression, or phrases like "every hour" or "weekdays at 9am".',
     optional: 'Optional',
     promptScheduleRequired: 'Prompt and schedule are required.',
+    deliverRequired: 'Choose This desktop, or a connected messaging channel with a home chat.',
     saveChanges: 'Save changes',
     createAction: 'Create cron'
   },

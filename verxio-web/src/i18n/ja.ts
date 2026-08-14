@@ -83,7 +83,11 @@ export const ja = defineLocale({
       signInFailed: 'サインインに失敗しました',
       signInToRemoteGateway: 'リモートゲートウェイにサインイン',
       signInWithProvider: provider => `${provider} でサインイン`,
-      identityProvider: 'ID プロバイダー'
+      identityProvider: 'ID プロバイダー',
+      hostedTitle: 'エージェントに接続しています',
+      hostedDescription:
+        '専用エージェントを起動しています。このページは自動で再試行します。チャットや設定は削除されません。',
+      hostedHint: '今すぐ再試行することもできます。インストール修復はデスクトップアプリ向けです。'
     }
   },
 
@@ -795,7 +799,7 @@ export const ja = defineLocale({
     recommended: '推奨',
     advanced: count => `詳細設定 (${count})`,
     noTokenNeeded:
-      'このプラットフォームはここでトークンが必要ありません。上のセットアップガイドを使用してから、以下で有効にしてください。',
+      'このプラットフォームはここでトークンが必要ありません。セットアップを終えてから、以下で有効にしてください。',
     enabled: '有効',
     disabled: '無効',
     unsavedChanges: '未保存の変更',
@@ -1016,6 +1020,77 @@ export const ja = defineLocale({
       messageYourselfHelp:
         'To chat with your agent, open WhatsApp → tap your profile → Message yourself. Do not use a regular chat with your phone number.'
     },
+    webhooks: {
+      title: 'Inbound webhooks',
+      description:
+        'Give GitHub, GitLab, or your own apps a Verxio URL. Incoming events run your agent and send the reply to a messaging channel you already connected.',
+      enableHint: 'Turn Webhooks on with the toggle below, then create a route.',
+      listenerOn: 'Webhooks are on',
+      listenerOff: 'Webhooks are off',
+      enabledTitle: 'Webhooks enabled',
+      enabledMessage: 'Verxio will accept inbound events for this workspace.',
+      enableFailed: 'Could not enable webhooks',
+      loadFailed: 'Could not load webhook routes',
+      routesTitle: 'Routes',
+      loadingRoutes: 'Loading routes…',
+      emptyRoutes: 'No routes yet. Create one to get a public Verxio URL.',
+      createTitle: 'New route',
+      createHint: 'Name the route, optionally filter events, and choose where replies are delivered.',
+      needConnectedChannel:
+        'Connect a messaging channel and set its home chat in Messaging before creating a webhook route.',
+      nameLabel: 'Route name',
+      namePlaceholder: 'github-pr',
+      nameRequired: 'Enter a route name.',
+      eventsLabel: 'Events (optional)',
+      eventsPlaceholder: 'pull_request, push',
+      promptLabel: 'Prompt template (optional)',
+      promptPlaceholder: 'Review this event:\n{__raw__}',
+      deliverLabel: 'Deliver to',
+      deliverPlaceholder: 'Choose a connected channel',
+      deliverRequired: 'Choose a connected messaging channel with a home chat.',
+      noConnection: 'No connection',
+      noHomeChannel: 'No home channel',
+      setHomeChannel: platform => `Set a home channel in Messaging → ${platform} before delivering here.`,
+      connectFirst: platform => `No connection. Set up ${platform} in Messaging first.`,
+      createAction: 'Create route',
+      creating: 'Creating…',
+      createdTitle: 'Route created',
+      createdMessage: name => `Paste this Verxio URL into ${name}.`,
+      createFailed: 'Could not create webhook route',
+      secretOnceTitle: 'Copy this secret now',
+      secretOnceHint:
+        'Verxio shows the signing secret once. Use it as the webhook secret in GitHub, GitLab, or your app.',
+      urlLabel: 'URL',
+      secretLabel: 'Secret',
+      copiedTitle: label => `${label} copied`,
+      copiedMessage: 'Ready to paste.',
+      copyFailed: 'Could not copy',
+      copyUrl: 'Copy URL',
+      deleteRoute: 'Delete route',
+      deletedTitle: 'Route deleted',
+      deletedMessage: name => `${name} will no longer accept events.`,
+      deleteFailed: 'Could not delete route',
+      updateFailed: 'Could not update route',
+      deliversTo: channel => (channel ? `Delivers to ${channel}` : 'No delivery target'),
+      publicUrlHint: 'Public Verxio URL',
+      scopedEmptyRoutes: 'No routes on this connection yet. Create one to get a public Verxio URL.',
+      scopedCreateHint: 'Routes created here belong to the selected webhook connection.'
+    },
+    apiServer: {
+      title: 'OpenAI-compatible API',
+      description:
+        'Point Open WebUI, LobeChat, or any OpenAI client at this Verxio URL. Use the API key below as a Bearer token.',
+      keyHint: 'Choose a key at least 16 characters long. Verxio will not start the API without it.',
+      baseUrlLabel: 'Base URL',
+      copyUrl: 'Copy URL',
+      copiedTitle: label => `${label} copied`,
+      copiedMessage: 'Ready to paste.',
+      copyFailed: 'Could not copy',
+      authHint: 'Authorization: Bearer <your API key>',
+      loadFailed: 'Could not load the public API URL',
+      connectionHint:
+        'Each API connection is a separate Bearer token on this same URL. Add connections for Open WebUI, internal tools, or partners.'
+    },
     platformIntro: {}
   },
 
@@ -1202,6 +1277,7 @@ export const ja = defineLocale({
     customHint: 'Cron 式、または「every hour」「weekdays at 9am」のようなフレーズ。',
     optional: '省略可能',
     promptScheduleRequired: 'プロンプトとスケジュールは必須です。',
+    deliverRequired: 'このデスクトップ、またはホームチャットが設定済みの接続チャネルを選んでください。',
     saveChanges: '変更を保存',
     createAction: 'Cron を作成'
   },

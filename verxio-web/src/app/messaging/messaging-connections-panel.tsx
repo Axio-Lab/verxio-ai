@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { writeClipboardText } from '@/components/ui/copy-button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { createMessagingConnection, deleteMessagingConnection, updateMessagingConnection } from '@/hermes'
-import { Plus, Trash2 } from '@/lib/icons'
+import { Copy, Plus, Trash2 } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
 import { runGatewayRestart } from '@/store/system-actions'
@@ -13,9 +14,11 @@ import type { MessagingConnectionInfo, MessagingPlatformInfo } from '@/types/her
 import { CREDENTIAL_CONTROL_CLASS } from '../settings/credential-key-ui'
 
 const PRIMARY_TOKEN_KEY: Record<string, string> = {
+  api_server: 'API_SERVER_KEY',
   discord: 'DISCORD_BOT_TOKEN',
   slack: 'SLACK_BOT_TOKEN',
   telegram: 'TELEGRAM_BOT_TOKEN',
+  webhook: 'WEBHOOK_SECRET',
   whatsapp_cloud: 'WHATSAPP_CLOUD_PHONE_NUMBER_ID'
 }
 
@@ -37,8 +40,11 @@ export function MessagingConnectionsPanel({
   const [label, setLabel] = useState('')
   const [token, setToken] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
+  const [createdSecret, setCreatedSecret] = useState<{ label: string; secret: string } | null>(null)
 
   const primaryKey = PRIMARY_TOKEN_KEY[platform.id] || ''
+  const autoGeneratesSecret = platform.id === 'webhook' || platform.id === 'api_server'
+  const needsGatewayRestart = platform.id !== 'webhook' && platform.id !== 'api_server'
   const tokenLabel = useMemo(() => {
     if (platform.id === 'slack') {
       return 'Bot token (xoxb-…)'
@@ -52,6 +58,14 @@ export function MessagingConnectionsPanel({
       return ''
     }
 
+    if (platform.id === 'webhook') {
+      return 'HMAC secret (optional — leave blank to auto-generate)'
+    }
+
+    if (platform.id === 'api_server') {
+      return 'API key (optional — leave blank to auto-generate)'
+    }
+
     return 'Bot token'
   }, [platform.id])
 
@@ -63,7 +77,7 @@ export function MessagingConnectionsPanel({
     const trimmedToken = token.trim()
     const trimmedLabel = label.trim() || `Connection ${connections.length + 1}`
 
-    if (platform.id !== 'whatsapp' && primaryKey && !trimmedToken) {
+    if (platform.id !== 'whatsapp' && primaryKey && !trimmedToken && !autoGeneratesSecret) {
       notify({ kind: 'error', message: 'Enter credentials for the new connection' })
 
       return
@@ -82,11 +96,16 @@ export function MessagingConnectionsPanel({
       setToken('')
       await onChanged()
       onSelectConnection(result.connection.id)
-      await runGatewayRestart()
+      if (result.connection.secret) {
+        setCreatedSecret({ label: trimmedLabel, secret: result.connection.secret })
+      }
+      if (needsGatewayRestart) {
+        await runGatewayRestart()
+      }
       notify({
         kind: 'success',
         title: 'Connection added',
-        message: `${trimmedLabel} saved. Gateway restarting…`
+        message: needsGatewayRestart ? `${trimmedLabel} saved. Gateway restarting…` : `${trimmedLabel} saved.`
       })
     } catch (error) {
       notifyError(error, 'Could not add connection')
@@ -128,7 +147,9 @@ export function MessagingConnectionsPanel({
         onSelectConnection(connections.find(row => row.is_default)?.id || connections[0]?.id || '')
       }
 
-      await runGatewayRestart()
+      if (needsGatewayRestart) {
+        await runGatewayRestart()
+      }
       notify({
         kind: 'success',
         title: 'Connection removed',
@@ -157,8 +178,38 @@ export function MessagingConnectionsPanel({
         </Button>
       </div>
       <p className="mt-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
-        Connected accounts for this gateway. Replies always go out on the same connection that received the message.
+        {platform.id === 'webhook'
+          ? 'Named webhook identities. Each has its own secret and routes, on the same listener.'
+          : platform.id === 'api_server'
+            ? 'Named API keys. Each client uses its own Bearer token on the same public URL.'
+            : 'Connected accounts for this gateway. Replies always go out on the same connection that received the message.'}
       </p>
+
+      {createdSecret ? (
+        <div className="mt-3 rounded-md border border-border/60 bg-muted/30 px-3 py-3">
+          <p className="text-sm font-medium">Copy this secret now</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Verxio shows the {platform.id === 'api_server' ? 'API key' : 'signing secret'} once for{' '}
+            {createdSecret.label}.
+          </p>
+          <div className="mt-2 flex items-start gap-2">
+            <p className="min-w-0 flex-1 wrap-anywhere font-mono text-xs">{createdSecret.secret}</p>
+            <Button
+              className="size-8 shrink-0"
+              onClick={() => {
+                void writeClipboardText(createdSecret.secret).then(
+                  () => notify({ kind: 'success', title: 'Secret copied', message: 'Ready to paste.' }),
+                  () => notify({ kind: 'error', title: 'Could not copy', message: 'Could not copy' })
+                )
+              }}
+              type="button"
+              variant="ghost"
+            >
+              <Copy className="size-3.5" />
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       <ul className="mt-3 grid gap-1">
         {connections.map(connection => {
@@ -238,6 +289,16 @@ export function MessagingConnectionsPanel({
             <p className="text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)">
               App-level verify token and app secret stay shared. Add each phone number ID here, then save its access
               token in the connection fields below.
+            </p>
+          )}
+          {platform.id === 'webhook' && (
+            <p className="text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)">
+              Leave the secret blank to auto-generate one. New routes on this connection can reuse it.
+            </p>
+          )}
+          {platform.id === 'api_server' && (
+            <p className="text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)">
+              Leave the key blank to auto-generate one. Clients authenticate with this Bearer token on the same API URL.
             </p>
           )}
           <div className="flex justify-end gap-2">

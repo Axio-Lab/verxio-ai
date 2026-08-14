@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: verxio-api
+  namespace: verxio-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: verxio-runtime-manager
+  namespace: verxio-runtimes
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "create", "delete", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: verxio-runtime-manager
+  namespace: verxio-runtimes
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: verxio-runtime-manager
+subjects:
+  - kind: ServiceAccount
+    name: verxio-api
+    namespace: verxio-system
