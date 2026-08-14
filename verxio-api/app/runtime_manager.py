@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import mimetypes
 import os
 import secrets
@@ -18,6 +19,8 @@ import httpx
 from app import db
 from app.control_plane import ensure_runtime_directories, now_iso, runtime_from_row, safe_path_part, save_runtime
 from app.models import ArtifactRecord, RuntimeInstance, new_id
+
+logger = logging.getLogger(__name__)
 
 
 # Hot-path caches: sync docker.sock calls on every /api/status poll freeze the
@@ -410,6 +413,28 @@ def invalidate_runtime_caches(runtime: RuntimeInstance) -> None:
     _HEALTHY_UNTIL.pop(name, None)
 
 
+def _runtime_manager_name(runtime: RuntimeInstance) -> str:
+    return (
+        runtime.manager
+        or os.getenv("VERXIO_RUNTIME_MANAGER", "local-docker")
+        or "local-docker"
+    ).strip().lower()
+
+
+def _k8s_pod_env_map(runtime: RuntimeInstance) -> dict[str, str] | None:
+    try:
+        from app.runtime_orch.factory import get_runtime_manager
+
+        manager = get_runtime_manager()
+        read_pod_env = getattr(manager, "read_pod_env", None)
+        if not callable(read_pod_env):
+            return None
+        return read_pod_env(runtime)
+    except Exception:
+        logger.debug("K8s runtime env inspect failed for %s", runtime.id, exc_info=True)
+        return None
+
+
 def _runtime_container_env_map(runtime: RuntimeInstance) -> dict[str, str] | None:
     """Read all container env vars once (cached) — avoids repeated docker inspect."""
 
@@ -420,6 +445,12 @@ def _runtime_container_env_map(runtime: RuntimeInstance) -> dict[str, str] | Non
         if time.monotonic() < expires_at:
             return env_map
         _CONTAINER_ENV_CACHE.pop(name, None)
+
+    if _runtime_manager_name(runtime) in {"k8s", "kubernetes"}:
+        env_map = _k8s_pod_env_map(runtime)
+        if env_map is not None:
+            _CONTAINER_ENV_CACHE[name] = (time.monotonic() + _CACHE_TTL_SECONDS, env_map)
+        return env_map
 
     result = _run_docker(
         [
@@ -459,7 +490,13 @@ def runtime_container_env_matches(runtime: RuntimeInstance, key: str, expected_v
 
     if not expected_value:
         return False
-    return runtime_container_env_value(runtime, key) == expected_value
+    env_map = _runtime_container_env_map(runtime)
+    if env_map is None:
+        # Docker: missing inspect means the container is gone / env unknown, so
+        # treat as drift. K8s: docker inspect always fails; if the pod spec
+        # cannot be read, do not bounce a live runtime.
+        return _runtime_manager_name(runtime) in {"k8s", "kubernetes"}
+    return env_map.get(key) == expected_value
 
 
 def runtime_live_dashboard_token(runtime: RuntimeInstance, fallback: str = "") -> str:
