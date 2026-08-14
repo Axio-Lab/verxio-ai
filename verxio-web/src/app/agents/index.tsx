@@ -131,7 +131,34 @@ const AGENT_TABS: Array<{ id: AgentTab; label: string }> = [
 ]
 
 function isDefaultAgent(agent: WorkflowAgent | null | undefined): boolean {
-  return Boolean(agent?.tags?.includes('default'))
+  return Boolean(agent?.tags?.includes('default') || agent?.origin === 'system')
+}
+
+function agentInitials(value: string): string {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(part => part[0]?.toUpperCase())
+    .join('')
+}
+
+function AgentListCopy({ description, fallback, role }: { description?: string; fallback: string; role?: string }) {
+  const roleText = role?.trim() || ''
+  const descriptionText = description?.trim() || ''
+
+  if (!roleText && !descriptionText) {
+    return <p className="mt-3 line-clamp-3 text-xs leading-5 text-muted-foreground">{fallback}</p>
+  }
+
+  return (
+    <div className="mt-3 grid gap-1">
+      {roleText ? <p className="text-xs leading-5">{roleText}</p> : null}
+      {descriptionText && descriptionText !== roleText ? (
+        <p className="line-clamp-3 text-xs leading-5 text-muted-foreground">{descriptionText}</p>
+      ) : null}
+    </div>
+  )
 }
 
 function isSdrAgent(agent: WorkflowAgent | null | undefined): boolean {
@@ -1354,29 +1381,32 @@ function AgentList({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="grid min-h-0 flex-1 content-start gap-2 overflow-y-auto sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid min-h-0 flex-1 content-start gap-3 overflow-y-auto sm:grid-cols-2 xl:grid-cols-3">
         {visibleItems.map(item => (
           <div
-            className="relative grid min-h-28 content-between gap-3 rounded-md border border-primary/40 p-4 text-left transition-colors hover:border-primary/60 hover:bg-(--chrome-action-hover)"
+            className="relative flex min-h-48 min-w-0 flex-col justify-between rounded-[6px] border border-primary/45 bg-white p-3 text-neutral-950"
             key={`${item.type}:${item.id}`}
           >
-            <button
-              className="absolute inset-0 rounded-md focus-visible:ring-2 focus-visible:ring-primary"
-              onClick={() => (item.type === 'agent' ? onSelectAgent(item.id) : onSelectDraft(item.id))}
-              type="button"
-            >
-              <span className="sr-only">Open {item.agent?.name || item.draft?.draft.agent.name || 'item'}</span>
-            </button>
-            <div className="relative z-10 pointer-events-none grid gap-3">
+            {item.agent && isDefaultAgent(item.agent) ? (
+              <Badge className="absolute top-2 right-2 z-20">(default)</Badge>
+            ) : null}
+            <div className={cn('min-w-0', item.agent && isDefaultAgent(item.agent) && 'pr-16')}>
               {item.agent ? <AgentListAgentCard agent={item.agent} /> : null}
               {item.draft ? <AgentListDraftCard setupDraft={item.draft} /> : null}
             </div>
-            <div className="relative z-10 flex justify-end">
+            <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:items-center sm:justify-end">
               <Button
-                className="pointer-events-auto"
-                onClick={event => {
-                  event.stopPropagation()
-
+                className="w-full min-w-0 sm:w-auto"
+                onClick={() => (item.type === 'agent' ? onSelectAgent(item.id) : onSelectDraft(item.id))}
+                size="xs"
+                type="button"
+                variant="outline"
+              >
+                {item.draft ? 'Review setup' : 'Configure agent'}
+              </Button>
+              <Button
+                className="w-full min-w-0 text-destructive hover:text-destructive sm:w-auto"
+                onClick={() => {
                   if (item.agent) {
                     onDeleteAgent(item.agent)
 
@@ -1387,11 +1417,11 @@ function AgentList({
                     onDeleteDraft(item.draft)
                   }
                 }}
-                size="sm"
+                size="xs"
                 type="button"
-                variant="ghost"
+                variant="outline"
               >
-                <Trash2 className="size-4" />
+                <Trash2 className="size-3" />
                 Delete
               </Button>
             </div>
@@ -1412,47 +1442,52 @@ function AgentList({
 
 function AgentListAgentCard({ agent }: { agent: WorkflowAgent }) {
   return (
-    <>
-      <span className="grid gap-1">
-        <span className="flex items-center gap-2 text-xs font-medium">
-          <span className={cn('size-1.5 rounded-full', agent.enabled ? 'bg-primary' : 'bg-muted-foreground/50')} />
-          {agent.name}
-          {isDefaultAgent(agent) ? (
-            <span className="rounded-full border border-primary/25 bg-primary/8 px-1.5 py-0.5 text-[0.6rem] font-medium text-primary">
-              (default)
-            </span>
-          ) : null}
-        </span>
-        <span className="line-clamp-2 text-[0.7rem] leading-relaxed text-muted-foreground">
-          {agent.role || agent.description || 'Reusable workflow agent'}
-        </span>
-      </span>
-      <span className="text-[0.65rem] font-medium text-primary">Configure agent</span>
-    </>
+    <div className="min-w-0">
+      <div className="flex items-start gap-2">
+        <div className="grid size-8 shrink-0 place-items-center rounded-[5px] bg-primary/10 text-[0.68rem] font-semibold text-primary">
+          {agentInitials(agent.name)}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium">{agent.name}</div>
+          <div className="mt-1 flex flex-wrap gap-1">
+            <Badge variant={agent.enabled ? 'default' : 'muted'}>{agent.enabled ? 'Enabled' : 'Disabled'}</Badge>
+          </div>
+        </div>
+      </div>
+      <AgentListCopy description={agent.description} fallback="Reusable workflow agent" role={agent.role} />
+    </div>
   )
 }
 
 function AgentListDraftCard({ setupDraft }: { setupDraft: WorkflowAgentSetupDraft }) {
   const agent = setupDraft.draft.agent
   const missing = setupDraft.draft.missing ?? []
+  const name = agent.name || 'Untitled setup draft'
 
   return (
-    <>
-      <span className="grid gap-1">
-        <span className="flex items-center gap-2 text-xs font-medium">
-          <span className="size-1.5 rounded-full bg-amber-500" />
-          {agent.name || 'Untitled setup draft'}
-        </span>
-        <span className="line-clamp-2 text-[0.7rem] leading-relaxed text-muted-foreground">
-          {agent.role || agent.description || setupDraft.prompt}
-        </span>
-      </span>
-      <span className="flex flex-wrap items-center gap-2 text-[0.65rem] font-medium">
-        <span className="rounded-full border border-amber-500/25 bg-amber-500/8 px-2 py-0.5 text-amber-600">Draft</span>
-        {missing.length > 0 ? <span className="text-muted-foreground">{missing.length} setup item(s)</span> : null}
-        <span className="text-primary">Review setup</span>
-      </span>
-    </>
+    <div className="min-w-0">
+      <div className="flex items-start gap-2">
+        <div className="grid size-8 shrink-0 place-items-center rounded-[5px] bg-primary/10 text-[0.68rem] font-semibold text-primary">
+          {agentInitials(name)}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium">{name}</div>
+          <div className="mt-1 flex flex-wrap gap-1">
+            <Badge variant="warn">Draft</Badge>
+            {missing.length > 0 ? (
+              <Badge variant="outline">
+                {missing.length} setup item{missing.length === 1 ? '' : 's'}
+              </Badge>
+            ) : null}
+          </div>
+        </div>
+      </div>
+      <AgentListCopy
+        description={agent.description}
+        fallback={setupDraft.prompt || 'Reusable workflow agent'}
+        role={agent.role}
+      />
+    </div>
   )
 }
 
