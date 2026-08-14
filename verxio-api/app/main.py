@@ -154,6 +154,8 @@ from app.models import (
     WorkflowAgentPublicInfo,
     WorkflowAgentPublicRunRequest,
     WorkflowAgentPublicRunResponse,
+    SdrContactsExportResponse,
+    SdrContactsResponse,
     WorkflowDeliveriesResponse,
     WorkflowDeliveryCreateRequest,
     WorkflowDeliveryRecord,
@@ -224,6 +226,7 @@ from app.workflow_agents import (
     delete_delivery as delete_workflow_delivery,
     delete_setup_draft as delete_workflow_setup_draft,
     delete_trigger as delete_workflow_trigger,
+    export_agent_sdr_contacts as export_workflow_sdr_contacts,
     get_agent as get_workflow_agent,
     get_embed_config as get_workflow_embed_config,
     get_public_embed_info as get_workflow_public_embed_info,
@@ -233,6 +236,7 @@ from app.workflow_agents import (
     list_deliveries as list_workflow_deliveries,
     list_run_events as list_workflow_run_events,
     list_runs as list_workflow_runs,
+    list_agent_sdr_contacts as list_workflow_sdr_contacts,
     list_skill_capabilities as list_workflow_skill_capabilities,
     list_tool_capabilities as list_workflow_tool_capabilities,
     list_triggers as list_workflow_triggers,
@@ -991,6 +995,26 @@ async def delete_workflow_agent_route(agent_id: str, request: Request) -> dict[s
     user = require_user(request)
     workspace, profile, _runtime_instance = get_context_for_user(user)
     return delete_workflow_agent(workspace, profile, agent_id)
+
+@app.get("/api/workflow-agents/{agent_id}/sdr-contacts", response_model=SdrContactsResponse)
+async def list_workflow_sdr_contacts_route(
+    agent_id: str,
+    request: Request,
+    channel: str = "",
+) -> SdrContactsResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return list_workflow_sdr_contacts(workspace, profile, agent_id, channel)
+
+@app.get("/api/workflow-agents/{agent_id}/sdr-contacts/export", response_model=SdrContactsExportResponse)
+async def export_workflow_sdr_contacts_route(
+    agent_id: str,
+    request: Request,
+    channel: str = "",
+) -> SdrContactsExportResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return export_workflow_sdr_contacts(workspace, profile, agent_id, channel)
 
 @app.get("/api/workflow-agents/{agent_id}/triggers", response_model=WorkflowTriggersResponse)
 async def list_workflow_triggers_route(agent_id: str, request: Request) -> WorkflowTriggersResponse:

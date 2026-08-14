@@ -2336,27 +2336,6 @@ RATING_THANK_YOU = (
     "Thank you for your feedback. I really appreciate your rating. If you need anything else, just let me know."
 )
 SUGGEST_RATING_MARKER = "[SUGGEST_RATING]"
-_CLOSING_PHRASES = (
-    "no",
-    "nope",
-    "nothing else",
-    "that's all",
-    "thats all",
-    "i'm good",
-    "im good",
-    "i am good",
-    "no thank you",
-    "no thanks",
-    "nothing more",
-    "no more questions",
-)
-
-
-def _is_closing_message(message: str) -> bool:
-    lower = message.strip().lower()
-    if not lower:
-        return False
-    return any(lower == phrase or phrase in lower for phrase in _CLOSING_PHRASES)
 
 
 def _agent_has_tag(agent: WorkflowAgentRecord, tag: str) -> bool:
@@ -2456,8 +2435,11 @@ def _maybe_handle_rating(workspace: Workspace, agent_id: str, conversation_id: s
             (int(first), now_iso(), session["id"]),
         )
         return RATING_THANK_YOU
-    if session.get("rating") is not None and _is_closing_message(trimmed):
-        return ""
+    if session.get("rating") is not None:
+        from app.sdr_funnel import is_closing_message
+
+        if is_closing_message(trimmed):
+            return ""
     return None
 
 
@@ -2528,6 +2510,28 @@ async def run_agent(
             event_type="rating_recorded" if rating_reply else "rating_closed",
             message="Stored a customer rating without calling the model." if rating_reply else "Ignored a closing message after a rating.",
         )
+    if _agent_has_tag(agent, "sdr"):
+        from app.sdr_funnel import maybe_handle_sdr_message
+
+        sdr_reply = await maybe_handle_sdr_message(
+            workspace,
+            profile,
+            agent,
+            message=message,
+            conversation_id=conversation_id,
+            trigger_type=trigger_type,
+            run_input=payload.input,
+        )
+        if sdr_reply is not None:
+            return await _complete_run_output(
+                workspace,
+                profile,
+                run,
+                sdr_reply,
+                payload.input,
+                event_type="sdr_funnel",
+                message="SDR funnel handled this message.",
+            )
     knowledge_context = retrieve_context(workspace, agent.knowledge, payload.input)
     if knowledge_context:
         _record_run_event(
@@ -2762,6 +2766,10 @@ def _string_matches_filter(actual: str, expected: Any) -> bool:
 
 
 def _trigger_accepts_messaging_event(config: dict[str, Any], payload: WorkflowMessagingTriggerRequest) -> bool:
+    if bool(config.get("requireConnection") or config.get("require_connection")):
+        expected_connection = str(config.get("connectionId") or config.get("connection_id") or "").strip()
+        if not expected_connection:
+            return False
     if not _string_matches_filter(payload.channel, config.get("channel") or config.get("channels")):
         return False
     if not _string_matches_filter(
@@ -2957,4 +2965,31 @@ async def tick_due_schedule_triggers(
         if not claimed:
             continue
         runs.append(await _run_claimed_schedule_trigger(row, claim_token))
+    from app.sdr_funnel import tick_due_sdr_follow_ups
+
+    await tick_due_sdr_follow_ups()
     return WorkflowTriggerRunsResponse(runs=runs)
+
+
+def list_agent_sdr_contacts(
+    workspace: Workspace,
+    profile: AgentProfile,
+    agent_id: str,
+    channel: str = "",
+):
+    get_agent(workspace, profile, agent_id)
+    from app.sdr_funnel import list_sdr_contacts
+
+    return list_sdr_contacts(workspace, agent_id, channel)
+
+
+def export_agent_sdr_contacts(
+    workspace: Workspace,
+    profile: AgentProfile,
+    agent_id: str,
+    channel: str = "",
+):
+    agent = get_agent(workspace, profile, agent_id)
+    from app.sdr_funnel import export_sdr_contacts_vcf
+
+    return export_sdr_contacts_vcf(workspace, agent, channel)
