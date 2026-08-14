@@ -1165,6 +1165,19 @@ async def ingest_workflow_webhook_route(trigger_id: str, request: Request) -> Wo
     return WorkflowWebhookIngestResponse(run=run)
 
 
+@app.post("/api/hooks/{workspace_id}/c/{connection_id}/{route_name}")
+async def ingest_messaging_hook_connection_route(
+    workspace_id: str,
+    connection_id: str,
+    route_name: str,
+    request: Request,
+) -> Response:
+    upstream = await ingest_public_hook(workspace_id, route_name, request, connection_id=connection_id)
+    excluded = {"content-encoding", "content-length", "transfer-encoding", "connection"}
+    headers = {key: value for key, value in upstream.headers.items() if key.lower() not in excluded}
+    return Response(content=upstream.content, status_code=upstream.status_code, headers=headers)
+
+
 @app.post("/api/hooks/{workspace_id}/{route_name}")
 async def ingest_messaging_hook_route(workspace_id: str, route_name: str, request: Request) -> Response:
     upstream = await ingest_public_hook(workspace_id, route_name, request)

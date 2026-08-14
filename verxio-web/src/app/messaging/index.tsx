@@ -446,7 +446,7 @@ function PlatformDetail({
   const isApiServer = platform.id === 'api_server'
   const supportsDmPairing = DM_PAIRING_PLATFORMS.has(platform.id)
   const usesCustomSetup = isWhatsApp || isWhatsAppCloud
-  const hideStandardCredentials = usesCustomSetup || isWebhook
+  const hideStandardCredentials = usesCustomSetup
   const setupGuideUrl = isVendorSetupUrl(platform.docs_url) ? platform.docs_url : ''
   const multiAccount = Boolean(platform.supports_multiple_connections)
   const hasEdits = Object.keys(trimEdits(edits)).length > 0
@@ -499,10 +499,6 @@ function PlatformDetail({
 
           {isSlack && <SlackManifestPanel />}
 
-          {isWebhook && <WebhookRoutesPanel onChanged={onRefresh} platform={platform} platforms={platforms} />}
-
-          {isApiServer && <ApiServerPanel platform={platform} />}
-
           {multiAccount && (
             <MessagingConnectionsPanel
               onChanged={onRefresh}
@@ -510,6 +506,19 @@ function PlatformDetail({
               platform={platform}
               selectedConnectionId={selectedConnection?.id || selectedConnectionId}
             />
+          )}
+
+          {isWebhook && (
+            <WebhookRoutesPanel
+              connectionId={selectedConnection?.id || selectedConnectionId}
+              onChanged={onRefresh}
+              platform={platform}
+              platforms={platforms}
+            />
+          )}
+
+          {isApiServer && (
+            <ApiServerPanel connectionId={selectedConnection?.id || selectedConnectionId} platform={platform} />
           )}
 
           {supportsDmPairing && <PairingRequestsPanel platform={platform} />}

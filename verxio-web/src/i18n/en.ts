@@ -1165,7 +1165,9 @@ export const en: Translations = {
       deleteFailed: 'Could not delete route',
       updateFailed: 'Could not update route',
       deliversTo: channel => (channel ? `Delivers to ${channel}` : 'No delivery target'),
-      publicUrlHint: 'Public Verxio URL'
+      publicUrlHint: 'Public Verxio URL',
+      scopedEmptyRoutes: 'No routes on this connection yet. Create one to get a public Verxio URL.',
+      scopedCreateHint: 'Routes created here belong to the selected webhook connection.'
     },
     apiServer: {
       title: 'OpenAI-compatible API',
@@ -1178,7 +1180,9 @@ export const en: Translations = {
       copiedMessage: 'Ready to paste.',
       copyFailed: 'Could not copy',
       authHint: 'Authorization: Bearer <your API key>',
-      loadFailed: 'Could not load the public API URL'
+      loadFailed: 'Could not load the public API URL',
+      connectionHint:
+        'Each API connection is a separate Bearer token on this same URL. Add connections for Open WebUI, internal tools, or partners.'
     },
     platformIntro: {}
   },

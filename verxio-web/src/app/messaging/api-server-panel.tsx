@@ -12,11 +12,12 @@ function SectionTitle({ children }: { children: string }) {
   return <h4 className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{children}</h4>
 }
 
-export function ApiServerPanel({ platform }: { platform: MessagingPlatformInfo }) {
+export function ApiServerPanel({ connectionId, platform }: { connectionId?: string; platform: MessagingPlatformInfo }) {
   const { t } = useI18n()
   const copy = t.messaging.apiServer
   const [baseUrl, setBaseUrl] = useState('')
   const [example, setExample] = useState('')
+  const selected = (platform.connections || []).find(row => row.id === (connectionId || 'default'))
 
   useEffect(() => {
     let cancelled = false
@@ -78,6 +79,10 @@ export function ApiServerPanel({ platform }: { platform: MessagingPlatformInfo }
           {copy.description}
         </p>
         <p className="mt-2 text-xs text-muted-foreground">{copy.keyHint}</p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          {copy.connectionHint}
+          {selected?.label ? ` Selected: ${selected.label}.` : ''}
+        </p>
       </section>
 
       {baseUrl ? (

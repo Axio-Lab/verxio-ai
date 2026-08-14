@@ -205,6 +205,7 @@ export interface MessagingConnectionInfo {
   is_default?: boolean
   label: string
   meta?: Record<string, unknown>
+  secret?: string
   state?: null | string
 }
 
@@ -233,6 +234,7 @@ export interface MessagingPlatformsResponse {
 export interface MessagingWebhookRoute {
   created_at?: null | string
   deliver?: string
+  deliver_connection_id?: null | string
   deliver_only?: boolean
   description?: string
   enabled: boolean
@@ -243,6 +245,7 @@ export interface MessagingWebhookRoute {
   secret_set?: boolean
   skills?: string[]
   url: string
+  webhook_connection_id?: string
 }
 
 export interface MessagingWebhooksResponse {
@@ -268,6 +271,7 @@ export interface MessagingWebhookCreate {
   prompt?: string
   secret?: string
   skills?: string[]
+  webhook_connection_id?: string
 }
 
 export interface MessagingPlatformUpdate {

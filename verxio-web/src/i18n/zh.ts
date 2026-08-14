@@ -1215,7 +1215,9 @@ export const zh: Translations = {
       deleteFailed: '无法删除路由',
       updateFailed: '无法更新路由',
       deliversTo: channel => (channel ? `投递到 ${channel}` : '未设置投递目标'),
-      publicUrlHint: '公开 Verxio URL'
+      publicUrlHint: '公开 Verxio URL',
+      scopedEmptyRoutes: '此连接还没有路由。创建一条即可获得公开的 Verxio URL。',
+      scopedCreateHint: '在这里创建的路由属于当前选中的 Webhook 连接。'
     },
     apiServer: {
       title: '兼容 OpenAI 的 API',
@@ -1228,7 +1230,8 @@ export const zh: Translations = {
       copiedMessage: '可以粘贴了。',
       copyFailed: '无法复制',
       authHint: 'Authorization: Bearer <你的 API 密钥>',
-      loadFailed: '无法加载公开 API URL'
+      loadFailed: '无法加载公开 API URL',
+      connectionHint: '每个 API 连接都是同一 URL 上的独立 Bearer token。可为 Open WebUI、内部工具或合作方分别添加连接。'
     },
     platformIntro: {
       telegram:

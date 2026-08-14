@@ -30,10 +30,12 @@ function SectionTitle({ children }: { children: string }) {
 }
 
 export function WebhookRoutesPanel({
+  connectionId,
   onChanged,
   platform,
   platforms
 }: {
+  connectionId?: string
   onChanged: () => Promise<void>
   platform: MessagingPlatformInfo
   platforms: MessagingPlatformInfo[]
@@ -56,6 +58,18 @@ export function WebhookRoutesPanel({
   const selected = options.find(option => option.id === deliver)
   const selectedTarget = parseMessagingDeliveryId(deliver)
   const selectedPlatform = platforms.find(row => row.id === selectedTarget.platformId)
+  const scopedConnectionId = (connectionId || 'default').trim() || 'default'
+  const visibleRoutes = useMemo(() => {
+    if (!routes) {
+      return []
+    }
+
+    return routes.filter(route => {
+      const owner = (route.webhook_connection_id || 'default').trim() || 'default'
+
+      return owner === scopedConnectionId
+    })
+  }, [routes, scopedConnectionId])
 
   useEffect(() => {
     let cancelled = false
@@ -143,7 +157,8 @@ export function WebhookRoutesPanel({
           .filter(Boolean),
         deliver: selected.platformId,
         deliver_chat_id: selected.chatId || selectedPlatform?.home_channel?.chat_id,
-        connection_id: selected.connectionId || undefined
+        connection_id: selected.connectionId || undefined,
+        webhook_connection_id: scopedConnectionId === 'default' ? undefined : scopedConnectionId
       })
 
       setName('')
@@ -206,6 +221,9 @@ export function WebhookRoutesPanel({
         <p className="mt-1 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
           {w.description}
         </p>
+        {scopedConnectionId !== 'default' ? (
+          <p className="mt-2 text-xs text-muted-foreground">{w.scopedCreateHint}</p>
+        ) : null}
         {!enabled && <p className="mt-2 text-xs text-muted-foreground">{w.enableHint}</p>}
       </section>
 
@@ -232,11 +250,13 @@ export function WebhookRoutesPanel({
         <SectionTitle>{w.routesTitle}</SectionTitle>
         {loading || routes === null ? (
           <p className="mt-2 text-xs text-muted-foreground">{w.loadingRoutes}</p>
-        ) : routes.length === 0 ? (
-          <p className="mt-2 text-xs text-muted-foreground">{w.emptyRoutes}</p>
+        ) : visibleRoutes.length === 0 ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            {scopedConnectionId === 'default' ? w.emptyRoutes : w.scopedEmptyRoutes}
+          </p>
         ) : (
           <div className="mt-3 grid gap-1">
-            {routes.map(route => (
+            {visibleRoutes.map(route => (
               <ListRow
                 action={
                   <div className="flex items-center gap-2">

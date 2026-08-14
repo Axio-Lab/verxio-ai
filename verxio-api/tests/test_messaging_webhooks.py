@@ -51,6 +51,28 @@ def test_rewrite_webhook_urls_uses_verxio_public_path():
     assert out["subscriptions"][0]["url"] == "https://app.verxio.xyz/api/hooks/ws_abc/github-pr"
 
 
+def test_rewrite_webhook_urls_scopes_non_default_connection():
+    from app.messaging_webhooks import public_hook_url, rewrite_webhook_urls
+
+    payload = {
+        "enabled": True,
+        "base_url": "http://0.0.0.0:8644",
+        "subscriptions": [
+            {
+                "name": "github-pr",
+                "url": "http://0.0.0.0:8644/c/webh_ab12/webhooks/github-pr",
+                "webhook_connection_id": "webh_ab12",
+                "secret_set": True,
+            }
+        ],
+    }
+    out = rewrite_webhook_urls(payload, "https://app.verxio.xyz/api/hooks/ws_abc")
+    assert out["subscriptions"][0]["url"] == "https://app.verxio.xyz/api/hooks/ws_abc/c/webh_ab12/github-pr"
+    assert public_hook_url("https://app.verxio.xyz/api/hooks/ws_abc", "alerts") == (
+        "https://app.verxio.xyz/api/hooks/ws_abc/alerts"
+    )
+
+
 def test_public_hooks_base_prefers_web_url(monkeypatch):
     monkeypatch.setenv("VERXIO_PUBLIC_WEB_URL", "https://app.verxio.xyz")
     monkeypatch.delenv("VERXIO_PUBLIC_API_URL", raising=False)

@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 WEBHOOK_CONTAINER_PORT = 8644
 _ROUTE_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+_CONN_ID_RE = re.compile(r"^[A-Za-z0-9_]+$")
 _NON_DELIVER_PLATFORMS = frozenset({"webhook", "api_server", "msgraph_webhook"})
 _HOP_BY_HOP = frozenset(
     {
@@ -53,6 +54,7 @@ class MessagingWebhookCreate(BaseModel):
     deliver: str = Field(min_length=1, max_length=80)
     deliver_chat_id: str | None = None
     connection_id: str | None = None
+    webhook_connection_id: str | None = None
     secret: str | None = None
 
 
@@ -70,6 +72,13 @@ def public_hooks_base(request: Request, workspace_id: str) -> str:
     return str(request.base_url).rstrip("/") + f"/api/hooks/{workspace_id}"
 
 
+def public_hook_url(public_base: str, name: str, webhook_connection_id: str | None = None) -> str:
+    conn = (webhook_connection_id or "").strip()
+    if conn and conn != "default":
+        return f"{public_base}/c/{conn}/{name}"
+    return f"{public_base}/{name}"
+
+
 def rewrite_webhook_urls(payload: dict[str, Any], public_base: str) -> dict[str, Any]:
     rewritten = dict(payload)
     rewritten["base_url"] = public_base
@@ -80,11 +89,15 @@ def rewrite_webhook_urls(payload: dict[str, Any], public_base: str) -> dict[str,
         row = dict(item)
         name = str(row.get("name") or "").strip()
         if name:
-            row["url"] = f"{public_base}/{name}"
+            row["url"] = public_hook_url(public_base, name, str(row.get("webhook_connection_id") or ""))
         subscriptions.append(row)
     rewritten["subscriptions"] = subscriptions
     if isinstance(rewritten.get("url"), str) and rewritten.get("name"):
-        rewritten["url"] = f"{public_base}/{rewritten['name']}"
+        rewritten["url"] = public_hook_url(
+            public_base,
+            str(rewritten["name"]),
+            str(rewritten.get("webhook_connection_id") or ""),
+        )
     return rewritten
 
 
@@ -145,10 +158,21 @@ def _forward_headers(request: Request) -> dict[str, str]:
     return headers
 
 
-async def ingest_public_hook(workspace_id: str, route_name: str, request: Request) -> httpx.Response:
+async def ingest_public_hook(
+    workspace_id: str,
+    route_name: str,
+    request: Request,
+    connection_id: str | None = None,
+) -> httpx.Response:
     name = (route_name or "").strip().lower()
     if not _ROUTE_NAME_RE.match(name):
         raise HTTPException(status_code=400, detail="Invalid webhook route name.")
+    conn = (connection_id or "").strip()
+    if conn:
+        if not _CONN_ID_RE.match(conn):
+            raise HTTPException(status_code=400, detail="Invalid webhook connection.")
+        if conn == "default":
+            conn = ""
 
     runtime = get_runtime_for_workspace(workspace_id)
     runtime = await wake_runtime(runtime, wait_ready=True, reason="messaging.webhook")
@@ -160,7 +184,10 @@ async def ingest_public_hook(workspace_id: str, route_name: str, request: Reques
         )
 
     body = await request.body()
-    target = f"{base}/webhooks/{name}"
+    if conn:
+        target = f"{base}/c/{conn}/webhooks/{name}"
+    else:
+        target = f"{base}/webhooks/{name}"
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
             return await client.post(target, content=body, headers=_forward_headers(request))
@@ -368,6 +395,8 @@ async def create_webhook(request: Request, user: dict[str, Any], body: Messaging
     }
     if conn_id:
         payload["connection_id"] = conn_id
+    if body.webhook_connection_id:
+        payload["webhook_connection_id"] = body.webhook_connection_id.strip()
     if body.secret:
         payload["secret"] = body.secret
     resp = await _dashboard_request(runtime, "POST", "/api/webhooks", json_body=payload)

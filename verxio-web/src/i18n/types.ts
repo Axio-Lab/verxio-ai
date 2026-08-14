@@ -807,6 +807,8 @@ export interface Translations {
       updateFailed: string
       deliversTo: (channel: string) => string
       publicUrlHint: string
+      scopedEmptyRoutes: string
+      scopedCreateHint: string
     }
     apiServer: {
       title: string
@@ -819,6 +821,7 @@ export interface Translations {
       copyFailed: string
       authHint: string
       loadFailed: string
+      connectionHint: string
     }
     platformIntro: Record<string, string>
   }
