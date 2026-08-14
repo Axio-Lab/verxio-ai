@@ -453,6 +453,11 @@ class WorkflowAgentRecord(BaseModel):
     tools: list[str] = Field(default_factory=list)
     integrations: list[str] = Field(default_factory=list)
     approval_policy: str = "default"
+    tags: list[str] = Field(default_factory=list)
+    origin: str = "user"
+    funnel_rules: dict[str, Any] = Field(default_factory=dict)
+    fallback_email: str = ""
+    campaign_context: str = ""
     created_at: str
     updated_at: str
 
@@ -468,6 +473,9 @@ class WorkflowAgentCreateRequest(BaseModel):
     tools: list[str] = Field(default_factory=list)
     integrations: list[str] = Field(default_factory=list)
     approval_policy: str = Field(default="default", max_length=80)
+    fallback_email: str = Field(default="", max_length=320)
+    campaign_context: str = Field(default="", max_length=8000)
+    funnel_rules: dict[str, Any] = Field(default_factory=dict)
 
 class WorkflowAgentUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=180)
@@ -481,6 +489,9 @@ class WorkflowAgentUpdateRequest(BaseModel):
     tools: list[str] | None = None
     integrations: list[str] | None = None
     approval_policy: str | None = Field(default=None, max_length=80)
+    fallback_email: str | None = Field(default=None, max_length=320)
+    campaign_context: str | None = Field(default=None, max_length=8000)
+    funnel_rules: dict[str, Any] | None = None
 
 WorkflowSetupActor = Literal["web", "session", "gateway"]
 WorkflowSetupApprovalStatus = Literal["pending", "approved", "rejected"]
@@ -882,6 +893,28 @@ class WorkflowRunEventsResponse(BaseModel):
 
 class WorkflowWebhookIngestResponse(BaseModel):
     run: WorkflowRunRecord
+
+class SdrContactRecord(BaseModel):
+    id: str
+    tenant_id: str
+    workspace_id: str
+    workflow_agent_id: str
+    channel: str = ""
+    sender_id: str = ""
+    sender_name: str = ""
+    conversation_id: str = ""
+    connection_id: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+    updated_at: str
+
+class SdrContactsResponse(BaseModel):
+    contacts: list[SdrContactRecord]
+    total: int = 0
+
+class SdrContactsExportResponse(BaseModel):
+    filename: str
+    vcf: str
 
 class BootstrapResponse(BaseModel):
     workspace: Workspace

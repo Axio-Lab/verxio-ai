@@ -287,6 +287,11 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         tools_json TEXT NOT NULL DEFAULT '[]',
         integrations_json TEXT NOT NULL DEFAULT '[]',
         approval_policy TEXT NOT NULL DEFAULT 'default',
+        tags_json TEXT NOT NULL DEFAULT '[]',
+        origin TEXT NOT NULL DEFAULT 'user',
+        funnel_rules_json TEXT NOT NULL DEFAULT '{"rules":[]}',
+        fallback_email TEXT NOT NULL DEFAULT '',
+        campaign_context TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -375,6 +380,65 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
         FOREIGN KEY (runtime_agent_id) REFERENCES agents(id) ON DELETE CASCADE,
         FOREIGN KEY (workflow_agent_id) REFERENCES workflow_agents(id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS workflow_agent_sessions (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        workflow_agent_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        suggest_rating INTEGER NOT NULL DEFAULT 0,
+        rating INTEGER,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+        FOREIGN KEY (workflow_agent_id) REFERENCES workflow_agents(id) ON DELETE CASCADE,
+        UNIQUE (workflow_agent_id, conversation_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS sdr_sessions (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        runtime_agent_id TEXT NOT NULL,
+        workflow_agent_id TEXT NOT NULL,
+        conversation_id TEXT NOT NULL,
+        session_type TEXT NOT NULL DEFAULT 'web',
+        flow_state_json TEXT NOT NULL DEFAULT '{}',
+        follow_up_next_fire_at TEXT,
+        reply_channel TEXT NOT NULL DEFAULT '',
+        reply_connection_id TEXT NOT NULL DEFAULT '',
+        reply_conversation_id TEXT NOT NULL DEFAULT '',
+        reply_sender_id TEXT NOT NULL DEFAULT '',
+        reply_thread_id TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+        FOREIGN KEY (workflow_agent_id) REFERENCES workflow_agents(id) ON DELETE CASCADE,
+        UNIQUE (workflow_agent_id, conversation_id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS sdr_contacts (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL,
+        workspace_id TEXT NOT NULL,
+        workflow_agent_id TEXT NOT NULL,
+        channel TEXT NOT NULL DEFAULT '',
+        sender_id TEXT NOT NULL DEFAULT '',
+        sender_name TEXT NOT NULL DEFAULT '',
+        conversation_id TEXT NOT NULL DEFAULT '',
+        connection_id TEXT NOT NULL DEFAULT '',
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+        FOREIGN KEY (workflow_agent_id) REFERENCES workflow_agents(id) ON DELETE CASCADE,
+        UNIQUE (workflow_agent_id, channel, sender_id)
     )
     """,
     """
@@ -676,8 +740,17 @@ def _table_columns(conn: Any, table: str) -> set[str]:
 def _ensure_legacy_columns(conn: Any) -> None:
     workflow_agent_columns = _table_columns(conn, "workflow_agents")
 
-    if "model_id" not in workflow_agent_columns:
-        conn.execute("ALTER TABLE workflow_agents ADD COLUMN model_id TEXT NOT NULL DEFAULT ''")
+    workflow_agent_additions = {
+        "model_id": "TEXT NOT NULL DEFAULT ''",
+        "tags_json": "TEXT NOT NULL DEFAULT '[]'",
+        "origin": "TEXT NOT NULL DEFAULT 'user'",
+        "funnel_rules_json": "TEXT NOT NULL DEFAULT '{\"rules\":[]}'",
+        "fallback_email": "TEXT NOT NULL DEFAULT ''",
+        "campaign_context": "TEXT NOT NULL DEFAULT ''",
+    }
+    for column, definition in workflow_agent_additions.items():
+        if column not in workflow_agent_columns:
+            conn.execute(f"ALTER TABLE workflow_agents ADD COLUMN {column} {definition}")
 
     workflow_trigger_columns = _table_columns(conn, "workflow_triggers")
     workflow_trigger_additions = {
@@ -704,8 +777,79 @@ def _ensure_legacy_columns(conn: Any) -> None:
 
     conn.execute(
         """
+        CREATE TABLE IF NOT EXISTS workflow_agent_sessions (
+            id TEXT PRIMARY KEY,
+            tenant_id TEXT NOT NULL,
+            workspace_id TEXT NOT NULL,
+            workflow_agent_id TEXT NOT NULL,
+            conversation_id TEXT NOT NULL,
+            suggest_rating INTEGER NOT NULL DEFAULT 0,
+            rating INTEGER,
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+            FOREIGN KEY (workflow_agent_id) REFERENCES workflow_agents(id) ON DELETE CASCADE,
+            UNIQUE (workflow_agent_id, conversation_id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS sdr_sessions (
+            id TEXT PRIMARY KEY,
+            tenant_id TEXT NOT NULL,
+            workspace_id TEXT NOT NULL,
+            runtime_agent_id TEXT NOT NULL,
+            workflow_agent_id TEXT NOT NULL,
+            conversation_id TEXT NOT NULL,
+            session_type TEXT NOT NULL DEFAULT 'web',
+            flow_state_json TEXT NOT NULL DEFAULT '{}',
+            follow_up_next_fire_at TEXT,
+            reply_channel TEXT NOT NULL DEFAULT '',
+            reply_connection_id TEXT NOT NULL DEFAULT '',
+            reply_conversation_id TEXT NOT NULL DEFAULT '',
+            reply_sender_id TEXT NOT NULL DEFAULT '',
+            reply_thread_id TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+            FOREIGN KEY (workflow_agent_id) REFERENCES workflow_agents(id) ON DELETE CASCADE,
+            UNIQUE (workflow_agent_id, conversation_id)
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS sdr_contacts (
+            id TEXT PRIMARY KEY,
+            tenant_id TEXT NOT NULL,
+            workspace_id TEXT NOT NULL,
+            workflow_agent_id TEXT NOT NULL,
+            channel TEXT NOT NULL DEFAULT '',
+            sender_id TEXT NOT NULL DEFAULT '',
+            sender_name TEXT NOT NULL DEFAULT '',
+            conversation_id TEXT NOT NULL DEFAULT '',
+            connection_id TEXT NOT NULL DEFAULT '',
+            metadata_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
+            FOREIGN KEY (workflow_agent_id) REFERENCES workflow_agents(id) ON DELETE CASCADE,
+            UNIQUE (workflow_agent_id, channel, sender_id)
+        )
+        """
+    )
+    conn.execute(
+        """
         CREATE INDEX IF NOT EXISTS idx_workflow_triggers_schedule_due
         ON workflow_triggers(trigger_type, enabled, next_run_at)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_sdr_sessions_follow_up
+        ON sdr_sessions(follow_up_next_fire_at)
         """
     )
 

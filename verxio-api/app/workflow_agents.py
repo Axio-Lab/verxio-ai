@@ -425,6 +425,14 @@ def _agent_from_row(row: dict[str, Any]) -> WorkflowAgentRecord:
     payload["knowledge"] = _json_loads(payload.pop("knowledge_json", "[]"), [])
     payload["tools"] = _json_loads(payload.pop("tools_json", "[]"), [])
     payload["integrations"] = _json_loads(payload.pop("integrations_json", "[]"), [])
+    payload["tags"] = _string_list(_json_loads(payload.pop("tags_json", "[]"), []))
+    funnel_rules = _json_loads(payload.pop("funnel_rules_json", "{}"), {})
+    if isinstance(funnel_rules, list):
+        funnel_rules = {"rules": funnel_rules}
+    payload["funnel_rules"] = funnel_rules if isinstance(funnel_rules, dict) else {"rules": []}
+    payload["origin"] = str(payload.get("origin") or "user")
+    payload["fallback_email"] = str(payload.get("fallback_email") or "")
+    payload["campaign_context"] = str(payload.get("campaign_context") or "")
     return WorkflowAgentRecord(**payload)
 
 
@@ -1001,6 +1009,9 @@ def list_integration_capabilities(user_id: str) -> WorkflowIntegrationCapabiliti
 
 
 def list_agents(workspace: Workspace, profile: AgentProfile) -> WorkflowAgentsResponse:
+    from app.default_workflow_agents import ensure_default_workflow_agents
+
+    ensure_default_workflow_agents(workspace, profile)
     agent_rows = db.fetch_all(
         """
         SELECT * FROM workflow_agents
@@ -1298,9 +1309,10 @@ def create_agent(workspace: Workspace, profile: AgentProfile, payload: WorkflowA
         INSERT INTO workflow_agents (
             id, tenant_id, workspace_id, runtime_agent_id, name, role, description,
             instructions, model_id, enabled, skills_json, knowledge_json, tools_json,
-            integrations_json, approval_policy, created_at, updated_at
+            integrations_json, approval_policy, tags_json, origin, funnel_rules_json,
+            fallback_email, campaign_context, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', 'user', ?, ?, ?, ?, ?)
         """,
         (
             agent_id,
@@ -1318,6 +1330,9 @@ def create_agent(workspace: Workspace, profile: AgentProfile, payload: WorkflowA
             _json_dumps(_string_list(payload.tools)),
             _json_dumps(_string_list(payload.integrations)),
             payload.approval_policy.strip() or "default",
+            _json_dumps(_json_object(payload.funnel_rules) or {"rules": []}),
+            payload.fallback_email.strip(),
+            payload.campaign_context.strip(),
             created_at,
             created_at,
         ),
@@ -1348,12 +1363,14 @@ def update_agent(
     data = current.model_dump()
     updates = payload.model_dump(exclude_unset=True)
     data.update({key: value for key, value in updates.items() if value is not None})
+    funnel_rules = data.get("funnel_rules") if isinstance(data.get("funnel_rules"), dict) else current.funnel_rules
     db.execute(
         """
         UPDATE workflow_agents
         SET name = ?, role = ?, description = ?, instructions = ?, model_id = ?, enabled = ?,
             skills_json = ?, knowledge_json = ?, tools_json = ?, integrations_json = ?,
-            approval_policy = ?, updated_at = ?
+            approval_policy = ?, funnel_rules_json = ?, fallback_email = ?, campaign_context = ?,
+            updated_at = ?
         WHERE id = ? AND workspace_id = ? AND runtime_agent_id = ?
         """,
         (
@@ -1368,6 +1385,9 @@ def update_agent(
             _json_dumps(_string_list(data.get("tools"))),
             _json_dumps(_string_list(data.get("integrations"))),
             str(data.get("approval_policy") or "default").strip(),
+            _json_dumps(funnel_rules or {"rules": []}),
+            str(data.get("fallback_email") or "").strip(),
+            str(data.get("campaign_context") or "").strip(),
             now_iso(),
             agent_id,
             workspace.id,

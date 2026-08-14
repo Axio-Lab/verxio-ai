@@ -188,7 +188,8 @@ def test_workflow_agent_crud_is_workspace_scoped(client):
 
     listed = client.get("/api/workflow-agents", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
     assert listed.status_code == 200
-    assert [item["id"] for item in listed.json()["agents"]] == [agent["id"]]
+    user_ids = [item["id"] for item in listed.json()["agents"] if item.get("origin") != "system"]
+    assert user_ids == [agent["id"]]
 
     update = client.put(
         f"/api/workflow-agents/{agent['id']}",
@@ -290,7 +291,8 @@ def test_workflow_agent_list_includes_setup_drafts(client):
     listed = client.get("/api/workflow-agents", headers=headers)
     assert listed.status_code == 200
     body = listed.json()
-    assert body["agents"] == []
+    assert all(item.get("origin") == "system" for item in body["agents"])
+    assert {item["name"] for item in body["agents"]} >= {"Customer Support", "SDR"}
     assert [item["id"] for item in body["setup_drafts"]] == [draft["id"]]
     assert body["setup_drafts"][0]["draft"]["agent"]["name"] == "Lead Research Agent"
 
@@ -338,7 +340,7 @@ def test_workflow_agent_and_setup_draft_can_be_deleted(client):
 
     listed = client.get("/api/workflow-agents", headers=headers)
     assert listed.status_code == 200
-    assert listed.json()["agents"] == []
+    assert all(item.get("origin") == "system" for item in listed.json()["agents"])
     missing = client.delete(f"/api/workflow-agents/setup-drafts/{draft_id}", headers=headers)
     assert missing.status_code == 404
 
