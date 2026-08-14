@@ -1133,6 +1133,7 @@ export function deleteWorkflowAgent(agentId: string): Promise<{ ok: boolean }> {
 
 export function listSdrContacts(agentId: string, channel = ''): Promise<{ contacts: SdrContact[]; total: number }> {
   const query = channel ? `?channel=${encodeURIComponent(channel)}` : ''
+
   return verxioFetch<{ contacts: SdrContact[]; total: number }>(
     `/api/workflow-agents/${encodeURIComponent(agentId)}/sdr-contacts${query}`
   )
@@ -1140,6 +1141,7 @@ export function listSdrContacts(agentId: string, channel = ''): Promise<{ contac
 
 export function exportSdrContacts(agentId: string, channel = ''): Promise<{ filename: string; vcf: string }> {
   const query = channel ? `?channel=${encodeURIComponent(channel)}` : ''
+
   return verxioFetch<{ filename: string; vcf: string }>(
     `/api/workflow-agents/${encodeURIComponent(agentId)}/sdr-contacts/export${query}`
   )

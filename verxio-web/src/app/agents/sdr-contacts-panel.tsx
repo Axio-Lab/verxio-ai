@@ -25,6 +25,7 @@ export function SdrContactsPanel({ agentId, agentName }: { agentId: string; agen
   const refresh = useCallback(async () => {
     setLoading(true)
     setError(null)
+
     try {
       const result = await listSdrContacts(agentId)
       setContacts(result.contacts)
@@ -42,6 +43,7 @@ export function SdrContactsPanel({ agentId, agentName }: { agentId: string; agen
   const onExport = async () => {
     setExporting(true)
     setError(null)
+
     try {
       const result = await exportSdrContacts(agentId)
       triggerDownload(result.filename || `sdr-contacts-${agentName}.vcf`, result.vcf)

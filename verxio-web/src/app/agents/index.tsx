@@ -74,6 +74,7 @@ import {
   listWorkflowTriggers,
   runPublicWorkflowAgent,
   runWorkflowAgent,
+  type SdrFunnelRules,
   updateWorkflowAgent,
   updateWorkflowAgentEmbedConfig,
   updateWorkflowDelivery,
@@ -84,7 +85,6 @@ import {
   type WorkflowAgentPublicInfo,
   type WorkflowAgentSetupDraft,
   type WorkflowAgentSetupDraftResponse,
-  type SdrFunnelRules,
   type WorkflowDelivery,
   type WorkflowDeliveryType,
   type WorkflowIntegrationCapability,
@@ -99,6 +99,7 @@ import { getScopedModelOptions } from '@/lib/verxio-model-options'
 import { notify, notifyError } from '@/store/notifications'
 
 import { AGENTS_ROUTE, SETTINGS_ROUTE } from '../routes'
+
 import { SdrContactsPanel } from './sdr-contacts-panel'
 import { SdrFunnelEditor } from './sdr-funnel-editor'
 
@@ -1666,6 +1667,7 @@ function AgentEditor({
           if (item.id === 'funnel' || item.id === 'contacts') {
             return isSdrAgent(selected)
           }
+
           return true
         }).map(item => (
           <button
