@@ -84,6 +84,7 @@ import {
   type WorkflowAgentPublicInfo,
   type WorkflowAgentSetupDraft,
   type WorkflowAgentSetupDraftResponse,
+  type SdrFunnelRules,
   type WorkflowDelivery,
   type WorkflowDeliveryType,
   type WorkflowIntegrationCapability,
@@ -98,6 +99,8 @@ import { getScopedModelOptions } from '@/lib/verxio-model-options'
 import { notify, notifyError } from '@/store/notifications'
 
 import { AGENTS_ROUTE, SETTINGS_ROUTE } from '../routes'
+import { SdrContactsPanel } from './sdr-contacts-panel'
+import { SdrFunnelEditor } from './sdr-funnel-editor'
 
 type AgentTab =
   | 'instructions'
@@ -107,6 +110,8 @@ type AgentTab =
   | 'tools'
   | 'delivery'
   | 'triggers'
+  | 'funnel'
+  | 'contacts'
   | 'embed'
   | 'runs'
 
@@ -118,9 +123,19 @@ const AGENT_TABS: Array<{ id: AgentTab; label: string }> = [
   { id: 'tools', label: 'Tools' },
   { id: 'delivery', label: 'Delivery' },
   { id: 'triggers', label: 'Triggers' },
+  { id: 'funnel', label: 'Funnel' },
+  { id: 'contacts', label: 'Contacts' },
   { id: 'embed', label: 'Embed' },
   { id: 'runs', label: 'Runs' }
 ]
+
+function isDefaultAgent(agent: WorkflowAgent | null | undefined): boolean {
+  return Boolean(agent?.tags?.includes('default'))
+}
+
+function isSdrAgent(agent: WorkflowAgent | null | undefined): boolean {
+  return Boolean(agent?.tags?.includes('sdr'))
+}
 
 type TriggerSourceId = 'app_event' | 'embed' | 'manual' | 'messaging' | 'schedule' | 'webhook'
 
@@ -267,8 +282,11 @@ function connectedAppDisplayName(appSlug: string, apps: ComposioApp[]): string {
 
 interface DraftState {
   approval_policy: string
+  campaign_context: string
   description: string
   enabled: boolean
+  fallback_email: string
+  funnel_rules: SdrFunnelRules
   instructions: string
   integrationsText: string
   knowledgeText: string
@@ -282,8 +300,11 @@ interface DraftState {
 function draftFromAgent(agent?: WorkflowAgent | null): DraftState {
   return {
     approval_policy: agent?.approval_policy ?? 'default',
+    campaign_context: agent?.campaign_context ?? '',
     description: agent?.description ?? '',
     enabled: agent?.enabled ?? true,
+    fallback_email: agent?.fallback_email ?? '',
+    funnel_rules: agent?.funnel_rules?.rules ? agent.funnel_rules : { rules: [] },
     instructions: agent?.instructions ?? '',
     integrationsText: (agent?.integrations ?? []).join('\n'),
     knowledgeText: (agent?.knowledge ?? []).join('\n'),
@@ -300,8 +321,11 @@ function draftFromSetupDraft(setupDraft: WorkflowAgentSetupDraft, defaultModelId
 
   return {
     approval_policy: agent.approval_policy ?? 'default',
+    campaign_context: agent.campaign_context ?? '',
     description: agent.description ?? '',
     enabled: agent.enabled ?? true,
+    fallback_email: agent.fallback_email ?? '',
+    funnel_rules: agent.funnel_rules?.rules ? agent.funnel_rules : { rules: [] },
     instructions: agent.instructions ?? '',
     integrationsText: (agent.integrations ?? []).join('\n'),
     knowledgeText: (agent.knowledge ?? []).join('\n'),
@@ -718,8 +742,11 @@ export function AgentsView() {
 
     const input = {
       approval_policy: draft.approval_policy,
+      campaign_context: draft.campaign_context,
       description: draft.description,
       enabled: draft.enabled,
+      fallback_email: draft.fallback_email,
+      funnel_rules: draft.funnel_rules,
       instructions: draft.instructions,
       integrations: lines(draft.integrationsText),
       knowledge: lines(draft.knowledgeText),
@@ -1046,6 +1073,9 @@ export function AgentsView() {
                       onError={setError}
                       onRefresh={() => refreshDetails(selected.id)}
                     />
+                  ) : null}
+                  {tab === 'contacts' && isSdrAgent(selected) ? (
+                    <SdrContactsPanel agentId={selected.id} agentName={selected.name} />
                   ) : null}
                 </>
               ) : (
@@ -1386,6 +1416,11 @@ function AgentListAgentCard({ agent }: { agent: WorkflowAgent }) {
         <span className="flex items-center gap-2 text-xs font-medium">
           <span className={cn('size-1.5 rounded-full', agent.enabled ? 'bg-primary' : 'bg-muted-foreground/50')} />
           {agent.name}
+          {isDefaultAgent(agent) ? (
+            <span className="rounded-full border border-primary/25 bg-primary/8 px-1.5 py-0.5 text-[0.6rem] font-medium text-primary">
+              (default)
+            </span>
+          ) : null}
         </span>
         <span className="line-clamp-2 text-[0.7rem] leading-relaxed text-muted-foreground">
           {agent.role || agent.description || 'Reusable workflow agent'}
@@ -1627,7 +1662,12 @@ function AgentEditor({
       </div>
 
       <nav className="flex gap-1 overflow-x-auto border-b border-(--stroke-nous)">
-        {AGENT_TABS.map(item => (
+        {AGENT_TABS.filter(item => {
+          if (item.id === 'funnel' || item.id === 'contacts') {
+            return isSdrAgent(selected)
+          }
+          return true
+        }).map(item => (
           <button
             className={cn(
               'shrink-0 border-b-2 px-3 py-2 text-xs font-medium transition-colors',
@@ -1665,6 +1705,27 @@ function AgentEditor({
               value={draft.approval_policy}
             />
           </label>
+          <label className="grid gap-1.5 text-xs font-medium">
+            Fallback email
+            <Input
+              disabled={busy}
+              onChange={event => patch({ fallback_email: event.target.value })}
+              placeholder="support@example.com"
+              value={draft.fallback_email}
+            />
+          </label>
+          {isSdrAgent(selected) ? (
+            <label className="grid gap-1.5 text-xs font-medium">
+              Campaign context
+              <Textarea
+                className="min-h-24"
+                disabled={busy}
+                onChange={event => patch({ campaign_context: event.target.value })}
+                placeholder="Offer, audience, and talking points the SDR should use after the funnel."
+                value={draft.campaign_context}
+              />
+            </label>
+          ) : null}
         </div>
       ) : null}
       {tab === 'skills' ? (
@@ -1704,6 +1765,13 @@ function AgentEditor({
           onRefresh={onToolsRefresh}
           selected={lines(draft.toolsText)}
           tools={toolCapabilities}
+        />
+      ) : null}
+      {tab === 'funnel' && isSdrAgent(selected) ? (
+        <SdrFunnelEditor
+          disabled={busy}
+          onChange={funnel_rules => patch({ funnel_rules })}
+          value={draft.funnel_rules}
         />
       ) : null}
     </section>
@@ -1802,6 +1870,14 @@ function AgentSaveRequired({ tab }: { tab: AgentTab }) {
       description:
         'Create the agent first so Verxio can issue its public share URL and embed token, then configure branding, allowed websites, and uploaded assets.',
       title: 'Save before publishing'
+    },
+    funnel: {
+      description: 'Create the SDR agent first, then add keyword triggers, qualification questions, and follow-ups.',
+      title: 'Save before editing the funnel'
+    },
+    contacts: {
+      description: 'Create the SDR agent first. Inbound WhatsApp and Telegram chats will show up here.',
+      title: 'Save before viewing contacts'
     },
     runs: {
       description: 'Create the agent first, then test it manually and review its execution history and events here.',
