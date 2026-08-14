@@ -1255,11 +1255,20 @@ async def workflow_agent_embed_script_route() -> Response:
   const panel = root.querySelector('[data-panel]');
   const output = root.querySelector('[data-output]');
   const button = root.querySelector('[data-open]');
+  const visitorKey = `verxio-embed-visitor-${token}`;
+  let visitorId = '';
+  try { visitorId = localStorage.getItem(visitorKey) || ''; } catch (e) {}
+  if (!visitorId) {
+    visitorId = (crypto.randomUUID && crypto.randomUUID()) || String(Date.now());
+    try { localStorage.setItem(visitorKey, visitorId); } catch (e) {}
+  }
   fetch(`/api/public/workflow-agents/${encodeURIComponent(token)}`).then(r => r.ok ? r.json() : null).then(info => {
     if (!info) return;
     root.querySelector('[data-title]').textContent = info.display_name || info.name || 'Verxio Agent';
     button.style.background = info.primary_color || '#0ea5e9';
     panel.querySelector('button[type="submit"]').style.background = info.primary_color || '#0ea5e9';
+    const textarea = panel.querySelector('textarea');
+    if (textarea && info.welcome_message) textarea.placeholder = info.welcome_message;
   }).catch(() => {});
   button.addEventListener('click', () => { panel.hidden = !panel.hidden; });
   panel.addEventListener('submit', async event => {
@@ -1270,7 +1279,7 @@ async def workflow_agent_embed_script_route() -> Response:
     const response = await fetch(`/api/public/workflow-agents/${encodeURIComponent(token)}/runs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ message, page_url: location.href })
+      body: JSON.stringify({ message, page_url: location.href, visitor_id: visitorId })
     });
     const body = await response.json().catch(() => ({}));
     output.textContent = body.run?.output_text || body.detail || 'Agent run queued.';
