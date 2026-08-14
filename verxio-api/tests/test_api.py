@@ -3500,15 +3500,22 @@ def test_runtime_health_uses_recent_success_cache(monkeypatch):
     assert "reachable recently" in detail
 
 
-def test_runtime_health_waits_until_gateway_is_running(monkeypatch):
-    runtime = _runtime_for_health(status="starting", container_name="verxio-health-gateway")
+def test_runtime_health_treats_healthz_as_ready(monkeypatch):
+    runtime = _runtime_for_health(status="starting", container_name="verxio-health-healthz")
 
     class FakeResponse:
+        def __init__(self, payload=None, fail=False):
+            self._payload = payload or {}
+            self._fail = fail
+
         def raise_for_status(self):
-            return None
+            if self._fail:
+                raise runtime_manager.httpx.HTTPStatusError(
+                    "boom", request=None, response=None
+                )
 
         def json(self):
-            return {"gateway_running": False, "gateway_state": "starting", "gateway_platforms": {}}
+            return self._payload
 
     class FakeClient:
         def __init__(self, *args, **kwargs):
@@ -3520,8 +3527,52 @@ def test_runtime_health_waits_until_gateway_is_running(monkeypatch):
         async def __aexit__(self, *args):
             return None
 
-        async def get(self, _url):
-            return FakeResponse()
+        async def get(self, url):
+            if url.endswith("/api/healthz"):
+                return FakeResponse({"ok": True})
+            return FakeResponse(
+                {"gateway_running": False, "gateway_state": "starting"},
+            )
+
+    monkeypatch.setattr(runtime_manager.httpx, "AsyncClient", FakeClient)
+
+    connected, detail = asyncio.run(runtime_manager.runtime_health(runtime))
+
+    assert connected is True
+    assert "reachable" in detail
+
+
+def test_runtime_health_status_fallback_waits_until_gateway_is_running(monkeypatch):
+    runtime = _runtime_for_health(status="starting", container_name="verxio-health-gateway")
+
+    class FakeResponse:
+        def __init__(self, payload=None, fail=False):
+            self._payload = payload or {}
+            self._fail = fail
+
+        def raise_for_status(self):
+            if self._fail:
+                raise RuntimeError("healthz missing")
+
+        def json(self):
+            return self._payload
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            return None
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def get(self, url):
+            if url.endswith("/api/healthz"):
+                return FakeResponse(fail=True)
+            return FakeResponse(
+                {"gateway_running": False, "gateway_state": "starting", "gateway_platforms": {}}
+            )
 
     monkeypatch.setattr(runtime_manager.httpx, "AsyncClient", FakeClient)
 

@@ -832,7 +832,11 @@ async def runtime_health(runtime: RuntimeInstance) -> tuple[bool, str]:
             try:
                 healthz = await client.get(f"{root}/api/healthz")
                 healthz.raise_for_status()
-                healthz_ok = True
+                # Do not follow with /api/status. That handler shares the
+                # dashboard event loop and a kubelet/API stampede after
+                # rebuild is what wedges the UI on "Reconnecting to Verxio".
+                mark_runtime_healthy(runtime)
+                return True, "Verxio runtime is reachable."
             except Exception as exc:
                 errors.append(f"{root}/api/healthz: {exc}")
 
@@ -851,11 +855,6 @@ async def runtime_health(runtime: RuntimeInstance) -> tuple[bool, str]:
                 return True, "Verxio runtime is reachable."
             except Exception as status_exc:
                 errors.append(f"{root}/api/status: {status_exc}")
-                if healthz_ok:
-                    # Dashboard process is accepting HTTP. Do not fail closed
-                    # because /api/status is still assembling on a cold start.
-                    mark_runtime_healthy(runtime)
-                    return True, "Verxio runtime is reachable."
     return False, f"Verxio runtime is not reachable: {'; '.join(errors)}"
 
 
