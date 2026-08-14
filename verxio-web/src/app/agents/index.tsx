@@ -46,6 +46,7 @@ import {
   createKnowledgeBase,
   createKnowledgeDocument,
   createWorkflowAgent,
+  createWorkflowAgentFromTemplate,
   createWorkflowCustomTool,
   createWorkflowDelivery,
   createWorkflowTrigger,
@@ -85,6 +86,7 @@ import {
   type WorkflowAgentPublicInfo,
   type WorkflowAgentSetupDraft,
   type WorkflowAgentSetupDraftResponse,
+  type WorkflowAgentTemplateId,
   type WorkflowDelivery,
   type WorkflowDeliveryType,
   type WorkflowIntegrationCapability,
@@ -128,6 +130,26 @@ const AGENT_TABS: Array<{ id: AgentTab; label: string }> = [
   { id: 'contacts', label: 'Contacts' },
   { id: 'embed', label: 'Embed' },
   { id: 'runs', label: 'Runs' }
+]
+
+const AGENT_TEMPLATES: Array<{
+  description: string
+  id: WorkflowAgentTemplateId
+  name: string
+  role: string
+}> = [
+  {
+    description: 'Knowledge-grounded replies for website visitors and messaging channels.',
+    id: 'customer-support',
+    name: 'Customer Support',
+    role: 'Customer support'
+  },
+  {
+    description: 'Keyword funnels, qualification questions, and channel follow-ups.',
+    id: 'sdr',
+    name: 'SDR',
+    role: 'Sales development'
+  }
 ]
 
 function isDefaultAgent(agent: WorkflowAgent | null | undefined): boolean {
@@ -492,6 +514,8 @@ export function AgentsView() {
   const [setupBusy, setSetupBusy] = useState(false)
 
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; kind: 'agent' | 'draft'; name: string } | null>(null)
+  const [createPickerOpen, setCreatePickerOpen] = useState(false)
+  const [creatingTemplate, setCreatingTemplate] = useState<WorkflowAgentTemplateId | null>(null)
 
   const routeSelection = useMemo(() => parseAgentRoute(location.pathname), [location.pathname])
 
@@ -899,7 +923,37 @@ export function AgentsView() {
   }
 
   const createNew = () => {
+    setCreatePickerOpen(false)
     navigate(`${AGENTS_ROUTE}/new`)
+  }
+
+  const openCreatePicker = () => {
+    setCreatePickerOpen(true)
+  }
+
+  const createFromTemplate = async (template: WorkflowAgentTemplateId) => {
+    setCreatingTemplate(template)
+    setError(null)
+
+    try {
+      const agent = await createWorkflowAgentFromTemplate({ template })
+
+      setAgents(current => [agent, ...current.filter(item => item.id !== agent.id)])
+      setCreatePickerOpen(false)
+      notify({
+        kind: 'success',
+        message: 'Customize instructions, knowledge, and channels next.',
+        title: `${agent.name} created`
+      })
+      navigate(agentDetailRoute(agent.id))
+    } catch (err) {
+      const message = 'Could not create agent'
+
+      setError(err instanceof Error ? err.message : `${message}.`)
+      notifyError(err, message)
+    } finally {
+      setCreatingTemplate(null)
+    }
   }
 
   const closeEditor = () => {
@@ -990,7 +1044,7 @@ export function AgentsView() {
               <RefreshCw className="size-4" />
               Refresh
             </Button>
-            <Button disabled={busy} onClick={createNew} size="sm">
+            <Button disabled={busy || Boolean(creatingTemplate)} onClick={openCreatePicker} size="sm">
               <Plus className="size-4" />
               Create agent
             </Button>
@@ -1014,7 +1068,7 @@ export function AgentsView() {
           {!editorOpen ? (
             <AgentList
               items={listItems}
-              onCreate={createNew}
+              onCreate={openCreatePicker}
               onDeleteAgent={agent => setDeleteTarget({ id: agent.id, kind: 'agent', name: agent.name })}
               onDeleteDraft={setupDraft =>
                 setDeleteTarget({
@@ -1113,6 +1167,17 @@ export function AgentsView() {
           ) : null}
         </div>
       )}
+      <CreateAgentTemplateDialog
+        busyTemplate={creatingTemplate}
+        onClose={() => {
+          if (!creatingTemplate) {
+            setCreatePickerOpen(false)
+          }
+        }}
+        onCreateScratch={createNew}
+        onCreateTemplate={template => void createFromTemplate(template)}
+        open={createPickerOpen}
+      />
       <ConfirmDialog
         busyLabel="Deleting…"
         confirmLabel="Delete"
@@ -1335,6 +1400,77 @@ export function PublicAgentShareView() {
   )
 }
 
+function CreateAgentTemplateDialog({
+  busyTemplate,
+  onClose,
+  onCreateScratch,
+  onCreateTemplate,
+  open
+}: {
+  busyTemplate: WorkflowAgentTemplateId | null
+  onClose: () => void
+  onCreateScratch: () => void
+  onCreateTemplate: (template: WorkflowAgentTemplateId) => void
+  open: boolean
+}) {
+  const creating = Boolean(busyTemplate)
+
+  return (
+    <Dialog onOpenChange={next => !next && onClose()} open={open}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Create agent</DialogTitle>
+          <DialogDescription>
+            Choose Customer Support or SDR. We create it with the default instructions, then you can customize.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {AGENT_TEMPLATES.map(template => (
+            <button
+              className="flex min-h-44 min-w-0 flex-col justify-between rounded-[6px] border border-primary/45 bg-white p-3 text-left text-neutral-950 disabled:opacity-60"
+              disabled={creating}
+              key={template.id}
+              onClick={() => onCreateTemplate(template.id)}
+              type="button"
+            >
+              <div className="min-w-0">
+                <div className="flex items-start gap-2">
+                  <div className="grid size-8 shrink-0 place-items-center rounded-[5px] bg-primary/10 text-[0.68rem] font-semibold text-primary">
+                    {agentInitials(template.name)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">{template.name}</div>
+                    <div className="mt-1 text-xs leading-5">{template.role}</div>
+                  </div>
+                </div>
+                <p className="mt-3 line-clamp-3 text-xs leading-5 text-muted-foreground">{template.description}</p>
+              </div>
+              <div className="mt-4 flex justify-end">
+                <span className="inline-flex items-center gap-1 rounded-[6px] border border-(--ui-stroke-secondary) px-2 py-0.5 text-[0.6875rem] leading-4">
+                  {busyTemplate === template.id ? (
+                    <Loader
+                      className="size-3 text-primary"
+                      label={`Creating ${template.name}`}
+                      strokeScale={0.7}
+                      type="rose-two"
+                    />
+                  ) : null}
+                  {busyTemplate === template.id ? 'Creating…' : 'Use this default'}
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
+        <DialogFooter>
+          <Button disabled={creating} onClick={onCreateScratch} size="sm" type="button" variant="ghost">
+            Start from scratch
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function AgentList({
   items,
   onCreate,
@@ -1368,7 +1504,7 @@ function AgentList({
           <Sparkles className="mx-auto size-6 text-primary" />
           <p className="text-sm font-medium">No agents yet</p>
           <p className="text-xs leading-relaxed text-muted-foreground">
-            Create the first reusable agent for payments, lead research, customer support, or internal ops.
+            Start from Customer Support or SDR, then customize knowledge, channels, and instructions.
           </p>
           <Button onClick={onCreate} size="sm">
             <Plus className="size-4" />

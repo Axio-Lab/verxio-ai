@@ -21,6 +21,7 @@ from app.knowledge_bases import retrieve_context
 from app.models import (
     AgentProfile,
     WorkflowAgentCreateRequest,
+    WorkflowAgentFromTemplateRequest,
     WorkflowAgentRecord,
     WorkflowAgentSetupApprovalRecord,
     WorkflowAgentSetupApprovalRequest,
@@ -1009,9 +1010,6 @@ def list_integration_capabilities(user_id: str) -> WorkflowIntegrationCapabiliti
 
 
 def list_agents(workspace: Workspace, profile: AgentProfile) -> WorkflowAgentsResponse:
-    from app.default_workflow_agents import ensure_default_workflow_agents
-
-    ensure_default_workflow_agents(workspace, profile)
     agent_rows = db.fetch_all(
         """
         SELECT * FROM workflow_agents
@@ -1338,6 +1336,16 @@ def create_agent(workspace: Workspace, profile: AgentProfile, payload: WorkflowA
         ),
     )
     return get_agent(workspace, profile, agent_id)
+
+
+def create_agent_from_template(
+    workspace: Workspace,
+    profile: AgentProfile,
+    payload: WorkflowAgentFromTemplateRequest,
+) -> WorkflowAgentRecord:
+    from app.default_workflow_agents import create_from_template
+
+    return create_from_template(workspace, profile, payload.template, name=payload.name)
 
 
 def get_agent(workspace: Workspace, profile: AgentProfile, agent_id: str) -> WorkflowAgentRecord:

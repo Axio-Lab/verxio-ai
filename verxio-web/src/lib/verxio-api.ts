@@ -1090,6 +1090,18 @@ export function createWorkflowAgent(input: WorkflowAgentInput & { name: string }
   })
 }
 
+export type WorkflowAgentTemplateId = 'customer-support' | 'sdr'
+
+export function createWorkflowAgentFromTemplate(input: {
+  name?: string
+  template: WorkflowAgentTemplateId
+}): Promise<WorkflowAgent> {
+  return verxioFetch<WorkflowAgent>('/api/workflow-agents/from-template', {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
+}
+
 export function draftWorkflowAgentSetup(input: {
   prompt: string
   source?: WorkflowSetupActor

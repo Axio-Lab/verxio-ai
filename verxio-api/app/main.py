@@ -134,6 +134,7 @@ from app.models import (
     SignupRequest,
     TranscriptionCatalogResponse,
     WorkflowAgentCreateRequest,
+    WorkflowAgentFromTemplateRequest,
     WorkflowCustomToolCreateRequest,
     WorkflowCustomToolRecord,
     WorkflowCustomToolsResponse,
@@ -216,6 +217,7 @@ from app.transcription_catalog import list_transcription_catalog
 from app.workflow_agents import (
     apply_setup_draft as apply_workflow_setup_draft,
     create_agent as create_workflow_agent,
+    create_agent_from_template as create_workflow_agent_from_template,
     create_custom_tool as create_workflow_custom_tool,
     create_setup_draft as create_workflow_setup_draft,
     create_setup_update_draft as create_workflow_setup_update_draft,
@@ -933,6 +935,16 @@ async def create_knowledge_document_route(
     user = require_user(request)
     workspace, _profile, _runtime_instance = get_context_for_user(user)
     return create_knowledge_document(workspace, knowledge_base_id, payload)
+
+@app.post("/api/workflow-agents/from-template", response_model=WorkflowAgentRecord)
+async def create_workflow_agent_from_template_route(
+    payload: WorkflowAgentFromTemplateRequest,
+    request: Request,
+) -> WorkflowAgentRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return create_workflow_agent_from_template(workspace, profile, payload)
+
 
 @app.post("/api/workflow-agents", response_model=WorkflowAgentRecord)
 async def create_workflow_agent_route(

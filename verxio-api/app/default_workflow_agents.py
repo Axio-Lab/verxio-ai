@@ -1,4 +1,4 @@
-"""Idempotent Customer Support and SDR default workflow agents."""
+"""Customer Support and SDR workflow agent templates."""
 
 from __future__ import annotations
 
@@ -16,10 +16,14 @@ from app.models import (
 
 DEFAULT_SUPPORT_NAME = "Customer Support"
 DEFAULT_SDR_NAME = "SDR"
-DEFAULT_SUPPORT_TAGS = ["default", "customer-support"]
-DEFAULT_SDR_TAGS = ["default", "sdr"]
+DEFAULT_SUPPORT_TAGS = ["customer-support"]
+DEFAULT_SDR_TAGS = ["sdr"]
 DEFAULT_EMBED_COLOR = "#6366f1"
 DEFAULT_WELCOME = "How can I help?"
+DEFAULT_SUPPORT_ROLE = "Customer support"
+DEFAULT_SUPPORT_DESCRIPTION = "Knowledge-grounded replies for website visitors and messaging channels."
+DEFAULT_SDR_ROLE = "Sales development"
+DEFAULT_SDR_DESCRIPTION = "Keyword funnels, qualification questions, and channel follow-ups."
 
 CUSTOMER_SUPPORT_INSTRUCTIONS = """You are the Customer Support agent for this workspace. You represent this brand and speak as its support agent.
 
@@ -94,17 +98,26 @@ def _json_dumps(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
-def _find_system_agent(workspace: Workspace, profile: AgentProfile, name: str) -> dict[str, Any] | None:
-    return db.fetch_one(
-        """
-        SELECT * FROM workflow_agents
-        WHERE workspace_id = ? AND runtime_agent_id = ? AND origin = 'system' AND name = ?
-        """,
-        (workspace.id, profile.id, name),
+def _agent_names(workspace: Workspace, profile: AgentProfile) -> set[str]:
+    rows = db.fetch_all(
+        "SELECT name FROM workflow_agents WHERE workspace_id = ? AND runtime_agent_id = ?",
+        (workspace.id, profile.id),
     )
+    return {str(row["name"]) for row in rows}
 
 
-def _insert_system_agent(
+def unique_agent_name(workspace: Workspace, profile: AgentProfile, base: str) -> str:
+    candidate = base.strip() or base
+    names = _agent_names(workspace, profile)
+    if candidate not in names:
+        return candidate
+    index = 2
+    while f"{candidate} {index}" in names:
+        index += 1
+    return f"{candidate} {index}"
+
+
+def _insert_template_agent(
     workspace: Workspace,
     profile: AgentProfile,
     *,
@@ -113,6 +126,7 @@ def _insert_system_agent(
     description: str,
     instructions: str,
     tags: list[str],
+    origin: str = "user",
 ) -> str:
     created_at = now_iso()
     agent_id = new_id("workflow_agent")
@@ -124,7 +138,7 @@ def _insert_system_agent(
             integrations_json, approval_policy, tags_json, origin, funnel_rules_json,
             fallback_email, campaign_context, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', 1, '[]', '[]', '[]', '[]', 'default', ?, 'system', '{"rules":[]}', '', '', ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', 1, '[]', '[]', '[]', '[]', 'default', ?, ?, '{"rules":[]}', '', '', ?, ?)
         """,
         (
             agent_id,
@@ -136,6 +150,7 @@ def _insert_system_agent(
             description,
             instructions,
             _json_dumps(tags),
+            origin,
             created_at,
             created_at,
         ),
@@ -183,7 +198,7 @@ def _ensure_reply_delivery(workspace: Workspace, profile: AgentProfile, agent_id
     )
 
 
-def _ensure_support_embed(workspace: Workspace, profile: AgentProfile, agent_id: str) -> None:
+def _ensure_support_embed(workspace: Workspace, profile: AgentProfile, agent_id: str, display_name: str) -> None:
     from app.workflow_agents import _public_token
 
     row = db.fetch_one(
@@ -209,7 +224,7 @@ def _ensure_support_embed(workspace: Workspace, profile: AgentProfile, agent_id:
             profile.id,
             agent_id,
             _public_token(),
-            DEFAULT_SUPPORT_NAME,
+            display_name,
             DEFAULT_WELCOME,
             DEFAULT_EMBED_COLOR,
             created_at,
@@ -218,32 +233,45 @@ def _ensure_support_embed(workspace: Workspace, profile: AgentProfile, agent_id:
     )
 
 
-def ensure_default_workflow_agents(workspace: Workspace, profile: AgentProfile) -> None:
-    support = _find_system_agent(workspace, profile, DEFAULT_SUPPORT_NAME)
-    if support is None:
-        support_id = _insert_system_agent(
+def create_from_template(
+    workspace: Workspace,
+    profile: AgentProfile,
+    template: str,
+    name: str | None = None,
+):
+    from fastapi import HTTPException
+
+    from app.workflow_agents import get_agent
+
+    requested = (name or "").strip()
+    if template == "customer-support":
+        agent_name = unique_agent_name(workspace, profile, requested or DEFAULT_SUPPORT_NAME)
+        agent_id = _insert_template_agent(
             workspace,
             profile,
-            name=DEFAULT_SUPPORT_NAME,
-            role="Customer support",
-            description="Knowledge-grounded replies for website visitors and messaging channels.",
+            name=agent_name,
+            role=DEFAULT_SUPPORT_ROLE,
+            description=DEFAULT_SUPPORT_DESCRIPTION,
             instructions=CUSTOMER_SUPPORT_INSTRUCTIONS.strip(),
             tags=DEFAULT_SUPPORT_TAGS,
         )
-        _ensure_unbound_chat_trigger(workspace, profile, support_id)
-        _ensure_reply_delivery(workspace, profile, support_id)
-        _ensure_support_embed(workspace, profile, support_id)
-
-    sdr = _find_system_agent(workspace, profile, DEFAULT_SDR_NAME)
-    if sdr is None:
-        sdr_id = _insert_system_agent(
+        _ensure_unbound_chat_trigger(workspace, profile, agent_id)
+        _ensure_reply_delivery(workspace, profile, agent_id)
+        _ensure_support_embed(workspace, profile, agent_id, agent_name)
+    elif template == "sdr":
+        agent_name = unique_agent_name(workspace, profile, requested or DEFAULT_SDR_NAME)
+        agent_id = _insert_template_agent(
             workspace,
             profile,
-            name=DEFAULT_SDR_NAME,
-            role="Sales development",
-            description="Keyword funnels, qualification questions, and channel follow-ups.",
+            name=agent_name,
+            role=DEFAULT_SDR_ROLE,
+            description=DEFAULT_SDR_DESCRIPTION,
             instructions=SDR_INSTRUCTIONS.strip(),
             tags=DEFAULT_SDR_TAGS,
         )
-        _ensure_unbound_chat_trigger(workspace, profile, sdr_id)
-        _ensure_reply_delivery(workspace, profile, sdr_id)
+        _ensure_unbound_chat_trigger(workspace, profile, agent_id)
+        _ensure_reply_delivery(workspace, profile, agent_id)
+    else:
+        raise HTTPException(status_code=400, detail="Unknown agent template.")
+
+    return get_agent(workspace, profile, agent_id)

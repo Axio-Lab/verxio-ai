@@ -477,6 +477,14 @@ class WorkflowAgentCreateRequest(BaseModel):
     campaign_context: str = Field(default="", max_length=8000)
     funnel_rules: dict[str, Any] = Field(default_factory=dict)
 
+
+WorkflowAgentTemplateId = Literal["customer-support", "sdr"]
+
+
+class WorkflowAgentFromTemplateRequest(BaseModel):
+    template: WorkflowAgentTemplateId
+    name: str | None = Field(default=None, min_length=1, max_length=180)
+
 class WorkflowAgentUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=180)
     role: str | None = Field(default=None, max_length=240)

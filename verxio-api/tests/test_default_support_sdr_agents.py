@@ -38,20 +38,28 @@ def _listed_agents(client, token: str) -> list[dict]:
     return listed.json()["agents"]
 
 
-def _by_name(agents: list[dict], name: str) -> dict:
-    return next(item for item in agents if item["name"] == name)
+def _create_from_template(client, token: str, template: str, name: str | None = None) -> dict:
+    payload: dict[str, str] = {"template": template}
+    if name:
+        payload["name"] = name
+    created = client.post("/api/workflow-agents/from-template", headers=_headers(token), json=payload)
+    assert created.status_code == 200, created.text
+    return created.json()
 
 
-def test_default_support_and_sdr_agents_are_seeded_idempotently(client):
+def test_create_support_and_sdr_from_template(client):
     _payload, token = signup(client, "default-agents-seed@example.com")
-    first = _listed_agents(client, token)
-    support = _by_name(first, "Customer Support")
-    sdr = _by_name(first, "SDR")
-    assert support["origin"] == "system"
-    assert sdr["origin"] == "system"
-    assert "default" in support["tags"]
+    assert _listed_agents(client, token) == []
+
+    support = _create_from_template(client, token, "customer-support")
+    sdr = _create_from_template(client, token, "sdr")
+    assert support["origin"] == "user"
+    assert sdr["origin"] == "user"
+    assert support["name"] == "Customer Support"
+    assert sdr["name"] == "SDR"
+    assert "default" not in support["tags"]
     assert "customer-support" in support["tags"]
-    assert "default" in sdr["tags"]
+    assert "default" not in sdr["tags"]
     assert "sdr" in sdr["tags"]
     assert support["role"] == "Customer support"
     assert sdr["role"] == "Sales development"
@@ -60,6 +68,7 @@ def test_default_support_and_sdr_agents_are_seeded_idempotently(client):
     assert embed.status_code == 200
     assert embed.json()["enabled"] is True
     assert embed.json()["welcome_message"] == "How can I help?"
+    assert embed.json()["display_name"] == "Customer Support"
 
     support_triggers = client.get(f"/api/workflow-agents/{support['id']}/triggers", headers=_headers(token))
     chat = next(item for item in support_triggers.json()["triggers"] if item["trigger_type"] == "chat")
@@ -69,8 +78,12 @@ def test_default_support_and_sdr_agents_are_seeded_idempotently(client):
     deliveries = client.get(f"/api/workflow-agents/{support['id']}/deliveries", headers=_headers(token))
     assert any(item["delivery_type"] == "reply_to_source" for item in deliveries.json()["deliveries"])
 
-    second = _listed_agents(client, token)
-    assert {item["id"] for item in second if item["origin"] == "system"} == {support["id"], sdr["id"]}
+    duplicate = _create_from_template(client, token, "customer-support")
+    assert duplicate["id"] != support["id"]
+    assert duplicate["name"] == "Customer Support 2"
+
+    listed = _listed_agents(client, token)
+    assert {item["id"] for item in listed} == {support["id"], sdr["id"], duplicate["id"]}
 
 
 def test_support_embed_uses_knowledge_and_rating_skips_model(client, monkeypatch):
@@ -86,7 +99,7 @@ def test_support_embed_uses_knowledge_and_rating_skips_model(client, monkeypatch
     seen: dict[str, str] = {}
     monkeypatch.setattr(workflow_agents, "run_agent_via_dashboard", fake_oneshot)
 
-    support = _by_name(_listed_agents(client, token), "Customer Support")
+    support = _create_from_template(client, token, "customer-support")
     knowledge_base = client.post("/api/knowledge-bases", headers=headers, json={"name": "Returns", "description": "Policy"}).json()
     document = client.post(
         f"/api/knowledge-bases/{knowledge_base['id']}/documents",
@@ -150,7 +163,7 @@ def test_sdr_funnel_collects_answers_and_dispatches_follow_up(client, monkeypatc
     monkeypatch.setattr("app.sdr_funnel.send_message_via_dashboard", fake_send)
     monkeypatch.setattr(workflow_agents, "send_message_via_dashboard", fake_send)
 
-    sdr = _by_name(_listed_agents(client, token), "SDR")
+    sdr = _create_from_template(client, token, "sdr")
     updated = client.put(
         f"/api/workflow-agents/{sdr['id']}",
         headers=headers,
