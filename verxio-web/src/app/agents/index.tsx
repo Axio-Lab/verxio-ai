@@ -24,7 +24,6 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { VerxioWordmark } from '@/components/verxio-wordmark'
 import { getMessagingPlatforms, type MessagingPlatformInfo } from '@/hermes'
-import { useI18n } from '@/i18n'
 import {
   AlertCircle,
   CheckCircle2,
@@ -1414,7 +1413,6 @@ function CreateAgentTemplateDialog({
   onCreateTemplate: (template: WorkflowAgentTemplateId) => void
   open: boolean
 }) {
-  const { t } = useI18n()
   const creating = Boolean(busyTemplate)
   const [selectedTemplate, setSelectedTemplate] = useState<WorkflowAgentTemplateId>(AGENT_TEMPLATES[0].id)
 
@@ -1426,8 +1424,8 @@ function CreateAgentTemplateDialog({
 
   return (
     <Dialog onOpenChange={next => !next && !creating && onClose()} open={open}>
-      <DialogContent className="max-w-md" showCloseButton={false}>
-        <DialogHeader>
+      <DialogContent className="max-w-xl">
+        <DialogHeader className="pr-8">
           <DialogTitle>Create agent</DialogTitle>
           <DialogDescription>
             Choose Customer Support or SDR. We create it with the default instructions, then you can customize.
@@ -1465,14 +1463,9 @@ function CreateAgentTemplateDialog({
           <Button disabled={creating} onClick={onCreateScratch} type="button" variant="ghost">
             Start from scratch
           </Button>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row">
-            <Button disabled={creating} onClick={onClose} type="button" variant="outline">
-              {t.common.cancel}
-            </Button>
-            <Button disabled={creating} onClick={() => onCreateTemplate(selectedTemplate)} type="button">
-              {creating ? 'Creating…' : 'Create agent'}
-            </Button>
-          </div>
+          <Button disabled={creating} onClick={() => onCreateTemplate(selectedTemplate)} type="button">
+            {creating ? 'Creating…' : 'Create agent'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
