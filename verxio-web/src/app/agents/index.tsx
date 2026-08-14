@@ -1326,7 +1326,7 @@ function AgentList({
       <div className="grid min-h-0 flex-1 content-start gap-2 overflow-y-auto sm:grid-cols-2 xl:grid-cols-3">
         {visibleItems.map(item => (
           <div
-            className="relative grid min-h-28 content-between gap-3 rounded-md border border-(--stroke-nous) p-4 text-left transition-colors hover:bg-(--chrome-action-hover)"
+            className="relative grid min-h-28 content-between gap-3 rounded-md border border-primary/40 p-4 text-left transition-colors hover:border-primary/60 hover:bg-(--chrome-action-hover)"
             key={`${item.type}:${item.id}`}
           >
             <button
