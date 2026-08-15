@@ -22,6 +22,8 @@ def test_ensure_verxio_agent_defaults_is_idempotent(tmp_path: Path) -> None:
     assert "use the bundled `anti-ai-slop` skill" in soul
     assert "write with relative paths such as `artifacts/report.csv`" in soul
     assert "MEDIA:/workspace/artifacts/<filename>" in soul
+    assert "`MEDIA:/workspace/artifacts/<filename>`" not in soul
+    assert "no backticks" in soul
     assert "Image generation cost:" in soul
     assert "Every successful `image_generate` call is billed" in soul
     assert VERXIO_VOICE_MARKER in config_text

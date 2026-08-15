@@ -53,7 +53,7 @@ Workspace:
 - After creating an artifact, verify the file exists and has a non-zero size before telling the user it was generated.
 - Terminal commands may use absolute `/workspace/...` paths.
 - When you mention a generated file to the user, give its `/workspace/artifacts/...` path so Verxio can index and display it.
-- On WhatsApp, Telegram, Discord, Slack, or any other messaging channel: after creating a report or document under `/workspace/artifacts`, include a bare line `MEDIA:/workspace/artifacts/<filename>` in your reply so the platform attaches the file. Do not put that MEDIA line only inside backticks. Messaging users cannot open the Verxio app path — the attachment is how they download the report.
+- On WhatsApp, Telegram, Discord, Slack, or any other messaging channel: after creating a report or document under `/workspace/artifacts`, put MEDIA:/workspace/artifacts/<filename> on its own line with no backticks and no quotes. The platform attaches the file. Messaging users cannot open the Verxio app path — the attachment is how they download the report.
 
 Image generation cost:
 - Every successful `image_generate` call is billed by the image provider. Do not regenerate to make a grayscale, phone preview, crop, resize, watermark, or near-identical variant.
@@ -104,7 +104,7 @@ Workspace and artifacts:
 - After creating an artifact, verify the file exists and has a non-zero size before telling the user it was generated.
 - Terminal commands may use absolute `/workspace/...` paths.
 - When you mention a generated file to the user, give its `/workspace/artifacts/...` path so Verxio can index and display it.
-- On WhatsApp, Telegram, Discord, Slack, or any other messaging channel: after creating a report or document under `/workspace/artifacts`, include a bare line `MEDIA:/workspace/artifacts/<filename>` in your reply so the platform attaches the file. Do not put that MEDIA line only inside backticks. Messaging users cannot open the Verxio app path — the attachment is how they download the report.
+- On WhatsApp, Telegram, Discord, Slack, or any other messaging channel: after creating a report or document under `/workspace/artifacts`, put MEDIA:/workspace/artifacts/<filename> on its own line with no backticks and no quotes. The platform attaches the file. Messaging users cannot open the Verxio app path — the attachment is how they download the report.
 
 Image generation cost:
 - Every successful `image_generate` call is billed by the image provider. Do not regenerate to make a grayscale, phone preview, crop, resize, watermark, or near-identical variant.
@@ -240,10 +240,15 @@ def ensure_verxio_agent_defaults(hermes_home: Path) -> None:
                 current,
                 "Messaging artifact delivery:\n"
                 "- On WhatsApp, Telegram, Discord, Slack, or any other messaging channel: "
-                "after creating a report or document under `/workspace/artifacts`, include a bare line "
-                "`MEDIA:/workspace/artifacts/<filename>` in your reply so the platform attaches the file. "
-                "Do not put that MEDIA line only inside backticks. Messaging users cannot open the Verxio "
-                "app path — the attachment is how they download the report.",
+                "after creating a report or document under `/workspace/artifacts`, put "
+                "MEDIA:/workspace/artifacts/<filename> on its own line with no backticks "
+                "and no quotes. The platform attaches the file. Messaging users cannot open "
+                "the Verxio app path — the attachment is how they download the report.",
+            )
+        elif "include a bare line `MEDIA:/workspace/artifacts/<filename>`" in current:
+            current = current.replace(
+                "include a bare line `MEDIA:/workspace/artifacts/<filename>` in your reply so the platform attaches the file. Do not put that MEDIA line only inside backticks.",
+                "put MEDIA:/workspace/artifacts/<filename> on its own line with no backticks and no quotes. The platform attaches the file.",
             )
         if "Image generation cost:" not in current:
             current = _join_prompt_parts(
