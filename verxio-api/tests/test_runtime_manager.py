@@ -344,3 +344,12 @@ def test_k8s_runtime_env_matches_avoids_restart_when_pod_unreadable(monkeypatch)
 
     monkeypatch.setattr("app.runtime_orch.factory.get_runtime_manager", lambda: _Mgr())
     assert runtime_manager.runtime_container_env_matches(runtime, "COMPOSIO_API_KEY", "k8s-key") is True
+
+
+def test_runtime_whatsapp_paired_sees_multi_session_default(tmp_path):
+    creds = tmp_path / "platforms" / "whatsapp" / "sessions" / "default" / "creds.json"
+    creds.parent.mkdir(parents=True)
+    creds.write_text("{}", encoding="utf-8")
+    runtime = _runtime().model_copy(update={"hermes_home_path": str(tmp_path)})
+
+    assert runtime_manager._runtime_whatsapp_paired(runtime) is True

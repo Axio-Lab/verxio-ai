@@ -130,6 +130,8 @@ def _runtime_whatsapp_paired(runtime: RuntimeInstance) -> bool:
         for path in (
             hermes_home / "platforms" / "whatsapp" / "session" / "creds.json",
             hermes_home / "whatsapp" / "session" / "creds.json",
+            hermes_home / "platforms" / "whatsapp" / "sessions" / "default" / "creds.json",
+            hermes_home / "whatsapp" / "sessions" / "default" / "creds.json",
         )
     )
 
