@@ -2294,6 +2294,15 @@ async def _record_delivery_events(
         if delivery.delivery_type == "save_only":
             _record_run_event(run, "delivery_saved", "Workflow output was saved to the run.", metadata)
             continue
+        if delivery.delivery_type == "reply_to_source" and str(run.trigger_type or "") == "chat":
+            metadata["skipped"] = "gateway_owns_reply"
+            _record_run_event(
+                run,
+                "delivery_saved",
+                "Inbound messaging gateway will deliver this reply.",
+                metadata,
+            )
+            continue
         try:
             result = await _execute_delivery(workspace, profile, run, delivery, output, run_input)
         except Exception as exc:
