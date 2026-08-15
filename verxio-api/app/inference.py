@@ -339,13 +339,13 @@ def inference_usage(user_id: str) -> InferenceUsageResponse:
     )
 
 
-def runtime_env_for_user(user_id: str) -> dict[str, str]:
-    """Inject every available Verxio-hosted secret into the runtime.
+def hosted_provider_env() -> dict[str, str]:
+    """Control-plane hosted secrets for every runtime container.
 
-    Hybrid mode keeps hosted Qwen/Gemini usable alongside BYOK providers, so
-    we no longer gate on ``settings.mode`` or a single default family.
+    These keys are never written to the runtime ``.env`` (hostPath would leak
+    them). Image rolls and reconcile must still inject them as container env,
+    even when the caller forgets ``extra_env``.
     """
-    ensure_inference_settings(user_id)
     env: dict[str, str] = {}
     for model in MODEL_CATALOG:
         _secret_name, secret_value = _hosted_secret(model)
@@ -356,6 +356,16 @@ def runtime_env_for_user(user_id: str) -> dict[str, str]:
         if model.runtime_env_var == "GEMINI_API_KEY":
             env.setdefault("GOOGLE_API_KEY", secret_value)
     return env
+
+
+def runtime_env_for_user(user_id: str) -> dict[str, str]:
+    """Inject every available Verxio-hosted secret into the runtime.
+
+    Hybrid mode keeps hosted Qwen/Gemini usable alongside BYOK providers, so
+    we no longer gate on ``settings.mode`` or a single default family.
+    """
+    ensure_inference_settings(user_id)
+    return hosted_provider_env()
 
 
 def _state_path(runtime: RuntimeInstance) -> Path:

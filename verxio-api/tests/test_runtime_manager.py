@@ -117,6 +117,28 @@ def test_runtime_container_env_disables_unpaired_whatsapp(tmp_path):
     assert "EMPTY_VALUE" not in env
 
 
+def test_runtime_container_env_injects_hosted_keys_without_extra_env(monkeypatch, tmp_path):
+    runtime = _runtime().model_copy(update={"hermes_home_path": str(tmp_path)})
+    monkeypatch.setenv("VERXIO_HOSTED_GEMINI_API_KEY", "hosted-gemini")
+    monkeypatch.delenv("VERXIO_GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("VERXIO_HOSTED_QWEN_API_KEY", raising=False)
+    monkeypatch.delenv("VERXIO_DASHSCOPE_API_KEY", raising=False)
+
+    env = runtime_manager._runtime_container_env(runtime)
+
+    assert env["GEMINI_API_KEY"] == "hosted-gemini"
+    assert env["GOOGLE_API_KEY"] == "hosted-gemini"
+
+
+def test_runtime_container_env_lets_extra_env_override_hosted_keys(monkeypatch, tmp_path):
+    runtime = _runtime().model_copy(update={"hermes_home_path": str(tmp_path)})
+    monkeypatch.setenv("VERXIO_HOSTED_GEMINI_API_KEY", "hosted-gemini")
+
+    env = runtime_manager._runtime_container_env(runtime, {"GEMINI_API_KEY": "override"})
+
+    assert env["GEMINI_API_KEY"] == "override"
+
+
 def test_runtime_container_env_allows_paired_whatsapp(tmp_path):
     runtime = _runtime().model_copy(update={"hermes_home_path": str(tmp_path)})
     session_dir = tmp_path / "platforms" / "whatsapp" / "session"

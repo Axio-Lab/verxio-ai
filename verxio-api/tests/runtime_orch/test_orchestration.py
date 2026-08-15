@@ -156,6 +156,49 @@ def test_k8s_manifest_render(monkeypatch):
     assert vols["hermes-home"].endswith("/hermes-home")
 
 
+def test_k8s_manifest_injects_hosted_keys_without_extra_env(monkeypatch):
+    monkeypatch.setenv("VERXIO_K8S_HOST_PATH_ROOT", "/verxio-runtimes")
+    monkeypatch.setenv("VERXIO_K8S_CONNECT_MODE", "hostPort")
+    monkeypatch.setenv("VERXIO_HOSTED_GEMINI_API_KEY", "hosted-gemini")
+    monkeypatch.delenv("VERXIO_GOOGLE_API_KEY", raising=False)
+    mgr = K8sRuntimeManager(namespace="verxio-test")
+    manifest = mgr.render_pod_manifest(
+        _rt(status="stopped"),
+        dashboard_token="tok_test",
+        host_port=19199,
+    )
+    env = {e["name"]: e["value"] for e in manifest["spec"]["containers"][0]["env"]}
+    assert env["GEMINI_API_KEY"] == "hosted-gemini"
+    assert env["GOOGLE_API_KEY"] == "hosted-gemini"
+
+
+def test_wake_runtime_injects_hosted_keys_when_caller_omits_extra_env(monkeypatch):
+    from app.runtime_orch import lifecycle
+    from app.runtime_orch.leases import InMemoryLeaseStore
+
+    captured: dict[str, dict[str, str] | None] = {}
+    monkeypatch.setenv("VERXIO_HOSTED_GEMINI_API_KEY", "hosted-gemini")
+    monkeypatch.delenv("VERXIO_GOOGLE_API_KEY", raising=False)
+    monkeypatch.setattr(lifecycle, "get_lease_store", lambda: InMemoryLeaseStore())
+    monkeypatch.setattr(lifecycle, "restore_hermes_home", lambda *_a, **_k: False)
+    monkeypatch.setattr(lifecycle, "touch_runtime_activity", lambda runtime: runtime)
+
+    class FakeManager:
+        name = "fake"
+
+        async def health(self, runtime):
+            return False, "stopped"
+
+        async def start(self, runtime, extra_env=None, wait_ready=True):
+            captured["extra_env"] = extra_env
+            return runtime
+
+    monkeypatch.setattr(lifecycle, "get_runtime_manager", lambda: FakeManager())
+    asyncio.run(lifecycle.wake_runtime(_rt(status="stopped"), reason="test.roll"))
+    assert captured["extra_env"]["GEMINI_API_KEY"] == "hosted-gemini"
+    assert captured["extra_env"]["GOOGLE_API_KEY"] == "hosted-gemini"
+
+
 def test_k8s_service_includes_webhook_port(monkeypatch):
     monkeypatch.setenv("VERXIO_K8S_CONNECT_MODE", "cluster")
     mgr = K8sRuntimeManager(namespace="verxio-test")

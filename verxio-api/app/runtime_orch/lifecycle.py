@@ -22,6 +22,27 @@ from app.runtime_orch.wake_queue import WakeJob, get_wake_queue
 logger = logging.getLogger(__name__)
 
 
+def _merge_hosted_extra_env(extra_env: dict[str, str] | None) -> dict[str, str]:
+    """Always attach hosted Gemini/Qwen keys on wake.
+
+    Those secrets are not in the runtime ``.env``. UI start/wake pass them;
+    reconcile / ``verxio-up`` / ``deploy-ecs`` used to omit them.
+    """
+    merged: dict[str, str] = {}
+    try:
+        from app.inference import hosted_provider_env
+
+        for key, value in hosted_provider_env().items():
+            if key and value:
+                merged[str(key)] = str(value)
+    except Exception:
+        logger.exception("Failed to load hosted provider env during wake")
+    for key, value in (extra_env or {}).items():
+        if key and value:
+            merged[str(key)] = str(value)
+    return merged
+
+
 def _parse_iso(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -98,7 +119,11 @@ async def wake_runtime(
             logger.info("Restored hermes-home snapshot for runtime %s", current.id)
 
         logger.info("Waking runtime %s reason=%s manager=%s", runtime.id, reason, manager.name)
-        started = await manager.start(current, extra_env=extra_env, wait_ready=wait_ready)
+        started = await manager.start(
+            current,
+            extra_env=_merge_hosted_extra_env(extra_env),
+            wait_ready=wait_ready,
+        )
         return touch_runtime_activity(started)
     finally:
         store.release(lease)
