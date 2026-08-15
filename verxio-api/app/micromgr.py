@@ -1,4 +1,4 @@
-"""Isaac-style human task engine for the AI Micro-Manager workflow agent."""
+"""Isaac-style human task engine for the Micro-Manager workflow agent."""
 
 from __future__ import annotations
 
@@ -174,7 +174,7 @@ def require_micromgr_agent(workspace: Workspace, profile: AgentProfile, agent_id
 
     agent = get_agent(workspace, profile, agent_id)
     if not is_micromgr_agent(agent):
-        raise HTTPException(status_code=400, detail="This agent is not an AI Micro-Manager.")
+        raise HTTPException(status_code=400, detail="This agent is not a Micro-Manager.")
     return agent
 
 
