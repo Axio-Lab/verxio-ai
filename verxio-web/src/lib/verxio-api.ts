@@ -1090,7 +1090,7 @@ export function createWorkflowAgent(input: WorkflowAgentInput & { name: string }
   })
 }
 
-export type WorkflowAgentTemplateId = 'customer-support' | 'sdr'
+export type WorkflowAgentTemplateId = 'customer-support' | 'sdr' | 'micromgr'
 
 export function createWorkflowAgentFromTemplate(input: {
   name?: string
@@ -1157,6 +1157,216 @@ export function exportSdrContacts(agentId: string, channel = ''): Promise<{ file
   return verxioFetch<{ filename: string; vcf: string }>(
     `/api/workflow-agents/${encodeURIComponent(agentId)}/sdr-contacts/export${query}`
   )
+}
+
+export type MicromgrPlatform = 'telegram' | 'whatsapp' | 'slack' | 'discord' | 'email'
+export type MicromgrWorkerRole = 'worker' | 'supervisor' | 'admin'
+
+export interface MicromgrTask {
+  acceptance_rules: string[]
+  created_at: string
+  delivery_config: Record<string, unknown>
+  description: string
+  escalation_timeout_min: number
+  evidence_type: string
+  grace_minutes: number
+  id: string
+  name: string
+  passing_score: number
+  recurrence_type: string
+  report_day_of_month: number | null
+  report_day_of_week: number | null
+  report_frequency: string
+  report_time: string
+  required_items: Array<{ evidenceType?: string; evidence_type?: string; label: string }>
+  resubmission_allowed: boolean
+  sample_evidence_url: string
+  scheduled_times: string[]
+  scoring_enabled: boolean
+  shift_enabled: boolean
+  status: string
+  timezone: string
+  updated_at: string
+  workflow_agent_id: string
+  workspace_id: string
+}
+
+export interface MicromgrWorker {
+  active_flag_count: number
+  connection_id: string
+  created_at: string
+  external_id: string
+  id: string
+  last_flag_reason: string | null
+  last_flagged_at: string | null
+  name: string
+  onboarded_at: string | null
+  platform: string
+  risk_level: string
+  role: string
+  shift_end: string | null
+  shift_start: string | null
+  status: string
+  task_id: string
+  total_flag_count: number
+  updated_at: string
+  workflow_agent_id: string
+  workspace_id: string
+}
+
+export interface MicromgrSubmission {
+  ai_feedback: string
+  ai_findings: string[]
+  ai_score: number | null
+  created_at: string
+  due_at: string
+  id: string
+  image_url: string
+  items: Array<{ id: string; image_url: string; label: string; received_at: string | null }>
+  platform: string
+  raw_message: string
+  status: string
+  submitted_at: string | null
+  task_id: string
+  task_name: string
+  updated_at: string
+  vet_attempts: number
+  worker_id: string
+  worker_name: string
+}
+
+export interface MicromgrFlag {
+  created_at: string
+  details: string
+  id: string
+  reason_label: string
+  reason_type: string
+  resolution_note: string
+  resolved_at: string | null
+  severity: string
+  status: string
+  submission_id: string | null
+  task_id: string
+  worker_id: string
+}
+
+export interface MicromgrReport {
+  avg_score: number | null
+  created_at: string
+  cycle_key: string
+  delivered_at: string | null
+  delivered_to: Record<string, unknown>
+  id: string
+  missed_count: number
+  pass_rate: number | null
+  period_end: string
+  period_start: string
+  summary_markdown: string
+  task_id: string
+  total_submissions: number
+}
+
+function micromgrPath(agentId: string, suffix: string): string {
+  return `/api/workflow-agents/${encodeURIComponent(agentId)}/micromgr/${suffix}`
+}
+
+export function listMicromgrTasks(agentId: string): Promise<{ tasks: MicromgrTask[]; total: number }> {
+  return verxioFetch<{ tasks: MicromgrTask[]; total: number }>(micromgrPath(agentId, 'tasks'))
+}
+
+export function createMicromgrTask(agentId: string, input: Record<string, unknown>): Promise<MicromgrTask> {
+  return verxioFetch<MicromgrTask>(micromgrPath(agentId, 'tasks'), { body: JSON.stringify(input), method: 'POST' })
+}
+
+export function updateMicromgrTask(
+  agentId: string,
+  taskId: string,
+  input: Record<string, unknown>
+): Promise<MicromgrTask> {
+  return verxioFetch<MicromgrTask>(`${micromgrPath(agentId, 'tasks')}/${encodeURIComponent(taskId)}`, {
+    body: JSON.stringify(input),
+    method: 'PUT'
+  })
+}
+
+export function deleteMicromgrTask(agentId: string, taskId: string): Promise<{ ok: boolean }> {
+  return verxioFetch<{ ok: boolean }>(`${micromgrPath(agentId, 'tasks')}/${encodeURIComponent(taskId)}`, {
+    method: 'DELETE'
+  })
+}
+
+export function listMicromgrWorkers(
+  agentId: string,
+  taskId = ''
+): Promise<{ workers: MicromgrWorker[]; total: number }> {
+  const query = taskId ? `?task_id=${encodeURIComponent(taskId)}` : ''
+
+  return verxioFetch<{ workers: MicromgrWorker[]; total: number }>(`${micromgrPath(agentId, 'workers')}${query}`)
+}
+
+export function addMicromgrWorker(
+  agentId: string,
+  input: {
+    connection_id?: string
+    external_id: string
+    name: string
+    platform: MicromgrPlatform
+    role?: MicromgrWorkerRole
+    shift_end?: string
+    shift_start?: string
+    task_id: string
+  }
+): Promise<MicromgrWorker> {
+  return verxioFetch<MicromgrWorker>(micromgrPath(agentId, 'workers'), { body: JSON.stringify(input), method: 'POST' })
+}
+
+export function deleteMicromgrWorker(agentId: string, workerId: string): Promise<{ ok: boolean }> {
+  return verxioFetch<{ ok: boolean }>(`${micromgrPath(agentId, 'workers')}/${encodeURIComponent(workerId)}`, {
+    method: 'DELETE'
+  })
+}
+
+export function listMicromgrLiveboard(
+  agentId: string,
+  taskId = ''
+): Promise<{ counts: Record<string, number>; submissions: MicromgrSubmission[]; total: number }> {
+  const query = taskId ? `?task_id=${encodeURIComponent(taskId)}` : ''
+
+  return verxioFetch<{ counts: Record<string, number>; submissions: MicromgrSubmission[]; total: number }>(
+    `${micromgrPath(agentId, 'liveboard')}${query}`
+  )
+}
+
+export function listMicromgrFlags(agentId: string, status = ''): Promise<{ flags: MicromgrFlag[]; total: number }> {
+  const query = status ? `?status=${encodeURIComponent(status)}` : ''
+
+  return verxioFetch<{ flags: MicromgrFlag[]; total: number }>(`${micromgrPath(agentId, 'flags')}${query}`)
+}
+
+export function updateMicromgrFlag(
+  agentId: string,
+  flagId: string,
+  input: { note?: string; status: 'open' | 'resolved' | 'dismissed' }
+): Promise<MicromgrFlag> {
+  return verxioFetch<MicromgrFlag>(`${micromgrPath(agentId, 'flags')}/${encodeURIComponent(flagId)}`, {
+    body: JSON.stringify(input),
+    method: 'PUT'
+  })
+}
+
+export function listMicromgrReports(
+  agentId: string,
+  taskId = ''
+): Promise<{ reports: MicromgrReport[]; total: number }> {
+  const query = taskId ? `?task_id=${encodeURIComponent(taskId)}` : ''
+
+  return verxioFetch<{ reports: MicromgrReport[]; total: number }>(`${micromgrPath(agentId, 'reports')}${query}`)
+}
+
+export function triggerMicromgrReport(agentId: string, taskId: string): Promise<MicromgrReport> {
+  return verxioFetch<MicromgrReport>(`${micromgrPath(agentId, 'tasks')}/${encodeURIComponent(taskId)}/report`, {
+    method: 'POST'
+  })
 }
 
 export function deleteWorkflowAgentSetupDraft(draftId: string): Promise<{ ok: boolean }> {

@@ -102,6 +102,13 @@ import { notify, notifyError } from '@/store/notifications'
 
 import { AGENTS_ROUTE, SETTINGS_ROUTE } from '../routes'
 
+import {
+  MicromgrFlagsPanel,
+  MicromgrLiveboardPanel,
+  MicromgrReportsPanel,
+  MicromgrTasksPanel,
+  MicromgrWorkersPanel
+} from './micromgr-panels'
 import { SdrContactsPanel } from './sdr-contacts-panel'
 import { SdrFunnelEditor } from './sdr-funnel-editor'
 
@@ -115,6 +122,11 @@ type AgentTab =
   | 'triggers'
   | 'funnel'
   | 'contacts'
+  | 'tasks'
+  | 'workers'
+  | 'liveboard'
+  | 'flags'
+  | 'reports'
   | 'embed'
   | 'runs'
 
@@ -128,6 +140,11 @@ const AGENT_TABS: Array<{ id: AgentTab; label: string }> = [
   { id: 'triggers', label: 'Triggers' },
   { id: 'funnel', label: 'Funnel' },
   { id: 'contacts', label: 'Contacts' },
+  { id: 'tasks', label: 'Tasks' },
+  { id: 'workers', label: 'Workers' },
+  { id: 'liveboard', label: 'Liveboard' },
+  { id: 'flags', label: 'Flags' },
+  { id: 'reports', label: 'Reports' },
   { id: 'embed', label: 'Embed' },
   { id: 'runs', label: 'Runs' }
 ]
@@ -149,6 +166,12 @@ const AGENT_TEMPLATES: Array<{
     id: 'sdr',
     name: 'SDR',
     role: 'Sales development'
+  },
+  {
+    description: 'Create tasks, onboard workers, vet submissions, flag misses, and send compliance reports.',
+    id: 'micromgr',
+    name: 'AI Micro-Manager',
+    role: 'Operations manager'
   }
 ]
 
@@ -185,6 +208,10 @@ function AgentListCopy({ description, fallback, role }: { description?: string; 
 
 function isSdrAgent(agent: WorkflowAgent | null | undefined): boolean {
   return Boolean(agent?.tags?.includes('sdr'))
+}
+
+function isMicromgrAgent(agent: WorkflowAgent | null | undefined): boolean {
+  return Boolean(agent?.tags?.includes('micromgr'))
 }
 
 type TriggerSourceId = 'app_event' | 'embed' | 'manual' | 'messaging' | 'schedule' | 'webhook'
@@ -1159,6 +1186,17 @@ export function AgentsView() {
                   {tab === 'contacts' && isSdrAgent(selected) ? (
                     <SdrContactsPanel agentId={selected.id} agentName={selected.name} />
                   ) : null}
+                  {tab === 'tasks' && isMicromgrAgent(selected) ? <MicromgrTasksPanel agentId={selected.id} /> : null}
+                  {tab === 'workers' && isMicromgrAgent(selected) ? (
+                    <MicromgrWorkersPanel agentId={selected.id} />
+                  ) : null}
+                  {tab === 'liveboard' && isMicromgrAgent(selected) ? (
+                    <MicromgrLiveboardPanel agentId={selected.id} />
+                  ) : null}
+                  {tab === 'flags' && isMicromgrAgent(selected) ? <MicromgrFlagsPanel agentId={selected.id} /> : null}
+                  {tab === 'reports' && isMicromgrAgent(selected) ? (
+                    <MicromgrReportsPanel agentId={selected.id} />
+                  ) : null}
                 </>
               ) : (
                 <AgentSaveRequired tab={tab} />
@@ -1428,7 +1466,8 @@ function CreateAgentTemplateDialog({
         <DialogHeader className="pr-8">
           <DialogTitle>Create agent</DialogTitle>
           <DialogDescription>
-            Choose Customer Support or SDR. We create it with the default instructions, then you can customize.
+            Choose Customer Support, SDR, or AI Micro-Manager. We create it with the default instructions, then you can
+            customize.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-2">
@@ -1505,7 +1544,7 @@ function AgentList({
           <Sparkles className="mx-auto size-6 text-primary" />
           <p className="text-sm font-medium">No agents yet</p>
           <p className="text-xs leading-relaxed text-muted-foreground">
-            Start from Customer Support or SDR, then customize knowledge, channels, and instructions.
+            Start from Customer Support, SDR, or AI Micro-Manager, then customize knowledge, channels, and instructions.
           </p>
           <Button onClick={onCreate} size="sm">
             <Plus className="size-4" />
@@ -1840,6 +1879,20 @@ function AgentEditor({
             return isSdrAgent(selected)
           }
 
+          if (
+            item.id === 'tasks' ||
+            item.id === 'workers' ||
+            item.id === 'liveboard' ||
+            item.id === 'flags' ||
+            item.id === 'reports'
+          ) {
+            return isMicromgrAgent(selected)
+          }
+
+          if (item.id === 'embed') {
+            return !isMicromgrAgent(selected)
+          }
+
           return true
         }).map(item => (
           <button
@@ -2052,6 +2105,27 @@ function AgentSaveRequired({ tab }: { tab: AgentTab }) {
     contacts: {
       description: 'Create the SDR agent first. Inbound WhatsApp and Telegram chats will show up here.',
       title: 'Save before viewing contacts'
+    },
+    tasks: {
+      description: 'Create the AI Micro-Manager first, then define tasks, due times, and passing scores.',
+      title: 'Save before adding tasks'
+    },
+    workers: {
+      description:
+        'Create the AI Micro-Manager first, then add workers by Telegram, WhatsApp, Slack, Discord, or email.',
+      title: 'Save before adding workers'
+    },
+    liveboard: {
+      description: 'Create the AI Micro-Manager first. Due rounds and scores will show up here.',
+      title: 'Save before viewing the liveboard'
+    },
+    flags: {
+      description: 'Create the AI Micro-Manager first. Missed deadlines and failing scores will show up here.',
+      title: 'Save before viewing flags'
+    },
+    reports: {
+      description: 'Create the AI Micro-Manager first, then generate and deliver compliance reports.',
+      title: 'Save before viewing reports'
     },
     runs: {
       description: 'Create the agent first, then test it manually and review its execution history and events here.',
