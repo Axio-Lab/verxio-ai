@@ -383,6 +383,18 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     from app.runtime_orch.workers import start_scale_workers, stop_scale_workers
 
     scale_tasks = start_scale_workers()
+
+    async def _reconcile_missing() -> None:
+        try:
+            from app.runtime_orch.lifecycle import reconcile_missing_runtimes
+
+            result = await reconcile_missing_runtimes(wake=True, reason="api.startup")
+            if result.get("missing"):
+                logging.getLogger(__name__).info("Startup runtime reconcile %s", result)
+        except Exception:
+            logging.getLogger(__name__).exception("Startup runtime reconcile failed")
+
+    asyncio.create_task(_reconcile_missing())
     try:
         yield
     finally:
@@ -530,9 +542,11 @@ async def get_slack_manifest(
 async def get_runtime(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
     runtime = get_runtime_for_user(user)
-    connected, detail = await runtime_health(runtime)
+    connected, detail = await get_runtime_manager().health(runtime)
     if connected:
         runtime = touch_runtime_activity(runtime)
+    elif runtime.status in {"running", "starting"}:
+        _schedule_runtime_ensure(user)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
 
 @app.post("/api/runtime/start", response_model=RuntimeControlResponse)

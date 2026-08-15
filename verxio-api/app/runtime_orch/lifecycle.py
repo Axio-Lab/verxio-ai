@@ -150,6 +150,56 @@ async def reap_idle_runtimes(*, limit: int = 50) -> list[str]:
     return drained
 
 
+async def reconcile_missing_runtimes(
+    *,
+    wake: bool = True,
+    inline: bool = False,
+    reason: str = "reconcile",
+) -> dict[str, list[str]]:
+    """Mark warm rows whose compute is gone as stopped, then wake them.
+
+    Image rolls delete pods/containers on purpose. The DB still says
+    ``running``, and a stale health cache used to skip recreate. Only the
+    previously warm set is touched — idle registered users stay cold.
+    """
+    from app.runtime_manager import invalidate_runtime_caches
+
+    manager = get_runtime_manager()
+    rows = db.fetch_all(
+        """
+        SELECT * FROM runtime_instances
+        WHERE status IN ('running', 'starting')
+        """
+    )
+    missing: list[str] = []
+    woken: list[str] = []
+    for row in rows:
+        runtime = runtime_from_row(row)
+        ok, _ = await manager.health(runtime)
+        if ok:
+            continue
+        invalidate_runtime_caches(runtime)
+        stopped = save_runtime(runtime, status=RuntimeStatus.STOPPED, last_error=None)
+        missing.append(runtime.id)
+        if wake:
+            if inline:
+                await wake_runtime(stopped, wait_ready=False, reason=reason)
+                woken.append(runtime.id)
+            else:
+                queued = await enqueue_wake(stopped, reason=reason)
+                if queued:
+                    woken.append(runtime.id)
+    if missing:
+        logger.info(
+            "Reconciled %d missing runtime(s) wake=%s reason=%s ids=%s",
+            len(missing),
+            wake,
+            reason,
+            ",".join(missing),
+        )
+    return {"missing": missing, "woken": woken}
+
+
 async def enqueue_wake(runtime: RuntimeInstance, *, reason: str) -> bool:
     queue = get_wake_queue()
     return await queue.enqueue(

@@ -63,8 +63,19 @@ class LocalDockerRuntimeManager:
         return runtime_api_server_base_url(runtime, ensure_network=True)
 
     async def health(self, runtime: RuntimeInstance) -> tuple[bool, str]:
-        from app.runtime_manager import runtime_health
+        from app.runtime_manager import (
+            _container_name,
+            _run_docker_async,
+            invalidate_runtime_caches,
+            runtime_health,
+        )
 
+        inspect = await _run_docker_async(
+            ["inspect", "-f", "{{.State.Running}}", _container_name(runtime)]
+        )
+        if inspect.returncode != 0 or inspect.stdout.strip() != "true":
+            invalidate_runtime_caches(runtime)
+            return False, "Runtime container is not running."
         return await runtime_health(runtime)
 
     def supports_publish_ports(self) -> bool:

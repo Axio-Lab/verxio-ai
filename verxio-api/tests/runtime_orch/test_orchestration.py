@@ -191,6 +191,65 @@ def test_k8s_health_uses_runtime_health(monkeypatch):
     assert calls == ["rt_test"]
 
 
+def test_k8s_health_false_when_pod_missing(monkeypatch):
+    monkeypatch.setenv("VERXIO_K8S_ENABLED", "true")
+    mgr = K8sRuntimeManager(namespace="verxio-test")
+    mgr.enabled = True
+    monkeypatch.setattr(mgr, "_pod_is_live", lambda runtime: False)
+    invalidated: list[str] = []
+    monkeypatch.setattr(
+        "app.runtime_manager.invalidate_runtime_caches",
+        lambda runtime: invalidated.append(runtime.id),
+    )
+
+    async def boom(_runtime):
+        raise AssertionError("runtime_health must not run when the pod is gone")
+
+    monkeypatch.setattr("app.runtime_manager.runtime_health", boom)
+    ok, detail = asyncio.run(mgr.health(_rt(status="running")))
+    assert ok is False
+    assert "not running" in detail
+    assert invalidated == ["rt_test"]
+
+
+def test_reconcile_missing_runtimes_marks_stopped_and_wakes(monkeypatch):
+    from app.runtime_orch import lifecycle
+
+    missing = _rt(status="running", id="rt_missing")
+    live = _rt(status="running", id="rt_live")
+    saved: list[tuple[str, str]] = []
+    woken: list[str] = []
+
+    class FakeManager:
+        async def health(self, runtime):
+            return runtime.id == "rt_live", "ok"
+
+    monkeypatch.setattr(lifecycle, "get_runtime_manager", lambda: FakeManager())
+    monkeypatch.setattr(
+        lifecycle.db,
+        "fetch_all",
+        lambda *_a, **_k: [missing.model_dump(), live.model_dump()],
+    )
+    monkeypatch.setattr(lifecycle, "runtime_from_row", lambda row: _rt(**row) if isinstance(row, dict) else row)
+    monkeypatch.setattr(
+        lifecycle,
+        "save_runtime",
+        lambda runtime, **fields: saved.append((runtime.id, str(fields.get("status")))) or runtime,
+    )
+    monkeypatch.setattr("app.runtime_manager.invalidate_runtime_caches", lambda runtime: None)
+
+    async def fake_enqueue(runtime, *, reason):
+        woken.append(f"{runtime.id}:{reason}")
+        return True
+
+    monkeypatch.setattr(lifecycle, "enqueue_wake", fake_enqueue)
+    result = asyncio.run(lifecycle.reconcile_missing_runtimes(wake=True, reason="test.wipe"))
+    assert result["missing"] == ["rt_missing"]
+    assert result["woken"] == ["rt_missing"]
+    assert saved == [("rt_missing", "stopped")]
+    assert woken == ["rt_missing:test.wipe"]
+
+
 def test_k8s_webhook_address_uses_service_dns_in_cluster_mode(monkeypatch):
     monkeypatch.setenv("VERXIO_K8S_CONNECT_MODE", "cluster")
     monkeypatch.setenv("VERXIO_K8S_NAMESPACE", "verxio-test")

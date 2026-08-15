@@ -199,6 +199,15 @@ else
   else
     echo "    none found"
   fi
+  echo "==> Reconciling warm runtimes (mark missing stopped, wake channel-active)"
+  docker exec -i verxio-ai-verxio-api-1 python3 - <<'PY'
+import asyncio
+from app.runtime_orch.factory import reset_runtime_manager_for_tests
+from app.runtime_orch.lifecycle import reconcile_missing_runtimes
+
+reset_runtime_manager_for_tests()
+print(asyncio.run(reconcile_missing_runtimes(wake=True, inline=True, reason="deploy.wipe")))
+PY
 fi
 
 if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet caddy 2>/dev/null; then
@@ -212,5 +221,5 @@ docker images --format 'table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedSinc
 
 echo
 echo "Done. Hermes image: ${HERMES_IMAGE} @ hermes-agent ${HERMES_SHA}"
-echo "Open the app once so Verxio starts fresh Hermes runtimes from the new image."
+echo "Warm runtimes are reconciled and woken automatically after an image change."
 echo "Quick check: curl -sS -m 5 -w ' time=%{time_total}\\n' http://127.0.0.1:8787/api/health"

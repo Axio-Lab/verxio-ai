@@ -31,17 +31,18 @@ done
 curl -fsS -m 5 http://127.0.0.1:8787/api/health
 echo
 
-echo "==> Waking the Kubernetes runtime"
+echo "==> Reconciling missing runtimes, then waking the latest"
 docker exec -i verxio-ai-verxio-api-1 python3 - <<'PY'
 import asyncio
 from app import db
 from app.control_plane import runtime_from_row
 from app.runtime_orch.factory import get_runtime_manager, reset_runtime_manager_for_tests
-from app.runtime_orch.lifecycle import wake_runtime
+from app.runtime_orch.lifecycle import reconcile_missing_runtimes, wake_runtime
 
 reset_runtime_manager_for_tests()
 manager = get_runtime_manager()
 print("manager", manager.name)
+print("reconcile", asyncio.run(reconcile_missing_runtimes(wake=True, inline=True, reason="verxio-up")))
 row = db.fetch_one("SELECT * FROM runtime_instances ORDER BY last_started_at DESC LIMIT 1")
 if not row:
     raise SystemExit("no runtime_instances row — sign in once from the web UI, then re-run")

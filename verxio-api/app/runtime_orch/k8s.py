@@ -540,9 +540,34 @@ class K8sRuntimeManager:
                     env_map[str(key)] = str(value)
         return env_map
 
-    async def health(self, runtime: RuntimeInstance) -> tuple[bool, str]:
-        from app.runtime_manager import runtime_health
+    def _pod_is_live(self, runtime: RuntimeInstance) -> bool:
+        """True when the pod exists and is not already terminating."""
+        from kubernetes.client.rest import ApiException
 
+        try:
+            pod = self._client().read_namespaced_pod(
+                name=self.pod_name(runtime),
+                namespace=self.namespace,
+            )
+        except ApiException as exc:
+            if exc.status == 404:
+                return False
+            logger.debug("K8s pod probe failed for %s", runtime.id, exc_info=True)
+            return False
+        except Exception:
+            logger.debug("K8s pod probe failed for %s", runtime.id, exc_info=True)
+            return False
+        if getattr(getattr(pod, "metadata", None), "deletion_timestamp", None):
+            return False
+        phase = str(getattr(getattr(pod, "status", None), "phase", "") or "")
+        return phase in {"", "Pending", "Running"}
+
+    async def health(self, runtime: RuntimeInstance) -> tuple[bool, str]:
+        from app.runtime_manager import invalidate_runtime_caches, runtime_health
+
+        if self.enabled and not await asyncio.to_thread(self._pod_is_live, runtime):
+            invalidate_runtime_caches(runtime)
+            return False, "K8s pod is not running."
         return await runtime_health(runtime)
 
     def supports_publish_ports(self) -> bool:
