@@ -2540,6 +2540,28 @@ async def run_agent(
                 event_type="sdr_funnel",
                 message="SDR funnel handled this message.",
             )
+    if _agent_has_tag(agent, "micromgr"):
+        from app.micromgr import maybe_handle_micromgr_message
+
+        micromgr_reply = await maybe_handle_micromgr_message(
+            workspace,
+            profile,
+            agent,
+            message=message,
+            conversation_id=conversation_id,
+            trigger_type=trigger_type,
+            run_input=payload.input,
+        )
+        if micromgr_reply is not None:
+            return await _complete_run_output(
+                workspace,
+                profile,
+                run,
+                micromgr_reply,
+                payload.input,
+                event_type="micromgr",
+                message="Micro-manager handled this worker message.",
+            )
     knowledge_context = retrieve_context(workspace, agent.knowledge, payload.input)
     if knowledge_context:
         _record_run_event(
@@ -2560,6 +2582,10 @@ async def run_agent(
         )
     custom_tools = _selected_custom_tools(workspace, agent)
     instructions = _build_instructions(agent, knowledge_context, custom_tools)
+    if _agent_has_tag(agent, "micromgr"):
+        from app.micromgr import manager_context_block
+
+        instructions = f"{instructions.rstrip()}\n\n{manager_context_block(agent.id)}\n"
     try:
         output = await run_agent_via_dashboard(
             workspace,
@@ -2974,8 +3000,10 @@ async def tick_due_schedule_triggers(
             continue
         runs.append(await _run_claimed_schedule_trigger(row, claim_token))
     from app.sdr_funnel import tick_due_sdr_follow_ups
+    from app.micromgr import tick_micromgr
 
     await tick_due_sdr_follow_ups()
+    await tick_micromgr()
     return WorkflowTriggerRunsResponse(runs=runs)
 
 
