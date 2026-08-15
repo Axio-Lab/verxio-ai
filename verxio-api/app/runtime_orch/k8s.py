@@ -89,6 +89,17 @@ class K8sRuntimeManager:
         dashboard_token: str,
         host_port: int | None = None,
     ) -> dict[str, Any]:
+        from app.runtime_manager import _runtime_container_env
+
+        reserved = {
+            "HERMES_DASHBOARD",
+            "HERMES_DASHBOARD_HOST",
+            "HERMES_DASHBOARD_INSECURE",
+            "HERMES_DASHBOARD_PORT",
+            "HERMES_DASHBOARD_SESSION_TOKEN",
+            "VERXIO_HOSTED",
+            "VERXIO_RUNTIME_TOKEN",
+        }
         env = [
             {"name": "HERMES_DASHBOARD", "value": "1"},
             {"name": "HERMES_DASHBOARD_HOST", "value": "0.0.0.0"},
@@ -101,18 +112,14 @@ class K8sRuntimeManager:
             {"name": "HERMES_MEDIA_ALLOW_DIRS", "value": "/workspace"},
             {"name": "VERXIO_HOSTED", "value": "1"},
         ]
-        for key, value in sorted((extra_env or {}).items()):
-            if key in {
-                "HERMES_DASHBOARD",
-                "HERMES_DASHBOARD_HOST",
-                "HERMES_DASHBOARD_PORT",
-                "HERMES_DASHBOARD_INSECURE",
-                "HERMES_DASHBOARD_SESSION_TOKEN",
-                "VERXIO_RUNTIME_TOKEN",
-                "VERXIO_HOSTED",
-            }:
+        container_env = _runtime_container_env(runtime, extra_env)
+        composio_api_key = os.getenv("COMPOSIO_API_KEY", "").strip()
+        if composio_api_key:
+            container_env["COMPOSIO_API_KEY"] = composio_api_key
+        for key, value in sorted(container_env.items()):
+            if key in reserved or not value:
                 continue
-            env.append({"name": key, "value": value})
+            env.append({"name": key, "value": str(value)})
 
         name = self.pod_name(runtime)
         dashboard_port: dict[str, Any] = {"containerPort": 9119, "name": "dashboard"}
@@ -507,6 +514,31 @@ class K8sRuntimeManager:
 
     async def api_server_address(self, runtime: RuntimeInstance) -> str | None:
         return self._api_server_url(runtime)
+
+    def read_pod_env(self, runtime: RuntimeInstance) -> dict[str, str] | None:
+        """Return the live pod's declared env. None if the pod cannot be read."""
+        from kubernetes.client.rest import ApiException
+
+        try:
+            pod = self._client().read_namespaced_pod(
+                name=self.pod_name(runtime),
+                namespace=self.namespace,
+            )
+        except ApiException:
+            return None
+        except Exception:
+            logger.debug("K8s pod env inspect failed for %s", runtime.id, exc_info=True)
+            return None
+
+        env_map: dict[str, str] = {}
+        containers = getattr(getattr(pod, "spec", None), "containers", None) or []
+        for container in containers:
+            for item in getattr(container, "env", None) or []:
+                key = getattr(item, "name", None)
+                value = getattr(item, "value", None)
+                if key and value is not None:
+                    env_map[str(key)] = str(value)
+        return env_map
 
     async def health(self, runtime: RuntimeInstance) -> tuple[bool, str]:
         from app.runtime_manager import runtime_health

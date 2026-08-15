@@ -70,6 +70,21 @@ from app.knowledge_bases import (
     list_documents as list_knowledge_documents,
     list_knowledge_bases,
 )
+from app.micromgr import (
+    add_worker as add_micromgr_worker,
+    create_task as create_micromgr_task,
+    delete_task as delete_micromgr_task,
+    delete_worker as delete_micromgr_worker,
+    list_flags as list_micromgr_flags,
+    list_liveboard as list_micromgr_liveboard,
+    list_reports as list_micromgr_reports,
+    list_tasks as list_micromgr_tasks,
+    list_workers as list_micromgr_workers,
+    trigger_report as trigger_micromgr_report,
+    update_flag as update_micromgr_flag,
+    update_task as update_micromgr_task,
+    update_worker as update_micromgr_worker,
+)
 from app.messaging_api_server import (
     get_api_server_info as get_messaging_api_server,
     proxy_openai_path,
@@ -157,6 +172,20 @@ from app.models import (
     WorkflowAgentPublicRunResponse,
     SdrContactsExportResponse,
     SdrContactsResponse,
+    MicromgrFlagRecord,
+    MicromgrFlagUpdateRequest,
+    MicromgrFlagsResponse,
+    MicromgrLiveboardResponse,
+    MicromgrReportRecord,
+    MicromgrReportsResponse,
+    MicromgrTaskCreateRequest,
+    MicromgrTaskRecord,
+    MicromgrTaskUpdateRequest,
+    MicromgrTasksResponse,
+    MicromgrWorkerCreateRequest,
+    MicromgrWorkerRecord,
+    MicromgrWorkerUpdateRequest,
+    MicromgrWorkersResponse,
     WorkflowDeliveriesResponse,
     WorkflowDeliveryCreateRequest,
     WorkflowDeliveryRecord,
@@ -1027,6 +1056,111 @@ async def export_workflow_sdr_contacts_route(
     user = require_user(request)
     workspace, profile, _runtime_instance = get_context_for_user(user)
     return export_workflow_sdr_contacts(workspace, profile, agent_id, channel)
+
+@app.get("/api/workflow-agents/{agent_id}/micromgr/tasks", response_model=MicromgrTasksResponse)
+async def list_micromgr_tasks_route(agent_id: str, request: Request) -> MicromgrTasksResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return list_micromgr_tasks(workspace, profile, agent_id)
+
+@app.post("/api/workflow-agents/{agent_id}/micromgr/tasks", response_model=MicromgrTaskRecord)
+async def create_micromgr_task_route(
+    agent_id: str,
+    payload: MicromgrTaskCreateRequest,
+    request: Request,
+) -> MicromgrTaskRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return create_micromgr_task(workspace, profile, agent_id, payload)
+
+@app.put("/api/workflow-agents/{agent_id}/micromgr/tasks/{task_id}", response_model=MicromgrTaskRecord)
+async def update_micromgr_task_route(
+    agent_id: str,
+    task_id: str,
+    payload: MicromgrTaskUpdateRequest,
+    request: Request,
+) -> MicromgrTaskRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return update_micromgr_task(workspace, profile, agent_id, task_id, payload)
+
+@app.delete("/api/workflow-agents/{agent_id}/micromgr/tasks/{task_id}")
+async def delete_micromgr_task_route(agent_id: str, task_id: str, request: Request) -> dict[str, bool]:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return delete_micromgr_task(workspace, profile, agent_id, task_id)
+
+@app.get("/api/workflow-agents/{agent_id}/micromgr/workers", response_model=MicromgrWorkersResponse)
+async def list_micromgr_workers_route(agent_id: str, request: Request, task_id: str = "") -> MicromgrWorkersResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return list_micromgr_workers(workspace, profile, agent_id, task_id)
+
+@app.post("/api/workflow-agents/{agent_id}/micromgr/workers", response_model=MicromgrWorkerRecord)
+async def add_micromgr_worker_route(
+    agent_id: str,
+    payload: MicromgrWorkerCreateRequest,
+    request: Request,
+) -> MicromgrWorkerRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return await add_micromgr_worker(workspace, profile, agent_id, payload)
+
+@app.put("/api/workflow-agents/{agent_id}/micromgr/workers/{worker_id}", response_model=MicromgrWorkerRecord)
+async def update_micromgr_worker_route(
+    agent_id: str,
+    worker_id: str,
+    payload: MicromgrWorkerUpdateRequest,
+    request: Request,
+) -> MicromgrWorkerRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return update_micromgr_worker(workspace, profile, agent_id, worker_id, payload)
+
+@app.delete("/api/workflow-agents/{agent_id}/micromgr/workers/{worker_id}")
+async def delete_micromgr_worker_route(agent_id: str, worker_id: str, request: Request) -> dict[str, bool]:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return delete_micromgr_worker(workspace, profile, agent_id, worker_id)
+
+@app.get("/api/workflow-agents/{agent_id}/micromgr/liveboard", response_model=MicromgrLiveboardResponse)
+async def list_micromgr_liveboard_route(
+    agent_id: str,
+    request: Request,
+    task_id: str = "",
+) -> MicromgrLiveboardResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return list_micromgr_liveboard(workspace, profile, agent_id, task_id)
+
+@app.get("/api/workflow-agents/{agent_id}/micromgr/flags", response_model=MicromgrFlagsResponse)
+async def list_micromgr_flags_route(agent_id: str, request: Request, status: str = "") -> MicromgrFlagsResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return list_micromgr_flags(workspace, profile, agent_id, status)
+
+@app.put("/api/workflow-agents/{agent_id}/micromgr/flags/{flag_id}", response_model=MicromgrFlagRecord)
+async def update_micromgr_flag_route(
+    agent_id: str,
+    flag_id: str,
+    payload: MicromgrFlagUpdateRequest,
+    request: Request,
+) -> MicromgrFlagRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return update_micromgr_flag(workspace, profile, agent_id, flag_id, status=payload.status, note=payload.note)
+
+@app.get("/api/workflow-agents/{agent_id}/micromgr/reports", response_model=MicromgrReportsResponse)
+async def list_micromgr_reports_route(agent_id: str, request: Request, task_id: str = "") -> MicromgrReportsResponse:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return list_micromgr_reports(workspace, profile, agent_id, task_id)
+
+@app.post("/api/workflow-agents/{agent_id}/micromgr/tasks/{task_id}/report", response_model=MicromgrReportRecord)
+async def trigger_micromgr_report_route(agent_id: str, task_id: str, request: Request) -> MicromgrReportRecord:
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return await trigger_micromgr_report(workspace, profile, agent_id, task_id)
 
 @app.get("/api/workflow-agents/{agent_id}/triggers", response_model=WorkflowTriggersResponse)
 async def list_workflow_triggers_route(agent_id: str, request: Request) -> WorkflowTriggersResponse:

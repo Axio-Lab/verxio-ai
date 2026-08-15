@@ -313,3 +313,34 @@ def test_sync_container_workspace_artifacts_mirrors_unreachable_host_path(monkey
     assert calls[0][:1] == ["inspect"]
     assert calls[-1][0] == "cp"
     assert calls[-1][1].endswith(":/workspace/artifacts/.")
+
+
+def test_k8s_runtime_env_map_skips_docker_inspect(monkeypatch):
+    runtime_manager._CONTAINER_ENV_CACHE.clear()
+    runtime = _runtime().model_copy(update={"manager": "k8s", "container_name": "verxio-ws-1-agent-1"})
+
+    class _Mgr:
+        def read_pod_env(self, _runtime):
+            return {"COMPOSIO_API_KEY": "k8s-key", "VERXIO_API_URL": "http://verxio-api:8787"}
+
+    monkeypatch.setattr("app.runtime_orch.factory.get_runtime_manager", lambda: _Mgr())
+
+    def boom(_args):
+        raise AssertionError("docker inspect must not run for k8s runtimes")
+
+    monkeypatch.setattr(runtime_manager, "_run_docker", boom)
+
+    assert runtime_manager.runtime_container_env_matches(runtime, "COMPOSIO_API_KEY", "k8s-key")
+    assert runtime_manager._runtime_container_env_map(runtime)["VERXIO_API_URL"] == "http://verxio-api:8787"
+
+
+def test_k8s_runtime_env_matches_avoids_restart_when_pod_unreadable(monkeypatch):
+    runtime_manager._CONTAINER_ENV_CACHE.clear()
+    runtime = _runtime().model_copy(update={"manager": "k8s"})
+
+    class _Mgr:
+        def read_pod_env(self, _runtime):
+            return None
+
+    monkeypatch.setattr("app.runtime_orch.factory.get_runtime_manager", lambda: _Mgr())
+    assert runtime_manager.runtime_container_env_matches(runtime, "COMPOSIO_API_KEY", "k8s-key") is True

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import Any
 
 import httpx
 from fastapi import HTTPException
@@ -124,6 +125,7 @@ async def run_agent_via_dashboard(
     user_input: str,
     *,
     instructions: str | None = None,
+    images: list[str] | None = None,
 ) -> str:
     runtime = ensure_runtime_instance(workspace, profile)
     runtime = await start_runtime(runtime)
@@ -132,9 +134,13 @@ async def run_agent_via_dashboard(
         raise HTTPException(status_code=503, detail="Runtime dashboard is not ready.")
 
     token = _runtime_dashboard_token(runtime.id)
-    body: dict[str, str] = {"input": user_input}
+    body: dict[str, Any] = {"input": user_input}
     if instructions:
         body["instructions"] = instructions
+    image_refs = [str(item).strip() for item in (images or []) if str(item).strip()]
+    if image_refs:
+        body["images"] = image_refs
+        body["task"] = "vision"
 
     timeout = _dashboard_timeout_seconds()
     target = f"{runtime.dashboard_url.rstrip('/')}/api/agent/oneshot"

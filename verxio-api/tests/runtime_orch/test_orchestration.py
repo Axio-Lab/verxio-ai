@@ -111,6 +111,8 @@ def test_factory_builds_backends():
 def test_k8s_manifest_render(monkeypatch):
     monkeypatch.setenv("VERXIO_K8S_HOST_PATH_ROOT", "/verxio-runtimes")
     monkeypatch.setenv("VERXIO_K8S_CONNECT_MODE", "hostPort")
+    monkeypatch.setenv("VERXIO_API_INTERNAL_URL", "http://verxio-api:8787")
+    monkeypatch.setenv("VERXIO_PUBLIC_WEB_URL", "http://127.0.0.1:8080")
     mgr = K8sRuntimeManager(namespace="verxio-test")
     manifest = mgr.render_pod_manifest(
         _rt(status="stopped"),
@@ -137,6 +139,12 @@ def test_k8s_manifest_render(monkeypatch):
     assert api_server["containerPort"] == 8642
     assert api_server["hostPort"] == mgr._api_server_host_port_for(_rt(status="stopped"))
     assert env["VERXIO_HOSTED"] == "1"
+    assert env["VERXIO_API_URL"] == "http://verxio-api:8787"
+    assert env["VERXIO_WORKSPACE_ID"] == "ws_1"
+    assert env["VERXIO_AGENT_ID"] == "agent_1"
+    assert env["VERXIO_PUBLIC_WEB_URL"] == "http://127.0.0.1:8080"
+    assert env["WHATSAPP_ENABLED"] == "false"
+    assert env["WHATSAPP_BROWSER_NAME"] == "Verxio Agent"
     assert manifest["spec"]["restartPolicy"] == "Always"
     probe = manifest["spec"]["containers"][0]["readinessProbe"]["httpGet"]
     assert probe["path"] == "/api/healthz"

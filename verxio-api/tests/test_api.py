@@ -1129,19 +1129,13 @@ def test_telegram_trigger_delivers_agent_report_back_through_same_gateway(client
     )
 
     assert response.status_code == 200
-    assert sent == [
-        {
-            "platform": "telegram",
-            "connection_id": "conn_reports",
-            "destination": "-100123456:77",
-            "message": "Report complete\n\n## Daily report\n\nAll assigned work is on track.",
-        }
-    ]
+    assert sent == []
     events = client.get(
         f"/api/workflow-agents/{agent['id']}/runs/{response.json()['runs'][0]['id']}/events",
         headers=headers,
     )
-    assert any(event["event_type"] == "delivery_sent" for event in events.json()["events"])
+    saved = next(event for event in events.json()["events"] if event["event_type"] == "delivery_saved")
+    assert saved["metadata"]["skipped"] == "gateway_owns_reply"
 
 
 def test_workflow_agent_embed_config_asset_and_public_run(client, monkeypatch):

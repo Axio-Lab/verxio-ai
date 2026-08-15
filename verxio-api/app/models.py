@@ -478,7 +478,7 @@ class WorkflowAgentCreateRequest(BaseModel):
     funnel_rules: dict[str, Any] = Field(default_factory=dict)
 
 
-WorkflowAgentTemplateId = Literal["customer-support", "sdr"]
+WorkflowAgentTemplateId = Literal["customer-support", "sdr", "micromgr"]
 
 
 class WorkflowAgentFromTemplateRequest(BaseModel):
@@ -923,6 +923,225 @@ class SdrContactsResponse(BaseModel):
 class SdrContactsExportResponse(BaseModel):
     filename: str
     vcf: str
+
+
+MicromgrPlatform = Literal["telegram", "whatsapp", "slack", "discord", "email"]
+MicromgrWorkerRole = Literal["worker", "supervisor", "admin"]
+MicromgrTaskStatus = Literal["ACTIVE", "PAUSED", "ARCHIVED"]
+MicromgrEvidenceType = Literal["PHOTO", "VIDEO", "TEXT", "DOCUMENT", "LOCATION", "AUDIO", "ANY"]
+MicromgrRecurrence = Literal["ONCE", "DAILY", "WEEKLY", "MONTHLY", "CUSTOM"]
+MicromgrReportFrequency = Literal["DAILY", "WEEKLY", "MONTHLY"]
+
+
+class MicromgrTaskRecord(BaseModel):
+    id: str
+    workspace_id: str
+    workflow_agent_id: str
+    name: str
+    description: str = ""
+    evidence_type: str = "PHOTO"
+    recurrence_type: str = "DAILY"
+    recurrence_interval: int | None = None
+    scheduled_times: list[str] = Field(default_factory=list)
+    timezone: str = "UTC"
+    acceptance_rules: list[str] = Field(default_factory=list)
+    sample_evidence_url: str = ""
+    required_items: list[Any] = Field(default_factory=list)
+    scoring_enabled: bool = True
+    passing_score: int = 70
+    grace_minutes: int = 15
+    resubmission_allowed: bool = True
+    report_time: str = "18:00"
+    report_frequency: str = "DAILY"
+    report_day_of_week: int | None = None
+    report_day_of_month: int | None = None
+    shift_enabled: bool = False
+    escalation_timeout_min: int = 60
+    delivery_config: dict[str, Any] = Field(default_factory=dict)
+    status: str = "ACTIVE"
+    created_at: str
+    updated_at: str
+
+
+class MicromgrTaskCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=180)
+    description: str = Field(default="", max_length=2000)
+    evidence_type: MicromgrEvidenceType = "PHOTO"
+    recurrence_type: MicromgrRecurrence = "DAILY"
+    recurrence_interval: int | None = None
+    scheduled_times: list[str] = Field(default_factory=list)
+    timezone: str = Field(default="UTC", max_length=80)
+    acceptance_rules: list[str] = Field(default_factory=list)
+    sample_evidence_url: str = Field(default="", max_length=2000)
+    required_items: list[Any] = Field(default_factory=list)
+    scoring_enabled: bool = True
+    passing_score: int = Field(default=70, ge=0, le=100)
+    grace_minutes: int = Field(default=15, ge=0, le=1440)
+    resubmission_allowed: bool = True
+    report_time: str = Field(default="18:00", max_length=8)
+    report_frequency: MicromgrReportFrequency = "DAILY"
+    report_day_of_week: int | None = Field(default=None, ge=1, le=7)
+    report_day_of_month: int | None = Field(default=None, ge=1, le=31)
+    shift_enabled: bool = False
+    escalation_timeout_min: int = Field(default=60, ge=1, le=10080)
+    delivery_config: dict[str, Any] = Field(default_factory=dict)
+
+
+class MicromgrTaskUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=180)
+    description: str | None = Field(default=None, max_length=2000)
+    evidence_type: MicromgrEvidenceType | None = None
+    recurrence_type: MicromgrRecurrence | None = None
+    recurrence_interval: int | None = None
+    scheduled_times: list[str] | None = None
+    timezone: str | None = Field(default=None, max_length=80)
+    acceptance_rules: list[str] | None = None
+    sample_evidence_url: str | None = Field(default=None, max_length=2000)
+    required_items: list[Any] | None = None
+    scoring_enabled: bool | None = None
+    passing_score: int | None = Field(default=None, ge=0, le=100)
+    grace_minutes: int | None = Field(default=None, ge=0, le=1440)
+    resubmission_allowed: bool | None = None
+    report_time: str | None = Field(default=None, max_length=8)
+    report_frequency: MicromgrReportFrequency | None = None
+    report_day_of_week: int | None = Field(default=None, ge=1, le=7)
+    report_day_of_month: int | None = Field(default=None, ge=1, le=31)
+    shift_enabled: bool | None = None
+    escalation_timeout_min: int | None = Field(default=None, ge=1, le=10080)
+    delivery_config: dict[str, Any] | None = None
+    status: MicromgrTaskStatus | None = None
+
+
+class MicromgrTasksResponse(BaseModel):
+    tasks: list[MicromgrTaskRecord]
+    total: int = 0
+
+
+class MicromgrWorkerRecord(BaseModel):
+    id: str
+    workspace_id: str
+    workflow_agent_id: str
+    task_id: str
+    name: str
+    platform: str
+    external_id: str
+    connection_id: str = ""
+    role: str = "worker"
+    shift_start: str | None = None
+    shift_end: str | None = None
+    status: str = "onboarding"
+    active_flag_count: int = 0
+    total_flag_count: int = 0
+    last_flagged_at: str | None = None
+    last_flag_reason: str | None = None
+    risk_level: str = "healthy"
+    onboarded_at: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class MicromgrWorkerCreateRequest(BaseModel):
+    task_id: str = Field(min_length=1, max_length=80)
+    name: str = Field(min_length=1, max_length=180)
+    platform: MicromgrPlatform
+    external_id: str = Field(min_length=1, max_length=320)
+    connection_id: str = Field(default="", max_length=180)
+    role: MicromgrWorkerRole = "worker"
+    shift_start: str | None = Field(default=None, max_length=8)
+    shift_end: str | None = Field(default=None, max_length=8)
+
+
+class MicromgrWorkerUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=180)
+    role: MicromgrWorkerRole | None = None
+    shift_start: str | None = Field(default=None, max_length=8)
+    shift_end: str | None = Field(default=None, max_length=8)
+    status: str | None = Field(default=None, max_length=40)
+    connection_id: str | None = Field(default=None, max_length=180)
+
+
+class MicromgrWorkersResponse(BaseModel):
+    workers: list[MicromgrWorkerRecord]
+    total: int = 0
+
+
+class MicromgrSubmissionRecord(BaseModel):
+    id: str
+    task_id: str
+    worker_id: str
+    due_at: str
+    submitted_at: str | None = None
+    image_url: str = ""
+    raw_message: str = ""
+    ai_score: int | None = None
+    ai_findings: list[str] = Field(default_factory=list)
+    ai_feedback: str = ""
+    status: str
+    vet_attempts: int = 0
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    worker_name: str = ""
+    task_name: str = ""
+    platform: str = ""
+    created_at: str
+    updated_at: str
+
+
+class MicromgrLiveboardResponse(BaseModel):
+    submissions: list[MicromgrSubmissionRecord]
+    counts: dict[str, int] = Field(default_factory=dict)
+    total: int = 0
+
+
+class MicromgrFlagRecord(BaseModel):
+    id: str
+    task_id: str
+    worker_id: str
+    submission_id: str | None = None
+    reason_type: str
+    reason_label: str = ""
+    details: str = ""
+    severity: str = "medium"
+    status: str = "open"
+    supervisor_id: str | None = None
+    supervisor_notified_at: str | None = None
+    admin_notified_at: str | None = None
+    resolved_at: str | None = None
+    resolved_by: str = ""
+    resolution_note: str = ""
+    created_at: str
+    updated_at: str
+
+
+class MicromgrFlagUpdateRequest(BaseModel):
+    status: Literal["open", "resolved", "dismissed"]
+    note: str = Field(default="", max_length=2000)
+
+
+class MicromgrFlagsResponse(BaseModel):
+    flags: list[MicromgrFlagRecord]
+    total: int = 0
+
+
+class MicromgrReportRecord(BaseModel):
+    id: str
+    task_id: str
+    period_start: str
+    period_end: str
+    cycle_key: str = ""
+    summary_markdown: str = ""
+    total_submissions: int = 0
+    missed_count: int = 0
+    avg_score: float | None = None
+    pass_rate: float | None = None
+    delivered_at: str | None = None
+    delivered_to: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+
+
+class MicromgrReportsResponse(BaseModel):
+    reports: list[MicromgrReportRecord]
+    total: int = 0
+
 
 class BootstrapResponse(BaseModel):
     workspace: Workspace

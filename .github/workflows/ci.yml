@@ -45,7 +45,7 @@ jobs:
         run: uv sync --extra dev
 
       - name: Runtime orchestration tests
-        run: uv run pytest tests/runtime_orch -v
+        run: uv run pytest tests/runtime_orch tests/test_micromgr_agent.py -v
         env:
           VERXIO_DATABASE_MODE: sqlite
           VERXIO_DATABASE_PATH: /tmp/verxio-orch-ci.sqlite3
@@ -68,3 +68,6 @@ jobs:
 
       - name: Fish Audio plugin tests
         run: ./scripts/run_tests.sh tests/plugins/tts/test_fishaudio_provider.py tests/plugins/tts/test_fishaudio_tools.py tests/plugins/tts/test_fishaudio_transcription.py tests/plugins/tts/test_fishaudio_stream.py tests/plugins/tts/test_fishaudio_usage.py tests/plugins/tts/test_fishaudio_audit.py tests/plugins/tts/test_fishaudio_common_security.py tests/plugins/tts/test_fishaudio_gc.py
+
+      - name: Verxio workflow hook tests
+        run: ./scripts/run_tests.sh tests/gateway/test_verxio_workflow_hook.py tests/agent/test_oneshot.py
