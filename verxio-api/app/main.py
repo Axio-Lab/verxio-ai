@@ -871,8 +871,9 @@ async def list_workflow_agents_route(request: Request) -> WorkflowAgentsResponse
 
 @app.get("/api/workflow-agents/capabilities/skills", response_model=WorkflowSkillCapabilitiesResponse)
 async def list_workflow_skill_capabilities_route(request: Request) -> WorkflowSkillCapabilitiesResponse:
-    require_user(request)
-    return await list_workflow_skill_capabilities()
+    user = require_user(request)
+    workspace, profile, _runtime_instance = get_context_for_user(user)
+    return await list_workflow_skill_capabilities(workspace, profile)
 
 @app.get("/api/workflow-agents/capabilities/tools", response_model=WorkflowToolCapabilitiesResponse)
 async def list_workflow_tool_capabilities_route(request: Request) -> WorkflowToolCapabilitiesResponse:
