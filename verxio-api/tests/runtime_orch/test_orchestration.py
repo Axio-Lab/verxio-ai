@@ -13,7 +13,7 @@ from app.runtime_orch.artifacts_store import LocalArtifactStore
 from app.runtime_orch.cells import cell_for_tenant
 from app.runtime_orch.factory import build_runtime_manager, reset_runtime_manager_for_tests
 from app.runtime_orch.idle import resolve_idle_policy
-from app.runtime_orch.k8s import K8sRuntimeManager
+from app.runtime_orch.k8s import K8sRuntimeManager, stop_leftover_docker_runtime
 from app.runtime_orch.leases import InMemoryLeaseStore, reset_lease_store_for_tests
 from app.runtime_orch.states import RuntimeStatus, assert_transition, is_warm, normalize_status
 from app.runtime_orch.wake_queue import WakeJob, WakeQueue
@@ -170,6 +170,24 @@ def test_k8s_manifest_injects_hosted_keys_without_extra_env(monkeypatch):
     env = {e["name"]: e["value"] for e in manifest["spec"]["containers"][0]["env"]}
     assert env["GEMINI_API_KEY"] == "hosted-gemini"
     assert env["GOOGLE_API_KEY"] == "hosted-gemini"
+
+
+def test_stop_leftover_docker_runtime_removes_same_named_container(monkeypatch):
+    calls: list[list[str]] = []
+
+    class Result:
+        returncode = 0
+        stdout = "verxio-ws-65d1bec2c80a-agent-4a1857681ca3\n"
+        stderr = ""
+
+    def fake_run(cmd, **_kwargs):
+        calls.append(list(cmd))
+        return Result()
+
+    monkeypatch.setattr("app.runtime_orch.k8s.subprocess.run", fake_run)
+    assert stop_leftover_docker_runtime("verxio-ws-65d1bec2c80a-agent-4a1857681ca3") is True
+    assert calls[0] == ["docker", "rm", "-f", "--", "verxio-ws-65d1bec2c80a-agent-4a1857681ca3"]
+    assert stop_leftover_docker_runtime("") is False
 
 
 def test_wake_runtime_injects_hosted_keys_when_caller_omits_extra_env(monkeypatch):

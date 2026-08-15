@@ -7,6 +7,7 @@ import logging
 import os
 import secrets
 import socket
+import subprocess
 import time
 from typing import Any
 
@@ -17,6 +18,30 @@ from app.runtime_orch.manager import RuntimeManagerError
 from app.runtime_orch.states import RuntimeStatus, assert_transition
 
 logger = logging.getLogger(__name__)
+
+
+def stop_leftover_docker_runtime(name: str) -> bool:
+    """Stop a same-named local-docker Hermes so it cannot steal Telegram polling.
+
+    Kind and local-docker use the same container name. If both run, Telegram
+    ``getUpdates`` conflicts and the Docker copy often has no hosted Gemini key.
+    """
+    if not name:
+        return False
+    try:
+        result = subprocess.run(
+            ["docker", "rm", "-f", "--", name],
+            check=False,
+            capture_output=True,
+            timeout=20,
+            text=True,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    removed = result.returncode == 0 and bool((result.stdout or "").strip())
+    if removed:
+        logger.warning("Removed leftover Docker runtime %s so k8s owns messaging", name)
+    return removed
 
 
 class K8sRuntimeManager:
@@ -365,6 +390,7 @@ class K8sRuntimeManager:
         )
         service = self.render_service_manifest(runtime)
         name = self.pod_name(runtime)
+        stop_leftover_docker_runtime(name)
         core = self._client()
 
         def _apply() -> str:
