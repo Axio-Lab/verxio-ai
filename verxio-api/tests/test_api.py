@@ -1702,6 +1702,18 @@ def test_dashboard_session_mutations_use_fast_proxy_path():
     )
 
 
+def test_dashboard_gateway_ui_uses_fast_proxy_path():
+    """Messaging, pairing, and cron must skip the start_runtime lock."""
+    assert main._dashboard_path_is_gateway_ui_fast_path("api/messaging/platforms")
+    assert main._dashboard_path_is_gateway_ui_fast_path("api/messaging/platforms/telegram/test")
+    assert main._dashboard_path_is_gateway_ui_fast_path("api/pairing")
+    assert main._dashboard_path_is_gateway_ui_fast_path("api/pairing/approve")
+    assert main._dashboard_path_is_gateway_ui_fast_path("api/cron/jobs")
+    assert main._dashboard_path_is_gateway_ui_fast_path("api/cron/jobs/job-1")
+    assert not main._dashboard_path_is_gateway_ui_fast_path("api/config")
+    assert not main._dashboard_path_is_gateway_ui_fast_path("api/sessions")
+
+
 def test_dashboard_model_options_uses_catalog_fast_path():
     """GET model/options must skip awaited bridge sync + start_runtime."""
     assert main._dashboard_path_is_model_options("api/model/options")

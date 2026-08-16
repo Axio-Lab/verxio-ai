@@ -1798,6 +1798,22 @@ def _dashboard_path_is_session_mutation_fast_path(path: str, method: str = "") -
             return True
     return False
 
+
+def _dashboard_path_is_gateway_ui_fast_path(path: str) -> bool:
+    """Messaging, pairing, and cron UI must not sit behind wake_runtime.
+
+    Those pages used to call wake on every load/delete. A k8s health crash
+    (missing ``kubernetes`` extra) turned /messaging and cron delete into 500s
+    even when the Hermes dashboard was already reachable.
+    """
+    normalized = path.strip("/")
+    return (
+        normalized == "api/pairing"
+        or normalized.startswith("api/pairing/")
+        or normalized.startswith("api/messaging/")
+        or normalized.startswith("api/cron/")
+    )
+
 def _dashboard_path_needs_inference_sync(path: str) -> bool:
     """Model info needs the hosted default written into Hermes config.yaml.
 
@@ -1881,7 +1897,8 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     model_options = medium_read  # alias used by older start-lock / sync branches
     toolset_fast = _dashboard_path_is_toolset_fast_path(path)
     session_fast = _dashboard_path_is_session_mutation_fast_path(path, request.method)
-    skip_start_lock = lightweight or medium_read or toolset_fast or session_fast
+    gateway_ui_fast = _dashboard_path_is_gateway_ui_fast_path(path)
+    skip_start_lock = lightweight or medium_read or toolset_fast or session_fast or gateway_ui_fast
 
     # Reads must stay fast for boot polling. Bridge sync belongs on writes and
     # the websocket background task — never on every status/config/sessions GET.
@@ -1931,12 +1948,21 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
                     reason="dashboard.toolset",
                 )
     else:
-        runtime = await wake_runtime(
-            get_runtime_for_user(user),
-            extra_env=runtime_env_for_user(str(user["id"])),
-            wait_ready=False,
-            reason="dashboard.proxy",
-        )
+        try:
+            runtime = await wake_runtime(
+                get_runtime_for_user(user),
+                extra_env=runtime_env_for_user(str(user["id"])),
+                wait_ready=False,
+                reason="dashboard.proxy",
+            )
+        except Exception:
+            logger.exception("wake_runtime failed during dashboard proxy")
+            runtime = get_runtime_for_user(user)
+            if not runtime_dashboard_base_url(runtime, ensure_network=False):
+                raise HTTPException(
+                    status_code=503,
+                    detail="Runtime dashboard is starting. Retry shortly.",
+                ) from None
 
     base = runtime_dashboard_base_url(runtime, ensure_network=False)
     if not base:
