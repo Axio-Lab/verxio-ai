@@ -7,6 +7,7 @@ import logging
 import os
 import secrets
 import socket
+import subprocess
 import time
 from typing import Any
 
@@ -17,6 +18,30 @@ from app.runtime_orch.manager import RuntimeManagerError
 from app.runtime_orch.states import RuntimeStatus, assert_transition
 
 logger = logging.getLogger(__name__)
+
+
+def stop_leftover_docker_runtime(name: str) -> bool:
+    """Stop a same-named local-docker Hermes so it cannot steal Telegram polling.
+
+    Kind and local-docker use the same container name. If both run, Telegram
+    ``getUpdates`` conflicts and the Docker copy often has no hosted Gemini key.
+    """
+    if not name:
+        return False
+    try:
+        result = subprocess.run(
+            ["docker", "rm", "-f", "--", name],
+            check=False,
+            capture_output=True,
+            timeout=20,
+            text=True,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    removed = result.returncode == 0 and bool((result.stdout or "").strip())
+    if removed:
+        logger.warning("Removed leftover Docker runtime %s so k8s owns messaging", name)
+    return removed
 
 
 class K8sRuntimeManager:
@@ -365,6 +390,7 @@ class K8sRuntimeManager:
         )
         service = self.render_service_manifest(runtime)
         name = self.pod_name(runtime)
+        stop_leftover_docker_runtime(name)
         core = self._client()
 
         def _apply() -> str:
@@ -540,9 +566,34 @@ class K8sRuntimeManager:
                     env_map[str(key)] = str(value)
         return env_map
 
-    async def health(self, runtime: RuntimeInstance) -> tuple[bool, str]:
-        from app.runtime_manager import runtime_health
+    def _pod_is_live(self, runtime: RuntimeInstance) -> bool:
+        """True when the pod exists and is not already terminating."""
+        from kubernetes.client.rest import ApiException
 
+        try:
+            pod = self._client().read_namespaced_pod(
+                name=self.pod_name(runtime),
+                namespace=self.namespace,
+            )
+        except ApiException as exc:
+            if exc.status == 404:
+                return False
+            logger.debug("K8s pod probe failed for %s", runtime.id, exc_info=True)
+            return False
+        except Exception:
+            logger.debug("K8s pod probe failed for %s", runtime.id, exc_info=True)
+            return False
+        if getattr(getattr(pod, "metadata", None), "deletion_timestamp", None):
+            return False
+        phase = str(getattr(getattr(pod, "status", None), "phase", "") or "")
+        return phase in {"", "Pending", "Running"}
+
+    async def health(self, runtime: RuntimeInstance) -> tuple[bool, str]:
+        from app.runtime_manager import invalidate_runtime_caches, runtime_health
+
+        if self.enabled and not await asyncio.to_thread(self._pod_is_live, runtime):
+            invalidate_runtime_caches(runtime)
+            return False, "K8s pod is not running."
         return await runtime_health(runtime)
 
     def supports_publish_ports(self) -> bool:

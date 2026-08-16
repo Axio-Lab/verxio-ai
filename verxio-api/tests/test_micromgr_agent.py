@@ -96,7 +96,7 @@ def _message(
 def test_create_micromgr_from_template(client):
     _payload, token = signup(client, "micromgr-template@example.com")
     agent = _create_from_template(client, token, "micromgr")
-    assert agent["name"] == "AI Micro-Manager"
+    assert agent["name"] == "Micro-Manager"
     assert agent["role"] == "Operations manager"
     assert "micromgr" in agent["tags"]
     assert "default" not in agent["tags"]

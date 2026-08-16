@@ -22,6 +22,27 @@ from app.runtime_orch.wake_queue import WakeJob, get_wake_queue
 logger = logging.getLogger(__name__)
 
 
+def _merge_hosted_extra_env(extra_env: dict[str, str] | None) -> dict[str, str]:
+    """Always attach hosted Gemini/Qwen keys on wake.
+
+    Those secrets are not in the runtime ``.env``. UI start/wake pass them;
+    reconcile / ``verxio-up`` / ``deploy-ecs`` used to omit them.
+    """
+    merged: dict[str, str] = {}
+    try:
+        from app.inference import hosted_provider_env
+
+        for key, value in hosted_provider_env().items():
+            if key and value:
+                merged[str(key)] = str(value)
+    except Exception:
+        logger.exception("Failed to load hosted provider env during wake")
+    for key, value in (extra_env or {}).items():
+        if key and value:
+            merged[str(key)] = str(value)
+    return merged
+
+
 def _parse_iso(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -98,7 +119,11 @@ async def wake_runtime(
             logger.info("Restored hermes-home snapshot for runtime %s", current.id)
 
         logger.info("Waking runtime %s reason=%s manager=%s", runtime.id, reason, manager.name)
-        started = await manager.start(current, extra_env=extra_env, wait_ready=wait_ready)
+        started = await manager.start(
+            current,
+            extra_env=_merge_hosted_extra_env(extra_env),
+            wait_ready=wait_ready,
+        )
         return touch_runtime_activity(started)
     finally:
         store.release(lease)
@@ -148,6 +173,56 @@ async def reap_idle_runtimes(*, limit: int = 50) -> list[str]:
         except Exception:
             logger.exception("Failed to drain idle runtime %s", runtime.id)
     return drained
+
+
+async def reconcile_missing_runtimes(
+    *,
+    wake: bool = True,
+    inline: bool = False,
+    reason: str = "reconcile",
+) -> dict[str, list[str]]:
+    """Mark warm rows whose compute is gone as stopped, then wake them.
+
+    Image rolls delete pods/containers on purpose. The DB still says
+    ``running``, and a stale health cache used to skip recreate. Only the
+    previously warm set is touched — idle registered users stay cold.
+    """
+    from app.runtime_manager import invalidate_runtime_caches
+
+    manager = get_runtime_manager()
+    rows = db.fetch_all(
+        """
+        SELECT * FROM runtime_instances
+        WHERE status IN ('running', 'starting')
+        """
+    )
+    missing: list[str] = []
+    woken: list[str] = []
+    for row in rows:
+        runtime = runtime_from_row(row)
+        ok, _ = await manager.health(runtime)
+        if ok:
+            continue
+        invalidate_runtime_caches(runtime)
+        stopped = save_runtime(runtime, status=RuntimeStatus.STOPPED, last_error=None)
+        missing.append(runtime.id)
+        if wake:
+            if inline:
+                await wake_runtime(stopped, wait_ready=False, reason=reason)
+                woken.append(runtime.id)
+            else:
+                queued = await enqueue_wake(stopped, reason=reason)
+                if queued:
+                    woken.append(runtime.id)
+    if missing:
+        logger.info(
+            "Reconciled %d missing runtime(s) wake=%s reason=%s ids=%s",
+            len(missing),
+            wake,
+            reason,
+            ",".join(missing),
+        )
+    return {"missing": missing, "woken": woken}
 
 
 async def enqueue_wake(runtime: RuntimeInstance, *, reason: str) -> bool:

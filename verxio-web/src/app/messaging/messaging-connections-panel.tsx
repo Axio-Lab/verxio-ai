@@ -13,6 +13,8 @@ import type { MessagingConnectionInfo, MessagingPlatformInfo } from '@/types/her
 
 import { CREDENTIAL_CONTROL_CLASS } from '../settings/credential-key-ui'
 
+import { effectiveMessagingState } from './messaging-state'
+
 const PRIMARY_TOKEN_KEY: Record<string, string> = {
   api_server: 'API_SERVER_KEY',
   discord: 'DISCORD_BOT_TOKEN',
@@ -237,7 +239,9 @@ export function MessagingConnectionsPanel({
                     ) : null}
                   </div>
                   <div className="truncate text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary)">
-                    {connection.identity || connection.state || (connection.configured ? 'configured' : 'needs setup')}
+                    {connection.identity ||
+                      (connection.is_default ? effectiveMessagingState(platform) : connection.state) ||
+                      (connection.configured ? 'configured' : 'needs setup')}
                   </div>
                 </button>
                 <Switch

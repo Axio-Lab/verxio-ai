@@ -1,4 +1,4 @@
-"""Customer Support, SDR, and AI Micro-Manager workflow agent templates."""
+"""Customer Support, SDR, and Micro-Manager workflow agent templates."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ DEFAULT_SUPPORT_ROLE = "Customer support"
 DEFAULT_SUPPORT_DESCRIPTION = "Knowledge-grounded replies for website visitors and messaging channels."
 DEFAULT_SDR_ROLE = "Sales development"
 DEFAULT_SDR_DESCRIPTION = "Keyword funnels, qualification questions, and channel follow-ups."
-DEFAULT_MICROMGR_NAME = "AI Micro-Manager"
+DEFAULT_MICROMGR_NAME = "Micro-Manager"
 DEFAULT_MICROMGR_TAGS = ["micromgr"]
 DEFAULT_MICROMGR_ROLE = "Operations manager"
 DEFAULT_MICROMGR_DESCRIPTION = "Create tasks, onboard workers, vet submissions, flag misses, and send compliance reports."

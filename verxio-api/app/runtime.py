@@ -25,9 +25,13 @@ LOCAL_RUNTIME_LOG = VERXIO_STATE_DIR / "hermes-gateway.log"
 
 
 def is_hosted_control_plane() -> bool:
-    """True when verxio-api orchestrates per-user Docker runtimes (production ECS)."""
+    """True when verxio-api orchestrates per-user runtimes (Docker or Kubernetes)."""
 
-    return os.getenv("VERXIO_RUNTIME_MANAGER", "").strip().lower() == "local-docker"
+    return os.getenv("VERXIO_RUNTIME_MANAGER", "").strip().lower() in {
+        "local-docker",
+        "k8s",
+        "kubernetes",
+    }
 
 
 def hosted_runtime_status() -> RuntimeStatus:

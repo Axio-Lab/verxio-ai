@@ -130,6 +130,8 @@ def _runtime_whatsapp_paired(runtime: RuntimeInstance) -> bool:
         for path in (
             hermes_home / "platforms" / "whatsapp" / "session" / "creds.json",
             hermes_home / "whatsapp" / "session" / "creds.json",
+            hermes_home / "platforms" / "whatsapp" / "sessions" / "default" / "creds.json",
+            hermes_home / "whatsapp" / "sessions" / "default" / "creds.json",
         )
     )
 
@@ -157,6 +159,18 @@ def _runtime_container_env(runtime: RuntimeInstance, extra_env: dict[str, str] |
 
     if not _runtime_whatsapp_paired(runtime):
         env["WHATSAPP_ENABLED"] = "false"
+
+    # Hosted Gemini/Qwen keys live on the control plane, not in the runtime
+    # ``.env``. Reconcile / image rolls used to recreate pods without extra_env,
+    # leaving config.yaml pinned to gemini with no GOOGLE_API_KEY.
+    try:
+        from app.inference import hosted_provider_env
+
+        for key, value in hosted_provider_env().items():
+            if key and value:
+                env[str(key)] = str(value)
+    except Exception:
+        logger.exception("Failed to load hosted provider env for runtime %s", runtime.id)
 
     for key, value in (extra_env or {}).items():
         if key and value:

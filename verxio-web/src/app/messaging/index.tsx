@@ -29,6 +29,7 @@ import type { SetStatusbarItemGroup } from '../shell/statusbar-controls'
 
 import { ApiServerPanel } from './api-server-panel'
 import { MessagingConnectionsPanel } from './messaging-connections-panel'
+import { effectiveMessagingState } from './messaging-state'
 import { PairingRequestsPanel } from './pairing-requests-panel'
 import { PlatformAvatar } from './platform-icon'
 import { SlackManifestPanel } from './slack-manifest-panel'
@@ -54,8 +55,10 @@ const PILL_TONE: Record<StatusTone, string> = {
 const stateLabel = (state: null | string | undefined, m: Translations['messaging']) =>
   state ? m.states[state] || state.replace(/_/g, ' ') : m.unknown
 
-function stateTone({ enabled, state }: MessagingPlatformInfo): StatusTone {
-  if (!enabled) {
+function stateTone(platform: MessagingPlatformInfo): StatusTone {
+  const state = effectiveMessagingState(platform)
+
+  if (!platform.enabled) {
     return 'muted'
   }
 
@@ -484,7 +487,7 @@ function PlatformDetail({
                 {platform.description}
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <StatePill tone={stateTone(platform)}>{stateLabel(platform.state, m)}</StatePill>
+                <StatePill tone={stateTone(platform)}>{stateLabel(effectiveMessagingState(platform), m)}</StatePill>
                 {/* Disabled + no credentials is "off", not unfinished setup. */}
                 {(platform.enabled || platform.configured) && (
                   <SetupPill active={platform.configured}>
@@ -831,12 +834,12 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 function PlatformHint({ platform }: { platform: MessagingPlatformInfo }) {
   const { t } = useI18n()
 
-  if (!platform.enabled || platform.state === 'connected') {
+  if (!platform.enabled || effectiveMessagingState(platform) === 'connected') {
     return null
   }
 
   const hint =
-    platform.state === 'pending_restart'
+    effectiveMessagingState(platform) === 'pending_restart'
       ? t.messaging.hintPendingRestart
       : platform.gateway_running
         ? null

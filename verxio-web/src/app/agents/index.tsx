@@ -170,7 +170,7 @@ const AGENT_TEMPLATES: Array<{
   {
     description: 'Create tasks, onboard workers, vet submissions, flag misses, and send compliance reports.',
     id: 'micromgr',
-    name: 'AI Micro-Manager',
+    name: 'Micro-Manager',
     role: 'Operations manager'
   }
 ]
@@ -1466,7 +1466,7 @@ function CreateAgentTemplateDialog({
         <DialogHeader className="pr-8">
           <DialogTitle>Create agent</DialogTitle>
           <DialogDescription>
-            Choose Customer Support, SDR, or AI Micro-Manager. We create it with the default instructions, then you can
+            Choose Customer Support, SDR, or Micro-Manager. We create it with the default instructions, then you can
             customize.
           </DialogDescription>
         </DialogHeader>
@@ -1544,7 +1544,7 @@ function AgentList({
           <Sparkles className="mx-auto size-6 text-primary" />
           <p className="text-sm font-medium">No agents yet</p>
           <p className="text-xs leading-relaxed text-muted-foreground">
-            Start from Customer Support, SDR, or AI Micro-Manager, then customize knowledge, channels, and instructions.
+            Start from Customer Support, SDR, or Micro-Manager, then customize knowledge, channels, and instructions.
           </p>
           <Button onClick={onCreate} size="sm">
             <Plus className="size-4" />
@@ -2107,24 +2107,23 @@ function AgentSaveRequired({ tab }: { tab: AgentTab }) {
       title: 'Save before viewing contacts'
     },
     tasks: {
-      description: 'Create the AI Micro-Manager first, then define tasks, due times, and passing scores.',
+      description: 'Create the Micro-Manager first, then define tasks, due times, and passing scores.',
       title: 'Save before adding tasks'
     },
     workers: {
-      description:
-        'Create the AI Micro-Manager first, then add workers by Telegram, WhatsApp, Slack, Discord, or email.',
+      description: 'Create the Micro-Manager first, then add workers by Telegram, WhatsApp, Slack, Discord, or email.',
       title: 'Save before adding workers'
     },
     liveboard: {
-      description: 'Create the AI Micro-Manager first. Due rounds and scores will show up here.',
+      description: 'Create the Micro-Manager first. Due rounds and scores will show up here.',
       title: 'Save before viewing the liveboard'
     },
     flags: {
-      description: 'Create the AI Micro-Manager first. Missed deadlines and failing scores will show up here.',
+      description: 'Create the Micro-Manager first. Missed deadlines and failing scores will show up here.',
       title: 'Save before viewing flags'
     },
     reports: {
-      description: 'Create the AI Micro-Manager first, then generate and deliver compliance reports.',
+      description: 'Create the Micro-Manager first, then generate and deliver compliance reports.',
       title: 'Save before viewing reports'
     },
     runs: {

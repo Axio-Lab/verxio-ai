@@ -82,7 +82,12 @@ from app.composio_catalog import (
     set_composio_trigger_instance_enabled,
 )
 from app.runtime import HermesRuntimeAdapter
-from app.runtime_dashboard import list_toolsets_via_dashboard, run_agent_via_dashboard, send_message_via_dashboard
+from app.runtime_dashboard import (
+    list_skills_via_dashboard,
+    list_toolsets_via_dashboard,
+    run_agent_via_dashboard,
+    send_message_via_dashboard,
+)
 
 STATIC_AGENT_ASSETS_ROOT = Path(__file__).resolve().parent.parent / "static" / "agent-assets"
 
@@ -797,11 +802,28 @@ def _tool_from_payload(item: Any, category: str = "") -> WorkflowToolCapability 
     )
 
 
-async def list_skill_capabilities() -> WorkflowSkillCapabilitiesResponse:
-    metadata = await HermesRuntimeAdapter().metadata()
-    skills = [skill for item in metadata.skills if (skill := _skill_from_payload(item))]
+async def list_skill_capabilities(
+    workspace: Workspace | None = None,
+    profile: AgentProfile | None = None,
+) -> WorkflowSkillCapabilitiesResponse:
+    errors: list[str] = []
+    raw_skills: list[dict[str, object]] = []
+    if workspace is not None and profile is not None:
+        try:
+            raw_skills = await list_skills_via_dashboard(workspace, profile)
+        except HTTPException as exc:
+            errors.append(str(exc.detail))
+            metadata = await HermesRuntimeAdapter().metadata()
+            raw_skills = metadata.skills
+            errors.extend(metadata.errors)
+    else:
+        metadata = await HermesRuntimeAdapter().metadata()
+        raw_skills = metadata.skills
+        errors.extend(metadata.errors)
+
+    skills = [skill for item in raw_skills if (skill := _skill_from_payload(item))]
     skills.sort(key=lambda item: item.name.lower())
-    return WorkflowSkillCapabilitiesResponse(skills=skills, errors=metadata.errors)
+    return WorkflowSkillCapabilitiesResponse(skills=skills, errors=errors)
 
 
 async def list_tool_capabilities(workspace: Workspace, profile: AgentProfile | None = None) -> WorkflowToolCapabilitiesResponse:

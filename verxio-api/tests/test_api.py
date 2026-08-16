@@ -13,6 +13,7 @@ from subprocess import CompletedProcess
 
 import pytest
 import yaml
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app import composio_catalog, control_plane, db, emailer, inference, main, runtime_manager, transcription_catalog, workflow_agents
@@ -118,6 +119,19 @@ def test_bootstrap_contains_verxio_profile(client):
 
 def test_bootstrap_skips_local_hermes_on_hosted_control_plane(client, monkeypatch):
     monkeypatch.setenv("VERXIO_RUNTIME_MANAGER", "local-docker")
+
+    response = client.get("/api/bootstrap")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["runtime"]["configured"] is True
+    assert payload["runtime"]["connected"] is True
+    assert "hosted control plane" in payload["runtime"]["detail"].lower()
+    assert payload["hermes"]["errors"] == []
+
+
+def test_bootstrap_skips_shared_hermes_on_k8s_control_plane(client, monkeypatch):
+    monkeypatch.setenv("VERXIO_RUNTIME_MANAGER", "k8s")
 
     response = client.get("/api/bootstrap")
 
@@ -1220,8 +1234,39 @@ def test_workflow_agent_embed_config_asset_and_public_run(client, monkeypatch):
     assert "Powered by Verxio" in script.text
 
 
-def test_workflow_skill_capabilities_use_runtime_metadata(client, monkeypatch):
+def test_workflow_skill_capabilities_use_runtime_dashboard(client, monkeypatch):
     _payload, token = signup(client, "workflow-skills@example.com")
+
+    async def fake_skills(_workspace, _profile):
+        return [
+            {
+                "name": "lead-scoring",
+                "description": "Score leads against the ICP.",
+                "category": "sales",
+                "enabled": True,
+            }
+        ]
+
+    monkeypatch.setattr(workflow_agents, "list_skills_via_dashboard", fake_skills)
+    response = client.get("/api/workflow-agents/capabilities/skills", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+
+    assert response.status_code == 200
+    assert response.json()["skills"] == [
+        {
+            "name": "lead-scoring",
+            "description": "Score leads against the ICP.",
+            "category": "sales",
+            "enabled": True,
+        }
+    ]
+    assert response.json()["errors"] == []
+
+
+def test_workflow_skill_capabilities_fall_back_to_runtime_metadata(client, monkeypatch):
+    _payload, token = signup(client, "workflow-skills-fallback@example.com")
+
+    async def boom(_workspace, _profile):
+        raise HTTPException(status_code=503, detail="Runtime dashboard is not ready.")
 
     class FakeAdapter:
         async def metadata(self):
@@ -1241,18 +1286,13 @@ def test_workflow_skill_capabilities_use_runtime_metadata(client, monkeypatch):
                 },
             )()
 
+    monkeypatch.setattr(workflow_agents, "list_skills_via_dashboard", boom)
     monkeypatch.setattr(workflow_agents, "HermesRuntimeAdapter", FakeAdapter)
     response = client.get("/api/workflow-agents/capabilities/skills", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
 
     assert response.status_code == 200
-    assert response.json()["skills"] == [
-        {
-            "name": "lead-scoring",
-            "description": "Score leads against the ICP.",
-            "category": "sales",
-            "enabled": True,
-        }
-    ]
+    assert response.json()["skills"][0]["name"] == "lead-scoring"
+    assert "Runtime dashboard is not ready." in response.json()["errors"]
 
 
 def test_workflow_tool_capabilities_use_runtime_metadata(client, monkeypatch):

@@ -119,6 +119,42 @@ async def list_toolsets_via_dashboard(workspace: Workspace, profile: AgentProfil
     return []
 
 
+async def list_skills_via_dashboard(workspace: Workspace, profile: AgentProfile) -> list[dict[str, object]]:
+    runtime = ensure_runtime_instance(workspace, profile)
+    runtime = await start_runtime(runtime)
+
+    if not runtime.dashboard_url:
+        raise HTTPException(status_code=503, detail="Runtime dashboard is not ready.")
+
+    token = _runtime_dashboard_token(runtime.id)
+    target = f"{runtime.dashboard_url.rstrip('/')}/api/skills"
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.get(target, headers=_dashboard_headers(token))
+            response.raise_for_status()
+            payload = response.json()
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text.strip() or exc.response.reason_phrase
+        try:
+            parsed = exc.response.json()
+            if isinstance(parsed, dict):
+                detail = str(parsed.get("detail") or parsed.get("error") or detail)
+        except ValueError:
+            pass
+        raise HTTPException(status_code=502, detail=detail or "Hermes dashboard request failed.") from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail=f"Runtime dashboard is not reachable: {exc}") from exc
+
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if isinstance(payload, dict):
+        items = payload.get("skills")
+        if isinstance(items, list):
+            return [item for item in items if isinstance(item, dict)]
+    return []
+
+
 async def run_agent_via_dashboard(
     workspace: Workspace,
     profile: AgentProfile,

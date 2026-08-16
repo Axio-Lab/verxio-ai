@@ -13,7 +13,7 @@ from app.runtime_orch.artifacts_store import LocalArtifactStore
 from app.runtime_orch.cells import cell_for_tenant
 from app.runtime_orch.factory import build_runtime_manager, reset_runtime_manager_for_tests
 from app.runtime_orch.idle import resolve_idle_policy
-from app.runtime_orch.k8s import K8sRuntimeManager
+from app.runtime_orch.k8s import K8sRuntimeManager, stop_leftover_docker_runtime
 from app.runtime_orch.leases import InMemoryLeaseStore, reset_lease_store_for_tests
 from app.runtime_orch.states import RuntimeStatus, assert_transition, is_warm, normalize_status
 from app.runtime_orch.wake_queue import WakeJob, WakeQueue
@@ -156,6 +156,67 @@ def test_k8s_manifest_render(monkeypatch):
     assert vols["hermes-home"].endswith("/hermes-home")
 
 
+def test_k8s_manifest_injects_hosted_keys_without_extra_env(monkeypatch):
+    monkeypatch.setenv("VERXIO_K8S_HOST_PATH_ROOT", "/verxio-runtimes")
+    monkeypatch.setenv("VERXIO_K8S_CONNECT_MODE", "hostPort")
+    monkeypatch.setenv("VERXIO_HOSTED_GEMINI_API_KEY", "hosted-gemini")
+    monkeypatch.delenv("VERXIO_GOOGLE_API_KEY", raising=False)
+    mgr = K8sRuntimeManager(namespace="verxio-test")
+    manifest = mgr.render_pod_manifest(
+        _rt(status="stopped"),
+        dashboard_token="tok_test",
+        host_port=19199,
+    )
+    env = {e["name"]: e["value"] for e in manifest["spec"]["containers"][0]["env"]}
+    assert env["GEMINI_API_KEY"] == "hosted-gemini"
+    assert env["GOOGLE_API_KEY"] == "hosted-gemini"
+
+
+def test_stop_leftover_docker_runtime_removes_same_named_container(monkeypatch):
+    calls: list[list[str]] = []
+
+    class Result:
+        returncode = 0
+        stdout = "verxio-ws-65d1bec2c80a-agent-4a1857681ca3\n"
+        stderr = ""
+
+    def fake_run(cmd, **_kwargs):
+        calls.append(list(cmd))
+        return Result()
+
+    monkeypatch.setattr("app.runtime_orch.k8s.subprocess.run", fake_run)
+    assert stop_leftover_docker_runtime("verxio-ws-65d1bec2c80a-agent-4a1857681ca3") is True
+    assert calls[0] == ["docker", "rm", "-f", "--", "verxio-ws-65d1bec2c80a-agent-4a1857681ca3"]
+    assert stop_leftover_docker_runtime("") is False
+
+
+def test_wake_runtime_injects_hosted_keys_when_caller_omits_extra_env(monkeypatch):
+    from app.runtime_orch import lifecycle
+    from app.runtime_orch.leases import InMemoryLeaseStore
+
+    captured: dict[str, dict[str, str] | None] = {}
+    monkeypatch.setenv("VERXIO_HOSTED_GEMINI_API_KEY", "hosted-gemini")
+    monkeypatch.delenv("VERXIO_GOOGLE_API_KEY", raising=False)
+    monkeypatch.setattr(lifecycle, "get_lease_store", lambda: InMemoryLeaseStore())
+    monkeypatch.setattr(lifecycle, "restore_hermes_home", lambda *_a, **_k: False)
+    monkeypatch.setattr(lifecycle, "touch_runtime_activity", lambda runtime: runtime)
+
+    class FakeManager:
+        name = "fake"
+
+        async def health(self, runtime):
+            return False, "stopped"
+
+        async def start(self, runtime, extra_env=None, wait_ready=True):
+            captured["extra_env"] = extra_env
+            return runtime
+
+    monkeypatch.setattr(lifecycle, "get_runtime_manager", lambda: FakeManager())
+    asyncio.run(lifecycle.wake_runtime(_rt(status="stopped"), reason="test.roll"))
+    assert captured["extra_env"]["GEMINI_API_KEY"] == "hosted-gemini"
+    assert captured["extra_env"]["GOOGLE_API_KEY"] == "hosted-gemini"
+
+
 def test_k8s_service_includes_webhook_port(monkeypatch):
     monkeypatch.setenv("VERXIO_K8S_CONNECT_MODE", "cluster")
     mgr = K8sRuntimeManager(namespace="verxio-test")
@@ -189,6 +250,65 @@ def test_k8s_health_uses_runtime_health(monkeypatch):
     assert ok is True
     assert detail == "ok"
     assert calls == ["rt_test"]
+
+
+def test_k8s_health_false_when_pod_missing(monkeypatch):
+    monkeypatch.setenv("VERXIO_K8S_ENABLED", "true")
+    mgr = K8sRuntimeManager(namespace="verxio-test")
+    mgr.enabled = True
+    monkeypatch.setattr(mgr, "_pod_is_live", lambda runtime: False)
+    invalidated: list[str] = []
+    monkeypatch.setattr(
+        "app.runtime_manager.invalidate_runtime_caches",
+        lambda runtime: invalidated.append(runtime.id),
+    )
+
+    async def boom(_runtime):
+        raise AssertionError("runtime_health must not run when the pod is gone")
+
+    monkeypatch.setattr("app.runtime_manager.runtime_health", boom)
+    ok, detail = asyncio.run(mgr.health(_rt(status="running")))
+    assert ok is False
+    assert "not running" in detail
+    assert invalidated == ["rt_test"]
+
+
+def test_reconcile_missing_runtimes_marks_stopped_and_wakes(monkeypatch):
+    from app.runtime_orch import lifecycle
+
+    missing = _rt(status="running", id="rt_missing")
+    live = _rt(status="running", id="rt_live")
+    saved: list[tuple[str, str]] = []
+    woken: list[str] = []
+
+    class FakeManager:
+        async def health(self, runtime):
+            return runtime.id == "rt_live", "ok"
+
+    monkeypatch.setattr(lifecycle, "get_runtime_manager", lambda: FakeManager())
+    monkeypatch.setattr(
+        lifecycle.db,
+        "fetch_all",
+        lambda *_a, **_k: [missing.model_dump(), live.model_dump()],
+    )
+    monkeypatch.setattr(lifecycle, "runtime_from_row", lambda row: _rt(**row) if isinstance(row, dict) else row)
+    monkeypatch.setattr(
+        lifecycle,
+        "save_runtime",
+        lambda runtime, **fields: saved.append((runtime.id, str(fields.get("status")))) or runtime,
+    )
+    monkeypatch.setattr("app.runtime_manager.invalidate_runtime_caches", lambda runtime: None)
+
+    async def fake_enqueue(runtime, *, reason):
+        woken.append(f"{runtime.id}:{reason}")
+        return True
+
+    monkeypatch.setattr(lifecycle, "enqueue_wake", fake_enqueue)
+    result = asyncio.run(lifecycle.reconcile_missing_runtimes(wake=True, reason="test.wipe"))
+    assert result["missing"] == ["rt_missing"]
+    assert result["woken"] == ["rt_missing"]
+    assert saved == [("rt_missing", "stopped")]
+    assert woken == ["rt_missing:test.wipe"]
 
 
 def test_k8s_webhook_address_uses_service_dns_in_cluster_mode(monkeypatch):
