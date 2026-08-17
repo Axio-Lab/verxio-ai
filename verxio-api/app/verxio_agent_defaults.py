@@ -67,14 +67,16 @@ Notepad:
 
 Integrations:
 - For Slack, tell users to open Verxio Web/Desktop, go to Messaging or Connections, select Slack, generate or copy the Verxio Slack manifest, create the Slack app from that manifest, paste the bot token and app-level token into Verxio, save, enable Slack, restart the Verxio runtime if prompted, and invite Verxio to channels.
-- When the user asks to use Gmail, Google Sheets, Calendar, Drive, Docs, Slack, Notion, or another Composio app, first check the Verxio Connected Apps section and call `mcp_composio_COMPOSIO_SEARCH_TOOLS` for that app before doing anything else.
-- Use the connected Verxio/Composio tools when available. Do not fall back to manual uploads, CSV export, or CLI setup unless the connected tool call actually fails.
+- When the user asks to use Gmail, Google Sheets, Calendar, Drive, Docs, Slack, Notion, or another Composio app: check Verxio Connected Apps, call `mcp_composio_COMPOSIO_SEARCH_TOOLS`, then ALWAYS execute with `mcp_composio_COMPOSIO_MULTI_EXECUTE_TOOL`.
+- Never use Hermes `tool_call` for Composio app slugs like `GOOGLESHEETS_CREATE_GOOGLE_SHEET1`. Those slugs are not Hermes tools; only MULTI_EXECUTE runs them.
+- Do not fall back to manual uploads, CSV export, Notepad, or CLI setup unless MULTI_EXECUTE itself fails.
 
 Voice and formatting:
 - Sound natural and human, like a capable person texting. Warm, direct, not robotic.
 - Do not use emojis, emoji icons, decorative symbols, horizontal rules, or signature blocks unless the user explicitly asks.
 - Avoid em dashes and en dashes used as stylistic punctuation; prefer short sentences and plain punctuation.
 - Keep chat replies concise. No branded headers and no markdown flourishes in short messages (especially WhatsApp).
+- Never send HTML tags, HTML entities, or raw markup in chat replies. WhatsApp shows them as literal text. Use plain sentences, *bold*, and line breaks only.
 - When something fails technically, explain it simply in one or two sentences without error codes or HTTP jargon unless the user is debugging.
 """
 
@@ -93,8 +95,9 @@ Identity and product boundary:
 
 Integration guidance:
 - For Slack setup, direct users to Verxio Web/Desktop > Messaging or Connections > Slack. Tell them to generate or copy the Verxio Slack manifest, create the Slack app from that manifest, paste the bot token and app-level token into Verxio, save, enable Slack, restart the Verxio runtime if prompted, and invite Verxio to channels.
-- When the user asks to use a Composio-connected app (Gmail, Google Sheets, Calendar, Drive, Docs, Slack, Notion, etc.), explicitly check connection first: read the Verxio Connected Apps list, then call `mcp_composio_COMPOSIO_SEARCH_TOOLS` for that toolkit before writing local files or saying the app is unavailable.
-- Use the connected Verxio/Composio `mcp_composio_*` tools directly when available. Do not suggest manual import/upload or missing CLI tools unless the connected tool call actually fails.
+- When the user asks to use a Composio-connected app (Gmail, Google Sheets, Calendar, Drive, Docs, Slack, Notion, etc.): read the Verxio Connected Apps list, call `mcp_composio_COMPOSIO_SEARCH_TOOLS`, optionally `mcp_composio_COMPOSIO_GET_TOOL_SCHEMAS`, then ALWAYS execute with `mcp_composio_COMPOSIO_MULTI_EXECUTE_TOOL`.
+- Never route Composio app action slugs (for example `GOOGLESHEETS_CREATE_GOOGLE_SHEET1`) through Hermes `tool_call`. Execute them only via MULTI_EXECUTE.
+- Do not suggest manual import/upload, CSV, Notepad substitutes, or missing CLI tools unless MULTI_EXECUTE itself fails.
 
 Workspace and artifacts:
 - Treat `/workspace` as the working directory.
@@ -122,6 +125,7 @@ Voice and formatting (always follow, including WhatsApp and other messaging):
 - Never use emojis, emoji icons, decorative symbols, horizontal rules, or signature blocks unless the user explicitly asks.
 - Avoid em dashes and en dashes used as stylistic punctuation; prefer short sentences and plain punctuation.
 - Keep chat replies concise. No branded headers and no markdown flourishes in short messages.
+- Never send HTML tags, HTML entities, or raw markup in chat replies. WhatsApp and other messengers show them as literal text. Use plain sentences, *bold*, and line breaks only.
 - When something fails technically, explain it simply in one or two sentences without error codes or HTTP jargon unless the user is debugging.
 """
 
@@ -286,11 +290,35 @@ def ensure_verxio_agent_defaults(hermes_home: Path) -> None:
     if not isinstance(whatsapp, dict):
         whatsapp = {}
     whatsapp["reply_prefix"] = ""
+    # Production deploys restart the gateway often. Hermes defaults to pinging
+    # every in-flight chat with "Gateway shutting down" — that is operator noise
+    # for end users, so Verxio mutes it on messaging platforms.
+    whatsapp["gateway_restart_notification"] = False
     if _whatsapp_session_paired(hermes_home):
         if whatsapp.get("enabled") is False:
             whatsapp.pop("enabled", None)
     else:
         whatsapp["enabled"] = False
+
+    telegram = config.get("telegram")
+    if not isinstance(telegram, dict):
+        telegram = {}
+    telegram["gateway_restart_notification"] = False
+
+    # Self-chat + empty prefix: ⚙️ tool bubbles are fromMe and get ingested
+    # as new user turns, so the final WhatsApp answer never lands.
+    display = config.get("display")
+    if not isinstance(display, dict):
+        display = {}
+    platforms = display.get("platforms")
+    if not isinstance(platforms, dict):
+        platforms = {}
+    wa_display = platforms.get("whatsapp")
+    if not isinstance(wa_display, dict):
+        wa_display = {}
+    wa_display["tool_progress"] = "off"
+    platforms["whatsapp"] = wa_display
+    display["platforms"] = platforms
 
     # Re-read immediately before write. A concurrent truncate/partial write used
     # to make the first load look empty; writing only agent+whatsapp then wiped
@@ -301,5 +329,31 @@ def ensure_verxio_agent_defaults(hermes_home: Path) -> None:
     merged = dict(disk)
     merged["agent"] = agent
     merged["whatsapp"] = whatsapp
+    disk_telegram = disk.get("telegram")
+    if not isinstance(disk_telegram, dict):
+        disk_telegram = dict(telegram)
+    else:
+        disk_telegram = dict(disk_telegram)
+    disk_telegram["gateway_restart_notification"] = False
+    merged["telegram"] = disk_telegram
+    disk_display = disk.get("display")
+    if not isinstance(disk_display, dict):
+        disk_display = dict(display)
+    else:
+        disk_display = dict(disk_display)
+    disk_platforms = disk_display.get("platforms")
+    if not isinstance(disk_platforms, dict):
+        disk_platforms = {}
+    else:
+        disk_platforms = dict(disk_platforms)
+    disk_wa_display = disk_platforms.get("whatsapp")
+    if not isinstance(disk_wa_display, dict):
+        disk_wa_display = {}
+    else:
+        disk_wa_display = dict(disk_wa_display)
+    disk_wa_display["tool_progress"] = "off"
+    disk_platforms["whatsapp"] = disk_wa_display
+    disk_display["platforms"] = disk_platforms
+    merged["display"] = disk_display
 
     _atomic_write_text(config_path, _dump_config(merged))

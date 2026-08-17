@@ -252,6 +252,37 @@ def test_k8s_health_uses_runtime_health(monkeypatch):
     assert calls == ["rt_test"]
 
 
+def test_k8s_health_falls_back_when_pod_probe_unknown(monkeypatch):
+    monkeypatch.setenv("VERXIO_K8S_ENABLED", "true")
+    mgr = K8sRuntimeManager(namespace="verxio-test")
+    mgr.enabled = True
+    monkeypatch.setattr(mgr, "_pod_is_live", lambda runtime: None)
+
+    async def fake_health(runtime):
+        return True, "dashboard-ok"
+
+    monkeypatch.setattr("app.runtime_manager.runtime_health", fake_health)
+    ok, detail = asyncio.run(mgr.health(_rt(status="running")))
+    assert ok is True
+    assert detail == "dashboard-ok"
+
+
+def test_k8s_pod_is_live_unknown_without_kubernetes(monkeypatch):
+    mgr = K8sRuntimeManager(namespace="verxio-test")
+
+    import builtins
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name.startswith("kubernetes"):
+            raise ImportError("No module named 'kubernetes'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    assert mgr._pod_is_live(_rt(status="running")) is None
+
+
 def test_k8s_health_false_when_pod_missing(monkeypatch):
     monkeypatch.setenv("VERXIO_K8S_ENABLED", "true")
     mgr = K8sRuntimeManager(namespace="verxio-test")

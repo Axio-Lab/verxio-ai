@@ -18,6 +18,8 @@ def test_ensure_verxio_agent_defaults_is_idempotent(tmp_path: Path) -> None:
     config_text = (hermes_home / "config.yaml").read_text(encoding="utf-8")
 
     assert "Voice and formatting" in soul
+    assert "Never send HTML tags" in soul
+    assert "Never send HTML tags" in config_text
     assert "Anti-slop quality bar for all Verxio output" in soul
     assert "use the bundled `anti-ai-slop` skill" in soul
     assert "write with relative paths such as `artifacts/report.csv`" in soul
@@ -35,6 +37,10 @@ def test_ensure_verxio_agent_defaults_is_idempotent(tmp_path: Path) -> None:
     assert "Every successful `image_generate` call is billed" in config_text
     assert 'reply_prefix: ""' in config_text or "reply_prefix: ''" in config_text
     assert "enabled: false" in config_text
+    loaded = yaml.safe_load(config_text)
+    assert loaded["display"]["platforms"]["whatsapp"]["tool_progress"] == "off"
+    assert loaded["whatsapp"]["gateway_restart_notification"] is False
+    assert loaded["telegram"]["gateway_restart_notification"] is False
 
     ensure_verxio_agent_defaults(hermes_home)
     assert config_text == (hermes_home / "config.yaml").read_text(encoding="utf-8")
@@ -226,6 +232,9 @@ def test_ensure_verxio_agent_defaults_does_not_disable_paired_whatsapp(tmp_path:
     loaded = yaml.safe_load((hermes_home / "config.yaml").read_text(encoding="utf-8"))
     assert loaded["whatsapp"]["reply_prefix"] == ""
     assert "enabled" not in loaded["whatsapp"]
+    assert loaded["display"]["platforms"]["whatsapp"]["tool_progress"] == "off"
+    assert loaded["whatsapp"]["gateway_restart_notification"] is False
+    assert loaded["telegram"]["gateway_restart_notification"] is False
 
 
 def test_anti_ai_slop_prompt_mentions_full_skill_reference() -> None:

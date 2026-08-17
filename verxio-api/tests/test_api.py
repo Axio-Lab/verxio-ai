@@ -1702,6 +1702,18 @@ def test_dashboard_session_mutations_use_fast_proxy_path():
     )
 
 
+def test_dashboard_gateway_ui_uses_fast_proxy_path():
+    """Messaging, pairing, and cron must skip the start_runtime lock."""
+    assert main._dashboard_path_is_gateway_ui_fast_path("api/messaging/platforms")
+    assert main._dashboard_path_is_gateway_ui_fast_path("api/messaging/platforms/telegram/test")
+    assert main._dashboard_path_is_gateway_ui_fast_path("api/pairing")
+    assert main._dashboard_path_is_gateway_ui_fast_path("api/pairing/approve")
+    assert main._dashboard_path_is_gateway_ui_fast_path("api/cron/jobs")
+    assert main._dashboard_path_is_gateway_ui_fast_path("api/cron/jobs/job-1")
+    assert not main._dashboard_path_is_gateway_ui_fast_path("api/config")
+    assert not main._dashboard_path_is_gateway_ui_fast_path("api/sessions")
+
+
 def test_dashboard_model_options_uses_catalog_fast_path():
     """GET model/options must skip awaited bridge sync + start_runtime."""
     assert main._dashboard_path_is_model_options("api/model/options")
@@ -1773,12 +1785,13 @@ def test_dashboard_env_put_does_not_restart_runtime(client, monkeypatch):
 
     restarted: list[str] = []
 
-    async def fake_restart(rt, extra_env=None):
-        restarted.append(rt.id)
-        return rt
+    class _FakeManager:
+        async def restart(self, rt, extra_env=None):
+            restarted.append(rt.id)
+            return rt
 
-    async def fake_start(rt, extra_env=None, wait_ready=True):
-        return rt
+        async def start(self, rt, extra_env=None, wait_ready=True):
+            return rt
 
     async def fake_token(*_a, **_k):
         return "token"
@@ -1804,8 +1817,7 @@ def test_dashboard_env_put_does_not_restart_runtime(client, monkeypatch):
         async def request(self, *args, **kwargs):
             return _FakeUpstream()
 
-    monkeypatch.setattr(main, "restart_runtime", fake_restart)
-    monkeypatch.setattr(main, "start_runtime", fake_start)
+    monkeypatch.setattr(main, "get_runtime_manager", lambda: _FakeManager())
     monkeypatch.setattr(main, "get_runtime_for_user", lambda _user, fresh=False: runtime)
     monkeypatch.setattr(main, "runtime_env_for_user", lambda _user_id: {"GEMINI_API_KEY": "hosted"})
     monkeypatch.setattr(main, "runtime_dashboard_base_url", lambda _runtime, ensure_network=False: "http://127.0.0.1:19119")
@@ -2900,9 +2912,12 @@ def test_composio_bridge_writes_runtime_mcp_server(client, monkeypatch):
     assert "Gmail" in config and "`gmail`" in config
     assert "/opt/data/google_token.json" in config
     assert "source of truth for Verxio" in config
-    assert "Google Docs / long content rules" in config
+    assert "only working path" in config
+    assert "ALWAYS execute with `mcp_composio_COMPOSIO_MULTI_EXECUTE_TOOL`" in config
+    assert "Never call those slugs via Hermes `tool_call`" in config
     assert "stringified JSON blob" in config
-    assert "GOOGLEDOCS_UPDATE_DOCUMENT_MARKDOWN" in config
+    assert "Google Docs long-content" in config
+    assert "or the discovered `mcp_composio_*` tool" not in config
 
 
 def test_composio_accounts_use_current_api_and_parse_auth_config_toolkit(monkeypatch):
@@ -3115,11 +3130,12 @@ def test_composio_connections_restart_stale_runtime_env(client, monkeypatch):
 
     restarted: list[str] = []
 
-    async def fake_restart(runtime, extra_env=None):
-        restarted.append(runtime.id)
-        return runtime
+    class _FakeManager:
+        async def restart(self, runtime, extra_env=None):
+            restarted.append(runtime.id)
+            return runtime
 
-    monkeypatch.setattr(main, "restart_runtime", fake_restart)
+    monkeypatch.setattr(main, "get_runtime_manager", lambda: _FakeManager())
 
     response = client.get("/api/composio/connections", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
 
@@ -3159,11 +3175,12 @@ def test_composio_bridge_sync_restarts_stale_runtime_env_without_apply_live(clie
 
     restarted: list[str] = []
 
-    async def fake_restart(runtime, extra_env=None):
-        restarted.append(runtime.id)
-        return runtime
+    class _FakeManager:
+        async def restart(self, runtime, extra_env=None):
+            restarted.append(runtime.id)
+            return runtime
 
-    monkeypatch.setattr(main, "restart_runtime", fake_restart)
+    monkeypatch.setattr(main, "get_runtime_manager", lambda: _FakeManager())
 
     import asyncio
 
@@ -3212,15 +3229,16 @@ def test_composio_connection_change_soft_reloads_mcp_without_docker_restart(clie
     restarted: list[str] = []
     soft_reloads: list[str] = []
 
-    async def fake_restart(runtime, extra_env=None):
-        restarted.append(runtime.id)
-        return runtime
+    class _FakeManager:
+        async def restart(self, runtime, extra_env=None):
+            restarted.append(runtime.id)
+            return runtime
 
     async def fake_soft_reload(runtime):
         soft_reloads.append(runtime.id)
         return {"ok": True, "message": "Reloaded MCP servers (3 tool(s)).", "toolCount": 3}
 
-    monkeypatch.setattr(main, "restart_runtime", fake_restart)
+    monkeypatch.setattr(main, "get_runtime_manager", lambda: _FakeManager())
     monkeypatch.setattr(main, "soft_reload_runtime_mcp", fake_soft_reload)
 
     response = client.get("/api/composio/connections", headers={"Cookie": f"{SESSION_COOKIE}={token}"})

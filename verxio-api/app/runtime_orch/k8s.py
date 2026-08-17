@@ -543,7 +543,10 @@ class K8sRuntimeManager:
 
     def read_pod_env(self, runtime: RuntimeInstance) -> dict[str, str] | None:
         """Return the live pod's declared env. None if the pod cannot be read."""
-        from kubernetes.client.rest import ApiException
+        try:
+            from kubernetes.client.rest import ApiException
+        except ImportError:
+            return None
 
         try:
             pod = self._client().read_namespaced_pod(
@@ -566,9 +569,17 @@ class K8sRuntimeManager:
                     env_map[str(key)] = str(value)
         return env_map
 
-    def _pod_is_live(self, runtime: RuntimeInstance) -> bool:
-        """True when the pod exists and is not already terminating."""
-        from kubernetes.client.rest import ApiException
+    def _pod_is_live(self, runtime: RuntimeInstance) -> bool | None:
+        """True/False when the cluster answers; None when the probe cannot run.
+
+        Missing ``kubernetes`` (API image built without the k8s extra) or a
+        kubeconfig/API error must not look like a dead pod. Callers fall
+        through to HTTP dashboard health in that case.
+        """
+        try:
+            from kubernetes.client.rest import ApiException
+        except ImportError:
+            return None
 
         try:
             pod = self._client().read_namespaced_pod(
@@ -579,10 +590,10 @@ class K8sRuntimeManager:
             if exc.status == 404:
                 return False
             logger.debug("K8s pod probe failed for %s", runtime.id, exc_info=True)
-            return False
+            return None
         except Exception:
             logger.debug("K8s pod probe failed for %s", runtime.id, exc_info=True)
-            return False
+            return None
         if getattr(getattr(pod, "metadata", None), "deletion_timestamp", None):
             return False
         phase = str(getattr(getattr(pod, "status", None), "phase", "") or "")
@@ -591,9 +602,11 @@ class K8sRuntimeManager:
     async def health(self, runtime: RuntimeInstance) -> tuple[bool, str]:
         from app.runtime_manager import invalidate_runtime_caches, runtime_health
 
-        if self.enabled and not await asyncio.to_thread(self._pod_is_live, runtime):
-            invalidate_runtime_caches(runtime)
-            return False, "K8s pod is not running."
+        if self.enabled:
+            live = await asyncio.to_thread(self._pod_is_live, runtime)
+            if live is False:
+                invalidate_runtime_caches(runtime)
+                return False, "K8s pod is not running."
         return await runtime_health(runtime)
 
     def supports_publish_ports(self) -> bool:
