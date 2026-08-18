@@ -1831,7 +1831,11 @@ export const ja = defineLocale({
     loadingFiles: 'ファイルを読み込み中',
     terminalFocus: 'ターミナルビューにフォーカス',
     terminalSplit: '分割ビューに戻る',
-    addToChat: 'チャットに追加'
+    addToChat: 'チャットに追加',
+    folderPickerTitle: 'フォルダを選択',
+    folderPickerDescription: 'このコンピューター上で Verxio がアクセスできるフォルダを参照します。',
+    folderPickerSelect: 'フォルダを選択',
+    folderPickerChooseAnother: '別のフォルダを選択…'
   },
 
   preview: {

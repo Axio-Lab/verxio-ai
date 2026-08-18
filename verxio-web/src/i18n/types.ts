@@ -1430,6 +1430,10 @@ export interface Translations {
     terminalFocus: string
     terminalSplit: string
     addToChat: string
+    folderPickerTitle: string
+    folderPickerDescription: string
+    folderPickerSelect: string
+    folderPickerChooseAnother: string
   }
 
   preview: {

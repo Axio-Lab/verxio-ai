@@ -1,5 +1,6 @@
 import type { HermesReadDirEntry, HermesReadDirResult, HermesReadFileTextResult } from '@/global'
 import { requestFolderAccessConsent, showFolderAccessUnsupported } from '@/store/folder-access'
+import { requestWebLocalFolderPicker } from '@/store/web-local-folder-picker'
 
 declare global {
   interface FileSystemHandlePermissionDescriptor {
@@ -169,6 +170,55 @@ async function resolveHandleForPath(path: string): Promise<FileSystemDirectoryHa
   return current
 }
 
+/** Restore browser folder access for reads/expansion (may show Verxio consent UI). */
+export async function ensureWebLocalFsAccess(): Promise<boolean> {
+  return Boolean((await restoreRootHandle()) ?? (await ensureRootHandleAccess()))
+}
+
+async function waitForFolderAccessDialogClose(): Promise<void> {
+  await new Promise<void>(resolve => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  })
+}
+
+/** Restore a stored handle, re-prompting through Verxio's modal before the browser permission UI. */
+async function ensureRootHandleAccess(): Promise<FileSystemDirectoryHandle | null> {
+  const handle = await loadStoredRootHandle()
+
+  if (!handle) {
+    return null
+  }
+
+  let perm = await handle.queryPermission({ mode: WEB_LOCAL_ACCESS_MODE })
+
+  if (perm === 'granted') {
+    cachedRoot = handle
+
+    return handle
+  }
+
+  if (perm !== 'prompt') {
+    return null
+  }
+
+  const approved = await requestFolderAccessConsent()
+
+  if (!approved) {
+    return null
+  }
+
+  perm = await handle.requestPermission({ mode: WEB_LOCAL_ACCESS_MODE })
+
+  if (perm !== 'granted') {
+    return null
+  }
+
+  cachedRoot = handle
+  await persistRootHandle(handle)
+
+  return handle
+}
+
 /** Browser-native folder picker — grants read access to a folder on the user's PC. */
 export async function pickBrowserLocalFolder(): Promise<string | null> {
   if (!supportsBrowserFolderPicker()) {
@@ -183,6 +233,8 @@ export async function pickBrowserLocalFolder(): Promise<string | null> {
     return null
   }
 
+  await waitForFolderAccessDialogClose()
+
   try {
     const handle = await window.showDirectoryPicker!({ mode: WEB_LOCAL_ACCESS_MODE })
 
@@ -196,6 +248,65 @@ export async function pickBrowserLocalFolder(): Promise<string | null> {
 
     throw error
   }
+}
+
+export interface PickWebLocalDirectoryOptions {
+  defaultPath?: string | null
+  title?: string
+}
+
+/** Pick a folder under an already-granted browser workspace, or grant one first. */
+export async function pickWebLocalDirectoryPaths(options: PickWebLocalDirectoryOptions = {}): Promise<string[]> {
+  if (!supportsBrowserFolderPicker()) {
+    await showFolderAccessUnsupported()
+
+    return []
+  }
+
+  const storedRoot = getStoredWebLocalRoot()
+  const defaultPath =
+    (options.defaultPath?.trim() &&
+      isWebLocalPath(options.defaultPath.trim()) &&
+      cleanWebLocalPath(options.defaultPath.trim())) ||
+    storedRoot ||
+    ''
+
+  let handle = (await restoreRootHandle()) ?? (await ensureRootHandleAccess())
+
+  if (handle) {
+    const startPath = defaultPath || webLocalRootPath(handle.name)
+    const picked = await requestWebLocalFolderPicker({
+      defaultPath: startPath,
+      title: options.title || 'Choose folder'
+    })
+
+    return picked ? [picked] : []
+  }
+
+  const rootPath = await pickBrowserLocalFolder()
+
+  if (!rootPath) {
+    return []
+  }
+
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(WEB_LOCAL_STORAGE_KEY, rootPath)
+  }
+
+  if (!defaultPath || defaultPath === rootPath) {
+    return [rootPath]
+  }
+
+  const picked = await requestWebLocalFolderPicker({
+    defaultPath: defaultPath.startsWith(rootPath) ? defaultPath : rootPath,
+    title: options.title || 'Choose folder'
+  })
+
+  return picked ? [picked] : [rootPath]
+}
+
+function cleanWebLocalPath(path: string): string {
+  return path.replace(/\/+$/, '') || path
 }
 
 export async function readWebLocalDir(dirPath: string): Promise<HermesReadDirResult> {

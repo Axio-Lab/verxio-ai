@@ -1987,7 +1987,11 @@ export const zh: Translations = {
     loadingFiles: '正在加载文件',
     terminalFocus: '聚焦终端视图',
     terminalSplit: '返回分栏视图',
-    addToChat: '添加到对话'
+    addToChat: '添加到对话',
+    folderPickerTitle: '选择文件夹',
+    folderPickerDescription: '浏览 Verxio 可访问的本机文件夹。',
+    folderPickerSelect: '选择文件夹',
+    folderPickerChooseAnother: '选择其他文件夹…'
   },
 
   preview: {

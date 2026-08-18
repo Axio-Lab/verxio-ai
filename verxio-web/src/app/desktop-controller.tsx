@@ -9,6 +9,7 @@ import { FolderAccessDialog } from '@/components/folder-access-dialog'
 import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overlay'
 import { Pane, PaneMain } from '@/components/pane-shell'
 import { RemoteDisplayBanner } from '@/components/remote-display-banner'
+import { WebLocalFolderPicker } from '@/components/web-local-folder-picker'
 import { readVerxioAuthScope } from '@/lib/auth-scope'
 import { clearModelOptionsQueries, refreshModelOptionsQueries } from '@/lib/model-options-cache'
 import { cn } from '@/lib/utils'
@@ -869,6 +870,7 @@ export function DesktopController() {
       <BootFailureOverlay />
       <CommandPalette />
       <FolderAccessDialog />
+      <WebLocalFolderPicker />
 
       {settingsOpen && (
         <Suspense fallback={null}>

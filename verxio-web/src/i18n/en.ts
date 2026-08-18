@@ -1926,7 +1926,11 @@ export const en: Translations = {
     loadingFiles: 'Loading files',
     terminalFocus: 'Focus terminal view',
     terminalSplit: 'Return to split view',
-    addToChat: 'Add to chat'
+    addToChat: 'Add to chat',
+    folderPickerTitle: 'Choose folder',
+    folderPickerDescription: 'Browse folders Verxio can access on this computer.',
+    folderPickerSelect: 'Select folder',
+    folderPickerChooseAnother: 'Choose a different folder…'
   },
 
   preview: {

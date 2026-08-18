@@ -7,6 +7,7 @@ import { attachmentId, contextPath, pathLabel } from '@/lib/chat-runtime'
 import { isAbsoluteFilesystemPath, pickBrowserFiles, readBlobAsDataUrl } from '@/lib/composer-attach'
 import { fishAudioAttachmentRef, uploadFishAudioAttachment } from '@/lib/fishaudio-session'
 import { isVerxioWeb } from '@/lib/platform'
+import { resolveWebLocalWorkspaceCwd } from '@/lib/web-local-fs'
 import {
   addComposerAttachment,
   type ComposerAttachment,
@@ -19,6 +20,12 @@ import type { ImageDetachResponse } from '../../types'
 
 const IMAGE_EXTENSION_PATTERN = /\.(png|jpe?g|gif|webp|bmp|tiff?|svg|ico)$/i
 const AUDIO_EXTENSION_PATTERN = /\.(aac|flac|m4a|mp3|mp4|ogg|opus|wav|webm)$/i
+
+function attachmentContextPath(path: string, cwd: string): string {
+  const webCwd = resolveWebLocalWorkspaceCwd(cwd) ?? cwd
+
+  return contextPath(path, webCwd)
+}
 
 const BLOB_MIME_EXTENSION: Record<string, string> = {
   'image/bmp': '.bmp',
@@ -248,7 +255,7 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
         return false
       }
 
-      const rel = contextPath(filePath, currentCwd)
+      const rel = attachmentContextPath(filePath, currentCwd)
 
       attachToMain({
         id: attachmentId('file', rel),
@@ -484,7 +491,7 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
           continue
         }
 
-        const rel = contextPath(path, currentCwd)
+        const rel = attachmentContextPath(path, currentCwd)
 
         attachToMain({
           id: attachmentId(kind, rel),
@@ -576,7 +583,7 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
         return false
       }
 
-      const rel = contextPath(folderPath, currentCwd)
+      const rel = attachmentContextPath(folderPath, currentCwd)
 
       attachToMain({
         id: attachmentId('folder', rel),

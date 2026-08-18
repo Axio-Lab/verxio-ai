@@ -1,4 +1,4 @@
-import { isWebLocalPath, readWebLocalDir, readWebLocalFileText } from './web-local-fs'
+import { ensureWebLocalFsAccess, isWebLocalPath, readWebLocalDir, readWebLocalFileText } from './web-local-fs'
 
 const REFERENCE_RE =
   /@(?:(?:file|folder):(?:`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|\S+)|(?:diff|staged)\b|(?:git|url):(?:`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|\S+))/g
@@ -31,8 +31,14 @@ function unwrapRefValue(raw: string): string {
 }
 
 function joinWebLocalPath(root: string, rel: string): string {
+  const trimmed = rel.trim()
+
+  if (isWebLocalPath(trimmed)) {
+    return trimmed.replace(/\/+$/, '')
+  }
+
   const base = root.replace(/\/+$/, '')
-  const clean = rel.replace(/^\.\//, '').replace(/\/+$/, '')
+  const clean = trimmed.replace(/^\.\//, '').replace(/\/+$/, '')
 
   if (!clean || clean === '.') {
     return base
@@ -217,10 +223,22 @@ export async function preprocessWebLocalContextReferences(message: string, cwd: 
     return message
   }
 
+  const hasAccess = await ensureWebLocalFsAccess()
+
   const warnings: string[] = []
   const blocks: string[] = []
 
+  if (!hasAccess) {
+    warnings.push('Local folder access is not available. Re-open the project folder in the file sidebar.')
+  }
+
   for (const ref of refs) {
+    if (!hasAccess) {
+      warnings.push(`${ref.raw}: folder not found`)
+
+      continue
+    }
+
     const expanded = ref.kind === 'file' ? await expandFileRef(ref, cwd) : await expandFolderRef(ref, cwd)
 
     if (expanded.warning) {
