@@ -183,18 +183,27 @@ export function WebLocalFolderPicker() {
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-2 border-t border-border/70 px-4 py-3">
-          <Button className="shrink-0 px-0" onClick={() => void chooseAnotherFolder()} size="sm" variant="link">
+        <div className="flex flex-col gap-3 border-t border-border/70 px-4 py-3">
+          <Button
+            className="h-auto self-start px-0 py-0 text-xs"
+            onClick={() => void chooseAnotherFolder()}
+            size="sm"
+            variant="link"
+          >
             {copy.folderPickerChooseAnother}
           </Button>
-          <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
-            <div className="hidden min-w-0 truncate text-xs text-muted-foreground sm:block">{currentPath}</div>
-            <Button onClick={() => close(null)} size="sm" variant="ghost">
-              {t.common.cancel}
-            </Button>
-            <Button onClick={() => close(currentPath)} size="sm">
-              {copy.folderPickerSelect}
-            </Button>
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0 truncate text-xs text-muted-foreground" title={currentPath}>
+              {currentPath}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button onClick={() => close(null)} size="sm" variant="ghost">
+                {t.common.cancel}
+              </Button>
+              <Button onClick={() => close(currentPath)} size="sm">
+                {copy.folderPickerSelect}
+              </Button>
+            </div>
           </div>
         </div>
       </DialogContent>
