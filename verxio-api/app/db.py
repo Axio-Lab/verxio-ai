@@ -9,9 +9,12 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 
+# db.py lives at verxio-api/app/db.py (or /app/app/db.py in the API image).
+API_ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
 VERXIO_STATE_DIR = WORKSPACE_ROOT / ".verxio"
-MIGRATIONS_DIR = WORKSPACE_ROOT / "migrations"
+# Migrations ship next to the API package (copied to /app/migrations in Docker).
+MIGRATIONS_DIR = API_ROOT / "migrations"
 _THREAD_LOCAL = threading.local()
 
 

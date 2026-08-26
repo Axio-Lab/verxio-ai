@@ -49,12 +49,15 @@ class InMemoryLeaseStore(LeaseStore):
 class SqliteLeaseStore(LeaseStore):
     """Cross-worker leases via control-plane DB (works with uvicorn --workers N)."""
 
-    _ensured = False
+    # Keyed by DB path so test fixtures that swap sqlite files still CREATE.
+    _ensured_for: str | None = None
 
     def _ensure_table(self) -> None:
-        if SqliteLeaseStore._ensured:
-            return
         from app import db
+
+        db_key = str(db.get_database_settings().local_path.resolve())
+        if SqliteLeaseStore._ensured_for == db_key:
+            return
 
         db.execute(
             """
@@ -65,7 +68,7 @@ class SqliteLeaseStore(LeaseStore):
             )
             """
         )
-        SqliteLeaseStore._ensured = True
+        SqliteLeaseStore._ensured_for = db_key
 
     def try_acquire(self, key: str, *, ttl_seconds: float = 90.0) -> Lease | None:
         from app import db
@@ -157,4 +160,4 @@ def get_lease_store() -> LeaseStore:
 def reset_lease_store_for_tests() -> None:
     global _STORE
     _STORE = None
-    SqliteLeaseStore._ensured = False
+    SqliteLeaseStore._ensured_for = None
