@@ -28,8 +28,8 @@ import { setMutableRef } from '@/lib/mutable-ref'
 import { isVerxioWeb } from '@/lib/platform'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
 import { verxioApiEnabled } from '@/lib/verxio-api'
-import { preprocessWebLocalContextReferences } from '@/lib/web-local-context'
-import { resolveWebLocalWorkspaceCwd } from '@/lib/web-local-fs'
+import { isGatewayStagedFileRef, preprocessWebLocalContextReferences } from '@/lib/web-local-context'
+import { isWebLocalPath, readWebLocalFileBlob, resolveWebLocalWorkspaceCwd } from '@/lib/web-local-fs'
 import { setSessionYolo } from '@/lib/yolo-session'
 import {
   $composerAttachments,
@@ -358,6 +358,42 @@ export function usePromptActions({
     ): Promise<ComposerAttachment[]> => {
       const updateComposerAttachments = options.updateComposerAttachments ?? true
 
+      const resolveWebLocalUploadFile = async (attachment: ComposerAttachment): Promise<File | null> => {
+        if (!isVerxioWeb()) {
+          return null
+        }
+
+        const path = attachment.path?.trim() || ''
+
+        if (path && isWebLocalPath(path)) {
+          return readWebLocalFileBlob(path)
+        }
+
+        const refTarget =
+          attachment.refText
+            ?.replace(/^@file:/, '')
+            .replace(/^[`'"]|[`'"]$/g, '')
+            .trim() || ''
+
+        if (!refTarget || isGatewayStagedFileRef(refTarget)) {
+          return null
+        }
+
+        if (isWebLocalPath(refTarget)) {
+          return readWebLocalFileBlob(refTarget)
+        }
+
+        const cwd = resolveWebLocalWorkspaceCwd($currentCwd.get())
+
+        if (!cwd) {
+          return null
+        }
+
+        const fullPath = `${cwd.replace(/\/+$/, '')}/${refTarget.replace(/^\.\//, '')}`
+
+        return readWebLocalFileBlob(fullPath)
+      }
+
       return Promise.all(
         attachments.map(async attachment => {
           if (attachment.kind !== 'file') {
@@ -366,18 +402,32 @@ export function usePromptActions({
 
           if (attachment.attachedSessionId === sessionId && attachment.refText?.startsWith('@file:')) {
             // Already staged on the gateway (has a real upload). Skip name-only refs.
-            if (!attachment.uploadFile) {
+            if (
+              !attachment.uploadFile &&
+              attachment.refText &&
+              isGatewayStagedFileRef(attachment.refText.replace(/^@file:/, ''))
+            ) {
+              return attachment
+            }
+
+            if (!attachment.uploadFile && !isVerxioWeb()) {
               return attachment
             }
           }
 
-          if (!attachment.uploadFile) {
-            // Path-only context refs (project tree) stay as @file: text — no upload.
-            return attachment
+          let uploadFile = attachment.uploadFile
+
+          if (!uploadFile) {
+            uploadFile = (await resolveWebLocalUploadFile(attachment)) ?? undefined
+
+            if (!uploadFile) {
+              // Path-only desktop/project text refs stay as @file: text — no upload.
+              return attachment
+            }
           }
 
-          const label = attachment.label || attachment.uploadFile.name || 'file'
-          const payload = await fileDataUrlFromFile(attachment.uploadFile)
+          const label = attachment.label || uploadFile.name || 'file'
+          const payload = await fileDataUrlFromFile(uploadFile)
 
           const result = await requestGateway<FileAttachResponse>('file.attach', {
             data_url: payload.dataUrl,
