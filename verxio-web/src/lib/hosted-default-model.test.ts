@@ -236,9 +236,23 @@ describe('isSelectedHostedFamilyModel', () => {
 
 describe('resolveHostedStatusbarCorrection', () => {
   const geminiSettings = { defaultModelId: 'verxio-gemini', mode: 'hosted' as const }
+  const qwenSettings = { defaultModelId: 'verxio-qwen', mode: 'hosted' as const }
   const hostedDefault = { model: 'gemini-flash-lite-latest', provider: 'gemini' }
+  const qwenDefault = { model: 'qwen3.6-plus', provider: 'alibaba' }
 
-  it('snaps a leftover Qwen pin to the live Gemini assignment', () => {
+  it('keeps a Gemini pick even when Settings default is Qwen', () => {
+    expect(
+      resolveHostedStatusbarCorrection(
+        { model: 'gemini-flash-lite-latest', provider: 'gemini' },
+        { model: 'qwen3.6-plus', provider: 'alibaba' },
+        qwenSettings,
+        catalog,
+        qwenDefault
+      )
+    ).toBeNull()
+  })
+
+  it('keeps a Qwen pick even when Settings default is Gemini', () => {
     expect(
       resolveHostedStatusbarCorrection(
         { model: 'qwen3.6-plus', provider: 'alibaba' },
@@ -247,7 +261,7 @@ describe('resolveHostedStatusbarCorrection', () => {
         catalog,
         hostedDefault
       )
-    ).toEqual({ model: 'gemini-flash-lite-latest', provider: 'gemini' })
+    ).toBeNull()
   })
 
   it('keeps an in-family Gemini pick', () => {
@@ -262,11 +276,23 @@ describe('resolveHostedStatusbarCorrection', () => {
     ).toBeNull()
   })
 
-  it('falls back to the hosted default when Hermes is also wrong-family', () => {
+  it('fills from Hermes when the store is empty', () => {
     expect(
       resolveHostedStatusbarCorrection(
+        { model: '', provider: '' },
         { model: 'qwen3.6-plus', provider: 'alibaba' },
-        { model: 'qwen3.6-plus', provider: 'alibaba' },
+        geminiSettings,
+        catalog,
+        hostedDefault
+      )
+    ).toEqual({ model: 'qwen3.6-plus', provider: 'alibaba' })
+  })
+
+  it('falls back to the hosted default when store and Hermes are empty', () => {
+    expect(
+      resolveHostedStatusbarCorrection(
+        { model: '', provider: '' },
+        { model: '', provider: '' },
         geminiSettings,
         catalog,
         hostedDefault

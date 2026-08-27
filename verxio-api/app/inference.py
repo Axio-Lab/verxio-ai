@@ -56,6 +56,8 @@ FALLBACK_QWEN_AVAILABLE_MODELS = (
 )
 FALLBACK_GEMINI_AVAILABLE_MODELS = (
     DEFAULT_GEMINI_UPSTREAM_MODEL,
+    "gemini-flash-latest",
+    "gemini-flash",
     "gemini-3.1-flash-lite",
     "gemini-2.5-pro",
     "gemini-2.5-flash",
@@ -64,7 +66,6 @@ FALLBACK_GEMINI_AVAILABLE_MODELS = (
     "gemini-3.1-pro",
     "gemini-3-pro",
     "gemini-3-flash",
-    "gemini-flash",
 )
 
 # Verxio GPT hosted injected these into runtime containers. Strip them when Qwen
