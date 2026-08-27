@@ -219,6 +219,18 @@ async function ensureRootHandleAccess(): Promise<FileSystemDirectoryHandle | nul
   return handle
 }
 
+export async function pathForDroppedDirectoryHandle(handle: FileSystemDirectoryHandle): Promise<string> {
+  await persistRootHandle(handle)
+
+  const rootPath = webLocalRootPath(handle.name)
+
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(WEB_LOCAL_STORAGE_KEY, rootPath)
+  }
+
+  return rootPath
+}
+
 /** Browser-native folder picker — grants read access to a folder on the user's PC. */
 export async function pickBrowserLocalFolder(): Promise<string | null> {
   if (!supportsBrowserFolderPicker()) {

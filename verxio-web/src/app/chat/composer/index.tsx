@@ -53,7 +53,12 @@ import { $statusItemsBySession } from '@/store/composer-status'
 import { $gatewayState, $messages } from '@/store/session'
 import { $threadScrolledUp } from '@/store/thread-scroll'
 
-import { extractDroppedFiles, HERMES_PATHS_MIME } from '../hooks/use-composer-actions'
+import {
+  enrichDroppedFilesForWeb,
+  extractDroppedFiles,
+  HERMES_PATHS_MIME,
+  partitionDroppedFiles
+} from '../hooks/use-composer-actions'
 
 import { AttachmentList } from './attachments'
 import { ContextMenu } from './context-menu'
@@ -1029,28 +1034,31 @@ export function ChatBar({
     event.preventDefault()
     resetDragState()
 
-    const candidates = extractDroppedFiles(event.dataTransfer)
+    const transfer = event.dataTransfer
+    const candidates = extractDroppedFiles(transfer)
 
     if (candidates.length === 0) {
       return
     }
 
-    if (Array.from(event.dataTransfer.types || []).includes(HERMES_PATHS_MIME)) {
-      const refs = droppedFileInlineRefs(candidates, cwd)
+    void (async () => {
+      const enriched = await enrichDroppedFilesForWeb(transfer, candidates)
+      const { inAppRefs, osDrops } = partitionDroppedFiles(enriched)
+      const refs = droppedFileInlineRefs(inAppRefs, cwd)
 
-      if (insertInlineRefs(refs)) {
+      if (refs.length && insertInlineRefs(refs)) {
         triggerHaptic('selection')
       }
 
-      return
-    }
+      if (osDrops.length) {
+        const attached = await onAttachDroppedItems(osDrops)
 
-    void Promise.resolve(onAttachDroppedItems(candidates)).then(attached => {
-      if (attached) {
-        triggerHaptic('selection')
-        requestMainFocus()
+        if (attached) {
+          triggerHaptic('selection')
+          requestMainFocus()
+        }
       }
-    })
+    })()
   }
 
   const handleInputDragOver = (event: ReactDragEvent<HTMLDivElement>) => {
@@ -1068,11 +1076,10 @@ export function ChatBar({
       return
     }
 
-    const candidates = extractDroppedFiles(event.dataTransfer)
+    const transfer = event.dataTransfer
+    const candidates = extractDroppedFiles(transfer)
 
-    const refs = droppedFileInlineRefs(candidates, cwd)
-
-    if (!refs.length) {
+    if (!candidates.length) {
       return
     }
 
@@ -1080,9 +1087,25 @@ export function ChatBar({
     event.stopPropagation()
     resetDragState()
 
-    if (insertInlineRefs(refs)) {
-      triggerHaptic('selection')
-    }
+    void (async () => {
+      const enriched = await enrichDroppedFilesForWeb(transfer, candidates)
+      const attach = onAttachDroppedItems
+      const { inAppRefs, osDrops } = partitionDroppedFiles(enriched)
+      const refs = droppedFileInlineRefs(attach ? inAppRefs : enriched, cwd)
+
+      if (refs.length && insertInlineRefs(refs)) {
+        triggerHaptic('selection')
+      }
+
+      if (attach && osDrops.length) {
+        const attached = await attach(osDrops)
+
+        if (attached) {
+          triggerHaptic('selection')
+          requestMainFocus()
+        }
+      }
+    })()
   }
 
   const clearDraft = useCallback(() => {

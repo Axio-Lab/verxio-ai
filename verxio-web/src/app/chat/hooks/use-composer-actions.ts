@@ -205,6 +205,119 @@ export function extractDroppedFiles(transfer: DataTransfer): DroppedFile[] {
   return result
 }
 
+/**
+ * In-app drags (project tree / gutter) are path-only and stay inline `@file:` refs.
+ * OS drops carry a File handle and must go through the upload/attach pipeline —
+ * especially on web, where there is no gateway-visible absolute path.
+ */
+export function partitionDroppedFiles(candidates: DroppedFile[]): {
+  osDrops: DroppedFile[]
+  inAppRefs: DroppedFile[]
+} {
+  const osDrops: DroppedFile[] = []
+  const inAppRefs: DroppedFile[] = []
+
+  for (const candidate of candidates) {
+    if (candidate.file) {
+      osDrops.push(candidate)
+    } else {
+      inAppRefs.push(candidate)
+    }
+  }
+
+  return { osDrops, inAppRefs }
+}
+
+/**
+ * Start File System Access handle reads during the drop gesture, then resolve
+ * directories to `verxio-local:` paths so OS folder drops match the + menu.
+ */
+export async function enrichDroppedFilesForWeb(transfer: DataTransfer, base: DroppedFile[]): Promise<DroppedFile[]> {
+  if (!isVerxioWeb()) {
+    return base
+  }
+
+  const items = transfer.items
+
+  if (!items?.length) {
+    return base
+  }
+
+  type FileSystemHandleLike = { kind: string; name: string }
+  type ItemWithHandle = DataTransferItem & {
+    getAsFileSystemHandle?: () => Promise<FileSystemHandleLike>
+  }
+
+  // Kick off handle promises synchronously — DataTransfer detaches after the handler returns.
+  const handleJobs: Array<Promise<{ file: File | null; handle: FileSystemHandleLike | null }>> = []
+
+  for (let i = 0; i < items.length; i += 1) {
+    const item = items[i] as ItemWithHandle | undefined
+
+    if (!item || item.kind !== 'file') {
+      continue
+    }
+
+    const file = item.getAsFile()
+    const getter = item.getAsFileSystemHandle
+
+    if (!getter) {
+      continue
+    }
+
+    handleJobs.push(
+      getter()
+        .then(handle => ({ file, handle }))
+        .catch(() => ({ file, handle: null }))
+    )
+  }
+
+  if (!handleJobs.length) {
+    return base
+  }
+
+  const { pathForDroppedDirectoryHandle } = await import('@/lib/web-local-fs')
+  const resolved = await Promise.all(handleJobs)
+  const folders: DroppedFile[] = []
+
+  for (const { handle } of resolved) {
+    if (!handle || handle.kind !== 'directory') {
+      continue
+    }
+
+    try {
+      const path = await pathForDroppedDirectoryHandle(handle as FileSystemDirectoryHandle)
+      folders.push({ path, isDirectory: true })
+    } catch {
+      // Permission denied / unsupported — keep the size-0 File fallback below.
+    }
+  }
+
+  if (!folders.length) {
+    return base
+  }
+
+  const merged: DroppedFile[] = [...folders]
+  const folderNames = new Set(folders.map(folder => folder.path.split('/').pop()?.toLowerCase()).filter(Boolean))
+
+  for (const candidate of base) {
+    if (candidate.isDirectory) {
+      merged.push(candidate)
+
+      continue
+    }
+
+    if (candidate.file && folderNames.has(candidate.file.name.toLowerCase()) && candidate.file.size === 0) {
+      // Dropped directory often also appears as a size-0 File — skip the duplicate.
+      continue
+    }
+
+    merged.push(candidate)
+  }
+
+  return merged
+}
+
 interface ComposerActionsOptions {
   activeSessionId: string | null
   currentCwd: string
