@@ -1257,7 +1257,8 @@ export function usePromptActions({
         try {
           const resumed = await requestGateway<{ session_id: string }>('session.resume', {
             session_id: selectedStoredSessionIdRef.current,
-            use_current_model: true
+            use_current_model: false,
+            restore_stored_runtime: true
           })
 
           const recoveredId = resumed?.session_id

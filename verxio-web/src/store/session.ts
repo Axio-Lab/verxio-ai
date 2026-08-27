@@ -12,8 +12,20 @@ import type { SessionInfo, UsageStats } from '@/types/hermes'
 type Updater<T> = T | ((current: T) => T)
 
 const WORKSPACE_CWD_KEY = 'hermes.desktop.workspace-cwd'
+const COMPOSER_MODEL_KEY = 'verxio.composer.model'
+const COMPOSER_PROVIDER_KEY = 'verxio.composer.provider'
+const COMPOSER_EFFORT_KEY = 'verxio.composer.reasoning-effort'
+const COMPOSER_FAST_KEY = 'verxio.composer.fast'
 
 export const getRememberedWorkspaceCwd = (): string => storedString(WORKSPACE_CWD_KEY)?.trim() || ''
+
+function storedBoolean(key: string): boolean {
+  return storedString(key) === '1'
+}
+
+function persistBoolean(key: string, value: boolean) {
+  persistString(key, value ? '1' : null)
+}
 
 interface AppAtom<T> {
   get: () => T
@@ -133,11 +145,11 @@ export const $messages = atom<ChatMessage[]>([])
 export const $freshDraftReady = atom(false)
 export const $busy = atom(false)
 export const $awaitingResponse = atom(false)
-export const $currentModel = atom('')
-export const $currentProvider = atom('')
-export const $currentReasoningEffort = atom('')
+export const $currentModel = atom(storedString(COMPOSER_MODEL_KEY) ?? '')
+export const $currentProvider = atom(storedString(COMPOSER_PROVIDER_KEY) ?? '')
+export const $currentReasoningEffort = atom(storedString(COMPOSER_EFFORT_KEY) ?? '')
 export const $currentServiceTier = atom('')
-export const $currentFastMode = atom(false)
+export const $currentFastMode = atom(storedBoolean(COMPOSER_FAST_KEY))
 // Effective approval-bypass state mirrored from the gateway (session.info).
 // Persistence lives in the backend config (approvals.mode), so this is a plain
 // reflection of the truth the gateway reports rather than its own store.
@@ -187,11 +199,27 @@ export const setMessages = (next: Updater<ChatMessage[]>) => updateAtom($message
 export const setFreshDraftReady = (next: Updater<boolean>) => updateAtom($freshDraftReady, next)
 export const setBusy = (next: Updater<boolean>) => updateAtom($busy, next)
 export const setAwaitingResponse = (next: Updater<boolean>) => updateAtom($awaitingResponse, next)
-export const setCurrentModel = (next: Updater<string>) => updateAtom($currentModel, next)
-export const setCurrentProvider = (next: Updater<string>) => updateAtom($currentProvider, next)
-export const setCurrentReasoningEffort = (next: Updater<string>) => updateAtom($currentReasoningEffort, next)
+export const setCurrentModel = (next: Updater<string>) => {
+  updateAtom($currentModel, next)
+  persistString(COMPOSER_MODEL_KEY, $currentModel.get() || null)
+}
+
+export const setCurrentProvider = (next: Updater<string>) => {
+  updateAtom($currentProvider, next)
+  persistString(COMPOSER_PROVIDER_KEY, $currentProvider.get() || null)
+}
+
+export const setCurrentReasoningEffort = (next: Updater<string>) => {
+  updateAtom($currentReasoningEffort, next)
+  persistString(COMPOSER_EFFORT_KEY, $currentReasoningEffort.get() || null)
+}
+
 export const setCurrentServiceTier = (next: Updater<string>) => updateAtom($currentServiceTier, next)
-export const setCurrentFastMode = (next: Updater<boolean>) => updateAtom($currentFastMode, next)
+
+export const setCurrentFastMode = (next: Updater<boolean>) => {
+  updateAtom($currentFastMode, next)
+  persistBoolean(COMPOSER_FAST_KEY, $currentFastMode.get())
+}
 export const setYoloActive = (next: Updater<boolean>) => updateAtom($yoloActive, next)
 
 export const setCurrentCwd = (next: Updater<string>) => {

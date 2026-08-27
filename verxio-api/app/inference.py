@@ -759,15 +759,23 @@ def sync_inference_runtime_bridge(runtime: RuntimeInstance, user_id: str) -> Inf
         )
 
     raw_model = config.get("model")
+    current_default = str(raw_model.get("default") or "").strip() if isinstance(raw_model, dict) else ""
+    current_provider = str(raw_model.get("provider") or "").strip().lower() if isinstance(raw_model, dict) else ""
+    available_ids = set(_available_model_ids(model))
+    # Keep an in-family selection (e.g. Gemini 3.1 Pro) — only rewrite when the
+    # provider/family is wrong or the default is empty/unknown.
     model_invalid = (
         not isinstance(raw_model, dict)
-        or not str(raw_model.get("default") or "").strip()
-        or str(raw_model.get("provider") or "").strip().lower() != model.provider_slug
-        or str(raw_model.get("default") or "").strip() != upstream_model_id
+        or not current_default
+        or current_provider != model.provider_slug
+        or (current_default not in available_ids and current_default != upstream_model_id)
     )
     model_config = raw_model if isinstance(raw_model, dict) else {}
     model_config["provider"] = model.provider_slug
-    model_config["default"] = upstream_model_id
+    if model_invalid:
+        model_config["default"] = upstream_model_id
+    else:
+        model_config["default"] = current_default
     config["model"] = model_config
 
     auth_active_cleared = _clear_conflicting_auth_active_provider(
