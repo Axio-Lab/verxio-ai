@@ -1,18 +1,19 @@
 export const AIML_PATH = '/aiml'
 export const AIML_CHECKOUT_PATH = '/aiml/checkout'
 
-export function formatUsd(amount: number): string {
-  return `$${amount}`
+export function formatNgn(amount: number): string {
+  return `₦${amount.toLocaleString('en-NG')}`
 }
 
 export const AIML_PRODUCT = {
   name: 'AI Money Library',
   shortName: 'AIML',
-  tagline: 'Playbooks, prompts, and agent recipes that turn AI into revenue.',
+  headline: 'Stop collecting AI tools. Start collecting revenue.',
+  tagline: 'Playbooks, prompts, and agent recipes that turn AI into a system you can sell with.',
   description:
     'A digital library of income systems you can run with AI — offers, content, outreach, and ready-to-use agent recipes.',
-  priceUsd: 97,
-  priceLabel: '$97',
+  priceNgn: 17500,
+  priceLabel: '₦17,500',
   billing: 'One-time purchase',
   format: 'Instant digital access',
 } as const
@@ -20,36 +21,81 @@ export const AIML_PRODUCT = {
 export const AIML_ORDER_BUMP = {
   name: 'Offer Accelerator Pack',
   description: 'Bonus swipe files, launch checklist, and extra agent recipes to ship your first offer faster.',
-  priceUsd: 39,
-  priceLabel: '$39',
+  priceNgn: 7500,
+  priceLabel: '₦7,500',
+} as const
+
+export const AIML_PAINS = [
+  'You have a graveyard of ChatGPT chats and no offer in the market.',
+  'You watch AI tutorials, then go back to doing the work by hand.',
+  'You bought tools. You still do not have a repeatable way to get paid.',
+] as const
+
+export const AIML_STEPS = [
+  {
+    step: '01',
+    title: 'Get instant access',
+    body: 'Checkout once. The library unlocks immediately — no shipping, no call, no login maze.',
+  },
+  {
+    step: '02',
+    title: 'Pick one money system',
+    body: 'Start with the offer, the content machine, or outreach. One playbook. One outcome.',
+  },
+  {
+    step: '03',
+    title: 'Run it, then reuse it',
+    body: 'Copy the prompts, deploy the agent recipes, and keep the system. This edition is yours.',
+  },
+] as const
+
+export const AIML_AUDIENCE = {
+  for: [
+    'Freelancers who want an offer, not another prompt pack to bookmark.',
+    'Founders who need AI to produce pipeline, not slide decks.',
+    'Operators who will actually run a playbook this week.',
+  ],
+  notFor: [
+    'People looking for a get-rich-overnight crypto bot.',
+    'Teams that need a live SaaS subscription (that is Verxio, separately).',
+    'Anyone who will not ship an offer after they have the system.',
+  ],
 } as const
 
 export const AIML_MODULES = [
   {
     title: 'Offer Engine',
     body: 'Positioning, packaging, and pricing templates so you sell an outcome, not a pile of prompts.',
+    valueNgn: 17500,
   },
   {
     title: 'Content Machine',
     body: 'Repeatable AI workflows for posts, emails, and landing copy that point back to an offer.',
+    valueNgn: 12088,
   },
   {
     title: 'Outreach Playbooks',
     body: 'Scripts and sequences for inbound and outbound — personalized at scale without sounding like spam.',
+    valueNgn: 12088,
   },
   {
     title: 'Agent Recipes',
     body: 'Ready-to-run agent setups for research, follow-up, fulfillment, and reporting.',
+    valueNgn: 17500,
   },
   {
     title: 'Prompt Packs',
     body: 'Battle-tested prompts for research, offers, sales pages, and customer conversations.',
+    valueNgn: 8479,
   },
   {
     title: 'Delivery Kit',
     body: 'How to fulfill, onboard, and keep buyers coming back — without building a giant ops team.',
+    valueNgn: 8479,
   },
 ] as const
+
+export const AIML_STACK_TOTAL = AIML_MODULES.reduce((sum, item) => sum + item.valueNgn, 0)
 
 export const AIML_INCLUDES = [
   'Full library of income playbooks',
@@ -75,5 +121,9 @@ export const AIML_FAQ = [
   {
     q: 'Is this a Verxio subscription?',
     a: 'No. This is a one-time digital product. Verxio the platform is separate; recipes here can be used with Verxio or on their own.',
+  },
+  {
+    q: 'What format is it?',
+    a: 'A downloadable library you can use immediately: playbooks, prompt packs, and agent recipes. Open it, pick a system, run it.',
   },
 ] as const

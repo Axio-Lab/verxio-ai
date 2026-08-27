@@ -2,7 +2,7 @@
 
 import { useId, useState } from 'react'
 
-import { AIML_INCLUDES, AIML_ORDER_BUMP, AIML_PRODUCT, formatUsd } from '@/lib/aiml'
+import { AIML_INCLUDES, AIML_ORDER_BUMP, AIML_PRODUCT, formatNgn } from '@/lib/aiml'
 
 export function CheckoutOrder() {
   const bumpId = useId()
@@ -10,7 +10,7 @@ export function CheckoutOrder() {
   const [busy, setBusy] = useState(false)
   const [submitted, setSubmitted] = useState(false)
 
-  const total = AIML_PRODUCT.priceUsd + (addBump ? AIML_ORDER_BUMP.priceUsd : 0)
+  const total = AIML_PRODUCT.priceNgn + (addBump ? AIML_ORDER_BUMP.priceNgn : 0)
 
   function payNow() {
     setBusy(true)
@@ -26,7 +26,7 @@ export function CheckoutOrder() {
         <p className="text-xs font-semibold uppercase tracking-wide text-primary">Preview only</p>
         <h2 className="mt-2 text-xl font-bold tracking-tight text-gray-900">Checkout is not connected yet</h2>
         <p className="mt-3 text-sm leading-relaxed text-gray-600">
-          No charge was made. Total would have been {formatUsd(total)}
+          No charge was made. Total would have been {formatNgn(total)}
           {addBump ? ` (${AIML_PRODUCT.name} + ${AIML_ORDER_BUMP.name})` : ` (${AIML_PRODUCT.name})`}.
         </p>
       </div>
@@ -67,7 +67,7 @@ export function CheckoutOrder() {
 
         <div className="mt-6 flex items-baseline justify-between border-t border-gray-200 pt-4">
           <span className="text-sm font-medium text-gray-700">Total due today</span>
-          <span className="text-2xl font-bold text-gray-900">{formatUsd(total)}</span>
+          <span className="text-2xl font-bold text-gray-900">{formatNgn(total)}</span>
         </div>
       </section>
 
