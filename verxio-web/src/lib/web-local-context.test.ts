@@ -7,8 +7,8 @@ vi.mock('./web-local-fs', () => ({
   readWebLocalFileText: vi.fn(async () => null)
 }))
 
-import { ensureWebLocalFsAccess, readWebLocalDir, readWebLocalFileText } from './web-local-fs'
 import { isGatewayStagedFileRef, preprocessWebLocalContextReferences } from './web-local-context'
+import { ensureWebLocalFsAccess, readWebLocalDir, readWebLocalFileText } from './web-local-fs'
 
 describe('web-local-context', () => {
   beforeEach(() => {
