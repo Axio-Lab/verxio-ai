@@ -47,6 +47,22 @@ function joinWebLocalPath(root: string, rel: string): string {
   return `${base}/${clean}`
 }
 
+/** Gateway-staged uploads live under the runtime hermes home, not the browser folder. */
+export function isGatewayStagedFileRef(target: string): boolean {
+  const normalized = target.trim().replace(/\\/g, '/').replace(/^\.\//, '')
+
+  if (!normalized) {
+    return false
+  }
+
+  return (
+    normalized.startsWith('.hermes/') ||
+    normalized.includes('/.hermes/desktop-attachments/') ||
+    normalized.startsWith('desktop-attachments/') ||
+    /(?:^|\/)\.hermes\/desktop-attachments\//.test(normalized)
+  )
+}
+
 function estimateTokens(text: string): number {
   return Math.max(1, Math.ceil(text.length / 4))
 }
@@ -219,7 +235,10 @@ export async function preprocessWebLocalContextReferences(message: string, cwd: 
 
   const refs = parseReferences(message).filter(ref => ref.kind === 'file' || ref.kind === 'folder')
 
-  if (!refs.length) {
+  // Leave gateway-staged uploads alone — they already live on the runtime, not in the browser FS.
+  const expandableRefs = refs.filter(ref => !(ref.kind === 'file' && isGatewayStagedFileRef(ref.target)))
+
+  if (!expandableRefs.length) {
     return message
   }
 
@@ -232,7 +251,7 @@ export async function preprocessWebLocalContextReferences(message: string, cwd: 
     warnings.push('Local folder access is not available. Re-open the project folder in the file sidebar.')
   }
 
-  for (const ref of refs) {
+  for (const ref of expandableRefs) {
     if (!hasAccess) {
       warnings.push(`${ref.raw}: folder not found`)
 
@@ -250,7 +269,7 @@ export async function preprocessWebLocalContextReferences(message: string, cwd: 
     }
   }
 
-  let final = removeReferenceTokens(message, refs)
+  let final = removeReferenceTokens(message, expandableRefs)
 
   if (warnings.length) {
     final = `${final}\n\n--- Context Warnings ---\n${warnings.map(w => `- ${w}`).join('\n')}`
