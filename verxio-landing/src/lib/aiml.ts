@@ -66,32 +66,32 @@ export const AIML_MODULES = [
   {
     title: 'Offer Engine',
     body: 'Positioning, packaging, and pricing templates so you sell an outcome, not a pile of prompts.',
-    valueNgn: 17500,
+    valueNgn: 102547,
   },
   {
     title: 'Content Machine',
     body: 'Repeatable AI workflows for posts, emails, and landing copy that point back to an offer.',
-    valueNgn: 12088,
+    valueNgn: 70832,
   },
   {
     title: 'Outreach Playbooks',
     body: 'Scripts and sequences for inbound and outbound — personalized at scale without sounding like spam.',
-    valueNgn: 12088,
+    valueNgn: 70832,
   },
   {
     title: 'Agent Recipes',
     body: 'Ready-to-run agent setups for research, follow-up, fulfillment, and reporting.',
-    valueNgn: 17500,
+    valueNgn: 102547,
   },
   {
     title: 'Prompt Packs',
     body: 'Battle-tested prompts for research, offers, sales pages, and customer conversations.',
-    valueNgn: 8479,
+    valueNgn: 49688,
   },
   {
     title: 'Delivery Kit',
     body: 'How to fulfill, onboard, and keep buyers coming back — without building a giant ops team.',
-    valueNgn: 8479,
+    valueNgn: 49688,
   },
 ] as const
 
