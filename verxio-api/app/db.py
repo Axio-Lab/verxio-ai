@@ -896,7 +896,13 @@ def run_migrations() -> None:
                 if _cursor_to_dicts(applied):
                     continue
                 for statement in _split_sql_script(migration.read_text(encoding="utf-8")):
-                    conn.execute(statement)
+                    try:
+                        conn.execute(statement)
+                    except sqlite3.OperationalError as exc:
+                        # Columns may already exist when schema was evolved via
+                        # _ensure_legacy_columns while MIGRATIONS_DIR was unset.
+                        if "duplicate column name" not in str(exc).lower():
+                            raise
                 conn.execute("INSERT INTO schema_migrations (version) VALUES (?)", (version,))
         else:
             for statement in SCHEMA_STATEMENTS:
