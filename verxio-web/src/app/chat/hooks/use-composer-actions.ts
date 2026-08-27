@@ -4,7 +4,12 @@ import { requestComposerFocus, requestComposerInsert } from '@/app/chat/composer
 import { formatRefValue } from '@/components/assistant-ui/directive-text'
 import { useI18n } from '@/i18n'
 import { attachmentId, contextPath, pathLabel } from '@/lib/chat-runtime'
-import { isAbsoluteFilesystemPath, pickBrowserFiles, readBlobAsDataUrl } from '@/lib/composer-attach'
+import {
+  isAbsoluteFilesystemPath,
+  isReadableAttachmentPath,
+  pickBrowserFiles,
+  readBlobAsDataUrl
+} from '@/lib/composer-attach'
 import { fishAudioAttachmentRef, uploadFishAudioAttachment } from '@/lib/fishaudio-session'
 import { isVerxioWeb } from '@/lib/platform'
 import { resolveWebLocalWorkspaceCwd } from '@/lib/web-local-fs'
@@ -277,9 +282,9 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
         return false
       }
 
-      // Bare browser filenames are not gateway-visible. Require a real path or
-      // a File blob (attachImageFile) so submit can call image.attach_bytes.
-      if (!isAbsoluteFilesystemPath(filePath)) {
+      // Bare browser filenames are not gateway-visible. Require a real path,
+      // web-local path, or a File blob (attachImageFile) so submit can upload bytes.
+      if (!isReadableAttachmentPath(filePath)) {
         return false
       }
 
@@ -659,8 +664,8 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
 
         // Ignore name-only "paths" from the web bridge — they aren't gateway-visible.
         const filePath =
-          (knownPath && isAbsoluteFilesystemPath(knownPath) && knownPath) ||
-          (fallbackPath && isAbsoluteFilesystemPath(fallbackPath) && fallbackPath) ||
+          (knownPath && isReadableAttachmentPath(knownPath) && knownPath) ||
+          (fallbackPath && isReadableAttachmentPath(fallbackPath) && fallbackPath) ||
           ''
 
         const isImage = file.type.startsWith('image/') || isImagePath(file.name) || (filePath && isImagePath(filePath))

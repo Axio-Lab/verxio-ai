@@ -347,7 +347,7 @@ export async function readWebLocalDir(dirPath: string): Promise<HermesReadDirRes
   }
 }
 
-export async function readWebLocalFileText(filePath: string): Promise<HermesReadFileTextResult | null> {
+export async function readWebLocalFileBlob(filePath: string): Promise<File | null> {
   if (!isWebLocalPath(filePath)) {
     return null
   }
@@ -369,7 +369,40 @@ export async function readWebLocalFileText(filePath: string): Promise<HermesRead
 
   try {
     const fileHandle = await parent.getFileHandle(fileName)
-    const file = await fileHandle.getFile()
+
+    return await fileHandle.getFile()
+  } catch {
+    return null
+  }
+}
+
+export async function readWebLocalFileDataUrl(filePath: string): Promise<string | null> {
+  const file = await readWebLocalFileBlob(filePath)
+
+  if (!file) {
+    return null
+  }
+
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  let binary = ''
+
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte)
+  }
+
+  const mime = file.type || 'application/octet-stream'
+
+  return `data:${mime};base64,${btoa(binary)}`
+}
+
+export async function readWebLocalFileText(filePath: string): Promise<HermesReadFileTextResult | null> {
+  const file = await readWebLocalFileBlob(filePath)
+
+  if (!file) {
+    return null
+  }
+
+  try {
     const text = await file.text()
 
     return {
@@ -378,17 +411,10 @@ export async function readWebLocalFileText(filePath: string): Promise<HermesRead
       binary: false
     }
   } catch {
-    try {
-      const fileHandle = await parent.getFileHandle(fileName)
-      const file = await fileHandle.getFile()
-
-      return {
-        path: filePath,
-        text: '',
-        binary: true
-      }
-    } catch {
-      return null
+    return {
+      path: filePath,
+      text: '',
+      binary: true
     }
   }
 }

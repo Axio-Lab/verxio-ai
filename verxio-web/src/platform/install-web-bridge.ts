@@ -30,6 +30,7 @@ import {
   isWebLocalPath,
   pickWebLocalDirectoryPaths,
   readWebLocalDir,
+  readWebLocalFileDataUrl,
   readWebLocalFileText,
   restoreRootHandle,
   WEB_LOCAL_STORAGE_KEY
@@ -771,7 +772,15 @@ export function installWebBridge(): void {
         return false
       }
     },
-    readFileDataUrl: async (filePath: string) => readWebArtifactDataUrl(filePath),
+    readFileDataUrl: async (filePath: string) => {
+      const local = await readWebLocalFileDataUrl(filePath)
+
+      if (local) {
+        return local
+      }
+
+      return readWebArtifactDataUrl(filePath)
+    },
     readFileText: async (filePath: string) => {
       const local = await readWebLocalFileText(filePath)
 

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { base64FromDataUrl, fileDataUrlFromFile, imageBytesFromFile, isAbsoluteFilesystemPath } from './composer-attach'
+import {
+  base64FromDataUrl,
+  fileDataUrlFromFile,
+  imageBytesFromFile,
+  isAbsoluteFilesystemPath,
+  isReadableAttachmentPath
+} from './composer-attach'
 
 describe('composer-attach helpers', () => {
   it('detects absolute filesystem paths only', () => {
@@ -9,6 +15,13 @@ describe('composer-attach helpers', () => {
     expect(isAbsoluteFilesystemPath('IMG_9225.jpg')).toBe(false)
     expect(isAbsoluteFilesystemPath('images/upload_1.jpg')).toBe(false)
     expect(isAbsoluteFilesystemPath('')).toBe(false)
+    expect(isAbsoluteFilesystemPath('verxio-local:/verxio/photo.jpg')).toBe(false)
+  })
+
+  it('accepts web-local paths as readable attachment sources', () => {
+    expect(isReadableAttachmentPath('/tmp/photo.jpg')).toBe(true)
+    expect(isReadableAttachmentPath('verxio-local:/verxio/photo.jpg')).toBe(true)
+    expect(isReadableAttachmentPath('IMG_9225.jpg')).toBe(false)
   })
 
   it('strips data-url prefixes for base64 payloads', () => {

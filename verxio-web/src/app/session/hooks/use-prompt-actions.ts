@@ -14,7 +14,7 @@ import {
   sessionTitle,
   SLASH_COMMAND_RE
 } from '@/lib/chat-runtime'
-import { fileDataUrlFromFile, imageBytesFromFile, isAbsoluteFilesystemPath } from '@/lib/composer-attach'
+import { fileDataUrlFromFile, imageBytesFromFile, isReadableAttachmentPath } from '@/lib/composer-attach'
 import {
   type CommandsCatalogLike,
   desktopSlashUnavailableMessage,
@@ -281,7 +281,7 @@ export function usePromptActions({
           if (
             attachment.attachedSessionId === sessionId &&
             attachment.path &&
-            isAbsoluteFilesystemPath(attachment.path)
+            isReadableAttachmentPath(attachment.path)
           ) {
             return attachment
           }
@@ -296,7 +296,7 @@ export function usePromptActions({
               content_base64: payload.contentBase64,
               filename: payload.filename
             })
-          } else if (attachment.path && isAbsoluteFilesystemPath(attachment.path)) {
+          } else if (attachment.path && isReadableAttachmentPath(attachment.path)) {
             // Prefer byte upload so remote gateways (web + desktop remote) work.
             // Fall back to path attach for local desktop where the gateway shares disk.
             try {
