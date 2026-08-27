@@ -1,6 +1,10 @@
 export const AIML_PATH = '/aiml'
 export const AIML_CHECKOUT_PATH = '/aiml/checkout'
 
+export function formatUsd(amount: number): string {
+  return `$${amount}`
+}
+
 export const AIML_PRODUCT = {
   name: 'AI Money Library',
   shortName: 'AIML',
@@ -11,6 +15,13 @@ export const AIML_PRODUCT = {
   priceLabel: '$97',
   billing: 'One-time purchase',
   format: 'Instant digital access',
+} as const
+
+export const AIML_ORDER_BUMP = {
+  name: 'Offer Accelerator Pack',
+  description: 'Bonus swipe files, launch checklist, and extra agent recipes to ship your first offer faster.',
+  priceUsd: 39,
+  priceLabel: '$39',
 } as const
 
 export const AIML_MODULES = [
