@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { isGatewayStagedFileRef, preprocessWebLocalContextReferences } from './web-local-context'
+import { ensureWebLocalFsAccess, readWebLocalDir, readWebLocalFileText } from './web-local-fs'
+
 vi.mock('./web-local-fs', () => ({
   ensureWebLocalFsAccess: vi.fn(async () => true),
   isWebLocalPath: (path: string) => path.startsWith('verxio-local:'),
   readWebLocalDir: vi.fn(async () => ({ entries: [] })),
   readWebLocalFileText: vi.fn(async () => null)
 }))
-
-import { isGatewayStagedFileRef, preprocessWebLocalContextReferences } from './web-local-context'
-import { ensureWebLocalFsAccess, readWebLocalDir, readWebLocalFileText } from './web-local-fs'
 
 describe('web-local-context', () => {
   beforeEach(() => {
