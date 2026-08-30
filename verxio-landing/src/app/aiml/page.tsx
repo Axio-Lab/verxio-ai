@@ -12,7 +12,7 @@ import {
   AIML_CHOICE,
   AIML_DIFFERENCE,
   AIML_GUARANTEE,
-  AIML_INCLUDES,
+  AIML_OFFER,
   AIML_PAYOFF,
   AIML_PLACEHOLDERS,
   AIML_PROBLEM,
@@ -225,19 +225,23 @@ export default function AimlSalesPage() {
 
       <section className="px-6 py-16">
         <div className="mx-auto max-w-3xl rounded-2xl border border-gray-200 bg-white p-8">
-          <p className="text-xs font-semibold uppercase tracking-wide text-primary">The Offer</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-primary">{AIML_OFFER.title}</p>
           <h2 className="mt-3 text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
-            Main Package: {AIML_PRODUCT.priceLabel}
+            {AIML_OFFER.heading}: {AIML_PRODUCT.priceLabel}
           </h2>
-          <p className="mt-3 text-base leading-relaxed text-gray-700">{AIML_PRODUCT.description}</p>
-          <ul className="mt-6 space-y-3">
-            {AIML_INCLUDES.map((item) => (
-              <li key={item} className="flex items-start gap-2 text-sm text-gray-700">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
-                {item}
+          <p className="mt-3 text-base italic leading-relaxed text-gray-600">{AIML_OFFER.priceAnchor}</p>
+          <p className="mt-6 text-base font-medium leading-relaxed text-gray-900">{AIML_OFFER.intro}</p>
+          <ul className="mt-5 space-y-4">
+            {AIML_OFFER.items.map((item) => (
+              <li key={item.title} className="flex items-start gap-3 text-base leading-relaxed text-gray-700">
+                <CheckCircle2 className="mt-1 h-4 w-4 shrink-0 text-primary" aria-hidden />
+                <span>
+                  <span className="font-semibold text-gray-900">{item.title}:</span> {item.body}
+                </span>
               </li>
             ))}
           </ul>
+          <p className="mt-6 text-base leading-relaxed text-gray-700">{AIML_OFFER.closer}</p>
         </div>
       </section>
 

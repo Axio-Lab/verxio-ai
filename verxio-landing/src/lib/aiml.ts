@@ -128,11 +128,38 @@ export const AIML_CHOICE = {
   body: 'You do not need to hire an expert. You just need to train the AI you already have. Get the library and start doing real work today.',
 } as const
 
+export const AIML_OFFER = {
+  title: 'The Offer',
+  heading: 'Main Package',
+  priceAnchor: 'Less than what you would pay a beginner copywriter for one bad sales page.',
+  intro: 'Here is exactly what you get the second you check out:',
+  items: [
+    {
+      title: '120 Expert AI Skills',
+      body: 'Spread across 13 business categories.',
+    },
+    {
+      title: 'Plug-and-Play Setup',
+      body: 'Load them directly into ChatGPT or Claude in seconds.',
+    },
+    {
+      title: 'Lifetime Access',
+      body: 'Keep the exact prompts that print money forever.',
+    },
+    {
+      title: 'Zero Monthly Fees',
+      body: 'One single payment. No hidden subscriptions.',
+    },
+  ],
+  closer:
+    'This library pays for itself the very first time you use it to write an ad, close a deal, or avoid hiring an agency.',
+} as const
+
 export const AIML_INCLUDES = [
-  '120 expert AI skills across 13 categories',
-  'Load them into ChatGPT or Claude',
-  'Keep them forever',
-  'One payment. No subscriptions',
+  '120 expert AI skills across 13 business categories',
+  'Load them directly into ChatGPT or Claude in seconds',
+  'Lifetime access — keep them forever',
+  'One payment. No hidden subscriptions',
 ] as const
 
 export const AIML_PLACEHOLDERS = {
