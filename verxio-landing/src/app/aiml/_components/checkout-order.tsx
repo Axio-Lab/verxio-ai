@@ -42,7 +42,9 @@ export function CheckoutOrder() {
           <li className="flex items-start justify-between gap-4">
             <div>
               <p className="font-medium text-gray-900">{AIML_PRODUCT.name}</p>
-              <p className="mt-1 text-sm text-gray-500">{AIML_PRODUCT.billing}</p>
+              <p className="mt-1 text-sm text-gray-500">
+                {AIML_PRODUCT.skillCount} expert skills · {AIML_PRODUCT.billing}
+              </p>
             </div>
             <p className="text-base font-semibold text-gray-900">{AIML_PRODUCT.priceLabel}</p>
           </li>
@@ -50,7 +52,9 @@ export function CheckoutOrder() {
             <li className="flex items-start justify-between gap-4">
               <div>
                 <p className="font-medium text-gray-900">{AIML_ORDER_BUMP.name}</p>
-                <p className="mt-1 text-sm text-gray-500">Order bump</p>
+                <p className="mt-1 text-sm text-gray-500">
+                  Unlock {AIML_PRODUCT.fullSkillCount} skills total
+                </p>
               </div>
               <p className="text-base font-semibold text-gray-900">{AIML_ORDER_BUMP.priceLabel}</p>
             </li>
@@ -86,7 +90,9 @@ export function CheckoutOrder() {
           />
           <span className="min-w-0">
             <span className="flex flex-wrap items-baseline justify-between gap-2">
-              <span className="text-sm font-semibold text-gray-900">Yes, add {AIML_ORDER_BUMP.name}</span>
+              <span className="text-sm font-semibold text-gray-900">
+                Yes, add {AIML_ORDER_BUMP.name} — unlock {AIML_PRODUCT.fullSkillCount} total
+              </span>
               <span className="text-sm font-bold text-gray-900">{AIML_ORDER_BUMP.priceLabel}</span>
             </span>
             <span className="mt-1 block text-sm leading-relaxed text-gray-600">
@@ -103,7 +109,7 @@ export function CheckoutOrder() {
         aria-busy={busy}
         className="inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-white shadow-md shadow-primary/20 transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50"
       >
-        {busy ? 'Processing…' : 'Pay now'}
+        {busy ? 'Processing…' : `Get Instant Access Now — ${formatNgn(total)}`}
       </button>
     </div>
   )

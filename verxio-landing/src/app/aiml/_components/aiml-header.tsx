@@ -15,7 +15,7 @@ export function AimlHeader() {
           href={AIML_CHECKOUT_PATH}
           className="inline-flex min-h-10 items-center rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
         >
-          Get access
+          Get Instant Access
         </Link>
       </div>
     </header>

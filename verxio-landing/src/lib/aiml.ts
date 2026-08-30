@@ -8,11 +8,14 @@ export function formatNgn(amount: number): string {
 export const AIML_PRODUCT = {
   name: 'AI Money Library',
   shortName: 'AIML',
-  headline: 'Stop taking AI courses. Start charging for AI services.',
+  headline: 'Stop Trying to Learn AI. Just Train Your ChatGPT to Do the Work of 100 Experts.',
   tagline:
-    'You do not need to learn prompt engineering or build an audience. You just need the exact copy-paste workflows to deliver high-paying services to local and foreign clients today.',
+    'Get 100 plug-and-play AI skills across 13 business categories. Turn any AI into a specialist who finds customers, writes ads, and fixes sales pages so you can keep the money you would normally pay a professional.',
   description:
-    'A digital library of income systems you can run with AI — offers, content, outreach, and ready-to-use agent recipes.',
+    'Get 120 expert AI skills across 13 categories. Load them into ChatGPT or Claude. Keep them forever. One payment. No subscriptions.',
+  ctaLabel: 'Get Instant Access Now',
+  skillCount: 120,
+  fullSkillCount: 320,
   priceNgn: 17500,
   priceLabel: '₦17,500',
   billing: 'One-time purchase',
@@ -20,111 +23,149 @@ export const AIML_PRODUCT = {
 } as const
 
 export const AIML_ORDER_BUMP = {
-  name: 'Offer Accelerator Pack',
-  description: 'Bonus swipe files, launch checklist, and extra agent recipes to ship your first offer faster.',
+  name: '200 Advanced Skills',
+  description:
+    'Unlock the remaining 200 advanced skills. This brings your total to 320 skills covering everything from ad automation to lead enrichment.',
   priceNgn: 7500,
   priceLabel: '₦7,500',
 } as const
 
-export const AIML_PAINS = [
-  'You have a graveyard of ChatGPT chats and no offer in the market.',
-  'You watch AI tutorials, then go back to doing the work by hand.',
-  'You bought tools. You still do not have a repeatable way to get paid.',
-] as const
-
-export const AIML_STEPS = [
-  {
-    step: '01',
-    title: 'Get instant access',
-    body: 'Checkout once. The library unlocks immediately — no shipping, no call, no login maze.',
-  },
-  {
-    step: '02',
-    title: 'Pick one money system',
-    body: 'Start with the offer, the content machine, or outreach. One playbook. One outcome.',
-  },
-  {
-    step: '03',
-    title: 'Run it, then reuse it',
-    body: 'Copy the prompts, deploy the agent recipes, and keep the system. This edition is yours.',
-  },
-] as const
-
-export const AIML_AUDIENCE = {
-  for: [
-    'Freelancers who want an offer, not another prompt pack to bookmark.',
-    'Founders who need AI to produce pipeline, not slide decks.',
-    'Operators who will actually run a playbook this week.',
-  ],
-  notFor: [
-    'People looking for a get-rich-overnight crypto bot.',
-    'Teams that need a live SaaS subscription (that is Verxio, separately).',
-    'Anyone who will not ship an offer after they have the system.',
+export const AIML_REALITY = {
+  title: 'The Reality',
+  paragraphs: [
+    'Everyone is talking about making money with AI. But here is what actually happens. You open ChatGPT or Claude. You type a vague prompt. You get a generic answer that sounds like a robot. You fix it, get frustrated, and do it again the next day from zero.',
+    'Meanwhile, the people actually making money are not typing prompts. They are using AI to deliver real work that business owners desperately need: ad copy, customer research, sales pages, video content, graphic designs, cold emails.',
+    'Business owners are paying professionals thousands of Naira every day for this work. That money could be yours.',
   ],
 } as const
 
-export const AIML_MODULES = [
-  {
-    title: 'Offer Engine',
-    body: 'Positioning, packaging, and pricing templates so you sell an outcome, not a pile of prompts.',
-    valueNgn: 102547,
-  },
-  {
-    title: 'Content Machine',
-    body: 'Repeatable AI workflows for posts, emails, and landing copy that point back to an offer.',
-    valueNgn: 70832,
-  },
-  {
-    title: 'Outreach Playbooks',
-    body: 'Scripts and sequences for inbound and outbound — personalized at scale without sounding like spam.',
-    valueNgn: 70832,
-  },
-  {
-    title: 'Agent Recipes',
-    body: 'Ready-to-run agent setups for research, follow-up, fulfillment, and reporting.',
-    valueNgn: 102547,
-  },
-  {
-    title: 'Prompt Packs',
-    body: 'Battle-tested prompts for research, offers, sales pages, and customer conversations.',
-    valueNgn: 49688,
-  },
-  {
-    title: 'Delivery Kit',
-    body: 'How to fulfill, onboard, and keep buyers coming back — without building a giant ops team.',
-    valueNgn: 49688,
-  },
+export const AIML_PROBLEM = {
+  title: 'The Problem',
+  lead: 'Your AI is not the problem. It just was not trained to do the job.',
+  paragraphs: [
+    'ChatGPT does not know what a converting Facebook ad looks like. It does not know the exact questions to ask for customer research. It does not know how to build a cold email sequence that gets replies instead of silence.',
+    'Every time you ask it to guess, you are losing money. And every time a business owner hires an agency because your AI could not prove it knew the job, you miss a payday.',
+  ],
+} as const
+
+export const AIML_DIFFERENCE = {
+  title: 'See The Difference: Regular AI vs. Expert Trained AI',
+  lead: 'Let’s say a client pays you to write a Facebook Ad for their business. Here is what happens when you use regular AI versus the AI Money Library.',
+  beforeLabel: 'BEFORE (Regular ChatGPT)',
+  beforeQuote:
+    'Welcome to our shop! We offer the best products at the most affordable prices. Customer satisfaction is our priority. Buy now!',
+  beforeResult: 'Sounds robotic. Zero clicks. Wasted ad spend. Client fires you.',
+  afterLabel: "AFTER (Using our 'Conversion Ad Copy' Skill)",
+  afterQuote:
+    'Stop overpaying for your supplies. Here is the exact system 500+ local businesses are using to cut costs by 30% this week without dropping quality. Click here to see the breakdown.',
+  afterResult: 'Hooks the reader, builds curiosity, drives cheap clicks. Client pays you again.',
+  closer: 'This is not just a minor improvement. It is the difference between getting ignored and getting paid.',
+} as const
+
+export const AIML_BETTER_WAY = {
+  title: 'The Better Way',
+  paragraphs: [
+    'The AI Money Library gives you 100 expert-built skills just like the one above. You drop them straight into your AI. It immediately stops guessing and starts working like a professional who has done the job a thousand times.',
+    'No 6-week courses. No expensive mentorship programs. No waiting to learn AI. You load the skill, and the work gets done.',
+  ],
+} as const
+
+export const AIML_STEPS = [
+  { step: '01', title: 'Copy the skill', body: 'Open the library and copy the expert skill you need.' },
+  { step: '02', title: 'Paste into ChatGPT', body: 'Drop it into ChatGPT or Claude. No setup course required.' },
+  { step: '03', title: 'Get expert output', body: 'Watch the specialist-level work generate instantly.' },
 ] as const
 
-export const AIML_STACK_TOTAL = AIML_MODULES.reduce((sum, item) => sum + item.valueNgn, 0)
+export const AIML_CATEGORIES = {
+  lead: 'You are not buying folders of prompts. You are buying 13 jobs your AI can do today — for your own business, or as a service you charge for.',
+  groups: [
+    {
+      title: 'Find people who will actually pay',
+      body: 'Research, lead generation, and competitor intel. Your AI asks the right questions, finds buyers with money, and shows you how others price — so you stop guessing what to sell.',
+    },
+    {
+      title: 'Get them to click, reply, and buy',
+      body: 'Ads, sales pitches, and cold emails. Your AI writes Facebook ads that hook, pitches that close, and outreach that gets replies instead of silence. This is the work agencies charge thousands of Naira for.',
+    },
+    {
+      title: 'Look like a real business, fast',
+      body: 'Content, social posts, brand voice, design, and SEO. Your AI writes like a person, plans what to post, makes simple graphics, and helps a business show up on Google — even if you have never hired a designer.',
+    },
+    {
+      title: 'Catch bad work before a client sees it',
+      body: 'Quality checks and research tools. Scan robotic AI writing before it goes out, and turn any YouTube video into notes you can use the same day.',
+    },
+  ],
+} as const
+
+export const AIML_PAYOFF = {
+  title: 'The Payoff',
+  lead: 'Two direct ways this library makes you money:',
+  items: [
+    {
+      title: '1. Keep your money.',
+      body: 'Stop hiring professionals for work your AI can now handle. Write your own ads, research your own market, and build your own funnels.',
+    },
+    {
+      title: '2. Sell the service.',
+      body: 'Every skill in this library is a service another business owner will pay you for. You do not need five years of experience when the AI skill already has it.',
+    },
+  ],
+} as const
+
+export const AIML_PROOF = {
+  title: 'The Proof',
+  body: 'This is not a random PDF of prompts. This is the exact skill system behind Verxio, an AI operating system generating real revenue. It is the same system used to scale Okporoko Central, a real Nigerian business moving physical products every day.',
+} as const
+
+export const AIML_GUARANTEE = {
+  title: 'The Guarantee',
+  body: 'If the library does not turn your AI into a working expert, ask for your money back. No long forms. No hassle.',
+} as const
+
+export const AIML_CHOICE = {
+  title: 'The Choice',
+  body: 'You do not need to hire an expert. You just need to train the AI you already have. Get the library and start doing real work today.',
+} as const
 
 export const AIML_INCLUDES = [
-  'Full library of income playbooks',
-  'Copy-and-run prompt packs',
-  'Agent recipes you can deploy',
-  'Offer and pricing templates',
-  'Lifetime access to this edition',
+  '120 expert AI skills across 13 categories',
+  'Load them into ChatGPT or Claude',
+  'Keep them forever',
+  'One payment. No subscriptions',
 ] as const
 
-export const AIML_FAQ = [
-  {
-    q: 'What is the AI Money Library?',
-    a: 'A digital product: playbooks, prompt packs, and agent recipes for using AI to create and sell offers — not another chatbot tutorial.',
+export const AIML_PLACEHOLDERS = {
+  hero: {
+    label: 'Hero image',
+    idea: 'A high-quality digital product mockup (a bundle box, a glowing folder, or a neat grid showing the 13 categories). It should look heavy, valuable, and instantly downloadable.',
   },
-  {
-    q: 'How do I get access?',
-    a: 'After checkout you receive instant digital access. No shipping, no subscription for this edition.',
+  beforeAfter: {
+    label: 'Before and after visual',
+    idea: 'A clean, side-by-side graphic. Left side (grey/dull): The boring ChatGPT response. Right side (bright/green): The punchy response formatted like a real high-performing Facebook Ad.',
   },
-  {
-    q: 'Who is it for?',
-    a: 'Founders, freelancers, and operators who already use AI and want a revenue system — not more tools to babysit.',
+  howItWorks: {
+    label: 'How it works',
+    idea: 'A quick 3-step visual or GIF. 1. Copy the skill. 2. Paste into ChatGPT. 3. Watch the expert output generate instantly.',
   },
-  {
-    q: 'Is this a Verxio subscription?',
-    a: 'No. This is a one-time digital product. Verxio the platform is separate; recipes here can be used with Verxio or on their own.',
+  testimonial1: {
+    label: 'Testimonial 1',
+    idea: 'A screenshot of a WhatsApp message or a tweet from a beta tester. E.g., “I used the Ad Copy skill for my fashion brand and made 3 sales today without hiring a copywriter! This library is crazy.”',
   },
-  {
-    q: 'What format is it?',
-    a: 'A downloadable library you can use immediately: playbooks, prompt packs, and agent recipes. Open it, pick a system, run it.',
+  caseStudy: {
+    label: 'Case study visual',
+    idea: "A screenshot of Okporoko Central's storefront, a successful ad, or a dashboard showing real business activity to prove this is street-tested, not just theory.",
   },
-] as const
+  testimonial2: {
+    label: 'Testimonial 2',
+    idea: 'Another strong review from a Nigerian business owner or freelancer praising the practicality and time-saving nature of the skills.',
+  },
+  orderBump: {
+    label: 'Order bump visual',
+    idea: 'A graphic showing a lock icon opening to reveal a massive treasure chest of extra skills.',
+  },
+  guarantee: {
+    label: 'Guarantee badge',
+    idea: 'A clean, trustworthy 100% Money-Back Guarantee badge.',
+  },
+} as const
