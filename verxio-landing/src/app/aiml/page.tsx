@@ -57,7 +57,8 @@ export default function AimlSalesPage() {
             120 expert AI skills · 13 categories
           </p>
           <h1 className="mt-5 text-4xl font-bold leading-[1.12] tracking-tight text-gray-900 sm:text-5xl">
-            {AIML_PRODUCT.headline}
+            {AIML_PRODUCT.headline.split(AIML_PRODUCT.headlineAccent)[0]}
+            <span className="text-primary">{AIML_PRODUCT.headlineAccent}</span>
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-gray-600">{AIML_PRODUCT.tagline}</p>
           <div className="mt-8 flex justify-center">
