@@ -7,31 +7,9 @@ import { AIML_ORDER_BUMP, AIML_PRODUCT, formatNgn } from '@/lib/aiml'
 export function CheckoutOrder() {
   const bumpId = useId()
   const [addBump, setAddBump] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [submitted, setSubmitted] = useState(false)
 
   const total = AIML_PRODUCT.priceNgn + (addBump ? AIML_ORDER_BUMP.priceNgn : 0)
-
-  function payNow() {
-    setBusy(true)
-    window.setTimeout(() => {
-      setBusy(false)
-      setSubmitted(true)
-    }, 400)
-  }
-
-  if (submitted) {
-    return (
-      <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-wide text-primary">Preview only</p>
-        <h2 className="mt-2 text-xl font-bold tracking-tight text-gray-900">Payment is not connected yet</h2>
-        <p className="mt-3 text-sm leading-relaxed text-gray-600">
-          No charge was made. Total would have been {formatNgn(total)}
-          {addBump ? ` (${AIML_PRODUCT.name} + ${AIML_ORDER_BUMP.name})` : ` (${AIML_PRODUCT.name})`}.
-        </p>
-      </div>
-    )
-  }
+  const checkoutUrl = addBump ? AIML_ORDER_BUMP.checkoutUrl : AIML_PRODUCT.checkoutUrl
 
   return (
     <div className="space-y-6">
@@ -67,9 +45,7 @@ export function CheckoutOrder() {
         </div>
       </section>
 
-      {!addBump ? (
-        <PayButton busy={busy} total={total} onPay={payNow} />
-      ) : null}
+      <PayButton href={checkoutUrl} total={total} />
 
       <div
         className={`rounded-2xl border-2 border-dotted border-primary p-5 transition-colors ${
@@ -103,29 +79,18 @@ export function CheckoutOrder() {
         </div>
       </div>
 
-      <PayButton busy={busy} total={total} onPay={payNow} />
+      <PayButton href={checkoutUrl} total={total} />
     </div>
   )
 }
 
-function PayButton({
-  busy,
-  total,
-  onPay,
-}: {
-  busy: boolean
-  total: number
-  onPay: () => void
-}) {
+function PayButton({ href, total }: { href: string; total: number }) {
   return (
-    <button
-      type="button"
-      onClick={onPay}
-      disabled={busy}
-      aria-busy={busy}
-      className="inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-white shadow-md shadow-primary/20 transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50"
+    <a
+      href={href}
+      className="inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-white shadow-md shadow-primary/20 transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
     >
-      {busy ? 'Processing...' : `Get Instant Access Now for ${formatNgn(total)}`}
-    </button>
+      Get Instant Access Now for {formatNgn(total)}
+    </a>
   )
 }

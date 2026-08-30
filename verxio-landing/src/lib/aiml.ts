@@ -8,9 +8,9 @@ export function formatNgn(amount: number): string {
 export const AIML_PRODUCT = {
   name: 'AI Money Library',
   shortName: 'AIML',
-  headline: 'Stop Trying to Learn AI. Just Train Your ChatGPT to Do the Work of 100 Experts.',
+  headline: 'Stop Trying to Learn AI. Just Train Your ChatGPT to Do the Work of 120 Experts.',
   tagline:
-    'Get 100 plug-and-play AI skills across 13 business categories. Turn any AI into a specialist who finds customers, writes ads, and fixes sales pages so you can keep the money you would normally pay a professional.',
+    'Get 120 plug-and-play AI expert skills across 13 business categories. Turn any AI into a specialist who finds customers, writes ads, and fixes sales pages so you can keep the money you would normally pay a professional.',
   description:
     'Get 120 expert AI skills across 13 categories. Load them into ChatGPT or Claude. Keep them forever. One payment. No subscriptions.',
   ctaLabel: 'Get Instant Access Now',
@@ -20,6 +20,7 @@ export const AIML_PRODUCT = {
   priceLabel: '₦17,500',
   billing: 'One-time purchase',
   format: 'Instant digital access',
+  checkoutUrl: 'https://paystack.shop/pay/l510mohlb6',
 } as const
 
 export const AIML_ORDER_BUMP = {
@@ -61,6 +62,7 @@ export const AIML_ORDER_BUMP = {
     'If you want to handle high-paying client work or scale your own business faster, check the box to add this to your order.',
   priceNgn: 7500,
   priceLabel: '₦7,500',
+  checkoutUrl: 'https://paystack.shop/pay/hc-q1-9ey1',
 } as const
 
 export const AIML_REALITY = {
