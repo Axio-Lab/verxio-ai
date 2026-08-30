@@ -23,9 +23,30 @@ export const AIML_PRODUCT = {
 } as const
 
 export const AIML_ORDER_BUMP = {
-  name: '200 Advanced Skills',
-  description:
-    'Unlock the remaining 200 advanced skills. This brings your total to 320 skills covering everything from ad automation to lead enrichment.',
+  name: '200 Advanced AI Skills',
+  checkboxLabel: 'YES, Add 200 Advanced AI Skills to My Order (+₦7,500)',
+  lead: 'You are already getting 120 expert skills today. But if you want to completely replace an expensive marketing team, add this upgrade. For just ₦7,500 extra, you unlock 200 more advanced skills. This brings your total library to 320 expert tools.',
+  systemsIntro: 'This upgrade gives you the exact systems agencies use to charge premium retainers:',
+  systems: [
+    {
+      title: 'Meta Ads Analyzer',
+      body: 'Stop burning money on bad ads. Let the AI find exactly what is wrong with your campaign and fix it.',
+    },
+    {
+      title: 'Competitor Analysis',
+      body: 'Spy on your rivals. Find out exactly how they price and sell so you can beat them.',
+    },
+    {
+      title: 'Deep Customer Research',
+      body: 'Know exactly what your buyers want to spend money on before you even pitch them.',
+    },
+    {
+      title: 'SEO and AEO Ranking',
+      body: 'Put your business at the top of Google searches without paying an agency a monthly fee.',
+    },
+  ],
+  closer:
+    'If you want to handle high-paying client work or scale your own business faster, check the box to add this to your order.',
   priceNgn: 7500,
   priceLabel: '₦7,500',
 } as const
@@ -155,13 +176,6 @@ export const AIML_OFFER = {
     'This library pays for itself the very first time you use it to write an ad, close a deal, or avoid hiring an agency.',
 } as const
 
-export const AIML_INCLUDES = [
-  '120 expert AI skills across 13 business categories',
-  'Load them directly into ChatGPT or Claude in seconds',
-  'Lifetime access — keep them forever',
-  'One payment. No hidden subscriptions',
-] as const
-
 export const AIML_PLACEHOLDERS = {
   hero: {
     label: 'Hero image',
@@ -186,10 +200,6 @@ export const AIML_PLACEHOLDERS = {
   testimonial2: {
     label: 'Testimonial 2',
     idea: 'Another strong review from a Nigerian business owner or freelancer praising the practicality and time-saving nature of the skills.',
-  },
-  orderBump: {
-    label: 'Order bump visual',
-    idea: 'A graphic showing a lock icon opening to reveal a massive treasure chest of extra skills.',
   },
   guarantee: {
     label: 'Guarantee badge',

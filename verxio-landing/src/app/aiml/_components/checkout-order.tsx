@@ -2,7 +2,7 @@
 
 import { useId, useState } from 'react'
 
-import { AIML_INCLUDES, AIML_ORDER_BUMP, AIML_PRODUCT, formatNgn } from '@/lib/aiml'
+import { AIML_ORDER_BUMP, AIML_PRODUCT, formatNgn } from '@/lib/aiml'
 
 export function CheckoutOrder() {
   const bumpId = useId()
@@ -24,7 +24,7 @@ export function CheckoutOrder() {
     return (
       <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
         <p className="text-xs font-semibold uppercase tracking-wide text-primary">Preview only</p>
-        <h2 className="mt-2 text-xl font-bold tracking-tight text-gray-900">Checkout is not connected yet</h2>
+        <h2 className="mt-2 text-xl font-bold tracking-tight text-gray-900">Payment is not connected yet</h2>
         <p className="mt-3 text-sm leading-relaxed text-gray-600">
           No charge was made. Total would have been {formatNgn(total)}
           {addBump ? ` (${AIML_PRODUCT.name} + ${AIML_ORDER_BUMP.name})` : ` (${AIML_PRODUCT.name})`}.
@@ -43,7 +43,7 @@ export function CheckoutOrder() {
             <div>
               <p className="font-medium text-gray-900">{AIML_PRODUCT.name}</p>
               <p className="mt-1 text-sm text-gray-500">
-                {AIML_PRODUCT.skillCount} expert skills · {AIML_PRODUCT.billing}
+                {AIML_PRODUCT.skillCount} expert skills
               </p>
             </div>
             <p className="text-base font-semibold text-gray-900">{AIML_PRODUCT.priceLabel}</p>
@@ -53,20 +53,12 @@ export function CheckoutOrder() {
               <div>
                 <p className="font-medium text-gray-900">{AIML_ORDER_BUMP.name}</p>
                 <p className="mt-1 text-sm text-gray-500">
-                  Unlock {AIML_PRODUCT.fullSkillCount} skills total
+                  {AIML_PRODUCT.fullSkillCount} skills total
                 </p>
               </div>
               <p className="text-base font-semibold text-gray-900">{AIML_ORDER_BUMP.priceLabel}</p>
             </li>
           ) : null}
-        </ul>
-
-        <ul className="mt-6 space-y-2 border-t border-gray-200 pt-4">
-          {AIML_INCLUDES.map((item) => (
-            <li key={item} className="text-sm text-gray-600">
-              {item}
-            </li>
-          ))}
         </ul>
 
         <div className="mt-6 flex items-baseline justify-between border-t border-gray-200 pt-4">
@@ -76,8 +68,8 @@ export function CheckoutOrder() {
       </section>
 
       <div
-        className={`rounded-2xl border p-4 transition-colors ${
-          addBump ? 'border-primary bg-primary/[0.04]' : 'border-gray-200 bg-white'
+        className={`rounded-2xl border-2 border-dotted border-primary p-5 transition-colors ${
+          addBump ? 'bg-primary/[0.04]' : 'bg-white'
         }`}
       >
         <label htmlFor={bumpId} className="flex min-h-11 cursor-pointer items-start gap-3">
@@ -88,18 +80,23 @@ export function CheckoutOrder() {
             onChange={(event) => setAddBump(event.target.checked)}
             className="mt-0.5 h-5 w-5 shrink-0 rounded border-gray-300 text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
           />
-          <span className="min-w-0">
-            <span className="flex flex-wrap items-baseline justify-between gap-2">
-              <span className="text-sm font-semibold text-gray-900">
-                Yes, add {AIML_ORDER_BUMP.name} — unlock {AIML_PRODUCT.fullSkillCount} total
-              </span>
-              <span className="text-sm font-bold text-gray-900">{AIML_ORDER_BUMP.priceLabel}</span>
-            </span>
-            <span className="mt-1 block text-sm leading-relaxed text-gray-600">
-              {AIML_ORDER_BUMP.description}
-            </span>
+          <span className="text-sm font-bold text-gray-900">
+            {AIML_ORDER_BUMP.checkboxLabel}
           </span>
         </label>
+
+        <div className="mt-4 space-y-4 pl-8">
+          <p className="text-sm leading-relaxed text-gray-700">{AIML_ORDER_BUMP.lead}</p>
+          <p className="text-sm font-medium leading-relaxed text-gray-900">{AIML_ORDER_BUMP.systemsIntro}</p>
+          <ul className="space-y-3">
+            {AIML_ORDER_BUMP.systems.map((item) => (
+              <li key={item.title} className="text-sm leading-relaxed text-gray-700">
+                <span className="font-semibold text-gray-900">{item.title}:</span> {item.body}
+              </li>
+            ))}
+          </ul>
+          <p className="text-sm leading-relaxed text-gray-700">{AIML_ORDER_BUMP.closer}</p>
+        </div>
       </div>
 
       <button
@@ -109,7 +106,7 @@ export function CheckoutOrder() {
         aria-busy={busy}
         className="inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-white shadow-md shadow-primary/20 transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50"
       >
-        {busy ? 'Processing…' : `Get Instant Access Now — ${formatNgn(total)}`}
+        {busy ? 'Processing...' : `Get Instant Access Now for ${formatNgn(total)}`}
       </button>
     </div>
   )
