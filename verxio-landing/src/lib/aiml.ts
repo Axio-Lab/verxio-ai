@@ -44,6 +44,18 @@ export const AIML_ORDER_BUMP = {
       title: 'SEO and AEO Ranking',
       body: 'Put your business at the top of Google searches without paying an agency a monthly fee.',
     },
+    {
+      title: 'Graphic Design Director',
+      body: 'Create professional ad creatives, product mockups, and social graphics without paying a designer or learning Photoshop.',
+    },
+    {
+      title: 'Cold Email Closer',
+      body: 'Write automated email sequences that force high-paying clients to open, read, and reply.',
+    },
+    {
+      title: 'Sales Page Auditor',
+      body: 'Find out exactly why your website is getting traffic but zero sales, and get the exact words to plug the leaks.',
+    },
   ],
   closer:
     'If you want to handle high-paying client work or scale your own business faster, check the box to add this to your order.',

@@ -67,6 +67,10 @@ export function CheckoutOrder() {
         </div>
       </section>
 
+      {!addBump ? (
+        <PayButton busy={busy} total={total} onPay={payNow} />
+      ) : null}
+
       <div
         className={`rounded-2xl border-2 border-dotted border-primary p-5 transition-colors ${
           addBump ? 'bg-primary/[0.04]' : 'bg-white'
@@ -99,15 +103,29 @@ export function CheckoutOrder() {
         </div>
       </div>
 
-      <button
-        type="button"
-        onClick={payNow}
-        disabled={busy}
-        aria-busy={busy}
-        className="inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-white shadow-md shadow-primary/20 transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50"
-      >
-        {busy ? 'Processing...' : `Get Instant Access Now for ${formatNgn(total)}`}
-      </button>
+      <PayButton busy={busy} total={total} onPay={payNow} />
     </div>
+  )
+}
+
+function PayButton({
+  busy,
+  total,
+  onPay,
+}: {
+  busy: boolean
+  total: number
+  onPay: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onPay}
+      disabled={busy}
+      aria-busy={busy}
+      className="inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-white shadow-md shadow-primary/20 transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50"
+    >
+      {busy ? 'Processing...' : `Get Instant Access Now for ${formatNgn(total)}`}
+    </button>
   )
 }
