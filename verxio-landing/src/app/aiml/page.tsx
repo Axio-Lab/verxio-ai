@@ -46,7 +46,7 @@ export default function AimlSalesPage() {
           <h1 className="mt-5 text-4xl font-bold leading-[1.12] tracking-tight text-gray-900 sm:text-5xl">
             {AIML_PRODUCT.headline}
           </h1>
-          <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-gray-600">
+          <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-gray-600">
             {AIML_PRODUCT.tagline}
           </p>
           <div className="mt-8 flex justify-center">

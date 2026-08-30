@@ -8,8 +8,9 @@ export function formatNgn(amount: number): string {
 export const AIML_PRODUCT = {
   name: 'AI Money Library',
   shortName: 'AIML',
-  headline: 'Stop collecting AI tools. Start collecting revenue.',
-  tagline: 'Playbooks, prompts, and agent recipes that turn AI into a system you can sell with.',
+  headline: 'Stop taking AI courses. Start charging for AI services.',
+  tagline:
+    'You do not need to learn prompt engineering or build an audience. You just need the exact copy-paste workflows to deliver high-paying services to local and foreign clients today.',
   description:
     'A digital library of income systems you can run with AI — offers, content, outreach, and ready-to-use agent recipes.',
   priceNgn: 17500,
