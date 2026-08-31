@@ -1,5 +1,6 @@
-import { AIML_CHECKOUT_PATH, AIML_PRODUCT } from '@/lib/aiml'
 import Link from 'next/link'
+
+import { AIML_CHECKOUT_PATH, AIML_OFFER, AIML_PRODUCT } from '@/lib/aiml'
 
 export function StickyCheckoutBar() {
   return (
@@ -8,7 +9,8 @@ export function StickyCheckoutBar() {
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-gray-900">{AIML_PRODUCT.name}</p>
           <p className="text-xs text-gray-500">
-            {AIML_PRODUCT.skillCount} expert skills · {AIML_PRODUCT.priceLabel}
+            <span className="text-red-600 line-through">{AIML_OFFER.bonusesTotal}</span>{' '}
+            <span className="font-semibold text-green-700">{AIML_PRODUCT.priceLabel}</span>
           </p>
         </div>
         <Link
