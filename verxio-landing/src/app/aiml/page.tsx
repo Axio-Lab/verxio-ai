@@ -65,12 +65,6 @@ export default function AimlSalesPage() {
             <span className="text-primary">{AIML_PRODUCT.headlineAccent}</span>
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-gray-600">{AIML_PRODUCT.tagline}</p>
-          <p className="mx-auto mt-4 max-w-xl text-base font-semibold leading-relaxed text-gray-900">
-            {AIML_PRODUCT.audience}
-          </p>
-          <div className="mt-8 flex justify-center">
-            <CheckoutButton>Get Instant Access Now for {AIML_PRODUCT.priceLabel}</CheckoutButton>
-          </div>
           <div className="mt-10 text-left">
             <ImagePlaceholder
               label={AIML_PLACEHOLDERS.hero.label}
@@ -78,6 +72,13 @@ export default function AimlSalesPage() {
               tall
             />
           </div>
+          <p className="mx-auto mt-8 max-w-xl text-base font-semibold leading-relaxed text-gray-900">
+            {AIML_PRODUCT.audience}
+          </p>
+          <div className="mt-8 flex justify-center">
+            <CheckoutButton>Get Instant Access Now for {AIML_PRODUCT.priceLabel}</CheckoutButton>
+          </div>
+
         </div>
       </section>
 
