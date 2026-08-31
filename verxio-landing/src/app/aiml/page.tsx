@@ -71,9 +71,6 @@ export default function AimlSalesPage() {
           <div className="mt-8 flex justify-center">
             <CheckoutButton>Get Instant Access Now for {AIML_PRODUCT.priceLabel}</CheckoutButton>
           </div>
-          <p className="mt-4 text-sm text-gray-500">
-            {AIML_PRODUCT.billing} · {AIML_PRODUCT.format} · Keep this edition
-          </p>
           <div className="mt-10 text-left">
             <ImagePlaceholder
               label={AIML_PLACEHOLDERS.hero.label}
