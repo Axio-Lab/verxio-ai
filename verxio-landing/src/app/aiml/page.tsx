@@ -235,7 +235,9 @@ export default function AimlSalesPage() {
         <div className="mx-auto max-w-3xl rounded-2xl border border-gray-200 bg-white p-8">
           <p className="text-xs font-semibold uppercase tracking-wide text-primary">{AIML_OFFER.title}</p>
           <h2 className="mt-3 text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
-            {AIML_OFFER.heading}: {AIML_PRODUCT.priceLabel}
+            {AIML_OFFER.heading}:{' '}
+            <span className="text-red-600 line-through">{AIML_OFFER.comparePriceLabel}</span>{' '}
+            <span className="text-green-700">{AIML_PRODUCT.priceLabel}</span>
           </h2>
           <p className="mt-3 text-base italic leading-relaxed text-gray-600">{AIML_OFFER.priceAnchor}</p>
           <p className="mt-6 text-base font-medium leading-relaxed text-gray-900">{AIML_OFFER.intro}</p>

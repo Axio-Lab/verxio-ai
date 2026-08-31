@@ -171,6 +171,7 @@ export const AIML_CHOICE = {
 export const AIML_OFFER = {
   title: 'AI Money Library Bundle',
   heading: 'Bundle Package',
+  comparePriceLabel: '₦50,000',
   priceAnchor: 'Less than what you may pay someone to write one sales page.',
   intro: 'Here is exactly what you get the second you check out:',
   items: [
