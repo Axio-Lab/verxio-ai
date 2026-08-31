@@ -1,5 +1,6 @@
 'use client'
 
+import { ArrowDown } from 'lucide-react'
 import { useId, useState } from 'react'
 
 import { AIML_ORDER_BUMP, AIML_PRODUCT, formatNgn } from '@/lib/aiml'
@@ -52,6 +53,11 @@ export function CheckoutOrder() {
           addBump ? 'bg-primary/[0.04]' : 'bg-white'
         }`}
       >
+        {!addBump ? (
+          <div className="mb-1 flex w-5 justify-center" aria-hidden>
+            <ArrowDown className="h-7 w-7 stroke-[2.5] text-red-600 motion-safe:animate-bounce" />
+          </div>
+        ) : null}
         <label htmlFor={bumpId} className="flex min-h-11 cursor-pointer items-start gap-3">
           <input
             id={bumpId}
