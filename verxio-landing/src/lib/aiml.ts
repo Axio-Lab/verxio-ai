@@ -8,10 +8,10 @@ export function formatNgn(amount: number): string {
 export const AIML_PRODUCT = {
   name: 'AI Money Library',
   shortName: 'AIML',
-  headline: 'Make ChatGPT and Claude Work Like Experts, Then Get Paid for It',
-  headlineAccent: 'Get Paid for It',
+  headline: 'How to Start Your AI Agency With ChatGPT and Claude as Experts, and Make More Money with AI',
+  headlineAccent: 'Make More Money with AI',
   tagline:
-    'Get 120 ready-to-use AI skills for work people already pay for: customer research, adverts, sales pages, content, design and more. Use them to grow your own business, offer the work as a service, or start your own AI agency. No long course. No staff. Choose a skill, add your details and let the AI guide the work.',
+    'Ready-to-use AI expert skills to deliver products and services people already pay for. Choose a service and let ChatGPT or Claude guide the work.',
   audience:
     'Made for Nigerian vendors, freelancers, creators and small business owners who want to use AI without becoming tech experts.',
   description:
