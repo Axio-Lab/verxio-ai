@@ -19,7 +19,6 @@ import {
   AIML_PLACEHOLDERS,
   AIML_PROBLEM,
   AIML_PRODUCT,
-  AIML_PROOF,
   AIML_REALITY,
   AIML_STEPS,
   AIML_TESTIMONIALS,
@@ -223,19 +222,6 @@ export default function AimlSalesPage() {
       </section>
 
       <section className="border-y border-gray-100 bg-gray-50 px-6 py-16">
-        <div className="mx-auto max-w-3xl">
-          <h2 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">{AIML_PROOF.title}</h2>
-          <p className="mt-6 text-base leading-relaxed text-gray-700">{AIML_PROOF.body}</p>
-          <div className="mt-8">
-            <ImagePlaceholder
-              label={AIML_PLACEHOLDERS.caseStudy.label}
-              idea={AIML_PLACEHOLDERS.caseStudy.idea}
-            />
-          </div>
-        </div>
-      </section>
-
-      <section className="px-6 py-16">
         <div className="mx-auto max-w-3xl rounded-2xl border border-gray-200 bg-white p-8">
           <p className="text-xs font-semibold uppercase tracking-wide text-primary">{AIML_OFFER.title}</p>
           <h2 className="mt-3 text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">

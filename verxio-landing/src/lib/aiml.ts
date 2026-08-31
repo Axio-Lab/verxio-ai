@@ -164,11 +164,6 @@ export const AIML_PAYOFF = {
   ],
 } as const
 
-export const AIML_PROOF = {
-  title: 'Built Around Work Real Businesses Need',
-  body: 'This is not a random list of prompts or another course about AI theory. The system was shaped through work on Verxio and Okporoko Central, a Nigerian business selling physical products. Each skill is organised around a practical business job you can understand, practise and offer as a service.',
-} as const
-
 export const AIML_GUARANTEE = {
   title: '100% Money-Back Guarantee',
   body: 'Explore the library and try the skills without carrying all the risk. If they do not help you turn ChatGPT or Claude into a more useful partner for client work, ask for your money back. No long form. No stress.',
@@ -254,10 +249,6 @@ export const AIML_PLACEHOLDERS = {
   howItWorks: {
     label: 'How it works',
     idea: 'A three-step visual: choose a service, run the expert skill, then review and deliver the client result.',
-  },
-  caseStudy: {
-    label: 'Case study visual',
-    idea: "A real example from Verxio or Okporoko Central showing the business problem, the AI-assisted work and the practical result.",
   },
 } as const
 
