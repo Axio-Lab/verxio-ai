@@ -22,6 +22,7 @@ import {
   AIML_PROOF,
   AIML_REALITY,
   AIML_STEPS,
+  AIML_TESTIMONIALS,
 } from '@/lib/aiml'
 import { SITE_URL } from '@/lib/site'
 
@@ -186,11 +187,21 @@ export default function AimlSalesPage() {
           <p className="mt-6 text-base font-medium text-gray-800">
             Start with one service. As your confidence and client base grow, add another.
           </p>
-          <div className="mt-6">
-            <ImagePlaceholder
-              label={AIML_PLACEHOLDERS.testimonial1.label}
-              idea={AIML_PLACEHOLDERS.testimonial1.idea}
-            />
+          <div className="mt-8 grid gap-4 sm:grid-cols-2">
+            {AIML_TESTIMONIALS.map((item) => (
+              <figure
+                key={item.src}
+                className="overflow-hidden rounded-2xl border border-gray-200 bg-[#0b1220] shadow-sm"
+              >
+                <Image
+                  src={item.src}
+                  alt={item.alt}
+                  width={1024}
+                  height={576}
+                  className="h-auto w-full"
+                />
+              </figure>
+            ))}
           </div>
           <SectionCta>Get All 120 Skills Now</SectionCta>
         </div>
@@ -215,14 +226,10 @@ export default function AimlSalesPage() {
         <div className="mx-auto max-w-3xl">
           <h2 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">{AIML_PROOF.title}</h2>
           <p className="mt-6 text-base leading-relaxed text-gray-700">{AIML_PROOF.body}</p>
-          <div className="mt-8 space-y-6">
+          <div className="mt-8">
             <ImagePlaceholder
               label={AIML_PLACEHOLDERS.caseStudy.label}
               idea={AIML_PLACEHOLDERS.caseStudy.idea}
-            />
-            <ImagePlaceholder
-              label={AIML_PLACEHOLDERS.testimonial2.label}
-              idea={AIML_PLACEHOLDERS.testimonial2.idea}
             />
           </div>
         </div>

@@ -95,7 +95,7 @@ export const AIML_DIFFERENCE = {
   beforeResult: 'It sounds like every other advert. There is no clear reason to stop and buy.',
   afterLabel: 'AFTER (Using the Conversion Ad Copy Skill)',
   afterQuote:
-    'Are rising supply costs reducing your profit? See three practical ways to spend less on your next order without reducing quality. Tap below to get the guide.',
+    'Are rising supply costs reducing your profit? See three practical ways to bspend less on your next order without reducing quality. Tap below to get the guide.',
   afterResult: 'It names a real problem, gives a clear benefit and tells the buyer what to do next.',
   closer:
     'Your client does not pay for a prompt. The client pays for a useful result. The expert process helps you produce that result with more structure and confidence.',
@@ -255,16 +255,27 @@ export const AIML_PLACEHOLDERS = {
     label: 'How it works',
     idea: 'A three-step visual: choose a service, run the expert skill, then review and deliver the client result.',
   },
-  testimonial1: {
-    label: 'Testimonial 1',
-    idea: 'A verified customer message describing the service they delivered, how the skill guided the work and what the client found useful.',
-  },
   caseStudy: {
     label: 'Case study visual',
     idea: "A real example from Verxio or Okporoko Central showing the business problem, the AI-assisted work and the practical result.",
   },
-  testimonial2: {
-    label: 'Testimonial 2',
-    idea: 'A verified review from a freelancer or business owner explaining how a skill made client work clearer or faster.',
-  },
 } as const
+
+export const AIML_TESTIMONIALS = [
+  {
+    src: '/aiml/testimonial-slides.png',
+    alt: 'Customer chat: I designed the slides for my master class with Verxio.',
+  },
+  {
+    src: '/aiml/testimonial-mind-blowing.png',
+    alt: 'Customer chat: This is mind-blowing.',
+  },
+  {
+    src: '/aiml/testimonial-business-owners.png',
+    alt: 'Customer chat: I have tried it and it is working perfectly. It is a tool built for business owners.',
+  },
+  {
+    src: '/aiml/testimonial-working-perfectly.png',
+    alt: 'Customer chat: Thanks a lot. I have tested it and it is working perfectly.',
+  },
+] as const
