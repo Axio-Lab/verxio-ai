@@ -26,7 +26,7 @@ import { SITE_URL } from '@/lib/site'
 const pageUrl = `${SITE_URL}/aiml`
 
 export const metadata: Metadata = {
-  title: `${AIML_PRODUCT.name} — ${AIML_PRODUCT.headline}`,
+  title: `${AIML_PRODUCT.name} | ${AIML_PRODUCT.headline}`,
   description: AIML_PRODUCT.tagline,
   alternates: { canonical: pageUrl },
   openGraph: {
@@ -53,16 +53,13 @@ export default function AimlSalesPage() {
 
       <section className="px-6 pb-16 pt-14">
         <div className="mx-auto max-w-3xl text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
-            120 expert AI skills · 13 categories
-          </p>
-          <h1 className="mt-5 text-4xl font-bold leading-[1.12] tracking-tight text-gray-900 sm:text-5xl">
+          <h1 className="text-4xl font-bold leading-[1.14] tracking-tight text-gray-900 sm:text-[2.625rem]">
             {AIML_PRODUCT.headline.split(AIML_PRODUCT.headlineAccent)[0]}
             <span className="text-primary">{AIML_PRODUCT.headlineAccent}</span>
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-gray-600">{AIML_PRODUCT.tagline}</p>
           <div className="mt-8 flex justify-center">
-            <CheckoutButton>Get Instant Access Now — {AIML_PRODUCT.priceLabel}</CheckoutButton>
+            <CheckoutButton>Get Instant Access Now for {AIML_PRODUCT.priceLabel}</CheckoutButton>
           </div>
           <p className="mt-4 text-sm text-gray-500">
             {AIML_PRODUCT.billing} · {AIML_PRODUCT.format} · Keep this edition
@@ -180,7 +177,7 @@ export default function AimlSalesPage() {
             ))}
           </ul>
           <p className="mt-6 text-base font-medium text-gray-800">
-            Every skill works the way a trained professional thinks — so you can sell the result, not the prompt.
+            Every skill works the way a trained professional thinks, so you can sell the result, not the prompt.
           </p>
           <div className="mt-6">
             <ImagePlaceholder
@@ -267,7 +264,7 @@ export default function AimlSalesPage() {
             Get the AI Money Library: 120 Expert AI Skills for {AIML_PRODUCT.priceLabel}
           </h3>
           <div className="mt-8 flex justify-center">
-            <CheckoutButton>Get Instant Access Now — {AIML_PRODUCT.priceLabel}</CheckoutButton>
+            <CheckoutButton>Get Instant Access Now for {AIML_PRODUCT.priceLabel}</CheckoutButton>
           </div>
         </div>
       </section>

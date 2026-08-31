@@ -17,7 +17,7 @@ export function CheckoutButton({
     <Link href={AIML_CHECKOUT_PATH} className={`${ctaClassName} ${className}`}>
       {children ?? (
         <>
-          {AIML_PRODUCT.ctaLabel} — {AIML_PRODUCT.priceLabel}
+          {AIML_PRODUCT.ctaLabel} for {AIML_PRODUCT.priceLabel}
           <ArrowRight className="ml-2 h-4 w-4" aria-hidden />
         </>
       )}

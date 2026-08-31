@@ -11,7 +11,7 @@ export const AIML_PRODUCT = {
   headline: 'Stop Trying to Learn AI. Make your ChatGPT and Claude Like work like experts and Make Money',
   headlineAccent: 'Make Money',
   tagline:
-    'Get 120 plug-and-play AI expert skills across 13 business categories. Turn any AI into a specialist who finds customers, writes ads, and fixes sales pages so you can keep the money you would normally pay a professional.',
+    "Get 120 plug-and-play AI expert skills across 13 business categories. Use them to run your own business and keep the money you'd normally pay a professional. Or use them to do work for other businesses eg a copywriter, customer research, write ads, sales pages, getting found online, and get paid for it.",
   description:
     'Get 120 expert AI skills across 13 categories. Load them into ChatGPT or Claude. Keep them forever. One payment. No subscriptions.',
   ctaLabel: 'Get Instant Access Now',
@@ -67,7 +67,7 @@ export const AIML_ORDER_BUMP = {
 } as const
 
 export const AIML_REALITY = {
-  title: 'The Reality',
+  title: '',
   paragraphs: [
     'Everyone is talking about making money with AI. But here is what actually happens. You open ChatGPT or Claude. You type a vague prompt. You get a generic answer that sounds like a robot. You fix it, get frustrated, and do it again the next day from zero.',
     'Meanwhile, the people actually making money are not typing prompts. They are using AI to deliver real work that business owners desperately need: ad copy, customer research, sales pages, video content, graphic designs, cold emails.',
@@ -76,7 +76,7 @@ export const AIML_REALITY = {
 } as const
 
 export const AIML_PROBLEM = {
-  title: 'The Problem',
+  title: '',
   lead: 'Your AI is not the problem. It just was not trained to do the job.',
   paragraphs: [
     'ChatGPT does not know what a converting Facebook ad looks like. It does not know the exact questions to ask for customer research. It does not know how to build a cold email sequence that gets replies instead of silence.',
@@ -99,7 +99,7 @@ export const AIML_DIFFERENCE = {
 } as const
 
 export const AIML_BETTER_WAY = {
-  title: 'The Better Way',
+  title: '',
   paragraphs: [
     'The AI Money Library gives you 100 expert-built skills just like the one above. You drop them straight into your AI. It immediately stops guessing and starts working like a professional who has done the job a thousand times.',
     'No 6-week courses. No expensive mentorship programs. No waiting to learn AI. You load the skill, and the work gets done.',
@@ -113,11 +113,11 @@ export const AIML_STEPS = [
 ] as const
 
 export const AIML_CATEGORIES = {
-  lead: 'You are not buying folders of prompts. You are buying 13 jobs your AI can do today — for your own business, or as a service you charge for.',
+  lead: 'You are not buying folders of prompts. You are buying 13 jobs your AI can do today: for your own business, or as a service you charge for.',
   groups: [
     {
       title: 'Find people who will actually pay',
-      body: 'Research, lead generation, and competitor intel. Your AI asks the right questions, finds buyers with money, and shows you how others price — so you stop guessing what to sell.',
+      body: 'Research, lead generation, and competitor intel. Your AI asks the right questions, finds buyers with money, and shows you how others price, so you stop guessing what to sell.',
     },
     {
       title: 'Get them to click, reply, and buy',
@@ -125,7 +125,7 @@ export const AIML_CATEGORIES = {
     },
     {
       title: 'Look like a real business, fast',
-      body: 'Content, social posts, brand voice, design, and SEO. Your AI writes like a person, plans what to post, makes simple graphics, and helps a business show up on Google — even if you have never hired a designer.',
+      body: 'Content, social posts, brand voice, design, and SEO. Your AI writes like a person, plans what to post, makes simple graphics, and helps a business show up on Google, even if you have never hired a designer.',
     },
     {
       title: 'Catch bad work before a client sees it',
@@ -135,7 +135,7 @@ export const AIML_CATEGORIES = {
 } as const
 
 export const AIML_PAYOFF = {
-  title: 'The Payoff',
+  title: '',
   lead: 'Two direct ways this library makes you money:',
   items: [
     {
@@ -155,18 +155,18 @@ export const AIML_PROOF = {
 } as const
 
 export const AIML_GUARANTEE = {
-  title: 'The Guarantee',
+  title: '100% Money-Back Guarantee',
   body: 'If the library does not turn your AI into a working expert, ask for your money back. No long forms. No hassle.',
 } as const
 
 export const AIML_CHOICE = {
-  title: 'The Choice',
+  title: '',
   body: 'You do not need to hire an expert. You just need to train the AI you already have. Get the library and start doing real work today.',
 } as const
 
 export const AIML_OFFER = {
-  title: 'The Offer',
-  heading: 'Main Package',
+  title: 'AI Money Library Bundle',
+  heading: 'Bundle Package',
   priceAnchor: 'Less than what you would pay a beginner copywriter for one bad sales page.',
   intro: 'Here is exactly what you get the second you check out:',
   items: [
