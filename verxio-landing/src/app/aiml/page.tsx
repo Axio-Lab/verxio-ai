@@ -72,13 +72,9 @@ export default function AimlSalesPage() {
               tall
             />
           </div>
-          <p className="mx-auto mt-8 max-w-xl text-base font-semibold leading-relaxed text-gray-900">
-            {AIML_PRODUCT.audience}
-          </p>
           <div className="mt-8 flex justify-center">
             <CheckoutButton>Get Instant Access Now for {AIML_PRODUCT.priceLabel}</CheckoutButton>
           </div>
-
         </div>
       </section>
 
@@ -173,7 +169,7 @@ export default function AimlSalesPage() {
       <section className="border-y border-gray-100 bg-gray-50 px-6 py-16">
         <div className="mx-auto max-w-3xl">
           <h2 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
-            What your AI will be able to do
+            Services Your AI Agency Can Offer
           </h2>
           <p className="mt-4 text-base leading-relaxed text-gray-700">{AIML_CATEGORIES.lead}</p>
           <ul className="mt-8 grid gap-4 sm:grid-cols-2">
@@ -185,7 +181,7 @@ export default function AimlSalesPage() {
             ))}
           </ul>
           <p className="mt-6 text-base font-medium text-gray-800">
-            Every skill works the way a trained professional thinks, so you can sell the result, not the prompt.
+            Start with one service. As your confidence and client base grow, add another.
           </p>
           <div className="mt-6">
             <ImagePlaceholder
