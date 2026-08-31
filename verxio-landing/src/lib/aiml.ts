@@ -95,7 +95,7 @@ export const AIML_DIFFERENCE = {
   beforeResult: 'It sounds like every other advert. There is no clear reason to stop and buy.',
   afterLabel: 'AFTER (Using the Conversion Ad Copy Skill)',
   afterQuote:
-    'Are rising supply costs reducing your profit? See three practical ways to bspend less on your next order without reducing quality. Tap below to get the guide.',
+    'Are rising supply costs reducing your profit? See three practical ways to spend less on your next order without reducing quality. Tap below to get the guide.',
   afterResult: 'It names a real problem, gives a clear benefit and tells the buyer what to do next.',
   closer:
     'Your client does not pay for a prompt. The client pays for a useful result. The expert process helps you produce that result with more structure and confidence.',
