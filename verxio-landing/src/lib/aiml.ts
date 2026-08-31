@@ -28,7 +28,9 @@ export const AIML_PRODUCT = {
 
 export const AIML_ORDER_BUMP = {
   name: '200 Advanced AI Skills',
-  checkboxLabel: 'YES, Add 200 more Advanced AI Skills to My Order (+₦7,500)',
+  checkboxLabel: 'YES, Add 200 more Advanced AI Skills to My Order',
+  valueLabel: '₦75,000 value',
+  todayLabel: '+₦7,500',
   lead: 'You are already getting 120 expert skills today. But if you want to completely replace an expensive marketing team, add this upgrade. For just ₦7,500 extra, you unlock 200 more advanced skills. This brings your total library to 320 expert tools.',
   systemsIntro: 'This upgrade gives you the exact systems agencies use to charge premium retainers:',
   systems: [

@@ -34,7 +34,7 @@ export function CheckoutOrder() {
                   {AIML_PRODUCT.fullSkillCount} skills total
                 </p>
               </div>
-              <p className="text-base font-semibold text-gray-900">{AIML_ORDER_BUMP.priceLabel}</p>
+              <p className="text-base font-semibold text-green-700">{AIML_ORDER_BUMP.priceLabel}</p>
             </li>
           ) : null}
         </ul>
@@ -60,8 +60,12 @@ export function CheckoutOrder() {
             onChange={(event) => setAddBump(event.target.checked)}
             className="mt-0.5 h-5 w-5 shrink-0 rounded border-gray-300 text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
           />
-          <span className="text-sm font-bold text-gray-900">
-            {AIML_ORDER_BUMP.checkboxLabel}
+          <span className="min-w-0 text-sm font-bold text-gray-900">
+            {AIML_ORDER_BUMP.checkboxLabel}{' '}
+            <span className="whitespace-nowrap">
+              <span className="text-red-600 line-through">{AIML_ORDER_BUMP.valueLabel}</span>{' '}
+              <span className="font-semibold text-green-700">{AIML_ORDER_BUMP.todayLabel}</span>
+            </span>
           </span>
         </label>
 
