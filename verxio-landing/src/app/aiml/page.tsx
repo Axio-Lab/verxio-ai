@@ -72,8 +72,11 @@ export default function AimlSalesPage() {
               tall
             />
           </div>
-          <div className="mt-8 flex justify-center">
-            <CheckoutButton>Get Instant Access Now for {AIML_PRODUCT.priceLabel}</CheckoutButton>
+          <div className="mt-8 space-y-4">
+            <CtaArrows />
+            <div className="flex justify-center">
+              <CheckoutButton>Get Instant Access Now for {AIML_PRODUCT.priceLabel}</CheckoutButton>
+            </div>
           </div>
         </div>
       </section>
