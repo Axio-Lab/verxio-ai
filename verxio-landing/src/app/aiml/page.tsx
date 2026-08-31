@@ -6,6 +6,7 @@ import { AimlHeader } from './_components/aiml-header'
 import { CheckoutButton } from './_components/checkout-button'
 import { ImagePlaceholder } from './_components/image-placeholder'
 import { StickyCheckoutBar } from './_components/sticky-checkout-bar'
+import { UrgencyCountdown } from './_components/urgency-countdown'
 import {
   AIML_BETTER_WAY,
   AIML_CATEGORIES,
@@ -273,6 +274,12 @@ export default function AimlSalesPage() {
               <span className="text-red-600 line-through">{AIML_OFFER.bonusesTotal}</span>{' '}
               <span className="font-semibold text-green-700">{AIML_OFFER.bonusesCloser}</span>
             </p>
+            <div className="mt-8 space-y-4">
+              <UrgencyCountdown variant="inline" />
+              <div className="flex justify-center">
+                <CheckoutButton>Get Instant Access Now for {AIML_PRODUCT.priceLabel}</CheckoutButton>
+              </div>
+            </div>
           </div>
         </div>
       </section>
