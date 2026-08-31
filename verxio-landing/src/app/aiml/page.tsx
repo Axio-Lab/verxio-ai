@@ -1,8 +1,10 @@
 import type { Metadata } from 'next'
+import Image from 'next/image'
 import { CheckCircle2 } from 'lucide-react'
 
 import { AimlFooter } from './_components/aiml-footer'
 import { CheckoutButton } from './_components/checkout-button'
+import { CtaArrows } from './_components/cta-arrows'
 import { ImagePlaceholder } from './_components/image-placeholder'
 import { StickyCheckoutBar } from './_components/sticky-checkout-bar'
 import { UrgencyCountdown } from './_components/urgency-countdown'
@@ -277,6 +279,7 @@ export default function AimlSalesPage() {
             </p>
             <div className="mt-8 space-y-4">
               <UrgencyCountdown variant="inline" />
+              <CtaArrows />
               <div className="flex justify-center">
                 <CheckoutButton>Get Instant Access Now for {AIML_PRODUCT.priceLabel}</CheckoutButton>
               </div>
@@ -289,10 +292,13 @@ export default function AimlSalesPage() {
         <div className="mx-auto max-w-3xl text-center">
           <h2 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">{AIML_GUARANTEE.title}</h2>
           <p className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-gray-700">{AIML_GUARANTEE.body}</p>
-          <div className="mt-8 text-left">
-            <ImagePlaceholder
-              label={AIML_PLACEHOLDERS.guarantee.label}
-              idea={AIML_PLACEHOLDERS.guarantee.idea}
+          <div className="mt-8 flex justify-center">
+            <Image
+              src="/aiml/money-back-guarantee.png"
+              alt="100% money-back guaranteed"
+              width={560}
+              height={560}
+              className="h-52 w-52 object-contain sm:h-64 sm:w-64"
             />
           </div>
         </div>

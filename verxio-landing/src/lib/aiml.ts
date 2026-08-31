@@ -251,8 +251,4 @@ export const AIML_PLACEHOLDERS = {
     label: 'Testimonial 2',
     idea: 'Another strong review from a Nigerian business owner or freelancer praising the practicality and time-saving nature of the skills.',
   },
-  guarantee: {
-    label: 'Guarantee badge',
-    idea: 'A clean, trustworthy 100% Money-Back Guarantee badge.',
-  },
 } as const
