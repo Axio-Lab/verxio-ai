@@ -2,7 +2,6 @@ import type { Metadata } from 'next'
 import { CheckCircle2 } from 'lucide-react'
 
 import { AimlFooter } from './_components/aiml-footer'
-import { AimlHeader } from './_components/aiml-header'
 import { CheckoutButton } from './_components/checkout-button'
 import { ImagePlaceholder } from './_components/image-placeholder'
 import { StickyCheckoutBar } from './_components/sticky-checkout-bar'
@@ -50,7 +49,9 @@ function SectionCta({ children }: { children: React.ReactNode }) {
 export default function AimlSalesPage() {
   return (
     <div className="min-h-screen bg-white pb-28">
-      <AimlHeader />
+      <div className="sticky top-0 z-40">
+        <UrgencyCountdown variant="banner" />
+      </div>
 
       <section className="px-6 pb-16 pt-14">
         <div className="mx-auto max-w-3xl text-center">
