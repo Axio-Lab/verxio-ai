@@ -240,6 +240,40 @@ export default function AimlSalesPage() {
             ))}
           </ul>
           <p className="mt-6 text-base leading-relaxed text-gray-700">{AIML_OFFER.closer}</p>
+
+          <div className="mt-8 border-t border-gray-200 pt-8">
+            <h3 className="text-xl font-bold tracking-tight text-gray-900">{AIML_OFFER.bonusesHeading}</h3>
+            <ul className="mt-5 space-y-5">
+              {AIML_OFFER.bonuses.map((bonus) => (
+                <li key={bonus.label} className="text-base leading-relaxed text-gray-700">
+                  <p>
+                    <span className="font-semibold text-gray-900">
+                      {bonus.label}: {bonus.title}
+                    </span>
+                    {bonus.valueLabel ? (
+                      <>
+                        {' '}
+                        <span className="text-red-600 line-through">{bonus.valueLabel}</span>
+                        {' '}
+                        <span className="font-semibold text-green-700">FREE</span>
+                      </>
+                    ) : (
+                      <>
+                        {' '}
+                        <span className="font-semibold text-green-700">FREE</span>
+                      </>
+                    )}
+                  </p>
+                  <p className="mt-1">{bonus.body}</p>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-6 text-base font-medium leading-relaxed text-gray-900">
+              Total bonus value:{' '}
+              <span className="text-red-600 line-through">{AIML_OFFER.bonusesTotal}</span>{' '}
+              <span className="font-semibold text-green-700">{AIML_OFFER.bonusesCloser}</span>
+            </p>
+          </div>
         </div>
       </section>
 

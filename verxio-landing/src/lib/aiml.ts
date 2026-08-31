@@ -189,6 +189,41 @@ export const AIML_OFFER = {
   ],
   closer:
     'This library pays for itself the very first time you use it to write an ad, close a deal, or avoid hiring an agency.',
+  bonusesHeading: 'Free Bonuses When You Get In Today',
+  bonuses: [
+    {
+      label: 'Bonus 1',
+      title: 'AI Money Weekend',
+      valueLabel: '₦250,000 value',
+      body: 'A weekly live coaching call where you learn how to make money with AI: new earning opportunities, real updates, and direct guidance, every week.',
+    },
+    {
+      label: 'Bonus 2',
+      title: 'Premium Access to Verxio',
+      valueLabel: '₦100,000 value',
+      body: 'Free access to Verxio, a full AI operator platform built to run business operations for you. Included at no extra cost.',
+    },
+    {
+      label: 'Bonus 3',
+      title: 'Access to the AI Money Community',
+      valueLabel: null,
+      body: "A private community where new trainings and new skills are dripped in regularly, so you're always working with the latest tools, not what worked six months ago.",
+    },
+    {
+      label: 'Bonus 4',
+      title: 'AI Business Audit',
+      valueLabel: '₦100,000 value',
+      body: 'We review your business and match you with an AI skill you can use to work toward your first ₦100,000.',
+    },
+    {
+      label: 'Bonus 5',
+      title: 'How to Get Your First 100 Customers',
+      valueLabel: '₦50,000 value',
+      body: 'A practical step by step framework for finding and winning your first 100 customers.',
+    },
+  ],
+  bonusesTotal: '₦500,000+',
+  bonusesCloser: 'yours free when you get the AI Money Library today.',
 } as const
 
 export const AIML_PLACEHOLDERS = {
