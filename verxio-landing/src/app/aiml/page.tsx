@@ -42,8 +42,11 @@ export const metadata: Metadata = {
 
 function SectionCta({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mt-10 flex justify-center">
-      <CheckoutButton>{children}</CheckoutButton>
+    <div className="mt-10 space-y-4">
+      <CtaArrows />
+      <div className="flex justify-center">
+        <CheckoutButton>{children}</CheckoutButton>
+      </div>
     </div>
   )
 }
@@ -57,7 +60,7 @@ export default function AimlSalesPage() {
 
       <section className="px-6 pb-16 pt-14">
         <div className="mx-auto max-w-3xl text-center">
-          <h1 className="text-4xl font-bold leading-[1.14] tracking-tight text-gray-900 sm:text-[2.625rem]">
+          <h1 className="text-[1.9rem] font-bold leading-[1.2] tracking-tight text-gray-900 sm:text-4xl sm:leading-[1.14] lg:text-[2.625rem]">
             {AIML_PRODUCT.headline.split(AIML_PRODUCT.headlineAccent)[0]}
             <span className="text-primary">{AIML_PRODUCT.headlineAccent}</span>
           </h1>
@@ -311,8 +314,11 @@ export default function AimlSalesPage() {
           <h3 className="mt-10 text-xl font-bold tracking-tight text-gray-900">
             Get the AI Money Library: 120 Expert AI Skills for {AIML_PRODUCT.priceLabel}
           </h3>
-          <div className="mt-8 flex justify-center">
-            <CheckoutButton>Get Instant Access Now for {AIML_PRODUCT.priceLabel}</CheckoutButton>
+          <div className="mt-8 space-y-4">
+            <CtaArrows />
+            <div className="flex justify-center">
+              <CheckoutButton>Get Instant Access Now for {AIML_PRODUCT.priceLabel}</CheckoutButton>
+            </div>
           </div>
         </div>
       </section>
