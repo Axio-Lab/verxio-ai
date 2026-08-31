@@ -8,10 +8,12 @@ export function formatNgn(amount: number): string {
 export const AIML_PRODUCT = {
   name: 'AI Money Library',
   shortName: 'AIML',
-  headline: 'Stop Trying to Learn AI. Make your ChatGPT and Claude Like work like experts and Make Money',
-  headlineAccent: 'Make Money',
+  headline: 'Make ChatGPT and Claude Work Like Experts, Then Get Paid for It',
+  headlineAccent: 'Get Paid for It',
   tagline:
-    "Get 120 plug-and-play AI expert skills across 13 business categories. Use them to run your own business and keep the money you'd normally pay a professional. Or use them to do work for other businesses eg a copywriter, customer research, write ads, sales pages, getting found online, and get paid for it.",
+    'Get 120 ready-to-use AI skills for work people already pay for: customer research, adverts, sales pages, content, design and more. Use them to grow your own business, offer the work as a service, or start your own AI agency. No long course. No staff. Choose a skill, add your details and let the AI guide the work.',
+  audience:
+    'Made for Nigerian vendors, freelancers, creators and small business owners who want to use AI without becoming tech experts.',
   description:
     'Get 120 expert AI skills across 13 categories. Load them into ChatGPT or Claude. Keep them forever. One payment. No subscriptions.',
   ctaLabel: 'Get Instant Access Now',
@@ -32,15 +34,15 @@ export const AIML_ORDER_BUMP = {
   systems: [
     {
       title: 'Meta Ads Analyzer',
-      body: 'Stop burning money on bad ads. Let the AI find exactly what is wrong with your campaign and fix it.',
+      body: 'Review your advert results, find weak areas and get clear suggestions for improving the campaign.',
     },
     {
       title: 'Competitor Analysis',
-      body: 'Spy on your rivals. Find out exactly how they price and sell so you can beat them.',
+      body: 'Study how other businesses price, promote and sell, then find ways to make your offer stronger.',
     },
     {
       title: 'Deep Customer Research',
-      body: 'Know exactly what your buyers want to spend money on before you even pitch them.',
+      body: 'Understand what buyers want, what problems they need solved and what matters before you pitch.',
     },
     {
       title: 'SEO and AEO Ranking',
@@ -52,11 +54,11 @@ export const AIML_ORDER_BUMP = {
     },
     {
       title: 'Cold Email Closer',
-      body: 'Write automated email sequences that force high-paying clients to open, read, and reply.',
+      body: 'Write clear email sequences designed to get the attention of better-paying clients and encourage replies.',
     },
     {
       title: 'Sales Page Auditor',
-      body: 'Find out exactly why your website is getting traffic but zero sales, and get the exact words to plug the leaks.',
+      body: 'Find possible reasons people visit your website without buying, then improve the weak parts of the page.',
     },
   ],
   closer:
@@ -67,107 +69,107 @@ export const AIML_ORDER_BUMP = {
 } as const
 
 export const AIML_REALITY = {
-  title: '',
+  title: 'If AI Has Disappointed You Before, You Are Not Alone',
   paragraphs: [
-    'Everyone is talking about making money with AI. But here is what actually happens. You open ChatGPT or Claude. You type a vague prompt. You get a generic answer that sounds like a robot. You fix it, get frustrated, and do it again the next day from zero.',
-    'Meanwhile, the people actually making money are not typing prompts. They are using AI to deliver real work that business owners desperately need: ad copy, customer research, sales pages, video content, graphic designs, cold emails.',
-    'Business owners are paying professionals thousands of Naira every day for this work. That money could be yours.',
+    'You may have opened ChatGPT, typed a question and received an answer that sounded robotic or useless. You changed the prompt, tried again and still did not get work you could use or sell.',
+    'That does not mean you are bad at AI. Most people were shown how to ask simple questions. They were not given the instructions an expert uses to do a complete job.',
+    'The good news is that Nigerian business owners already pay for this work every day: adverts, customer research, sales pages, social media content, designs and emails. With the right AI skill, you can do that work for your own business or offer it as a paid service.',
   ],
 } as const
 
 export const AIML_PROBLEM = {
-  title: '',
-  lead: 'Your AI is not the problem. It just was not trained to do the job.',
+  title: 'Why the Prompts You Tried Did Not Work',
+  lead: 'Your AI is not the problem. It needs clear instructions for the exact job.',
   paragraphs: [
-    'ChatGPT does not know what a converting Facebook ad looks like. It does not know the exact questions to ask for customer research. It does not know how to build a cold email sequence that gets replies instead of silence.',
-    'Every time you ask it to guess, you are losing money. And every time a business owner hires an agency because your AI could not prove it knew the job, you miss a payday.',
+    'Maybe you copied prompts from social media, watched videos or bought another AI tool. The result was still too general because a short prompt does not contain the full process for research, adverts, sales or content.',
+    'When the AI has to guess, you spend more time correcting bad work. You may still pay a writer, designer or agency, or lose a job you could have handled yourself.',
   ],
 } as const
 
 export const AIML_DIFFERENCE = {
-  title: 'See The Difference: Regular AI vs. Expert Trained AI',
-  lead: 'Let’s say a client pays you to write a Facebook Ad for their business. Here is what happens when you use regular AI versus the AI Money Library.',
+  title: 'See What Changes When the AI Knows the Job',
+  lead: 'Imagine a client asks you to write a Facebook advert. Here is the difference between a basic prompt and an AI Money Library skill.',
   beforeLabel: 'BEFORE (Regular ChatGPT)',
   beforeQuote:
     'Welcome to our shop! We offer the best products at the most affordable prices. Customer satisfaction is our priority. Buy now!',
-  beforeResult: 'Sounds robotic. Zero clicks. Wasted ad spend. Client fires you.',
-  afterLabel: "AFTER (Using our 'Conversion Ad Copy' Skill)",
+  beforeResult: 'It sounds like every other advert. There is no clear reason to stop and buy.',
+  afterLabel: 'AFTER (Using the Conversion Ad Copy Skill)',
   afterQuote:
-    'Stop overpaying for your supplies. Here is the exact system 500+ local businesses are using to cut costs by 30% this week without dropping quality. Click here to see the breakdown.',
-  afterResult: 'Hooks the reader, builds curiosity, drives cheap clicks. Client pays you again.',
-  closer: 'This is not just a minor improvement. It is the difference between getting ignored and getting paid.',
+    'Are rising supply costs reducing your profit? See three practical ways to spend less on your next order without reducing quality. Tap below to get the guide.',
+  afterResult: 'It names a real problem, gives a clear benefit and tells the buyer what to do next.',
+  closer: 'That is the difference between asking AI to guess and giving it a proven process to follow.',
 } as const
 
 export const AIML_BETTER_WAY = {
-  title: '',
+  title: 'The Simple Way to Get Better Work From AI',
   paragraphs: [
-    'The AI Money Library gives you 100 expert-built skills just like the one above. You drop them straight into your AI. It immediately stops guessing and starts working like a professional who has done the job a thousand times.',
-    'No 6-week courses. No expensive mentorship programs. No waiting to learn AI. You load the skill, and the work gets done.',
+    'The AI Money Library gives you 120 expert AI skills like the one above. Each skill tells ChatGPT or Claude what questions to ask, what steps to follow and what a good result should contain.',
+    'You do not need a six-week course or technical experience. Choose the job, paste the skill, answer a few questions and use the result.',
   ],
 } as const
 
 export const AIML_STEPS = [
   { step: '01', title: 'Copy the skill', body: 'Open the library and copy the expert skill you need.' },
-  { step: '02', title: 'Paste into ChatGPT', body: 'Drop it into ChatGPT or Claude. No setup course required.' },
-  { step: '03', title: 'Get expert output', body: 'Watch the specialist-level work generate instantly.' },
+  { step: '02', title: 'Paste and answer', body: 'Paste it into ChatGPT or Claude and answer the questions it asks.' },
+  { step: '03', title: 'Use the result', body: 'Get work you can use in your business or deliver to a paying client.' },
 ] as const
 
 export const AIML_CATEGORIES = {
-  lead: 'You are not buying folders of prompts. You are buying 13 jobs your AI can do today: for your own business, or as a service you charge for.',
+  lead: 'You are not buying random prompts. You are getting 13 types of work your AI can help you do for your own business or for a paying client.',
   groups: [
     {
       title: 'Find people who will actually pay',
-      body: 'Research, lead generation, and competitor intel. Your AI asks the right questions, finds buyers with money, and shows you how others price, so you stop guessing what to sell.',
+      body: 'Do customer research, find possible buyers and study competitors. Learn what people want, what they can pay and how other businesses sell.',
     },
     {
       title: 'Get them to click, reply, and buy',
-      body: 'Ads, sales pitches, and cold emails. Your AI writes Facebook ads that hook, pitches that close, and outreach that gets replies instead of silence. This is the work agencies charge thousands of Naira for.',
+      body: 'Create Facebook adverts, sales messages and cold emails. Use clear words that get attention and help people understand why they should buy.',
     },
     {
       title: 'Look like a real business, fast',
-      body: 'Content, social posts, brand voice, design, and SEO. Your AI writes like a person, plans what to post, makes simple graphics, and helps a business show up on Google, even if you have never hired a designer.',
+      body: 'Create content, social posts, brand messages and design ideas. Help a business look professional and get found on Google and AI search.',
     },
     {
       title: 'Catch bad work before a client sees it',
-      body: 'Quality checks and research tools. Scan robotic AI writing before it goes out, and turn any YouTube video into notes you can use the same day.',
+      body: 'Check AI writing before you send it. Find weak or robotic parts, improve the work and turn useful videos into clear notes.',
     },
   ],
 } as const
 
 export const AIML_PAYOFF = {
-  title: '',
-  lead: 'Two direct ways this library makes you money:',
+  title: 'Use It for Your Business or Sell the Service',
+  lead: 'There are two simple ways to get value from this library:',
   items: [
     {
       title: '1. Keep your money.',
-      body: 'Stop hiring professionals for work your AI can now handle. Write your own ads, research your own market, and build your own funnels.',
+      body: 'Use the skills to write your adverts, research your customers and improve your sales pages instead of paying for every small job.',
     },
     {
       title: '2. Sell the service.',
-      body: 'Every skill in this library is a service another business owner will pay you for. You do not need five years of experience when the AI skill already has it.',
+      body: 'Offer customer research, adverts, content, sales pages or search ranking to vendors, shops and small businesses. Start with one service and grow from there.',
     },
   ],
 } as const
 
 export const AIML_PROOF = {
-  title: 'The Proof',
-  body: 'This is not a random PDF of prompts. This is the exact skill system behind Verxio, an AI operating system generating real revenue. It is the same system used to scale Okporoko Central, a real Nigerian business moving physical products every day.',
+  title: 'Built From Real Business Work',
+  body: 'This is not a random list of prompts. The system was built while working on Verxio and Okporoko Central, a Nigerian business that sells physical products. The skills are designed around real jobs businesses need, not AI theory.',
 } as const
 
 export const AIML_GUARANTEE = {
   title: '100% Money-Back Guarantee',
-  body: 'If the library does not turn your AI into a working expert, ask for your money back. No long forms. No hassle.',
+  body: 'Try the library without carrying all the risk. If it does not help you get better work from your AI, ask for your money back. No long form. No stress.',
 } as const
 
 export const AIML_CHOICE = {
-  title: '',
-  body: 'You do not need to hire an expert. You just need to train the AI you already have. Get the library and start doing real work today.',
+  title: 'Start With One Skill and One Real Job',
+  body: 'You already have access to ChatGPT or Claude. Give it a clear job, follow the steps and use the result. Start with your own business or choose one service to sell.',
 } as const
 
 export const AIML_OFFER = {
   title: 'AI Money Library Bundle',
   heading: 'Bundle Package',
-  priceAnchor: 'Less than what you would pay a beginner copywriter for one bad sales page.',
+  priceAnchor: 'Less than what you may pay someone to write one sales page.',
   intro: 'Here is exactly what you get the second you check out:',
   items: [
     {
@@ -180,7 +182,7 @@ export const AIML_OFFER = {
     },
     {
       title: 'Lifetime Access',
-      body: 'Keep the exact prompts that print money forever.',
+      body: 'Keep this edition of the skills and use them whenever you need them.',
     },
     {
       title: 'Zero Monthly Fees',
@@ -188,7 +190,7 @@ export const AIML_OFFER = {
     },
   ],
   closer:
-    'This library pays for itself the very first time you use it to write an ad, close a deal, or avoid hiring an agency.',
+    'One useful advert, client job or business improvement can cover what you paid for the library.',
   bonusesHeading: 'Free Bonuses When You Get In Today',
   bonuses: [
     {
