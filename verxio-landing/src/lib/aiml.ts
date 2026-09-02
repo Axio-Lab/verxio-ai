@@ -8,12 +8,12 @@ export function formatNgn(amount: number): string {
 export const AIML_PRODUCT = {
   name: 'AI Money Library',
   shortName: 'AIML',
-  headline: 'Grow Your Business. Sell Services With AI.',
-  headlineAccent: 'Sell Services With AI',
+  headline: 'Grow Your Business. Get Paid to Help Others.',
+  headlineAccent: 'Get Paid to Help Others',
   tagline:
-    'Use 120 ready-to-use expert AI skills to get customers, improve your offer, keep better records or do the same work for another business and get paid.',
+    'The AI Money Library gives you 120 ready-to-use skills for getting customers, improving offers, bookkeeping, data entry, content, designs, videos and more. Use them in your business or sell the finished work as a service.',
   description:
-    'Use 120 expert AI skills in your own business or offer the work as a paid service to shops, traders and other small businesses.',
+    'Use 120 expert AI skills to grow your business or offer content, design, bookkeeping, data entry and other paid services to businesses.',
   ctaLabel: 'Get Instant Access Now',
   skillCount: 120,
   fullSkillCount: 320,
@@ -112,12 +112,12 @@ export const AIML_BETTER_WAY = {
 export const AIML_USE_PATHS = [
   {
     title: 'Use it in your own business',
-    body: 'Create better offers, write adverts, follow up with customers, organise records, handle routine bookkeeping, enter data and understand what is happening in the business.',
+    body: 'Create better offers, write adverts, follow up with customers, organise records, handle routine bookkeeping, enter data, plan content and create designs or videos.',
     result: 'You save time, reduce avoidable mistakes and do more of the work that can bring in or protect money.',
   },
   {
     title: 'Offer it as a paid service',
-    body: 'Help another business with customer research, adverts, content, offer design, record keeping, data entry or other work from the library.',
+    body: 'Help another business with customer research, adverts, content, designs, videos, offer design, record keeping, data entry or other work from the library.',
     result: 'You agree on the job, use the right skill, review the work and get paid for the finished result.',
   },
 ] as const
@@ -157,8 +157,16 @@ export const AIML_CATEGORIES = {
       body: 'Organise sales, expenses, customer details, routine bookkeeping and data entry so important information is easier to find and use.',
     },
     {
-      title: 'Research, plan and deliver work',
-      body: 'Study customers and competitors, prepare reports, plan content and check finished work before you use it or send it to a client.',
+      title: 'Create content, designs and videos',
+      body: 'Plan posts, write scripts, prepare design ideas and create video content for your business or for a paying client.',
+    },
+    {
+      title: 'Understand customers and competitors',
+      body: 'Study what customers want, compare other businesses and turn what you learn into clear ideas you can use.',
+    },
+    {
+      title: 'Prepare and deliver client work',
+      body: 'Organise information, prepare reports and check finished work before you use it or send it to a paying client.',
     },
   ],
 } as const
@@ -197,7 +205,7 @@ export const AIML_OFFER = {
   items: [
     {
       title: '120 Expert AI Skills',
-      body: 'Practical systems for sales, offers, research, records, content, planning and other business work.',
+      body: 'Practical systems for sales, offers, research, records, content, designs, videos, planning and other business work.',
     },
     {
       title: 'Plug-and-Play Setup',
