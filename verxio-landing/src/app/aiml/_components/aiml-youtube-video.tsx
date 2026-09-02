@@ -52,20 +52,26 @@ export function AimlYoutubeVideo({
 
 export function AimlFileVideo({
   src,
-  poster,
   title,
 }: {
   src: string
-  poster: string
   title: string
 }) {
   return (
-    <figure data-aiml-player="" className={frameClassName}>
-      <div data-aiml-frame="" className={boxClassName}>
-        <video className="absolute inset-0 h-full w-full object-cover" poster={poster} playsInline preload="metadata">
+    <figure className={frameClassName}>
+      <div className={boxClassName}>
+        <video
+          data-aiml-loop
+          className="absolute inset-0 h-full w-full object-cover"
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="auto"
+          aria-label={title}
+        >
           <source src={src} type="video/mp4" />
         </video>
-        <PlayOverlay label={`Play video: ${title}`} />
       </div>
     </figure>
   )
@@ -76,28 +82,50 @@ export function AimlPlayerScript() {
     <script
       dangerouslySetInnerHTML={{
         __html: `(function(){
-  if (window.__aimlPlayBound) return;
-  window.__aimlPlayBound = true;
-  document.addEventListener('click', function(event) {
-    var btn = event.target && event.target.closest ? event.target.closest('[data-aiml-play]') : null;
-    if (!btn) return;
-    event.preventDefault();
-    var player = btn.closest('[data-aiml-player]');
-    if (!player) return;
-    var youtube = player.getAttribute('data-youtube');
-    var frame = player.querySelector('[data-aiml-frame]');
-    if (youtube && frame) {
-      var title = (btn.getAttribute('aria-label') || 'Video').replace(/"/g, '');
-      frame.innerHTML = '<iframe title="' + title + '" src="https://www.youtube-nocookie.com/embed/' + youtube + '?autoplay=1&rel=0&modestbranding=1" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen class="absolute inset-0 h-full w-full"></iframe>';
-      return;
-    }
-    var video = player.querySelector('video');
-    if (!video) return;
-    btn.remove();
-    video.setAttribute('controls', '');
+  if (!window.__aimlPlayBound) {
+    window.__aimlPlayBound = true;
+    document.addEventListener('click', function(event) {
+      var btn = event.target && event.target.closest ? event.target.closest('[data-aiml-play]') : null;
+      if (!btn) return;
+      event.preventDefault();
+      var player = btn.closest('[data-aiml-player]');
+      if (!player) return;
+      var youtube = player.getAttribute('data-youtube');
+      var frame = player.querySelector('[data-aiml-frame]');
+      if (youtube && frame) {
+        var title = (btn.getAttribute('aria-label') || 'Video').replace(/"/g, '');
+        frame.innerHTML = '<iframe title="' + title + '" src="https://www.youtube-nocookie.com/embed/' + youtube + '?autoplay=1&rel=0&modestbranding=1" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen class="absolute inset-0 h-full w-full"></iframe>';
+      }
+    });
+  }
+  function playLoop(video) {
+    video.muted = true;
     var playPromise = video.play();
     if (playPromise && playPromise.catch) playPromise.catch(function(){});
-  });
+  }
+  function bindLoopVideos() {
+    var videos = document.querySelectorAll('video[data-aiml-loop]');
+    if (!videos.length) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (!window.__aimlLoopObserver && 'IntersectionObserver' in window) {
+      window.__aimlLoopObserver = new IntersectionObserver(function(entries) {
+        for (var j = 0; j < entries.length; j++) {
+          var entry = entries[j];
+          if (entry.isIntersecting) playLoop(entry.target);
+          else entry.target.pause();
+        }
+      }, { threshold: 0.25, rootMargin: '80px 0px' });
+    }
+    for (var k = 0; k < videos.length; k++) {
+      var video = videos[k];
+      if (video.dataset.aimlLoopBound) continue;
+      video.dataset.aimlLoopBound = '1';
+      if (window.__aimlLoopObserver) window.__aimlLoopObserver.observe(video);
+      else playLoop(video);
+    }
+  }
+  bindLoopVideos();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindLoopVideos);
 })();`,
       }}
     />

@@ -190,7 +190,6 @@ export default function AimlSalesPage() {
           <div className="mt-8">
             <AimlFileVideo
               src={AIML_PLACEHOLDERS.howItWorks.videoSrc}
-              poster={AIML_PLACEHOLDERS.howItWorks.posterSrc}
               title={AIML_PLACEHOLDERS.howItWorks.videoTitle}
             />
           </div>
