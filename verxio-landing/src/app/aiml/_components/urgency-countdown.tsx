@@ -42,7 +42,7 @@ export function UrgencyCountdown({ variant }: { variant: 'banner' | 'inline' }) 
   if (variant === 'banner') {
     return (
       <div className="bg-red-600 px-4 py-2 text-center shadow-[0_0_28px_rgba(220,38,38,0.7)]">
-        <p className="text-sm font-bold uppercase tracking-wide text-white">
+        <p className="text-base font-bold uppercase tracking-wide text-white">
           Free bonuses end in{' '}
           <span className="inline-block tabular-nums tracking-widest motion-safe:animate-pulse" aria-live="polite">
             {display}
@@ -53,7 +53,7 @@ export function UrgencyCountdown({ variant }: { variant: 'banner' | 'inline' }) 
   }
 
   return (
-    <p className="flex items-center justify-center gap-2 text-base font-bold text-red-600">
+    <p className="flex items-center justify-center gap-2 text-lg font-bold text-red-600">
       <Clock className="h-5 w-5 shrink-0 motion-safe:animate-pulse" aria-hidden />
       <span>
         Bonus offer ends in <span className="tabular-nums tracking-widest">{display}</span>

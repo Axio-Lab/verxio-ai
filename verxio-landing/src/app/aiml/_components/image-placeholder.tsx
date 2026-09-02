@@ -16,8 +16,8 @@ export function ImagePlaceholder({
       }`}
     >
       <ImageIcon className="h-8 w-8 text-gray-400" aria-hidden />
-      <figcaption className="mt-3 text-sm font-semibold text-gray-800">{label}</figcaption>
-      <p className="mt-2 max-w-lg text-sm leading-relaxed text-gray-500">{idea}</p>
+      <figcaption className="mt-3 text-base font-semibold text-gray-800">{label}</figcaption>
+      <p className="mt-2 max-w-lg text-base leading-relaxed text-gray-500">{idea}</p>
     </figure>
   )
 }
