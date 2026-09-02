@@ -245,6 +245,9 @@ export const AIML_PLACEHOLDERS = {
   beforeAfter: {
     label: 'Before and after visual',
     idea: 'A side-by-side graphic showing a generic AI answer beside a structured client-ready advert created with an expert skill.',
+    videoUrl: 'https://youtu.be/2K5c9IT4VnI',
+    videoId: '2K5c9IT4VnI',
+    videoTitle: 'Before and after: generic AI versus expert-trained AI',
   },
   howItWorks: {
     label: 'How it works',

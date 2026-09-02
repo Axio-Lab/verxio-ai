@@ -5,6 +5,7 @@ import { CheckCircle2 } from 'lucide-react'
 import { AimlFooter } from './_components/aiml-footer'
 import { CheckoutButton } from './_components/checkout-button'
 import { CtaArrows } from './_components/cta-arrows'
+import { BeforeAfterVideo } from './_components/before-after-video'
 import { ImagePlaceholder } from './_components/image-placeholder'
 import { StickyCheckoutBar } from './_components/sticky-checkout-bar'
 import { UrgencyCountdown } from './_components/urgency-countdown'
@@ -131,10 +132,7 @@ export default function AimlSalesPage() {
             </article>
           </div>
           <div className="mt-6">
-            <ImagePlaceholder
-              label={AIML_PLACEHOLDERS.beforeAfter.label}
-              idea={AIML_PLACEHOLDERS.beforeAfter.idea}
-            />
+            <BeforeAfterVideo />
           </div>
           <p className="mt-6 text-base font-semibold leading-relaxed text-gray-900">{AIML_DIFFERENCE.closer}</p>
           <SectionCta>See What Expert-Trained AI Can Do</SectionCta>
