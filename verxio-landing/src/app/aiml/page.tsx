@@ -24,6 +24,7 @@ import {
   AIML_REALITY,
   AIML_STEPS,
   AIML_TESTIMONIALS,
+  AIML_USE_PATHS,
 } from '@/lib/aiml'
 import { SITE_URL } from '@/lib/site'
 
@@ -63,7 +64,7 @@ export default function AimlSalesPage() {
 
       <section className="px-6 pb-16 pt-14">
         <div className="mx-auto max-w-3xl text-center">
-          <h1 className="text-[2.15rem] font-bold leading-[1.18] tracking-tight text-gray-900 sm:text-[2.5rem] sm:leading-[1.12] lg:text-5xl">
+          <h1 className="text-[2rem] font-bold leading-[1.18] tracking-tight text-gray-900 sm:text-[2.5rem] sm:leading-[1.12] lg:text-5xl">
             {AIML_PRODUCT.headline.split(AIML_PRODUCT.headlineAccent)[0]}
             <span className="text-primary">{AIML_PRODUCT.headlineAccent}</span>
           </h1>
@@ -151,6 +152,32 @@ export default function AimlSalesPage() {
               </p>
             ))}
           </div>
+          <div className="mt-8 grid gap-5 sm:grid-cols-2">
+            {AIML_USE_PATHS.map((path, index) => (
+              <article
+                key={path.title}
+                className={
+                  index === 0
+                    ? 'rounded-2xl bg-gray-900 p-6 text-white'
+                    : 'rounded-2xl bg-primary p-6 text-gray-950'
+                }
+              >
+                <p className="text-sm font-semibold">Path {index + 1}</p>
+                <h3 className="mt-2 text-2xl font-bold tracking-tight">{path.title}</h3>
+                <p
+                  className={
+                    index === 0
+                      ? 'mt-4 text-base leading-relaxed text-white/85'
+                      : 'mt-4 text-base leading-relaxed text-gray-900'
+                  }
+                >
+                  {path.body}
+                </p>
+                <p className="mt-4 text-base font-semibold leading-relaxed">{path.result}</p>
+              </article>
+            ))}
+          </div>
+          <h3 className="mt-12 text-2xl font-bold tracking-tight text-gray-900">How to start with one skill</h3>
           <ol className="mt-8 grid gap-6 sm:grid-cols-3">
             {AIML_STEPS.map((item) => (
               <li key={item.step}>
@@ -172,9 +199,7 @@ export default function AimlSalesPage() {
 
       <section className="border-y border-gray-100 bg-gray-50 px-6 py-16">
         <div className="mx-auto max-w-3xl">
-          <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
-            Services Your AI Agency Can Offer
-          </h2>
+          <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">{AIML_CATEGORIES.title}</h2>
           <p className="mt-4 text-lg leading-relaxed text-gray-700">{AIML_CATEGORIES.lead}</p>
           <ul className="mt-8 grid gap-4 sm:grid-cols-2">
             {AIML_CATEGORIES.groups.map((item) => (
@@ -185,7 +210,8 @@ export default function AimlSalesPage() {
             ))}
           </ul>
           <p className="mt-6 text-lg font-medium text-gray-800">
-            Start with one service. As your confidence and client base grow, add another.
+            Use these skills for your own business. When you can produce a useful result, you can also offer that
+            work to other businesses for a fee.
           </p>
         </div>
         <div className="mx-auto mt-12 max-w-4xl">
@@ -209,7 +235,7 @@ export default function AimlSalesPage() {
               </figure>
             ))}
           </div>
-          <SectionCta>Get All 120 Skills Now</SectionCta>
+          <SectionCta>Get All 120 Expert AI Skills Now</SectionCta>
         </div>
       </section>
 

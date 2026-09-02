@@ -8,12 +8,12 @@ export function formatNgn(amount: number): string {
 export const AIML_PRODUCT = {
   name: 'AI Money Library',
   shortName: 'AIML',
-  headline: 'How to Start Your AI Agency With ChatGPT and Claude as Experts, and Make More Money with AI',
-  headlineAccent: 'Make More Money with AI',
+  headline: 'Grow Your Business. Sell Services With AI.',
+  headlineAccent: 'Sell Services With AI',
   tagline:
-    'Ready-to-use AI expert skills to deliver products and services people already pay for. Choose a service and let ChatGPT or Claude guide the work.',
+    'Use 120 ready-to-use expert AI skills to get customers, improve your offer, keep better records or do the same work for another business and get paid.',
   description:
-    'Get 120 expert AI skills for starting an AI agency with ChatGPT or Claude. Choose a service, deliver useful work and build from there.',
+    'Use 120 expert AI skills in your own business or offer the work as a paid service to shops, traders and other small businesses.',
   ctaLabel: 'Get Instant Access Now',
   skillCount: 120,
   fullSkillCount: 320,
@@ -29,8 +29,8 @@ export const AIML_ORDER_BUMP = {
   checkboxLabel: 'YES, Add 200 more Advanced AI Skills to My Order',
   valueLabel: '₦75,000 value',
   todayLabel: '+₦7,500',
-  lead: 'You are already getting 120 expert skills today. But if you want to completely replace an expensive marketing team, add this upgrade. For just ₦7,500 extra, you unlock 200 more advanced skills. This brings your total library to 320 expert tools.',
-  systemsIntro: 'This upgrade gives you the exact systems agencies use to charge premium retainers:',
+  lead: 'You are already getting 120 expert skills. Add this upgrade if you want more advanced systems for growing your own business or handling bigger jobs for clients. For ₦7,500 extra, you unlock 200 more skills and bring your total library to 320.',
+  systemsIntro: 'The upgrade adds systems for work such as:',
   systems: [
     {
       title: 'Meta Ads Analyzer',
@@ -46,7 +46,7 @@ export const AIML_ORDER_BUMP = {
     },
     {
       title: 'SEO and AEO Ranking',
-      body: 'Put your business at the top of Google searches without paying an agency a monthly fee.',
+      body: 'Improve how your business appears in Google and AI search results without paying an agency a monthly fee.',
     },
     {
       title: 'Graphic Design Director',
@@ -62,33 +62,33 @@ export const AIML_ORDER_BUMP = {
     },
   ],
   closer:
-    'If you want to handle high-paying client work or scale your own business faster, check the box to add this to your order.',
+    'If you want more ways to improve your business or offer paid services, check the box to add this to your order.',
   priceNgn: 7500,
   priceLabel: '₦7,500',
   checkoutUrl: 'https://paystack.shop/pay/hc-q1-9ey1',
 } as const
 
 export const AIML_REALITY = {
-  title: 'You Do Not Need to Be an AI Expert to Start',
+  title: 'Your Business Already Has Work That Must Get Done',
   paragraphs: [
-    'Businesses need customer research, adverts, sales pages, content, designs and help getting found online. They already pay people and agencies to do this work.',
-    'You may want to offer these services but feel you do not have enough experience. Or you may have tried ChatGPT and received answers that sounded robotic, vague or impossible to sell.',
-    'That does not mean an AI agency is beyond you. It means ChatGPT or Claude needs the right instructions for each job. Give the AI an expert process to follow and you can focus on finding clients, understanding their needs and delivering useful work.',
+    'Every day, shop owners, traders, wholesalers, food vendors, POS agents, salons and service businesses look for customers, answer enquiries, record sales, track expenses and decide what to sell next.',
+    'Many already use notebooks, WhatsApp, spreadsheets, calculators and memory. Those methods are familiar and useful. The problem starts when records go missing, follow-ups are forgotten, offers are unclear or important work takes too long.',
+    'The AI Money Library helps you improve one job at a time. You can use a skill in your own business, or do the same work for another business and charge for the result.',
   ],
 } as const
 
 export const AIML_PROBLEM = {
-  title: 'Why Most People Never Turn AI Into Income',
-  lead: 'They keep learning about AI but never build a service they can confidently offer.',
+  title: 'A Short Prompt Is Not a Working Business System',
+  lead: 'ChatGPT can write an answer. It still needs the right process to produce work a business can use.',
   paragraphs: [
-    'They watch more videos, save random prompts and test new tools. But when a real business asks for customer research, an advert or a sales page, those short prompts do not contain the full process needed to do the job well.',
-    'The AI has to guess. The result needs too much correction, so they do not trust the work enough to charge for it. More courses do not solve this. A clear service and a repeatable system do.',
+    'A one-line prompt leaves too much for the AI to guess. It may give you a generic advert, a weak offer or a report that misses the details that matter.',
+    'An expert skill gives ChatGPT or Claude a clear job, the questions to ask and the steps to follow. You spend less time explaining from scratch and get a stronger first draft to review.',
   ],
 } as const
 
 export const AIML_DIFFERENCE = {
-  title: 'See What Changes When Your AI Has an Expert Process',
-  lead: 'Imagine the first client for your AI agency asks for a Facebook advert. Here is the difference between a basic prompt and an AI Money Library skill.',
+  title: 'See the Difference a Clear Process Makes',
+  lead: 'Imagine you need a Facebook advert for your own business, or a customer pays you to write one. Here is the difference.',
   beforeLabel: 'BEFORE (Regular ChatGPT)',
   beforeQuote:
     'Welcome to our shop! We offer the best products at the most affordable prices. Customer satisfaction is our priority. Buy now!',
@@ -98,92 +98,106 @@ export const AIML_DIFFERENCE = {
     'Are rising supply costs reducing your profit? See three practical ways to spend less on your next order without reducing quality. Tap below to get the guide.',
   afterResult: 'It names a real problem, gives a clear benefit and tells the buyer what to do next.',
   closer:
-    'Your client does not pay for a prompt. The client pays for a useful result. The expert process helps you produce that result with more structure and confidence.',
+    'The value is not the prompt. The value is useful work: an advert that is clearer, a record that is organised or an offer customers can understand.',
 } as const
 
 export const AIML_BETTER_WAY = {
-  title: 'Your AI Agency Can Start With One Service',
+  title: 'Use the Skills in Your Business or Sell the Work',
   paragraphs: [
-    'You do not need an office, employees or ten services on your first day. Start with one problem a business already wants solved, such as customer research, adverts, content or sales pages.',
-    'The AI Money Library gives you 120 expert AI skills across 13 categories. Each skill tells ChatGPT or Claude what questions to ask, what steps to follow and what the finished work should contain.',
+    'You do not need to choose between improving your own business and earning from other businesses. The same skill can help you do both.',
+    'Start with the problem closest to you. Use a skill to improve your own work, or take that result to a shop owner, trader or service business that needs help.',
   ],
 } as const
+
+export const AIML_USE_PATHS = [
+  {
+    title: 'Use it in your own business',
+    body: 'Create better offers, write adverts, follow up with customers, organise records, handle routine bookkeeping, enter data and understand what is happening in the business.',
+    result: 'You save time, reduce avoidable mistakes and do more of the work that can bring in or protect money.',
+  },
+  {
+    title: 'Offer it as a paid service',
+    body: 'Help another business with customer research, adverts, content, offer design, record keeping, data entry or other work from the library.',
+    result: 'You agree on the job, use the right skill, review the work and get paid for the finished result.',
+  },
+] as const
 
 export const AIML_STEPS = [
   {
     step: '01',
-    title: 'Choose a service',
-    body: 'Pick one useful job you can offer to a clear type of business.',
+    title: 'Choose one business problem',
+    body: 'Start with a real job: getting customers, improving an offer, organising records or completing work for a client.',
   },
   {
     step: '02',
-    title: 'Run the expert skill',
-    body: 'Add the client’s details and let ChatGPT or Claude guide you through the work.',
+    title: 'Open the matching skill',
+    body: 'Add the business details and let ChatGPT or Claude ask questions and work through the job.',
   },
   {
     step: '03',
-    title: 'Deliver the result',
-    body: 'Review the output, make it fit the client and deliver work they can use.',
+    title: 'Review and use the work',
+    body: 'Check the output, correct the details, then use it in your business or deliver it to the customer who hired you.',
   },
 ] as const
 
 export const AIML_CATEGORIES = {
-  lead: 'You are not buying random prompts. You are getting practical systems for services that businesses understand and already pay for.',
+  title: 'What You Can Do With the Expert AI Skills',
+  lead: 'These are not random prompts. They are step-by-step systems for work that helps a business sell, stay organised and make better decisions.',
   groups: [
     {
-      title: 'Research and business strategy',
-      body: 'Help clients understand their customers, study competitors, improve offers and find better opportunities.',
+      title: 'Get more customers',
+      body: 'Plan adverts, sales messages, follow-up messages, social posts and simple campaigns that give people a clear reason to respond.',
     },
     {
-      title: 'Advertising and sales',
-      body: 'Create adverts, sales messages, email campaigns and sales pages that communicate a clear reason to buy.',
+      title: 'Build a stronger offer',
+      body: 'Understand what customers want, study competing businesses, improve what you sell and explain why it is worth paying for.',
     },
     {
-      title: 'Content and creative work',
-      body: 'Plan content, write social posts, shape a brand voice and create ideas for graphics and product campaigns.',
+      title: 'Keep better business records',
+      body: 'Organise sales, expenses, customer details, routine bookkeeping and data entry so important information is easier to find and use.',
     },
     {
-      title: 'Search visibility and quality',
-      body: 'Help businesses get found on Google and AI search, then review the work before it reaches the client.',
+      title: 'Research, plan and deliver work',
+      body: 'Study customers and competitors, prepare reports, plan content and check finished work before you use it or send it to a client.',
     },
   ],
 } as const
 
 export const AIML_PAYOFF = {
-  title: 'Start Small, Then Grow Your AI Agency',
-  lead: 'You do not need to build everything at once. Grow in two practical stages:',
+  title: 'Start With One Useful Result',
+  lead: 'You do not need to learn all 120 skills before you begin. Pick one job you understand and follow this path:',
   items: [
     {
-      title: '1. Win one clear job.',
-      body: 'Choose one service, practise the workflow and offer it to businesses that already need that result.',
+      title: '1. Solve a problem close to you.',
+      body: 'Use a skill for your own business, or help a business you already know. This gives you a real result to review.',
     },
     {
-      title: '2. Add more services.',
-      body: 'After you can deliver one job confidently, use the other skills to serve the same client or reach new types of businesses.',
+      title: '2. Repeat what works.',
+      body: 'Keep using the skill in your business, offer the same job to more businesses or add another skill when there is a clear need.',
     },
   ],
 } as const
 
 export const AIML_GUARANTEE = {
   title: '100% Money-Back Guarantee',
-  body: 'Explore the library and try the skills without carrying all the risk. If they do not help you turn ChatGPT or Claude into a more useful partner for client work, ask for your money back. No long form. No stress.',
+  body: 'Explore the library and try the skills. If they do not help you use ChatGPT or Claude for useful business work, ask for your money back. No long form. No stress.',
 } as const
 
 export const AIML_CHOICE = {
-  title: 'You Do Not Need a Team to Start',
-  body: 'You need one service, one business problem and one expert process to follow. Choose your first service, use ChatGPT or Claude to do the work and build your AI agency one client at a time.',
+  title: 'You Do Not Need a Team or Technical Background',
+  body: 'You need one business problem and the right process. Choose a skill, add the details and review the work. Use the result yourself or get paid to deliver it to another business.',
 } as const
 
 export const AIML_OFFER = {
   title: 'AI Money Library Bundle',
   heading: 'Bundle Package',
   comparePriceLabel: '₦50,000',
-  priceAnchor: 'Start with the tools for your first service without paying for another long course.',
-  intro: 'Here is what you get to help you start and grow your AI agency:',
+  priceAnchor: 'Get practical systems for business work without paying for another long course.',
+  intro: 'Here is what you get to improve your business or offer useful services to others:',
   items: [
     {
       title: '120 Expert AI Skills',
-      body: 'Practical systems for services businesses already pay for.',
+      body: 'Practical systems for sales, offers, research, records, content, planning and other business work.',
     },
     {
       title: 'Plug-and-Play Setup',
@@ -199,7 +213,7 @@ export const AIML_OFFER = {
     },
   ],
   closer:
-    'You do not have to master all 120 skills before you begin. Start with the one that helps you deliver your first useful service.',
+    'You do not have to master all 120 skills. Start with one job that can help your business or solve a problem another business will pay you to handle.',
   bonusesHeading: 'Free Bonuses When You Get In Today',
   bonuses: [
     {
@@ -240,7 +254,7 @@ export const AIML_OFFER = {
 export const AIML_PLACEHOLDERS = {
   hero: {
     label: 'Hero image',
-    idea: 'A product mockup showing the AI Money Library turning ChatGPT and Claude into an expert team for a small AI agency.',
+    idea: 'A product mockup showing 120 expert AI skills for running your business better or handling paid work for other businesses.',
   },
   beforeAfter: {
     label: 'Before and after visual',
