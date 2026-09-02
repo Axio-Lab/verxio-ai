@@ -8,8 +8,8 @@ export function formatNgn(amount: number): string {
 export const AIML_PRODUCT = {
   name: 'AI Money Library',
   shortName: 'AIML',
-  headline: 'Grow Your Business. Get Paid to Help Others.',
-  headlineAccent: 'Get Paid to Help Others',
+  headline: 'How to Use AI in Your Business to Get More Customers, Increase Sales and Make More Money',
+  headlineAccent: 'Get More Customers, Increase Sales and Make More Money',
   tagline:
     'The AI Money Library gives you 120 ready-to-use skills for getting customers, improving offers, bookkeeping, data entry, content, designs, videos and more. Use them in your business or sell the finished work as a service.',
   description:
