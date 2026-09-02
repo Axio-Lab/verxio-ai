@@ -227,9 +227,9 @@ export default function AimlSalesPage() {
                 <Image
                   src={item.src}
                   alt={item.alt}
-                  width={1400}
-                  height={900}
-                  className="h-auto w-full origin-center scale-[1.22] sm:scale-[1.18]"
+                  width={1024}
+                  height={576}
+                  className="h-auto w-full object-contain"
                   sizes="(min-width: 896px) 56rem, 100vw"
                 />
               </figure>
