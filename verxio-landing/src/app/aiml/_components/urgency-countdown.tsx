@@ -20,32 +20,31 @@ function formatRemaining(ms: number): string {
   return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
 }
 
-function useEndOfDayCountdown(): string | null {
-  const [remaining, setRemaining] = useState<number | null>(null)
+function useEndOfDayCountdown(): string {
+  const [remaining, setRemaining] = useState(msUntilEndOfDay)
 
   useEffect(() => {
-    function tick() {
-      setRemaining(msUntilEndOfDay())
-    }
-    tick()
-    const id = window.setInterval(tick, 1000)
+    const id = window.setInterval(() => setRemaining(msUntilEndOfDay()), 1000)
     return () => window.clearInterval(id)
   }, [])
 
-  return remaining === null ? null : formatRemaining(remaining)
+  return formatRemaining(remaining)
 }
 
 export function UrgencyCountdown({ variant }: { variant: 'banner' | 'inline' }) {
   const time = useEndOfDayCountdown()
-  const display = time ?? '--:--:--'
 
   if (variant === 'banner') {
     return (
       <div className="bg-red-600 px-4 py-2 text-center shadow-[0_0_28px_rgba(220,38,38,0.7)]">
         <p className="text-base font-bold uppercase tracking-wide text-white">
           Free bonuses end in{' '}
-          <span className="inline-block tabular-nums tracking-widest motion-safe:animate-pulse" aria-live="polite">
-            {display}
+          <span
+            className="inline-block tabular-nums tracking-widest motion-safe:animate-pulse"
+            aria-live="polite"
+            suppressHydrationWarning
+          >
+            {time}
           </span>
         </p>
       </div>
@@ -56,7 +55,10 @@ export function UrgencyCountdown({ variant }: { variant: 'banner' | 'inline' }) 
     <p className="flex items-center justify-center gap-2 text-lg font-bold text-red-600">
       <Clock className="h-5 w-5 shrink-0 motion-safe:animate-pulse" aria-hidden />
       <span>
-        Bonus offer ends in <span className="tabular-nums tracking-widest">{display}</span>
+        Bonus offer ends in{' '}
+        <span className="tabular-nums tracking-widest" suppressHydrationWarning>
+          {time}
+        </span>
       </span>
     </p>
   )

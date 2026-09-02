@@ -252,6 +252,9 @@ export const AIML_PLACEHOLDERS = {
   howItWorks: {
     label: 'How it works',
     idea: 'A three-step visual: choose a service, run the expert skill, then review and deliver the client result.',
+    videoSrc: '/aiml/how-to-use-expert-skills.mp4',
+    posterSrc: '/aiml/how-to-use-expert-skills.png',
+    videoTitle: 'How to use the plug-and-use expert AI skills',
   },
 } as const
 

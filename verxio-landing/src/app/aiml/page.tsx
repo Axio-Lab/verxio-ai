@@ -5,6 +5,7 @@ import { CheckCircle2 } from 'lucide-react'
 import { AimlFooter } from './_components/aiml-footer'
 import { CheckoutButton } from './_components/checkout-button'
 import { CtaArrows } from './_components/cta-arrows'
+import { AimlFileVideo, AimlPlayerScript } from './_components/aiml-youtube-video'
 import { BeforeAfterVideo } from './_components/before-after-video'
 import { ImagePlaceholder } from './_components/image-placeholder'
 import { StickyCheckoutBar } from './_components/sticky-checkout-bar'
@@ -55,6 +56,7 @@ function SectionCta({ children }: { children: React.ReactNode }) {
 export default function AimlSalesPage() {
   return (
     <div className="min-h-screen bg-white pb-28">
+      <AimlPlayerScript />
       <div className="sticky top-0 z-40">
         <UrgencyCountdown variant="banner" />
       </div>
@@ -159,9 +161,10 @@ export default function AimlSalesPage() {
             ))}
           </ol>
           <div className="mt-8">
-            <ImagePlaceholder
-              label={AIML_PLACEHOLDERS.howItWorks.label}
-              idea={AIML_PLACEHOLDERS.howItWorks.idea}
+            <AimlFileVideo
+              src={AIML_PLACEHOLDERS.howItWorks.videoSrc}
+              poster={AIML_PLACEHOLDERS.howItWorks.posterSrc}
+              title={AIML_PLACEHOLDERS.howItWorks.videoTitle}
             />
           </div>
         </div>
