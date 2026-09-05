@@ -13,6 +13,7 @@ import {
   submitOAuthCode,
   validateProviderCredential
 } from '@/hermes'
+import { markModelOptionsForceRefresh } from '@/lib/model-options-cache'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
 import { evaluateRuntimeReadiness, type RuntimeReadinessResult } from '@/lib/runtime-readiness'
 import { verxioApiEnabled } from '@/lib/verxio-api'
@@ -232,13 +233,25 @@ function notifyGatewayTools(tools: string[] | undefined) {
 // card — the user gets the undefined-model auto-selection behaviour
 // we had before, which works but is surprising. The confirm step is
 // opportunistic polish, not a hard requirement for onboarding.
+function apiKeySlugCandidates(envKey: string, label: string): string[] {
+  const mapped: Record<string, string[]> = {
+    GEMINI_API_KEY: ['gemini'],
+    GOOGLE_API_KEY: ['gemini'],
+    OPENAI_API_KEY: ['openai-api', 'openai']
+  }
+  const candidates = [...(mapped[envKey] ?? []), envKey.replace(/_API_KEY$/, '').toLowerCase(), label.toLowerCase()]
+
+  return [...new Set(candidates.filter(Boolean))]
+}
+
 async function fetchProviderDefaultModel(
   preferredSlugs: string[]
 ): Promise<null | { providerSlug: string; defaultModel: string }> {
   let options
 
   try {
-    options = await getGlobalModelOptions()
+    markModelOptionsForceRefresh()
+    options = await getGlobalModelOptions({ refresh: true })
   } catch {
     return null
   }
@@ -852,7 +865,7 @@ export async function saveOnboardingApiKey(
     // env-key prefix stripped). Pass a couple of likely candidates;
     // fetchProviderDefaultModel falls back to the first authenticated
     // provider returned by /api/model/options if none match.
-    const slugCandidates = [envKey.replace(/_API_KEY$/, '').toLowerCase(), label.toLowerCase()]
+    const slugCandidates = apiKeySlugCandidates(envKey, label)
     // ignoreRuntimeGate=true: never block onboarding on the runtime check.
     await completeWithModelConfirm(ctx, label, slugCandidates, () => undefined, true)
 
