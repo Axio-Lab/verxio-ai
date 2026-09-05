@@ -69,7 +69,7 @@ export default function AimlSalesPage() {
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-xl leading-relaxed text-gray-600">{AIML_PRODUCT.tagline}</p>
         </div>
-        <div className="mx-auto mt-10 max-w-3xl">
+        <div className="mx-auto mt-10 max-w-4xl">
           <figure className="overflow-hidden rounded-2xl bg-[#070b14] shadow-[0_22px_50px_rgba(15,23,42,0.28),0_8px_18px_rgba(15,23,42,0.16)]">
             <Image
               src={AIML_PLACEHOLDERS.hero.src}
@@ -77,7 +77,7 @@ export default function AimlSalesPage() {
               width={AIML_PLACEHOLDERS.hero.width}
               height={AIML_PLACEHOLDERS.hero.height}
               className="h-auto w-full object-contain"
-              sizes="(min-width: 768px) 48rem, 100vw"
+              sizes="(min-width: 896px) 56rem, 100vw"
               priority
             />
           </figure>
