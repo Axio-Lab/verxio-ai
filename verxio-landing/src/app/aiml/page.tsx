@@ -7,7 +7,6 @@ import { CheckoutButton } from './_components/checkout-button'
 import { CtaArrows } from './_components/cta-arrows'
 import { AimlFileVideo, AimlPlayerScript } from './_components/aiml-youtube-video'
 import { BeforeAfterVideo } from './_components/before-after-video'
-import { ImagePlaceholder } from './_components/image-placeholder'
 import { StickyCheckoutBar } from './_components/sticky-checkout-bar'
 import { UrgencyCountdown } from './_components/urgency-countdown'
 import {
@@ -69,18 +68,24 @@ export default function AimlSalesPage() {
             <span className="text-primary">{AIML_PRODUCT.headlineAccent}</span>
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-xl leading-relaxed text-gray-600">{AIML_PRODUCT.tagline}</p>
-          <div className="mt-10 text-left">
-            <ImagePlaceholder
-              label={AIML_PLACEHOLDERS.hero.label}
-              idea={AIML_PLACEHOLDERS.hero.idea}
-              tall
+        </div>
+        <div className="mx-auto mt-10 max-w-3xl">
+          <figure className="overflow-hidden rounded-2xl bg-[#070b14] shadow-[0_22px_50px_rgba(15,23,42,0.28),0_8px_18px_rgba(15,23,42,0.16)]">
+            <Image
+              src={AIML_PLACEHOLDERS.hero.src}
+              alt={AIML_PLACEHOLDERS.hero.alt}
+              width={AIML_PLACEHOLDERS.hero.width}
+              height={AIML_PLACEHOLDERS.hero.height}
+              className="h-auto w-full object-contain"
+              sizes="(min-width: 768px) 48rem, 100vw"
+              priority
             />
-          </div>
-          <div className="mt-8 space-y-4">
-            <CtaArrows />
-            <div className="flex justify-center">
-              <CheckoutButton>Get Instant Access Now for {AIML_PRODUCT.priceLabel}</CheckoutButton>
-            </div>
+          </figure>
+        </div>
+        <div className="mx-auto mt-8 max-w-3xl space-y-4 text-center">
+          <CtaArrows />
+          <div className="flex justify-center">
+            <CheckoutButton>Get Instant Access Now for {AIML_PRODUCT.priceLabel}</CheckoutButton>
           </div>
         </div>
       </section>

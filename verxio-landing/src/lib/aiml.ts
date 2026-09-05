@@ -261,8 +261,10 @@ export const AIML_OFFER = {
 
 export const AIML_PLACEHOLDERS = {
   hero: {
-    label: 'Hero image',
-    idea: 'A product mockup showing 120 expert AI skills for running your business better or handling paid work for other businesses.',
+    src: '/aiml/hero-ai-money-library.png',
+    alt: 'AI Money Library: 120 expert AI skills for business and client work, covering ads, sales, research, operations, and more.',
+    width: 1024,
+    height: 576,
   },
   beforeAfter: {
     label: 'Before and after visual',
