@@ -11,6 +11,13 @@ export function isAbsoluteFilesystemPath(path: string | undefined | null): boole
   return value.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value)
 }
 
+/** Paths the web/desktop bridge can read for image preview + byte upload. */
+export function isReadableAttachmentPath(path: string | undefined | null): boolean {
+  const value = String(path || '').trim()
+
+  return isAbsoluteFilesystemPath(value) || value.startsWith('verxio-local:')
+}
+
 export function base64FromDataUrl(dataUrl: string): string {
   const comma = dataUrl.indexOf(',')
 

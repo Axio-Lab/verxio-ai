@@ -45,9 +45,10 @@ import { ChatDropOverlay } from './chat-drop-overlay'
 import { ChatSwapOverlay } from './chat-swap-overlay'
 import { ChatBar, ChatBarFallback } from './composer'
 import { requestComposerInsert, requestComposerInsertRefs } from './composer/focus'
-import { droppedFileInlineRef, type SessionDragPayload, sessionInlineRef } from './composer/inline-refs'
+import { droppedFileInlineRefs, type SessionDragPayload, sessionInlineRef } from './composer/inline-refs'
 import type { ChatBarState } from './composer/types'
 import type { DroppedFile } from './hooks/use-composer-actions'
+import { enrichDroppedFilesForWeb, partitionDroppedFiles } from './hooks/use-composer-actions'
 import { useFileDropZone } from './hooks/use-file-drop-zone'
 import { ScrollToBottomButton } from './scroll-to-bottom-button'
 import { SessionActionsMenu } from './sidebar/session-actions-menu'
@@ -267,20 +268,25 @@ export function ChatView({
     onReload
   })
 
-  // Drop files anywhere in the conversation area, not just on the composer
-  // input — appending the same inline `@file:` ref chips the composer drop
-  // produces (vs. attachment cards) so both surfaces behave identically.
+  // Drop files anywhere in the conversation area. In-app drags stay inline
+  // @file:/@folder: refs; OS drops go through the attachment/upload pipeline.
   const onDropFiles = useCallback(
-    (candidates: DroppedFile[]) => {
-      const refs = candidates
-        .map(candidate => droppedFileInlineRef(candidate, currentCwd))
-        .filter((ref): ref is string => Boolean(ref))
+    (candidates: DroppedFile[], transfer?: DataTransfer) => {
+      void (async () => {
+        const enriched = transfer ? await enrichDroppedFilesForWeb(transfer, candidates) : candidates
+        const { inAppRefs, osDrops } = partitionDroppedFiles(enriched)
+        const refs = droppedFileInlineRefs(inAppRefs, currentCwd)
 
-      if (refs.length) {
-        requestComposerInsert(refs.join(' '), { mode: 'inline', target: 'main' })
-      }
+        if (refs.length) {
+          requestComposerInsert(refs.join(' '), { mode: 'inline', target: 'main' })
+        }
+
+        if (osDrops.length) {
+          await onAttachDroppedItems(osDrops)
+        }
+      })()
     },
-    [currentCwd]
+    [currentCwd, onAttachDroppedItems]
   )
 
   // Dropping a sidebar session inserts an @session link the agent can resolve

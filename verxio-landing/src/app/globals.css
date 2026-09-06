@@ -206,3 +206,44 @@ select option {
 .animate-float {
   animation: float 3s ease-in-out infinite;
 }
+
+@keyframes aiml-play-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.12);
+  }
+}
+
+@keyframes aiml-play-ring {
+  0% {
+    transform: scale(0.92);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1.55);
+    opacity: 0;
+  }
+}
+
+.aiml-play-pulse {
+  animation: aiml-play-pulse 1.4s ease-in-out infinite;
+}
+
+.aiml-play-ring {
+  animation: aiml-play-ring 1.8s ease-out infinite;
+}
+
+.aiml-play-ring-delay {
+  animation: aiml-play-ring 1.8s ease-out 0.5s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aiml-play-pulse,
+  .aiml-play-ring,
+  .aiml-play-ring-delay {
+    animation: none;
+  }
+}

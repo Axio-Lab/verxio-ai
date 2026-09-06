@@ -9,9 +9,12 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 
+# db.py lives at verxio-api/app/db.py (or /app/app/db.py in the API image).
+API_ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE_ROOT = Path(__file__).resolve().parents[2]
 VERXIO_STATE_DIR = WORKSPACE_ROOT / ".verxio"
-MIGRATIONS_DIR = WORKSPACE_ROOT / "migrations"
+# Migrations ship next to the API package (copied to /app/migrations in Docker).
+MIGRATIONS_DIR = API_ROOT / "migrations"
 _THREAD_LOCAL = threading.local()
 
 
@@ -893,7 +896,13 @@ def run_migrations() -> None:
                 if _cursor_to_dicts(applied):
                     continue
                 for statement in _split_sql_script(migration.read_text(encoding="utf-8")):
-                    conn.execute(statement)
+                    try:
+                        conn.execute(statement)
+                    except sqlite3.OperationalError as exc:
+                        # Columns may already exist when schema was evolved via
+                        # _ensure_legacy_columns while MIGRATIONS_DIR was unset.
+                        if "duplicate column name" not in str(exc).lower():
+                            raise
                 conn.execute("INSERT INTO schema_migrations (version) VALUES (?)", (version,))
         else:
             for statement in SCHEMA_STATEMENTS:

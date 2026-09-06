@@ -4,6 +4,7 @@ import { useCallback } from 'react'
 import { getGlobalModelInfo, setGlobalModel } from '@/hermes'
 import { useI18n } from '@/i18n'
 import {
+  isVerxioHostedDefaultSelection,
   resolveHostedDefaultModel,
   resolveHostedStatusbarCorrection,
   resolveStatusbarModel,
@@ -118,6 +119,28 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
         if (hostedDefault && !storeModel) {
           applyModelSelection(hostedDefault)
 
+          return
+        }
+
+        // Keep a persisted hosted pick across refresh (any Gemini/Qwen id), even
+        // with no live session — do not let Hermes global / Settings default win.
+        if (storeModel && isVerxioHostedDefaultSelection(storeModel, storeProvider, catalog)) {
+          return
+        }
+
+        // Also keep when the provider is a hosted family even if this exact model
+        // id is not yet in availableModelIds (catalog still warming / new ids).
+        if (
+          storeModel &&
+          storeProvider &&
+          (catalog.models ?? []).some(
+            entry =>
+              entry.hostedAvailable &&
+              String(entry.providerSlug || '')
+                .trim()
+                .toLowerCase() === storeProvider.toLowerCase()
+          )
+        ) {
           return
         }
 

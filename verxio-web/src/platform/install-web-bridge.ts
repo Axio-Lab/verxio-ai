@@ -28,8 +28,9 @@ import { verxioArtifactPreviewTarget } from '@/lib/verxio-artifact-preview'
 import {
   getStoredWebLocalRoot,
   isWebLocalPath,
-  pickBrowserLocalFolder,
+  pickWebLocalDirectoryPaths,
   readWebLocalDir,
+  readWebLocalFileDataUrl,
   readWebLocalFileText,
   restoreRootHandle,
   WEB_LOCAL_STORAGE_KEY
@@ -395,16 +396,11 @@ async function fetchJson<T>(url: string, init: RequestInit & { timeoutMs?: numbe
   return (await res.json()) as T
 }
 
-async function pickDirectoryPaths(): Promise<string[]> {
-  const browserPath = await pickBrowserLocalFolder()
-
-  if (!browserPath) {
-    return []
-  }
-
-  localStorage.setItem(WEB_LOCAL_STORAGE_KEY, browserPath)
-
-  return [browserPath]
+async function pickDirectoryPaths(options?: HermesSelectPathsOptions): Promise<string[]> {
+  return pickWebLocalDirectoryPaths({
+    defaultPath: options?.defaultPath,
+    title: options?.title
+  })
 }
 
 function emitBoot(patch: Partial<DesktopBootProgress>) {
@@ -776,7 +772,15 @@ export function installWebBridge(): void {
         return false
       }
     },
-    readFileDataUrl: async (filePath: string) => readWebArtifactDataUrl(filePath),
+    readFileDataUrl: async (filePath: string) => {
+      const local = await readWebLocalFileDataUrl(filePath)
+
+      if (local) {
+        return local
+      }
+
+      return readWebArtifactDataUrl(filePath)
+    },
     readFileText: async (filePath: string) => {
       const local = await readWebLocalFileText(filePath)
 
@@ -798,7 +802,7 @@ export function installWebBridge(): void {
     },
     selectPaths: async (options?: HermesSelectPathsOptions) => {
       if (options?.directories) {
-        return pickDirectoryPaths()
+        return pickDirectoryPaths(options)
       }
 
       if ('showOpenFilePicker' in window) {

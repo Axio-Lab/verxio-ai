@@ -25,11 +25,7 @@ import {
 import { gatewayEventRequiresSessionId } from '@/lib/gateway-events'
 import { dedupeGeneratedImageEchoesInParts } from '@/lib/generated-images'
 import { triggerHaptic } from '@/lib/haptics'
-import {
-  isSelectedHostedFamilyModel,
-  isVerxioHostedDefaultSelection,
-  resolveHostedDefaultModel
-} from '@/lib/hosted-default-model'
+import { isVerxioHostedDefaultSelection, resolveHostedDefaultModel } from '@/lib/hosted-default-model'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
 import { parseTodos } from '@/lib/todos'
 import { getInferenceCatalog, getInferenceSettings, verxioApiEnabled } from '@/lib/verxio-api'
@@ -49,6 +45,7 @@ import {
   setSudoRequest
 } from '@/store/prompts'
 import {
+  $currentModel,
   $currentProvider,
   setCurrentBranch,
   setCurrentCwd,
@@ -691,47 +688,63 @@ export function useMessageStream({
 
           if (modelChanged) {
             const nextModel = payload!.model || ''
-            const nextProvider = typeof payload?.provider === 'string' ? payload.provider : $currentProvider.get()
 
-            setCurrentModel(nextModel)
+            if (!nextModel) {
+              setCurrentModel('')
 
-            if (verxioApiEnabled()) {
-              void Promise.all([getInferenceSettings(), getInferenceCatalog()])
-                .then(([settings, catalog]) => {
-                  if (nextModel) {
-                    // Ignore a leftover from the other hosted family (Qwen pin
-                    // while Settings default is Gemini) so the statusbar matches
-                    // the picker. Leave connected BYOK pins alone.
-                    if (
-                      isVerxioHostedDefaultSelection(nextModel, nextProvider, catalog) &&
-                      !isSelectedHostedFamilyModel(nextModel, nextProvider, settings, catalog)
-                    ) {
-                      const hostedDefault = resolveHostedDefaultModel(settings, catalog)
+              if (verxioApiEnabled()) {
+                void Promise.all([getInferenceSettings(), getInferenceCatalog()])
+                  .then(([settings, catalog]) => {
+                    // Empty session model while hosted: show Verxio default instead of "no model".
+                    const hostedDefault = resolveHostedDefaultModel(settings, catalog)
 
-                      if (hostedDefault) {
-                        setCurrentModel(hostedDefault.model)
+                    if (hostedDefault) {
+                      setCurrentModel(hostedDefault.model)
 
-                        if (hostedDefault.provider) {
-                          setCurrentProvider(hostedDefault.provider)
-                        }
+                      if (hostedDefault.provider) {
+                        setCurrentProvider(hostedDefault.provider)
                       }
                     }
+                  })
+                  .catch(() => undefined)
+              }
+            } else if (activeSessionIdRef.current) {
+              // Live session: Hermes session.info is authoritative.
+              setCurrentModel(nextModel)
+            } else if (verxioApiEnabled()) {
+              // Home / no session: do not let Hermes global (often Settings default)
+              // overwrite a persisted Gemini/Qwen pick from another hosted family.
+              const pinnedModel = $currentModel.get().trim()
+              const pinnedProvider = $currentProvider.get().trim()
 
+              void Promise.all([getInferenceSettings(), getInferenceCatalog()])
+                .then(([, catalog]) => {
+                  const pinnedIsHosted =
+                    Boolean(pinnedModel) &&
+                    (isVerxioHostedDefaultSelection(pinnedModel, pinnedProvider, catalog) ||
+                      (Boolean(pinnedProvider) &&
+                        (catalog.models ?? []).some(
+                          entry =>
+                            entry.hostedAvailable &&
+                            String(entry.providerSlug || '')
+                              .trim()
+                              .toLowerCase() === pinnedProvider.toLowerCase()
+                        )))
+
+                  if (pinnedIsHosted && pinnedModel !== nextModel) {
                     return
                   }
 
-                  // Empty session model while hosted: show Verxio default instead of "no model".
-                  const hostedDefault = resolveHostedDefaultModel(settings, catalog)
-
-                  if (hostedDefault) {
-                    setCurrentModel(hostedDefault.model)
-
-                    if (hostedDefault.provider) {
-                      setCurrentProvider(hostedDefault.provider)
-                    }
+                  setCurrentModel(nextModel)
+                })
+                .catch(() => {
+                  // Keep a local pin if catalog lookup failed; don't snap to Hermes global.
+                  if (!pinnedModel) {
+                    setCurrentModel(nextModel)
                   }
                 })
-                .catch(() => undefined)
+            } else {
+              setCurrentModel(nextModel)
             }
           }
 

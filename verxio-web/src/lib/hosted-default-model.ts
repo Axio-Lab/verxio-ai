@@ -269,11 +269,11 @@ export function resolveHostedDefaultModel(
 }
 
 /**
- * Correct a statusbar pin that no longer belongs to the hosted family.
+ * Correct an empty/invalid statusbar pin after refresh.
  *
- * Prefer the live Hermes assignment when it is in-family; otherwise the
- * Settings hosted default. Returns null when the current store pin is already
- * valid (including a user pick of another Gemini/Qwen id in that family).
+ * Keep the user's persisted pick when it is any valid Verxio Hosted catalog
+ * model (Gemini or Qwen), even if Settings → default is the other family.
+ * Only fill from Hermes / the Settings hosted default when the store is empty.
  */
 export function resolveHostedStatusbarCorrection(
   store: { model: string; provider: string },
@@ -282,19 +282,22 @@ export function resolveHostedStatusbarCorrection(
   catalog: Pick<VerxioInferenceCatalogResponse, 'defaultModelId' | 'models'>,
   hostedDefault: HostedDefaultModelSelection | null
 ): HostedDefaultModelSelection | null {
+  void settings
+
   // Don't overwrite a connected BYOK pin with the hosted default.
   if (store.model.trim() && !isVerxioHostedDefaultSelection(store.model, store.provider, catalog)) {
     return null
   }
 
-  if (isSelectedHostedFamilyModel(store.model, store.provider, settings, catalog)) {
+  // Keep any hosted catalog pick (e.g. Gemini Flash while Settings default is Qwen).
+  if (isVerxioHostedDefaultSelection(store.model, store.provider, catalog)) {
     return null
   }
 
   const hermesModel = typeof hermes.model === 'string' ? hermes.model.trim() : ''
   const hermesProvider = typeof hermes.provider === 'string' ? hermes.provider.trim() : ''
 
-  if (hermesModel && isSelectedHostedFamilyModel(hermesModel, hermesProvider, settings, catalog)) {
+  if (hermesModel && isVerxioHostedDefaultSelection(hermesModel, hermesProvider, catalog)) {
     return { model: hermesModel, provider: hermesProvider || hostedDefault?.provider || '' }
   }
 

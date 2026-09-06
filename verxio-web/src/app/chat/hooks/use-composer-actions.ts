@@ -4,9 +4,15 @@ import { requestComposerFocus, requestComposerInsert } from '@/app/chat/composer
 import { formatRefValue } from '@/components/assistant-ui/directive-text'
 import { useI18n } from '@/i18n'
 import { attachmentId, contextPath, pathLabel } from '@/lib/chat-runtime'
-import { isAbsoluteFilesystemPath, pickBrowserFiles, readBlobAsDataUrl } from '@/lib/composer-attach'
+import {
+  isAbsoluteFilesystemPath,
+  isReadableAttachmentPath,
+  pickBrowserFiles,
+  readBlobAsDataUrl
+} from '@/lib/composer-attach'
 import { fishAudioAttachmentRef, uploadFishAudioAttachment } from '@/lib/fishaudio-session'
 import { isVerxioWeb } from '@/lib/platform'
+import { resolveWebLocalWorkspaceCwd } from '@/lib/web-local-fs'
 import {
   addComposerAttachment,
   type ComposerAttachment,
@@ -19,6 +25,12 @@ import type { ImageDetachResponse } from '../../types'
 
 const IMAGE_EXTENSION_PATTERN = /\.(png|jpe?g|gif|webp|bmp|tiff?|svg|ico)$/i
 const AUDIO_EXTENSION_PATTERN = /\.(aac|flac|m4a|mp3|mp4|ogg|opus|wav|webm)$/i
+
+function attachmentContextPath(path: string, cwd: string): string {
+  const webCwd = resolveWebLocalWorkspaceCwd(cwd) ?? cwd
+
+  return contextPath(path, webCwd)
+}
 
 const BLOB_MIME_EXTENSION: Record<string, string> = {
   'image/bmp': '.bmp',
@@ -193,6 +205,119 @@ export function extractDroppedFiles(transfer: DataTransfer): DroppedFile[] {
   return result
 }
 
+/**
+ * In-app drags (project tree / gutter) are path-only and stay inline `@file:` refs.
+ * OS drops carry a File handle and must go through the upload/attach pipeline —
+ * especially on web, where there is no gateway-visible absolute path.
+ */
+export function partitionDroppedFiles(candidates: DroppedFile[]): {
+  osDrops: DroppedFile[]
+  inAppRefs: DroppedFile[]
+} {
+  const osDrops: DroppedFile[] = []
+  const inAppRefs: DroppedFile[] = []
+
+  for (const candidate of candidates) {
+    if (candidate.file) {
+      osDrops.push(candidate)
+    } else {
+      inAppRefs.push(candidate)
+    }
+  }
+
+  return { osDrops, inAppRefs }
+}
+
+/**
+ * Start File System Access handle reads during the drop gesture, then resolve
+ * directories to `verxio-local:` paths so OS folder drops match the + menu.
+ */
+export async function enrichDroppedFilesForWeb(transfer: DataTransfer, base: DroppedFile[]): Promise<DroppedFile[]> {
+  if (!isVerxioWeb()) {
+    return base
+  }
+
+  const items = transfer.items
+
+  if (!items?.length) {
+    return base
+  }
+
+  type FileSystemHandleLike = { kind: string; name: string }
+  type ItemWithHandle = DataTransferItem & {
+    getAsFileSystemHandle?: () => Promise<FileSystemHandleLike>
+  }
+
+  // Kick off handle promises synchronously — DataTransfer detaches after the handler returns.
+  const handleJobs: Array<Promise<{ file: File | null; handle: FileSystemHandleLike | null }>> = []
+
+  for (let i = 0; i < items.length; i += 1) {
+    const item = items[i] as ItemWithHandle | undefined
+
+    if (!item || item.kind !== 'file') {
+      continue
+    }
+
+    const file = item.getAsFile()
+    const getter = item.getAsFileSystemHandle
+
+    if (!getter) {
+      continue
+    }
+
+    handleJobs.push(
+      getter()
+        .then(handle => ({ file, handle }))
+        .catch(() => ({ file, handle: null }))
+    )
+  }
+
+  if (!handleJobs.length) {
+    return base
+  }
+
+  const { pathForDroppedDirectoryHandle } = await import('@/lib/web-local-fs')
+  const resolved = await Promise.all(handleJobs)
+  const folders: DroppedFile[] = []
+
+  for (const { handle } of resolved) {
+    if (!handle || handle.kind !== 'directory') {
+      continue
+    }
+
+    try {
+      const path = await pathForDroppedDirectoryHandle(handle as FileSystemDirectoryHandle)
+      folders.push({ path, isDirectory: true })
+    } catch {
+      // Permission denied / unsupported — keep the size-0 File fallback below.
+    }
+  }
+
+  if (!folders.length) {
+    return base
+  }
+
+  const merged: DroppedFile[] = [...folders]
+  const folderNames = new Set(folders.map(folder => folder.path.split('/').pop()?.toLowerCase()).filter(Boolean))
+
+  for (const candidate of base) {
+    if (candidate.isDirectory) {
+      merged.push(candidate)
+
+      continue
+    }
+
+    if (candidate.file && folderNames.has(candidate.file.name.toLowerCase()) && candidate.file.size === 0) {
+      // Dropped directory often also appears as a size-0 File — skip the duplicate.
+      continue
+    }
+
+    merged.push(candidate)
+  }
+
+  return merged
+}
+
 interface ComposerActionsOptions {
   activeSessionId: string | null
   currentCwd: string
@@ -248,7 +373,7 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
         return false
       }
 
-      const rel = contextPath(filePath, currentCwd)
+      const rel = attachmentContextPath(filePath, currentCwd)
 
       attachToMain({
         id: attachmentId('file', rel),
@@ -270,9 +395,9 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
         return false
       }
 
-      // Bare browser filenames are not gateway-visible. Require a real path or
-      // a File blob (attachImageFile) so submit can call image.attach_bytes.
-      if (!isAbsoluteFilesystemPath(filePath)) {
+      // Bare browser filenames are not gateway-visible. Require a real path,
+      // web-local path, or a File blob (attachImageFile) so submit can upload bytes.
+      if (!isReadableAttachmentPath(filePath)) {
         return false
       }
 
@@ -484,7 +609,7 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
           continue
         }
 
-        const rel = contextPath(path, currentCwd)
+        const rel = attachmentContextPath(path, currentCwd)
 
         attachToMain({
           id: attachmentId(kind, rel),
@@ -576,7 +701,7 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
         return false
       }
 
-      const rel = contextPath(folderPath, currentCwd)
+      const rel = attachmentContextPath(folderPath, currentCwd)
 
       attachToMain({
         id: attachmentId('folder', rel),
@@ -652,8 +777,8 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
 
         // Ignore name-only "paths" from the web bridge — they aren't gateway-visible.
         const filePath =
-          (knownPath && isAbsoluteFilesystemPath(knownPath) && knownPath) ||
-          (fallbackPath && isAbsoluteFilesystemPath(fallbackPath) && fallbackPath) ||
+          (knownPath && isReadableAttachmentPath(knownPath) && knownPath) ||
+          (fallbackPath && isReadableAttachmentPath(fallbackPath) && fallbackPath) ||
           ''
 
         const isImage = file.type.startsWith('image/') || isImagePath(file.name) || (filePath && isImagePath(filePath))

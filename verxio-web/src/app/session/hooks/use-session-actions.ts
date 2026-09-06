@@ -17,6 +17,10 @@ import { requestDesktopOnboarding } from '@/store/onboarding'
 import { $activeGatewayProfile, $newChatProfile, ensureGatewayProfile, normalizeProfileKey } from '@/store/profile'
 import {
   $currentCwd,
+  $currentFastMode,
+  $currentModel,
+  $currentProvider,
+  $currentReasoningEffort,
   $messages,
   $sessions,
   adjustSessionProfileTotal,
@@ -400,13 +404,20 @@ export function useSessionActions({
         const newChatProfile = $newChatProfile.get() ?? normalizeProfileKey($activeGatewayProfile.get())
         await ensureGatewayProfile(newChatProfile)
         const cwd = cwdForGatewaySubmission($currentCwd.get().trim() || getRememberedWorkspaceCwd())
-        // Pass the owning profile so a new chat under a non-launch profile (global
-        // remote mode) builds its agent + persists against THAT profile's home/db.
+        // The composer's model/effort/fast is sticky UI state. Ship it with
+        // session.create so the new chat opens on whatever the picker shows.
+        const uiModel = $currentModel.get().trim()
+        const uiProvider = $currentProvider.get().trim()
+        const uiEffort = $currentReasoningEffort.get().trim()
+        const uiFast = $currentFastMode.get()
 
         const created = await requestGateway<SessionCreateResponse>('session.create', {
           cols: 96,
           ...(cwd && { cwd }),
-          ...(newChatProfile ? { profile: newChatProfile } : {})
+          ...(newChatProfile ? { profile: newChatProfile } : {}),
+          ...(uiModel ? { model: uiModel, ...(uiProvider ? { provider: uiProvider } : {}) } : {}),
+          ...(uiEffort ? { reasoning_effort: uiEffort } : {}),
+          ...(uiFast ? { fast: true } : {})
         })
 
         const stored = created.stored_session_id ?? null
@@ -687,7 +698,9 @@ export function useSessionActions({
         const resumed = await requestGateway<SessionResumeResponse>('session.resume', {
           session_id: storedSessionId,
           cols: 96,
-          use_current_model: true,
+          // Restore this chat's stored model instead of forcing the global default.
+          use_current_model: false,
+          restore_stored_runtime: true,
           // Owning profile: in app-global remote mode one backend serves every
           // profile, so the gateway opens this profile's state.db + home to
           // resume + persist the right session (no-op for single/launch profile).

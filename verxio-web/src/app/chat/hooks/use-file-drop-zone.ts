@@ -26,7 +26,7 @@ const dragKindOf = (event: ReactDragEvent): DragKind => {
 interface FileDropZoneOptions {
   /** When false the zone ignores drags entirely. */
   enabled?: boolean
-  onDropFiles: (files: DroppedFile[]) => void
+  onDropFiles: (files: DroppedFile[], transfer?: DataTransfer) => void
   onDropSession?: (session: SessionDragPayload) => void
 }
 
@@ -105,7 +105,7 @@ export function useFileDropZone({ enabled = true, onDropFiles, onDropSession }: 
       const files = extractDroppedFiles(event.dataTransfer)
 
       if (files.length) {
-        onDropFiles(files)
+        onDropFiles(files, event.dataTransfer)
       }
     },
     [enabled, onDropFiles, onDropSession, reset]

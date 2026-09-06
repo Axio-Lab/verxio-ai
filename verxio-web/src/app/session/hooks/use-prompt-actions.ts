@@ -14,7 +14,7 @@ import {
   sessionTitle,
   SLASH_COMMAND_RE
 } from '@/lib/chat-runtime'
-import { fileDataUrlFromFile, imageBytesFromFile, isAbsoluteFilesystemPath } from '@/lib/composer-attach'
+import { fileDataUrlFromFile, imageBytesFromFile, isReadableAttachmentPath } from '@/lib/composer-attach'
 import {
   type CommandsCatalogLike,
   desktopSlashUnavailableMessage,
@@ -28,8 +28,8 @@ import { setMutableRef } from '@/lib/mutable-ref'
 import { isVerxioWeb } from '@/lib/platform'
 import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
 import { verxioApiEnabled } from '@/lib/verxio-api'
-import { preprocessWebLocalContextReferences } from '@/lib/web-local-context'
-import { resolveWebLocalWorkspaceCwd } from '@/lib/web-local-fs'
+import { isGatewayStagedFileRef, preprocessWebLocalContextReferences } from '@/lib/web-local-context'
+import { isWebLocalPath, readWebLocalFileBlob, resolveWebLocalWorkspaceCwd } from '@/lib/web-local-fs'
 import { setSessionYolo } from '@/lib/yolo-session'
 import {
   $composerAttachments,
@@ -281,7 +281,7 @@ export function usePromptActions({
           if (
             attachment.attachedSessionId === sessionId &&
             attachment.path &&
-            isAbsoluteFilesystemPath(attachment.path)
+            isReadableAttachmentPath(attachment.path)
           ) {
             return attachment
           }
@@ -296,7 +296,7 @@ export function usePromptActions({
               content_base64: payload.contentBase64,
               filename: payload.filename
             })
-          } else if (attachment.path && isAbsoluteFilesystemPath(attachment.path)) {
+          } else if (attachment.path && isReadableAttachmentPath(attachment.path)) {
             // Prefer byte upload so remote gateways (web + desktop remote) work.
             // Fall back to path attach for local desktop where the gateway shares disk.
             try {
@@ -358,6 +358,42 @@ export function usePromptActions({
     ): Promise<ComposerAttachment[]> => {
       const updateComposerAttachments = options.updateComposerAttachments ?? true
 
+      const resolveWebLocalUploadFile = async (attachment: ComposerAttachment): Promise<File | null> => {
+        if (!isVerxioWeb()) {
+          return null
+        }
+
+        const path = attachment.path?.trim() || ''
+
+        if (path && isWebLocalPath(path)) {
+          return readWebLocalFileBlob(path)
+        }
+
+        const refTarget =
+          attachment.refText
+            ?.replace(/^@file:/, '')
+            .replace(/^[`'"]|[`'"]$/g, '')
+            .trim() || ''
+
+        if (!refTarget || isGatewayStagedFileRef(refTarget)) {
+          return null
+        }
+
+        if (isWebLocalPath(refTarget)) {
+          return readWebLocalFileBlob(refTarget)
+        }
+
+        const cwd = resolveWebLocalWorkspaceCwd($currentCwd.get())
+
+        if (!cwd) {
+          return null
+        }
+
+        const fullPath = `${cwd.replace(/\/+$/, '')}/${refTarget.replace(/^\.\//, '')}`
+
+        return readWebLocalFileBlob(fullPath)
+      }
+
       return Promise.all(
         attachments.map(async attachment => {
           if (attachment.kind !== 'file') {
@@ -366,18 +402,32 @@ export function usePromptActions({
 
           if (attachment.attachedSessionId === sessionId && attachment.refText?.startsWith('@file:')) {
             // Already staged on the gateway (has a real upload). Skip name-only refs.
-            if (!attachment.uploadFile) {
+            if (
+              !attachment.uploadFile &&
+              attachment.refText &&
+              isGatewayStagedFileRef(attachment.refText.replace(/^@file:/, ''))
+            ) {
+              return attachment
+            }
+
+            if (!attachment.uploadFile && !isVerxioWeb()) {
               return attachment
             }
           }
 
-          if (!attachment.uploadFile) {
-            // Path-only context refs (project tree) stay as @file: text — no upload.
-            return attachment
+          let uploadFile = attachment.uploadFile
+
+          if (!uploadFile) {
+            uploadFile = (await resolveWebLocalUploadFile(attachment)) ?? undefined
+
+            if (!uploadFile) {
+              // Path-only desktop/project text refs stay as @file: text — no upload.
+              return attachment
+            }
           }
 
-          const label = attachment.label || attachment.uploadFile.name || 'file'
-          const payload = await fileDataUrlFromFile(attachment.uploadFile)
+          const label = attachment.label || uploadFile.name || 'file'
+          const payload = await fileDataUrlFromFile(uploadFile)
 
           const result = await requestGateway<FileAttachResponse>('file.attach', {
             data_url: payload.dataUrl,
@@ -1207,7 +1257,8 @@ export function usePromptActions({
         try {
           const resumed = await requestGateway<{ session_id: string }>('session.resume', {
             session_id: selectedStoredSessionIdRef.current,
-            use_current_model: true
+            use_current_model: false,
+            restore_stored_runtime: true
           })
 
           const recoveredId = resumed?.session_id

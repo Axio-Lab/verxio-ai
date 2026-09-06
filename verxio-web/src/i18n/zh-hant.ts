@@ -1777,7 +1777,11 @@ export const zhHant = defineLocale({
     loadingFiles: '正在載入檔案',
     terminalFocus: '聚焦終端機檢視',
     terminalSplit: '返回分割檢視',
-    addToChat: '新增至聊天'
+    addToChat: '新增至聊天',
+    folderPickerTitle: '選擇資料夾',
+    folderPickerDescription: '瀏覽 Verxio 可存取的本機資料夾。',
+    folderPickerSelect: '選擇資料夾',
+    folderPickerChooseAnother: '選擇其他資料夾…'
   },
 
   preview: {

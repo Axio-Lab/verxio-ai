@@ -1,4 +1,4 @@
-import { isWebLocalPath, readWebLocalDir, readWebLocalFileText } from './web-local-fs'
+import { ensureWebLocalFsAccess, isWebLocalPath, readWebLocalDir, readWebLocalFileText } from './web-local-fs'
 
 const REFERENCE_RE =
   /@(?:(?:file|folder):(?:`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|\S+)|(?:diff|staged)\b|(?:git|url):(?:`[^`\n]+`|"[^"\n]+"|'[^'\n]+'|\S+))/g
@@ -31,14 +31,36 @@ function unwrapRefValue(raw: string): string {
 }
 
 function joinWebLocalPath(root: string, rel: string): string {
+  const trimmed = rel.trim()
+
+  if (isWebLocalPath(trimmed)) {
+    return trimmed.replace(/\/+$/, '')
+  }
+
   const base = root.replace(/\/+$/, '')
-  const clean = rel.replace(/^\.\//, '').replace(/\/+$/, '')
+  const clean = trimmed.replace(/^\.\//, '').replace(/\/+$/, '')
 
   if (!clean || clean === '.') {
     return base
   }
 
   return `${base}/${clean}`
+}
+
+/** Gateway-staged uploads live under the runtime hermes home, not the browser folder. */
+export function isGatewayStagedFileRef(target: string): boolean {
+  const normalized = target.trim().replace(/\\/g, '/').replace(/^\.\//, '')
+
+  if (!normalized) {
+    return false
+  }
+
+  return (
+    normalized.startsWith('.hermes/') ||
+    normalized.includes('/.hermes/desktop-attachments/') ||
+    normalized.startsWith('desktop-attachments/') ||
+    /(?:^|\/)\.hermes\/desktop-attachments\//.test(normalized)
+  )
 }
 
 function estimateTokens(text: string): number {
@@ -213,14 +235,29 @@ export async function preprocessWebLocalContextReferences(message: string, cwd: 
 
   const refs = parseReferences(message).filter(ref => ref.kind === 'file' || ref.kind === 'folder')
 
-  if (!refs.length) {
+  // Leave gateway-staged uploads alone — they already live on the runtime, not in the browser FS.
+  const expandableRefs = refs.filter(ref => !(ref.kind === 'file' && isGatewayStagedFileRef(ref.target)))
+
+  if (!expandableRefs.length) {
     return message
   }
+
+  const hasAccess = await ensureWebLocalFsAccess()
 
   const warnings: string[] = []
   const blocks: string[] = []
 
-  for (const ref of refs) {
+  if (!hasAccess) {
+    warnings.push('Local folder access is not available. Re-open the project folder in the file sidebar.')
+  }
+
+  for (const ref of expandableRefs) {
+    if (!hasAccess) {
+      warnings.push(`${ref.raw}: folder not found`)
+
+      continue
+    }
+
     const expanded = ref.kind === 'file' ? await expandFileRef(ref, cwd) : await expandFolderRef(ref, cwd)
 
     if (expanded.warning) {
@@ -232,7 +269,7 @@ export async function preprocessWebLocalContextReferences(message: string, cwd: 
     }
   }
 
-  let final = removeReferenceTokens(message, refs)
+  let final = removeReferenceTokens(message, expandableRefs)
 
   if (warnings.length) {
     final = `${final}\n\n--- Context Warnings ---\n${warnings.map(w => `- ${w}`).join('\n')}`

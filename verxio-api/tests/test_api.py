@@ -68,6 +68,9 @@ def client(monkeypatch, tmp_path):
     monkeypatch.delenv("VERXIO_SMTP_FROM", raising=False)
     monkeypatch.setattr(control_plane, "RUNTIME_ROOT", tmp_path / "runtimes")
     emailer.SENT_AUTH_EMAILS.clear()
+    from app.runtime_orch.leases import reset_lease_store_for_tests
+
+    reset_lease_store_for_tests()
     db.run_migrations()
 
     with TestClient(app) as test_client:
