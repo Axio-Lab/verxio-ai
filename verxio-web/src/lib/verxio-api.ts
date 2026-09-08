@@ -858,10 +858,16 @@ export function authLogin(email: string, password: string): Promise<VerxioAuthRe
 export function authSignup(
   email: string,
   password: string,
-  displayName?: string
+  displayName: string | undefined,
+  inviteCode: string
 ): Promise<VerxioAuthCodeChallengeResponse> {
   return verxioFetch<VerxioAuthCodeChallengeResponse>('/api/auth/signup', {
-    body: JSON.stringify({ email, name: displayName || email.split('@')[0] || 'Verxio User', password }),
+    body: JSON.stringify({
+      email,
+      invite_code: inviteCode.trim(),
+      name: displayName || email.split('@')[0] || 'Verxio User',
+      password
+    }),
     method: 'POST'
   })
 }

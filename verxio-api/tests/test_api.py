@@ -64,6 +64,7 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setenv("VERXIO_RUNTIME_MODE", "demo")
     monkeypatch.setenv("VERXIO_WORKFLOW_SCHEDULER_ENABLED", "0")
     monkeypatch.setenv("VERXIO_AUTH_CODE_SECRET", "test-auth-code-secret")
+    monkeypatch.setenv("VERXIO_SIGNUP_INVITE_CODE", "97685")
     monkeypatch.delenv("VERXIO_SMTP_HOST", raising=False)
     monkeypatch.delenv("VERXIO_SMTP_FROM", raising=False)
     monkeypatch.setattr(control_plane, "RUNTIME_ROOT", tmp_path / "runtimes")
@@ -89,6 +90,7 @@ def signup(client: TestClient, email: str = "ada@example.com") -> tuple[dict, st
         "/api/auth/signup",
         json={
             "email": email,
+            "invite_code": "97685",
             "name": email.split("@")[0].title(),
             "password": "password-123",
         },
@@ -2324,6 +2326,27 @@ def test_signup_creates_user_workspace_agent_and_runtime(client):
     assert runtime_rows[0]["artifact_path"].endswith("/workspace/artifacts")
 
 
+def test_signup_requires_valid_invite_code(client):
+    missing = client.post(
+        "/api/auth/signup",
+        json={"email": "no-invite@example.com", "name": "No Invite", "password": "password-123"},
+    )
+    assert missing.status_code == 422
+
+    wrong = client.post(
+        "/api/auth/signup",
+        json={
+            "email": "wrong-invite@example.com",
+            "invite_code": "00000",
+            "name": "Wrong Invite",
+            "password": "password-123",
+        },
+    )
+    assert wrong.status_code == 403
+    assert wrong.json()["detail"] == "Invite code is invalid."
+    assert db.fetch_one("SELECT * FROM users WHERE email = ?", ("wrong-invite@example.com",)) is None
+
+
 def test_runtime_volume_files_survive_runtime_record_recreation(client):
     payload, _token = signup(client, "persistent-runtime@example.com")
     workspace, agent, runtime = control_plane.ensure_personal_workspace(payload["user"])
@@ -2364,6 +2387,7 @@ def test_signup_requires_email_code_before_session_or_workspace(client):
         "/api/auth/signup",
         json={
             "email": "verify@example.com",
+            "invite_code": "97685",
             "name": "Verify",
             "password": "password-123",
         },
@@ -2409,6 +2433,7 @@ def test_password_login_for_unverified_user_resends_verification_code(client):
         "/api/auth/signup",
         json={
             "email": "unverified@example.com",
+            "invite_code": "97685",
             "name": "Unverified",
             "password": "password-123",
         },

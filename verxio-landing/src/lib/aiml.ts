@@ -234,7 +234,7 @@ export const AIML_OFFER = {
       label: 'Bonus 2',
       title: 'Premium Access to Verxio',
       valueLabel: '₦100,000 value',
-      body: 'Free access to Verxio, a full AI operator platform built to run business operations for you. Included at no extra cost.',
+      body: 'Free access to Verxio, a full AI operator platform built to run business operations for you. After you purchase, we email you a beta invite code. Use that code when you create your account at app.verxio.xyz.',
     },
     {
       label: 'Bonus 3',
