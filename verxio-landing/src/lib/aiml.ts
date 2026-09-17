@@ -224,20 +224,6 @@ export const AIML_MEDIA_SLOTS = {
       hint: 'Add a customer testimonial screenshot here.',
     },
   ],
-  afterIncludes: [
-    {
-      label: 'Testimonial',
-      hint: 'Add a customer testimonial here.',
-    },
-    {
-      label: 'Testimonial',
-      hint: 'Add a customer testimonial here.',
-    },
-    {
-      label: 'Testimonial',
-      hint: 'Add a customer testimonial here.',
-    },
-  ],
   video: {
     label: 'Testimonial / video testimonial',
     hint: 'Add a written or video testimonial here.',
@@ -247,6 +233,25 @@ export const AIML_MEDIA_SLOTS = {
     hint: 'Add a final proof screenshot here.',
   },
 } as const
+
+export const AIML_TESTIMONIALS = [
+  {
+    src: '/aiml/testimonial-slides.png',
+    alt: 'Customer chat: I designed the slides for my master class with Verxio.',
+  },
+  {
+    src: '/aiml/testimonial-mind-blowing.png',
+    alt: 'Customer chat: This is mind-blowing.',
+  },
+  {
+    src: '/aiml/testimonial-business-owners.png',
+    alt: 'Customer chat: I have tried it and it is working perfectly. It is a tool built for business owners.',
+  },
+  {
+    src: '/aiml/testimonial-working-perfectly.png',
+    alt: 'Customer chat: Thanks a lot. I have tested it and it is working perfectly.',
+  },
+] as const
 
 export const AIML_PLACEHOLDERS = {
   beforeAfter: {

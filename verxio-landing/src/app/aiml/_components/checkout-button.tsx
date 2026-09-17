@@ -4,7 +4,7 @@ import { ArrowRight } from 'lucide-react'
 import { AIML_CHECKOUT_PATH, AIML_PRODUCT } from '@/lib/aiml'
 
 const ctaClassName =
-  'inline-flex min-h-12 items-center justify-center rounded-lg bg-primary px-7 py-3.5 text-base font-semibold text-white shadow-md shadow-primary/20 transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2'
+  'inline-flex min-h-12 items-center justify-center rounded-lg bg-primary px-7 py-3.5 text-lg font-semibold text-white shadow-md shadow-primary/20 transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 sm:text-xl'
 
 export function CheckoutButton({
   children,
