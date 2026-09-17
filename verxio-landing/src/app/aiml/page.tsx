@@ -6,24 +6,22 @@ import { AimlFooter } from './_components/aiml-footer'
 import { CheckoutButton } from './_components/checkout-button'
 import { CtaArrows } from './_components/cta-arrows'
 import { AimlFileVideo, AimlPlayerScript } from './_components/aiml-youtube-video'
-import { BeforeAfterVideo } from './_components/before-after-video'
+import { MediaPlaceholder } from './_components/media-placeholder'
 import { StickyCheckoutBar } from './_components/sticky-checkout-bar'
-import { UrgencyCountdown } from './_components/urgency-countdown'
 import {
-  AIML_BETTER_WAY,
-  AIML_CATEGORIES,
-  AIML_CHOICE,
-  AIML_DIFFERENCE,
+  AIML_CLOSE,
+  AIML_FROM_AI,
   AIML_GUARANTEE,
-  AIML_OFFER,
-  AIML_PAYOFF,
-  AIML_PLACEHOLDERS,
-  AIML_PROBLEM,
+  AIML_INCLUDES_AFTER_VIDEO,
+  AIML_INCLUDES_BEFORE_VIDEO,
+  AIML_MEDIA_SLOTS,
+  AIML_OPPORTUNITY,
+  AIML_PRICE,
   AIML_PRODUCT,
-  AIML_REALITY,
-  AIML_STEPS,
-  AIML_TESTIMONIALS,
-  AIML_USE_PATHS,
+  AIML_PROOF,
+  AIML_REQUIREMENTS,
+  AIML_STORY,
+  AIML_WALKTHROUGH,
 } from '@/lib/aiml'
 import { SITE_URL } from '@/lib/site'
 
@@ -53,13 +51,29 @@ function SectionCta({ children }: { children: React.ReactNode }) {
   )
 }
 
+function IncludeList({
+  items,
+}: {
+  items: readonly { title: string; body: string }[]
+}) {
+  return (
+    <ul className="space-y-5">
+      {items.map((item) => (
+        <li key={item.title} className="flex items-start gap-3 text-lg leading-relaxed text-gray-700">
+          <CheckCircle2 className="mt-1 h-5 w-5 shrink-0 text-primary" aria-hidden />
+          <span>
+            <span className="font-semibold text-gray-900">{item.title}.</span> {item.body}
+          </span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 export default function AimlSalesPage() {
   return (
     <div className="min-h-screen bg-white pb-28">
       <AimlPlayerScript />
-      <div className="sticky top-0 z-40">
-        <UrgencyCountdown variant="banner" />
-      </div>
 
       <section className="px-6 pb-16 pt-14">
         <div className="mx-auto max-w-3xl text-center">
@@ -69,257 +83,143 @@ export default function AimlSalesPage() {
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-xl leading-relaxed text-gray-600">{AIML_PRODUCT.tagline}</p>
         </div>
-        <div className="mx-auto mt-10 max-w-4xl">
-          <figure className="overflow-hidden rounded-2xl bg-[#070b14] shadow-[0_22px_50px_rgba(15,23,42,0.28),0_8px_18px_rgba(15,23,42,0.16)]">
-            <Image
-              src={AIML_PLACEHOLDERS.hero.src}
-              alt={AIML_PLACEHOLDERS.hero.alt}
-              width={AIML_PLACEHOLDERS.hero.width}
-              height={AIML_PLACEHOLDERS.hero.height}
-              className="h-auto w-full object-contain"
-              sizes="(min-width: 896px) 56rem, 100vw"
-              priority
-            />
-          </figure>
-        </div>
-        <div className="mx-auto mt-8 max-w-3xl space-y-4 text-center">
-          <CtaArrows />
-          <div className="flex justify-center">
-            <CheckoutButton>Get Instant Access Now for {AIML_PRODUCT.priceLabel}</CheckoutButton>
-          </div>
-        </div>
       </section>
 
       <section className="border-y border-gray-100 bg-gray-50 px-6 py-16">
         <div className="mx-auto max-w-3xl">
-          <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">{AIML_REALITY.title}</h2>
-          <div className="mt-6 space-y-4">
-            {AIML_REALITY.paragraphs.map((paragraph) => (
-              <p key={paragraph} className="text-lg leading-relaxed text-gray-700">
-                {paragraph}
-              </p>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="px-6 py-16">
-        <div className="mx-auto max-w-3xl">
-          <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">{AIML_PROBLEM.title}</h2>
-          <p className="mt-6 text-xl font-semibold leading-relaxed text-gray-900">{AIML_PROBLEM.lead}</p>
-          <div className="mt-4 space-y-4">
-            {AIML_PROBLEM.paragraphs.map((paragraph) => (
-              <p key={paragraph} className="text-lg leading-relaxed text-gray-700">
-                {paragraph}
-              </p>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="border-y border-gray-100 bg-gray-50 px-6 py-16">
-        <div className="mx-auto max-w-3xl">
-          <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">{AIML_DIFFERENCE.title}</h2>
-          <p className="mt-4 text-lg leading-relaxed text-gray-700">{AIML_DIFFERENCE.lead}</p>
-          <div className="mt-8 grid gap-4 sm:grid-cols-2">
-            <article className="rounded-2xl border border-gray-200 bg-gray-100 p-6">
-              <p className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-                {AIML_DIFFERENCE.beforeLabel}
-              </p>
-              <p className="mt-3 text-base italic leading-relaxed text-gray-600">“{AIML_DIFFERENCE.beforeQuote}”</p>
-              <p className="mt-4 text-base font-medium text-gray-700">{AIML_DIFFERENCE.beforeResult}</p>
-            </article>
-            <article className="rounded-2xl border border-primary/20 bg-primary/[0.04] p-6">
-              <p className="text-sm font-semibold uppercase tracking-wide text-primary">
-                {AIML_DIFFERENCE.afterLabel}
-              </p>
-              <p className="mt-3 text-base font-medium leading-relaxed text-gray-900">
-                “{AIML_DIFFERENCE.afterQuote}”
-              </p>
-              <p className="mt-4 text-base font-medium text-gray-800">{AIML_DIFFERENCE.afterResult}</p>
-            </article>
-          </div>
-          <div className="mt-6">
-            <BeforeAfterVideo />
-          </div>
-          <p className="mt-6 text-lg font-semibold leading-relaxed text-gray-900">{AIML_DIFFERENCE.closer}</p>
-          <SectionCta>See What Expert-Trained AI Can Do</SectionCta>
-        </div>
-      </section>
-
-      <section className="px-6 py-16">
-        <div className="mx-auto max-w-3xl">
-          <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">{AIML_BETTER_WAY.title}</h2>
-          <div className="mt-6 space-y-4">
-            {AIML_BETTER_WAY.paragraphs.map((paragraph) => (
-              <p key={paragraph} className="text-lg leading-relaxed text-gray-700">
-                {paragraph}
-              </p>
-            ))}
-          </div>
-          <div className="mt-8 grid gap-5 sm:grid-cols-2">
-            {AIML_USE_PATHS.map((path, index) => (
-              <article
-                key={path.title}
-                className={
-                  index === 0
-                    ? 'rounded-2xl bg-gray-900 p-6 text-white'
-                    : 'rounded-2xl bg-primary p-6 text-gray-950'
-                }
-              >
-                <p className="text-sm font-semibold">Path {index + 1}</p>
-                <h3 className="mt-2 text-2xl font-bold tracking-tight">{path.title}</h3>
-                <p
-                  className={
-                    index === 0
-                      ? 'mt-4 text-base leading-relaxed text-white/85'
-                      : 'mt-4 text-base leading-relaxed text-gray-900'
-                  }
-                >
-                  {path.body}
-                </p>
-                <p className="mt-4 text-base font-semibold leading-relaxed">{path.result}</p>
+          <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">{AIML_PROOF.title}</h2>
+          <div className="mt-8 grid gap-4 sm:grid-cols-3">
+            {AIML_PROOF.results.map((item) => (
+              <article key={item.label} className="rounded-2xl border border-gray-200 bg-white p-6 text-center">
+                <p className="text-2xl font-bold tracking-tight text-gray-900">{item.amount}</p>
+                <p className="mt-2 text-sm font-medium leading-relaxed text-gray-600">{item.label}</p>
               </article>
             ))}
           </div>
-          <h3 className="mt-12 text-2xl font-bold tracking-tight text-gray-900">How to start with one skill</h3>
-          <ol className="mt-8 grid gap-6 sm:grid-cols-3">
-            {AIML_STEPS.map((item) => (
-              <li key={item.step}>
-                <p className="text-sm font-bold tracking-widest text-primary">{item.step}</p>
-                <h3 className="mt-2 text-lg font-semibold text-gray-900">{item.title}</h3>
-                <p className="mt-2 text-base leading-relaxed text-gray-600">{item.body}</p>
-              </li>
-            ))}
-          </ol>
           <div className="mt-8">
-            <AimlFileVideo
-              src={AIML_PLACEHOLDERS.howItWorks.videoSrc}
-              title={AIML_PLACEHOLDERS.howItWorks.videoTitle}
-            />
+            <MediaPlaceholder label={AIML_MEDIA_SLOTS.payment.label} hint={AIML_MEDIA_SLOTS.payment.hint} />
           </div>
+        </div>
+      </section>
+
+      <section className="px-6 py-16">
+        <div className="mx-auto max-w-3xl space-y-5">
+          <p className="text-lg leading-relaxed text-gray-700">{AIML_STORY.ordinary}</p>
+          <p className="text-lg font-semibold text-gray-900">{AIML_STORY.because}</p>
+          <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">{AIML_STORY.needTitle}</h2>
+          <p className="text-xl font-semibold text-gray-900">{AIML_STORY.needLead}</p>
+          <p className="text-lg leading-relaxed text-gray-700">{AIML_STORY.needBody}</p>
+          <p className="text-lg leading-relaxed text-gray-700">{AIML_STORY.possible}</p>
+          <p className="text-lg font-semibold text-gray-900">{AIML_STORY.problemLead}</p>
+          <p className="text-lg leading-relaxed text-gray-700">{AIML_STORY.problem}</p>
+          <ul className="space-y-2 text-lg leading-relaxed text-gray-800">
+            {AIML_STORY.needToKnow.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+          <p className="text-xl font-semibold text-gray-900">{AIML_STORY.bridge}</p>
         </div>
       </section>
 
       <section className="border-y border-gray-100 bg-gray-50 px-6 py-16">
         <div className="mx-auto max-w-3xl">
-          <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">{AIML_CATEGORIES.title}</h2>
-          <p className="mt-4 text-lg leading-relaxed text-gray-700">{AIML_CATEGORIES.lead}</p>
-          <ul className="mt-8 grid gap-4 sm:grid-cols-2">
-            {AIML_CATEGORIES.groups.map((item) => (
-              <li key={item.title} className="rounded-2xl border border-gray-200 bg-white p-6">
-                <h3 className="text-lg font-semibold text-gray-900">{item.title}</h3>
-                <p className="mt-2 text-base leading-relaxed text-gray-600">{item.body}</p>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-6 text-lg font-medium text-gray-800">
-            Use these skills for your own business. When you can produce a useful result, you can also offer that
-            work to other businesses for a fee.
-          </p>
-        </div>
-        <div className="mx-auto mt-12 max-w-4xl">
-          <h3 className="text-center text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
-            What people say after they use it
-          </h3>
-          <div className="mt-8 space-y-8">
-            {AIML_TESTIMONIALS.map((item) => (
-              <figure
-                key={item.src}
-                className="overflow-hidden rounded-3xl border border-gray-200 bg-[#0b1220] shadow-[0_20px_50px_rgba(15,23,42,0.18)]"
-              >
-                <Image
-                  src={item.src}
-                  alt={item.alt}
-                  width={1024}
-                  height={576}
-                  className="h-auto w-full object-contain"
-                  sizes="(min-width: 896px) 56rem, 100vw"
-                />
-              </figure>
+          <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">{AIML_FROM_AI.title}</h2>
+          <div className="mt-6 space-y-4">
+            {AIML_FROM_AI.paragraphs.map((paragraph) => (
+              <p key={paragraph} className="text-lg leading-relaxed text-gray-700">
+                {paragraph}
+              </p>
             ))}
           </div>
-          <SectionCta>Get All 120 Expert AI Skills Now</SectionCta>
+          <div className="mt-8 grid gap-4 sm:grid-cols-2">
+            {AIML_MEDIA_SLOTS.afterFromAi.map((slot, index) => (
+              <MediaPlaceholder key={`${slot.label}-${index}`} label={slot.label} hint={slot.hint} />
+            ))}
+          </div>
         </div>
       </section>
 
       <section className="px-6 py-16">
         <div className="mx-auto max-w-3xl">
-          <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">{AIML_PAYOFF.title}</h2>
-          <p className="mt-4 text-lg leading-relaxed text-gray-700">{AIML_PAYOFF.lead}</p>
-          <ul className="mt-8 space-y-6">
-            {AIML_PAYOFF.items.map((item) => (
-              <li key={item.title}>
-                <h3 className="text-lg font-semibold text-gray-900">{item.title}</h3>
-                <p className="mt-2 text-lg leading-relaxed text-gray-700">{item.body}</p>
-              </li>
+          <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">{AIML_REQUIREMENTS.title}</h2>
+          <ul className="mt-6 space-y-2 text-lg leading-relaxed text-gray-800">
+            {AIML_REQUIREMENTS.avoid.map((item) => (
+              <li key={item}>{item}</li>
             ))}
           </ul>
+          <p className="mt-6 text-lg leading-relaxed text-gray-700">{AIML_REQUIREMENTS.need}</p>
         </div>
       </section>
 
       <section className="border-y border-gray-100 bg-gray-50 px-6 py-16">
-        <div className="mx-auto max-w-3xl rounded-2xl border border-gray-200 bg-white p-8">
-          <p className="text-sm font-semibold uppercase tracking-wide text-primary">{AIML_OFFER.title}</p>
-          <h2 className="mt-3 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
-            {AIML_OFFER.heading}:{' '}
-            <span className="text-red-600 line-through">{AIML_OFFER.comparePriceLabel}</span>{' '}
+        <div className="mx-auto max-w-3xl">
+          <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">Here&apos;s what you get inside:</h2>
+          <div className="mt-8">
+            <IncludeList items={AIML_INCLUDES_BEFORE_VIDEO} />
+          </div>
+          <div className="mt-10">
+            <blockquote className="mb-6 text-center text-xl font-semibold italic leading-relaxed text-gray-900">
+              “{AIML_WALKTHROUGH.quote}”
+            </blockquote>
+            <AimlFileVideo src={AIML_WALKTHROUGH.videoSrc} title={AIML_WALKTHROUGH.videoTitle} />
+          </div>
+          <div className="mt-10">
+            <IncludeList items={AIML_INCLUDES_AFTER_VIDEO} />
+          </div>
+          <div className="mt-10 grid gap-4 sm:grid-cols-3">
+            {AIML_MEDIA_SLOTS.afterIncludes.map((slot, index) => (
+              <MediaPlaceholder key={`${slot.label}-${index}`} label={slot.label} hint={slot.hint} />
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="px-6 py-16">
+        <div className="mx-auto max-w-3xl rounded-2xl border border-gray-200 bg-white p-8 text-center">
+          <p className="text-lg font-medium text-gray-800">{AIML_PRICE.lead}</p>
+          <p className="mt-4 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
+            <span className="text-red-600 line-through">{AIML_PRODUCT.comparePriceLabel}</span>{' '}
             <span className="text-green-700">{AIML_PRODUCT.priceLabel}</span>
-          </h2>
-          <p className="mt-3 text-lg italic leading-relaxed text-gray-600">{AIML_OFFER.priceAnchor}</p>
-          <p className="mt-6 text-lg font-medium leading-relaxed text-gray-900">{AIML_OFFER.intro}</p>
-          <ul className="mt-5 space-y-4">
-            {AIML_OFFER.items.map((item) => (
-              <li key={item.title} className="flex items-start gap-3 text-lg leading-relaxed text-gray-700">
-                <CheckCircle2 className="mt-1 h-5 w-5 shrink-0 text-primary" aria-hidden />
-                <span>
-                  <span className="font-semibold text-gray-900">{item.title}:</span> {item.body}
-                </span>
-              </li>
+          </p>
+          <p className="mt-4 text-xl font-semibold text-gray-900">{AIML_PRICE.billing}</p>
+          <ul className="mt-6 space-y-2 text-lg leading-relaxed text-gray-700">
+            {AIML_PRICE.notes.map((note) => (
+              <li key={note}>{note}</li>
             ))}
           </ul>
-          <p className="mt-6 text-lg leading-relaxed text-gray-700">{AIML_OFFER.closer}</p>
+          <SectionCta>
+            {AIML_CLOSE.ctaHeading}
+          </SectionCta>
+        </div>
+      </section>
 
-          <div className="mt-8 border-t border-gray-200 pt-8">
-            <h3 className="text-2xl font-bold tracking-tight text-gray-900">{AIML_OFFER.bonusesHeading}</h3>
-            <ul className="mt-5 space-y-5">
-              {AIML_OFFER.bonuses.map((bonus) => (
-                <li key={bonus.label} className="text-lg leading-relaxed text-gray-700">
-                  <p>
-                    <span className="font-semibold text-gray-900">
-                      {bonus.label}: {bonus.title}
-                    </span>
-                    {bonus.valueLabel ? (
-                      <>
-                        {' '}
-                        <span className="text-red-600 line-through">{bonus.valueLabel}</span>
-                        {' '}
-                        <span className="font-semibold text-green-700">FREE</span>
-                      </>
-                    ) : (
-                      <>
-                        {' '}
-                        <span className="font-semibold text-green-700">FREE</span>
-                      </>
-                    )}
-                  </p>
-                  <p className="mt-1">{bonus.body}</p>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-6 text-lg font-medium leading-relaxed text-gray-900">
-              Total bonus value:{' '}
-              <span className="text-red-600 line-through">{AIML_OFFER.bonusesTotal}</span>{' '}
-              <span className="font-semibold text-green-700">{AIML_OFFER.bonusesCloser}</span>
-            </p>
-            <div className="mt-8 space-y-4">
-              <UrgencyCountdown variant="inline" />
-              <CtaArrows />
-              <div className="flex justify-center">
-                <CheckoutButton>Get Instant Access Now for {AIML_PRODUCT.priceLabel}</CheckoutButton>
-              </div>
-            </div>
+      <section className="border-y border-gray-100 bg-gray-50 px-6 py-16">
+        <div className="mx-auto max-w-3xl">
+          <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">{AIML_OPPORTUNITY.title}</h2>
+          <div className="mt-6 space-y-4">
+            {AIML_OPPORTUNITY.paragraphs.map((paragraph) => (
+              <p key={paragraph} className="text-lg leading-relaxed text-gray-700">
+                {paragraph}
+              </p>
+            ))}
           </div>
+          <div className="mt-8">
+            <MediaPlaceholder label={AIML_MEDIA_SLOTS.video.label} hint={AIML_MEDIA_SLOTS.video.hint} />
+          </div>
+        </div>
+      </section>
+
+      <section className="px-6 py-16">
+        <div className="mx-auto max-w-3xl text-center">
+          <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">{AIML_CLOSE.title}</h2>
+          <ul className="mx-auto mt-6 max-w-md space-y-2 text-lg leading-relaxed text-gray-800">
+            {AIML_CLOSE.steps.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ul>
+          <h3 className="mt-10 text-2xl font-bold tracking-tight text-gray-900">{AIML_CLOSE.ctaHeading}</h3>
+          <p className="mt-3 text-base text-gray-600">{AIML_CLOSE.finePrint}</p>
+          <SectionCta>{AIML_PRODUCT.ctaLabel}</SectionCta>
         </div>
       </section>
 
@@ -336,22 +236,19 @@ export default function AimlSalesPage() {
               className="h-52 w-52 object-contain sm:h-64 sm:w-64"
             />
           </div>
+          <div className="mx-auto mt-10 max-w-2xl">
+            <MediaPlaceholder label={AIML_MEDIA_SLOTS.final.label} hint={AIML_MEDIA_SLOTS.final.hint} />
+          </div>
         </div>
       </section>
 
       <section className="px-6 py-16">
         <div className="mx-auto max-w-3xl text-center">
-          <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">{AIML_CHOICE.title}</h2>
-          <p className="mx-auto mt-4 max-w-xl text-lg leading-relaxed text-gray-700">{AIML_CHOICE.body}</p>
-          <h3 className="mt-10 text-2xl font-bold tracking-tight text-gray-900">
-            Get the AI Money Library: 120 Expert AI Skills for {AIML_PRODUCT.priceLabel}
-          </h3>
-          <div className="mt-8 space-y-4">
-            <CtaArrows />
-            <div className="flex justify-center">
-              <CheckoutButton>Get Instant Access Now for {AIML_PRODUCT.priceLabel}</CheckoutButton>
-            </div>
-          </div>
+          <h2 className="text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">{AIML_CLOSE.finalTitle}</h2>
+          <p className="mx-auto mt-4 max-w-xl text-lg font-medium leading-relaxed text-gray-800">
+            {AIML_CLOSE.finalBody}
+          </p>
+          <SectionCta>{AIML_CLOSE.finalCta}</SectionCta>
         </div>
       </section>
 

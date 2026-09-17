@@ -8,19 +8,20 @@ export function formatNgn(amount: number): string {
 export const AIML_PRODUCT = {
   name: 'AI Money Library',
   shortName: 'AIML',
-  headline: 'Use AI to Get More Customers, Increase Your Sales and Make Money Helping Other Businesses',
-  headlineAccent: 'Make Money Helping Other Businesses',
+  headline: "If You Don't Start Using AI to Make Money Now, You May Regret It Soon.",
+  headlineAccent: 'You May Regret It Soon.',
   tagline:
-    'The AI Money Library gives you 120 ready-to-use expert AI skills for getting customers, improving offers, bookkeeping, data entry, content, designs, videos and more.',
+    'Discover how smart Nigerians are using AI to create services, get customers and make money — even without being AI experts.',
   description:
-    'Use 120 expert AI skills to grow your business or offer content, design, bookkeeping, data entry and other paid services to businesses.',
-  ctaLabel: 'Get Instant Access Now',
+    'Practical AI skills you can use to create useful work for yourself or other businesses, then turn those skills into services people will pay for.',
+  ctaLabel: 'Get Access Now',
   skillCount: 120,
   fullSkillCount: 320,
   priceNgn: 17500,
   priceLabel: '₦17,500',
-  billing: 'One-time purchase',
-  format: 'Instant digital access',
+  comparePriceLabel: '₦50,000',
+  billing: 'One-time payment. Lifetime access.',
+  format: 'Instant access after payment',
   checkoutUrl: 'https://paystack.shop/pay/l510mohlb6',
 } as const
 
@@ -68,234 +69,189 @@ export const AIML_ORDER_BUMP = {
   checkoutUrl: 'https://paystack.shop/pay/hc-q1-9ey1',
 } as const
 
-export const AIML_REALITY = {
-  title: 'Your Business Already Has Work That Must Get Done',
-  paragraphs: [
-    'Every day, shop owners, traders, wholesalers, food vendors, POS agents, salons and service businesses look for customers, answer enquiries, record sales, track expenses and decide what to sell next.',
-    'Many already use notebooks, WhatsApp, spreadsheets, calculators and memory. Those methods are familiar and useful. The problem starts when records go missing, follow-ups are forgotten, offers are unclear or important work takes too long.',
-    'The AI Money Library helps you improve one job at a time. You can use a skill in your own business, or do the same work for another business and charge for the result.',
+export const AIML_PROOF = {
+  title: "Look at what's possible:",
+  results: [
+    {
+      amount: '₦[RESULT]',
+      label: 'For ONE AI-assisted service',
+    },
+    {
+      amount: '₦[RESULT]/mo',
+      label: "A client's monthly payment",
+    },
+    {
+      amount: '₦[RESULT]',
+      label: 'From ONE business service',
+    },
   ],
 } as const
 
-export const AIML_PROBLEM = {
-  title: 'A Short Prompt Is Not a Working Business System',
-  lead: 'ChatGPT can write an answer. It still needs the right process to produce work a business can use.',
+export const AIML_STORY = {
+  ordinary:
+    "And these aren't people sitting in some fancy office with years of tech experience. They are ordinary people who learned how to use AI to create things businesses and customers actually need.",
+  because: 'Because right now…',
+  needTitle: 'Businesses need help.',
+  needLead: 'Lots of it.',
+  needBody:
+    'Content. Sales. Marketing. Research. Designs. Videos. Offers. Business planning. Customer service. And plenty more.',
+  possible: 'And AI has made it possible to do many of these things faster and easier than before.',
+  problemLead: "But here's the problem…",
+  problem:
+    "Knowing how to use ChatGPT or Claude doesn't automatically put money in your account. You need to know what to do with AI.",
+  needToKnow: [
+    'What to create.',
+    'What services to offer.',
+    'Who to offer them to.',
+    'What to say.',
+    'How to price your work.',
+    'And how to turn what AI can do into something people will actually pay you for.',
+  ],
+  bridge: "That's what AI Money Library shows you.",
+} as const
+
+export const AIML_FROM_AI = {
+  title: 'From AI to money.',
   paragraphs: [
-    'A one-line prompt leaves too much for the AI to guess. It may give you a generic advert, a weak offer or a report that misses the details that matter.',
-    'An expert skill gives ChatGPT or Claude a clear job, the questions to ask and the steps to follow. You spend less time explaining from scratch and get a stronger first draft to review.',
+    "You'll discover practical AI skills you can use to create useful work for yourself or other businesses.",
+    "You'll learn the different things AI can help you do… how to use the skills… how to apply them to real business problems… and how to turn those skills into services people can pay you for.",
   ],
 } as const
 
-export const AIML_DIFFERENCE = {
-  title: 'See the Difference a Clear Process Makes',
-  lead: 'Imagine you need a Facebook advert for your own business, or a customer pays you to write one. Here is the difference.',
-  beforeLabel: 'BEFORE (Regular ChatGPT)',
-  beforeQuote:
-    'Welcome to our shop! We offer the best products at the most affordable prices. Customer satisfaction is our priority. Buy now!',
-  beforeResult: 'It sounds like every other advert. There is no clear reason to stop and buy.',
-  afterLabel: 'AFTER (Using the Conversion Ad Copy Skill)',
-  afterQuote:
-    'Are rising supply costs reducing your profit? See three practical ways to spend less on your next order without reducing quality. Tap below to get the guide.',
-  afterResult: 'It names a real problem, gives a clear benefit and tells the buyer what to do next.',
-  closer:
-    'The value is not the prompt. The value is useful work: an advert that is clearer, a record that is organised or an offer customers can understand.',
-} as const
-
-export const AIML_BETTER_WAY = {
-  title: 'Use the Skills in Your Business or Sell the Work',
-  paragraphs: [
-    'You do not need to choose between improving your own business and earning from other businesses. The same skill can help you do both.',
-    'Start with the problem closest to you. Use a skill to improve your own work, or take that result to a shop owner, trader or service business that needs help.',
+export const AIML_REQUIREMENTS = {
+  title: "You don't need:",
+  avoid: [
+    'A tech degree',
+    'Years of experience',
+    'Thousands of followers',
+    'To be an AI expert',
+    'Expensive software',
   ],
+  need: 'You need a phone or computer, internet, the right AI tools… and the right skills to put AI to work.',
 } as const
 
-export const AIML_USE_PATHS = [
+export const AIML_INCLUDES_BEFORE_VIDEO = [
   {
-    title: 'Use it in your own business',
-    body: 'Create better offers, write adverts, follow up with customers, organise records, handle routine bookkeeping, enter data, plan content and create designs or videos.',
-    result: 'You save time, reduce avoidable mistakes and do more of the work that can bring in or protect money.',
+    title: 'The AI Money Skill Library',
+    body: 'Discover practical AI skills you can use for content, sales, marketing, research, business, designs, videos, planning and more.',
   },
   {
-    title: 'Offer it as a paid service',
-    body: 'Help another business with customer research, adverts, content, designs, videos, offer design, record keeping, data entry or other work from the library.',
-    result: 'You agree on the job, use the right skill, review the work and get paid for the finished result.',
+    title: 'AI for business',
+    body: 'Learn how to use AI to solve everyday business problems and get more done without doing everything manually.',
+  },
+  {
+    title: 'AI service opportunities',
+    body: 'Discover the different AI-powered services you can offer to businesses and individuals.',
+  },
+  {
+    title: 'Ready-to-use AI skills',
+    body: "Don't waste hours wondering what to type or how to structure your work. Use practical, ready-to-go skills and prompts to get started faster.",
   },
 ] as const
 
-export const AIML_STEPS = [
+export const AIML_WALKTHROUGH = {
+  quote: "Come inside. Let me show you exactly what you're getting.",
+  videoSrc: '/aiml/how-to-use-expert-skills.mp4',
+  videoTitle: 'AI Money Library walkthrough',
+} as const
+
+export const AIML_INCLUDES_AFTER_VIDEO = [
   {
-    step: '01',
-    title: 'Choose one business problem',
-    body: 'Start with a real job: getting customers, improving an offer, organising records or completing work for a client.',
+    title: 'AI tools',
+    body: 'Discover the AI tools you can use to create, research, write, design, plan and execute faster.',
   },
   {
-    step: '02',
-    title: 'Open the matching skill',
-    body: 'Add the business details and let ChatGPT or Claude ask questions and work through the job.',
+    title: 'Money-making ideas',
+    body: 'Discover practical ways to turn your AI skills into services, freelance work and business opportunities.',
   },
   {
-    step: '03',
-    title: 'Review and use the work',
-    body: 'Check the output, correct the details, then use it in your business or deliver it to the customer who hired you.',
+    title: 'Business & sales skills',
+    body: 'Learn AI-assisted skills for finding customers, creating offers, marketing and selling.',
+  },
+  {
+    title: 'Private community + support',
+    body: "You're not left alone after buying. You get access to a community where you can ask questions, share your work and learn with others.",
+  },
+  {
+    title: 'Updates',
+    body: 'AI is changing fast. Your library continues to grow as new tools, techniques and opportunities emerge.',
   },
 ] as const
 
-export const AIML_CATEGORIES = {
-  title: 'What You Can Do With the Expert AI Skills',
-  lead: 'These are not random prompts. They are step-by-step systems for work that helps a business sell, stay organised and make better decisions.',
-  groups: [
-    {
-      title: 'Get more customers',
-      body: 'Plan adverts, sales messages, follow-up messages, social posts and simple campaigns that give people a clear reason to respond.',
-    },
-    {
-      title: 'Build a stronger offer',
-      body: 'Understand what customers want, study competing businesses, improve what you sell and explain why it is worth paying for.',
-    },
-    {
-      title: 'Keep better business records',
-      body: 'Organise sales, expenses, customer details, routine bookkeeping and data entry so important information is easier to find and use.',
-    },
-    {
-      title: 'Create content, designs and videos',
-      body: 'Plan posts, write scripts, prepare design ideas and create video content for your business or for a paying client.',
-    },
-    {
-      title: 'Understand customers and competitors',
-      body: 'Study what customers want, compare other businesses and turn what you learn into clear ideas you can use.',
-    },
-    {
-      title: 'Prepare and deliver client work',
-      body: 'Organise information, prepare reports and check finished work before you use it or send it to a paying client.',
-    },
+export const AIML_PRICE = {
+  lead: 'And you get all of this for…',
+  billing: 'One-time payment. Lifetime access.',
+  notes: ['No monthly subscription.', 'No complicated setup.', 'Just get access and start learning.'],
+} as const
+
+export const AIML_OPPORTUNITY = {
+  title: 'The opportunity is already here.',
+  paragraphs: [
+    'People are already using AI. Businesses are already looking for people who can help them create content, market their businesses, research, design, sell and get things done faster.',
+    'The tools are already available.',
+    'The question is… will you learn how to actually use them?',
+    "Because the people making money with AI aren't necessarily the people who know the most about technology. They're the people who know how to turn AI into something useful. Something they can use themselves. Or something they can offer to someone who needs it.",
   ],
 } as const
 
-export const AIML_PAYOFF = {
-  title: 'Start With One Useful Result',
-  lead: 'You do not need to learn all 120 skills before you begin. Pick one job you understand and follow this path:',
-  items: [
-    {
-      title: '1. Solve a problem close to you.',
-      body: 'Use a skill for your own business, or help a business you already know. This gives you a real result to review.',
-    },
-    {
-      title: '2. Repeat what works.',
-      body: 'Keep using the skill in your business, offer the same job to more businesses or add another skill when there is a clear need.',
-    },
-  ],
+export const AIML_CLOSE = {
+  title: 'Get access to AI Money Library now.',
+  steps: ['Start learning.', 'Start creating.', 'Start using AI.', 'Start finding ways to make money with it.'],
+  ctaHeading: 'Get the AI Money Library for ₦17,500',
+  finePrint: 'Instant access after payment · One-time payment · Lifetime access',
+  finalTitle: 'Stop hearing about what AI can do.',
+  finalBody: 'Start learning what you can actually do with it.',
+  finalCta: 'Get AI Money Library now',
 } as const
 
 export const AIML_GUARANTEE = {
   title: '100% Money-Back Guarantee',
-  body: 'Explore the library and try the skills. If they do not help you use ChatGPT or Claude for useful business work, ask for your money back. No long form. No stress.',
+  body: "If you go through the library and decide it's not for you, you can request your money back according to the guarantee terms.",
 } as const
 
-export const AIML_CHOICE = {
-  title: 'You Do Not Need a Team or Technical Background',
-  body: 'You need one business problem and the right process. Choose a skill, add the details and review the work. Use the result yourself or get paid to deliver it to another business.',
-} as const
-
-export const AIML_OFFER = {
-  title: 'AI Money Library Bundle',
-  heading: 'Bundle Package',
-  comparePriceLabel: '₦50,000',
-  priceAnchor: 'Get practical systems for business work without paying for another long course.',
-  intro: 'Here is what you get to improve your business or offer useful services to others:',
-  items: [
+export const AIML_MEDIA_SLOTS = {
+  payment: {
+    label: 'Testimonial / payment screenshot',
+    hint: 'Add a payment or result screenshot here.',
+  },
+  afterFromAi: [
     {
-      title: '120 Expert AI Skills',
-      body: 'Practical systems for sales, offers, research, records, content, designs, videos, planning and other business work.',
+      label: 'Testimonial screenshot',
+      hint: 'Add a customer testimonial screenshot here.',
     },
     {
-      title: 'Plug-and-Play Setup',
-      body: 'Load them directly into ChatGPT or Claude in seconds.',
-    },
-    {
-      title: 'Lifetime Access',
-      body: 'Keep this edition of the skills and use them whenever you need them.',
-    },
-    {
-      title: 'Zero Monthly Fees',
-      body: 'One single payment. No hidden subscriptions.',
+      label: 'Testimonial screenshot',
+      hint: 'Add a customer testimonial screenshot here.',
     },
   ],
-  closer:
-    'You do not have to master all 120 skills. Start with one job that can help your business or solve a problem another business will pay you to handle.',
-  bonusesHeading: 'Free Bonuses When You Get In Today',
-  bonuses: [
+  afterIncludes: [
     {
-      label: 'Bonus 1',
-      title: 'AI Money Weekend',
-      valueLabel: '₦250,000 value',
-      body: 'A weekly live coaching call where you learn how to make money with AI: new earning opportunities, real updates, and direct guidance, every week.',
+      label: 'Testimonial',
+      hint: 'Add a customer testimonial here.',
     },
     {
-      label: 'Bonus 2',
-      title: 'Premium Access to Verxio',
-      valueLabel: '₦100,000 value',
-      body: 'Free access to Verxio, a full AI operator platform built to run business operations for you. After you purchase, we email you a beta invite code. Use that code when you create your account at app.verxio.xyz.',
+      label: 'Testimonial',
+      hint: 'Add a customer testimonial here.',
     },
     {
-      label: 'Bonus 3',
-      title: 'Access to the AI Money Community',
-      valueLabel: null,
-      body: "A private community where new trainings and new skills are dripped in regularly, so you're always working with the latest tools, not what worked six months ago.",
-    },
-    {
-      label: 'Bonus 4',
-      title: 'AI Business Audit',
-      valueLabel: '₦100,000 value',
-      body: 'We review your business and match you with an AI skill you can use to work toward your first ₦100,000.',
-    },
-    {
-      label: 'Bonus 5',
-      title: 'How to Get Your First 100 Customers',
-      valueLabel: '₦50,000 value',
-      body: 'A practical step by step framework for finding and winning your first 100 customers.',
+      label: 'Testimonial',
+      hint: 'Add a customer testimonial here.',
     },
   ],
-  bonusesTotal: '₦500,000+',
-  bonusesCloser: 'yours free when you get the AI Money Library today.',
+  video: {
+    label: 'Testimonial / video testimonial',
+    hint: 'Add a written or video testimonial here.',
+  },
+  final: {
+    label: 'Final testimonial / proof screenshot',
+    hint: 'Add a final proof screenshot here.',
+  },
 } as const
 
 export const AIML_PLACEHOLDERS = {
-  hero: {
-    src: '/aiml/hero-ai-money-library.png',
-    alt: 'AI Money Library: 120 expert AI skills for business and client work, covering ads, sales, research, operations, and more.',
-    width: 1024,
-    height: 576,
-  },
   beforeAfter: {
-    label: 'Before and after visual',
-    idea: 'A side-by-side graphic showing a generic AI answer beside a structured client-ready advert created with an expert skill.',
     videoUrl: 'https://youtu.be/2K5c9IT4VnI',
     videoId: '2K5c9IT4VnI',
     videoTitle: 'Before and after: generic AI versus expert-trained AI',
   },
-  howItWorks: {
-    label: 'How it works',
-    idea: 'A three-step visual: choose a service, run the expert skill, then review and deliver the client result.',
-    videoSrc: '/aiml/how-to-use-expert-skills.mp4',
-    videoTitle: 'How to use the plug-and-use expert AI skills',
-  },
 } as const
-
-export const AIML_TESTIMONIALS = [
-  {
-    src: '/aiml/testimonial-slides.png',
-    alt: 'Customer chat: I designed the slides for my master class with Verxio.',
-  },
-  {
-    src: '/aiml/testimonial-mind-blowing.png',
-    alt: 'Customer chat: This is mind-blowing.',
-  },
-  {
-    src: '/aiml/testimonial-business-owners.png',
-    alt: 'Customer chat: I have tried it and it is working perfectly. It is a tool built for business owners.',
-  },
-  {
-    src: '/aiml/testimonial-working-perfectly.png',
-    alt: 'Customer chat: Thanks a lot. I have tested it and it is working perfectly.',
-  },
-] as const
