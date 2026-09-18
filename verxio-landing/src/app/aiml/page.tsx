@@ -255,9 +255,16 @@ export default function AimlSalesPage() {
               </p>
             ))}
           </div>
-          <div className="mt-8">
-            <MediaPlaceholder label={AIML_MEDIA_SLOTS.video.label} hint={AIML_MEDIA_SLOTS.video.hint} />
-          </div>
+          <figure className="mt-8 overflow-hidden rounded-3xl border border-gray-200 bg-[#0b1220] shadow-[0_20px_50px_rgba(15,23,42,0.18)]">
+            <Image
+              src={AIML_OPPORTUNITY.testimonial.src}
+              alt={AIML_OPPORTUNITY.testimonial.alt}
+              width={1024}
+              height={485}
+              className="h-auto w-full max-w-full object-contain"
+              sizes="(min-width: 768px) 48rem, 100vw"
+            />
+          </figure>
         </div>
       </section>
 

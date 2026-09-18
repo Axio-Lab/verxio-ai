@@ -221,6 +221,10 @@ export const AIML_OPPORTUNITY = {
     { text: 'Something they can use themselves.' },
     { text: 'Or something they can offer to someone who needs it.' },
   ],
+  testimonial: {
+    src: '/aiml/testimonial-offer-client-120k.png',
+    alt: 'Customer chat: I used the Offer Creation Skill from the 120 AI Expert Skill Library to land a ₦120,000 client.',
+  },
 } as const
 
 export const AIML_CLOSE = {
@@ -241,10 +245,6 @@ export const AIML_GUARANTEE = {
 } as const
 
 export const AIML_MEDIA_SLOTS = {
-  video: {
-    label: 'Testimonial / video testimonial',
-    hint: 'Add a written or video testimonial here.',
-  },
   final: {
     label: 'Final testimonial / proof screenshot',
     hint: 'Add a final proof screenshot here.',
