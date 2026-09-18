@@ -207,10 +207,19 @@ export const AIML_PRICE = {
 export const AIML_OPPORTUNITY = {
   title: 'The opportunity is already here.',
   paragraphs: [
-    'People are already using AI. Businesses are already looking for people who can help them create content, market their businesses, research, design, sell and get things done faster.',
-    'The tools are already available.',
-    'The question is… will you learn how to actually use them?',
-    "Because the people making money with AI aren't necessarily the people who know the most about technology. They're the people who know how to turn AI into something useful. Something they can use themselves. Or something they can offer to someone who needs it.",
+    { text: 'People are already using AI.' },
+    {
+      text: 'Businesses are already looking for people who can help them create content, market their businesses, research, design, sell and get things done faster.',
+    },
+    { text: 'The tools are already available.' },
+    { text: 'The question is…' },
+    { text: 'will you learn how to actually use them?', emphasis: true },
+    {
+      text: "Because the people making money with AI aren't necessarily the people who know the most about technology.",
+    },
+    { text: "They're the people who know how to turn AI into something useful." },
+    { text: 'Something they can use themselves.' },
+    { text: 'Or something they can offer to someone who needs it.' },
   ],
 } as const
 
@@ -226,7 +235,9 @@ export const AIML_CLOSE = {
 
 export const AIML_GUARANTEE = {
   title: '100% Money-Back Guarantee',
-  body: "If you go through the library and decide it's not for you, you can request your money back according to the guarantee terms.",
+  body: 'If you use the library, do your part, and can document that the product itself did not work, you can request your money back. The library is an AI skill toolkit, not a magic wand. Lack of results from unused skills or skipped work does not trigger the guarantee.',
+  termsLabel: 'Read the full guarantee terms',
+  termsHref: '/terms-of-service#money-back-guarantee',
 } as const
 
 export const AIML_MEDIA_SLOTS = {
@@ -265,4 +276,17 @@ export const AIML_PLACEHOLDERS = {
     videoId: '2K5c9IT4VnI',
     videoTitle: 'Before and after: generic AI versus expert-trained AI',
   },
+} as const
+
+export const AIML_DISCLAIMER = {
+  facebook:
+    'NOT FACEBOOK: This site is not a part of the Facebook™ website or Facebook Inc. Additionally, this site is NOT endorsed by Facebook™ in any way. FACEBOOK is a trademark of FACEBOOK, Inc.',
+  results:
+    'DISCLAIMER: Please understand results are not typical. Your results will vary and depend on many factors including but not limited to your background, experience, and work ethic. All business entails risk as well as taking regular and consistent effort and action.',
+  guarantees:
+    'Verxio can not and does not make any guarantees about your ability to get results or earn any money with our ideas, information, tools, or strategies.',
+  legal:
+    'Nothing on this page, any of our websites, or any of our content or curriculum is a promise or guarantee of results or future earnings, and we do not offer any legal, medical, tax or other professional advice. Any financial numbers referenced here, or on any of our sites, are illustrative of concepts only and should not be considered average earnings, exact earnings, or promises for actual or future performance. Use caution and always consult your accountant, lawyer or professional advisor before acting on this or any information related to a lifestyle change or your business or finances. You alone are responsible and accountable for your decisions, actions and results in life, and by your use of this site you agree not to attempt to hold us liable for your decisions, actions or results, at any time, under any circumstance.',
+  facebookRepeat:
+    'This site is not a part of the Facebook website or Facebook Inc. Additionally, this site is NOT endorsed by Facebook in any way. FACEBOOK is a trademark of FACEBOOK, Inc.',
 } as const

@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 
 export default function TermsOfServicePage() {
   return (
-    <LegalPageLayout title="Terms of Service" description="Last updated: February 2026">
+    <LegalPageLayout title="Terms of Service" description="Last updated: September 2026">
       <section>
         <h2>1. Acceptance of Terms</h2>
         <p>
@@ -90,7 +90,50 @@ export default function TermsOfServicePage() {
       </section>
 
       <section>
-        <h2>7. Disclaimers</h2>
+        <h2 id="money-back-guarantee">7. AI Money Library Money-Back Guarantee</h2>
+        <p>
+          The AI Money Library (also described as the AI Expert Skill Library) is a library of AI
+          skills, prompts, and tools. It is not a magic wand. It does not replace your effort, your
+          judgment, or the work of applying those skills to a real business, client, or offer. We do
+          not promise income, clients, or any particular result from purchasing or accessing the
+          library.
+        </p>
+        <p>
+          If we offer a money-back guarantee for the AI Money Library, that guarantee is triggered
+          only when you actually use the product and can show that the library itself did not work
+          as described. A refund request must include documented proof of that use and of the
+          product failure. Without that documentation, the guarantee is not triggered.
+        </p>
+        <p>Documented proof must show, at a minimum:</p>
+        <ul>
+          <li>That you accessed and used the relevant skills or tools in the library.</li>
+          <li>What you applied them to, and how you applied them.</li>
+          <li>
+            Why the lack of result came from the product (for example, a skill or tool that could
+            not be used as described, or that failed when used as instructed).
+          </li>
+        </ul>
+        <p>
+          The guarantee does not apply where the lack of result came from you not doing your part.
+          That includes, without limitation: not using the library, using it only in a superficial
+          way, not following the skill or tool as instructed, not taking the follow-on work a
+          service or business requires (outreach, delivery, pricing, client conversations, and
+          similar), or expecting the library to produce money or clients on its own.
+        </p>
+        <p>
+          Refund requests under this clause should be sent to{" "}
+          <a href="mailto:support@verxio.xyz" className="text-primary hover:underline">
+            support@verxio.xyz
+          </a>{" "}
+          with the documentation described above. We may ask for additional information reasonably
+          needed to review the claim. This guarantee is limited to the amount you paid for the AI
+          Money Library purchase at issue and does not change the disclaimers or limitation of
+          liability below, except as required by law.
+        </p>
+      </section>
+
+      <section>
+        <h2>8. Disclaimers</h2>
         <p>
           THE SERVICE IS PROVIDED &quot;AS IS&quot; AND &quot;AS AVAILABLE&quot; WITHOUT WARRANTIES
           OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO IMPLIED WARRANTIES OF
@@ -100,7 +143,7 @@ export default function TermsOfServicePage() {
       </section>
 
       <section>
-        <h2>8. Limitation of Liability</h2>
+        <h2>9. Limitation of Liability</h2>
         <p>
           TO THE MAXIMUM EXTENT PERMITTED BY LAW, VERXIO AND ITS AFFILIATES, OFFICERS, EMPLOYEES,
           AND AGENTS SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR
@@ -112,7 +155,7 @@ export default function TermsOfServicePage() {
       </section>
 
       <section>
-        <h2>9. Indemnification</h2>
+        <h2>10. Indemnification</h2>
         <p>
           You agree to indemnify and hold harmless Verxio and its affiliates from any claims,
           damages, losses, or expenses (including reasonable attorneys&apos; fees) arising from your
@@ -122,7 +165,7 @@ export default function TermsOfServicePage() {
       </section>
 
       <section>
-        <h2>10. Termination</h2>
+        <h2>11. Termination</h2>
         <p>
           You may stop using the Service and close your account at any time. We may suspend or
           terminate your access or the Service with or without notice for breach of these Terms, for
@@ -133,7 +176,7 @@ export default function TermsOfServicePage() {
       </section>
 
       <section>
-        <h2>11. Governing Law and Disputes</h2>
+        <h2>12. Governing Law and Disputes</h2>
         <p>
           These Terms are governed by the laws of the jurisdiction in which Verxio operates, without
           regard to conflict-of-law principles. Any dispute shall be resolved in the courts of that
@@ -142,7 +185,7 @@ export default function TermsOfServicePage() {
       </section>
 
       <section>
-        <h2>12. Changes</h2>
+        <h2>13. Changes</h2>
         <p>
           We may modify these Terms at any time. We will post the updated Terms on this page and
           update the &quot;Last updated&quot; date. Material changes may be communicated via email
@@ -152,7 +195,7 @@ export default function TermsOfServicePage() {
       </section>
 
       <section>
-        <h2>13. Contact</h2>
+        <h2>14. Contact</h2>
         <p>For questions about these Terms of Service, contact us at:</p>
         <p className="mt-2">
           <strong>Verxio</strong>

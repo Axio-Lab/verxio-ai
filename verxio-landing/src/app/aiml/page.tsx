@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Image from 'next/image'
+import Link from 'next/link'
 import { CheckCircle2 } from 'lucide-react'
 
 import { AimlFooter } from './_components/aiml-footer'
@@ -242,8 +243,15 @@ export default function AimlSalesPage() {
           <h2 className="text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl">{AIML_OPPORTUNITY.title}</h2>
           <div className="mt-6 space-y-4">
             {AIML_OPPORTUNITY.paragraphs.map((paragraph) => (
-              <p key={paragraph} className="text-xl leading-relaxed text-gray-700 sm:text-2xl">
-                {paragraph}
+              <p
+                key={paragraph.text}
+                className={
+                  'emphasis' in paragraph && paragraph.emphasis
+                    ? 'text-xl font-bold leading-relaxed text-gray-900 sm:text-2xl'
+                    : 'text-xl leading-relaxed text-gray-700 sm:text-2xl'
+                }
+              >
+                {paragraph.text}
               </p>
             ))}
           </div>
@@ -271,6 +279,14 @@ export default function AimlSalesPage() {
         <div className="mx-auto max-w-3xl text-center">
           <h2 className="text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl">{AIML_GUARANTEE.title}</h2>
           <p className="mx-auto mt-4 max-w-xl text-xl leading-relaxed text-gray-700 sm:text-2xl">{AIML_GUARANTEE.body}</p>
+          <p className="mt-3">
+            <Link
+              href={AIML_GUARANTEE.termsHref}
+              className="text-lg font-medium text-primary hover:underline sm:text-xl"
+            >
+              {AIML_GUARANTEE.termsLabel}
+            </Link>
+          </p>
           <div className="mt-8 flex justify-center">
             <Image
               src="/aiml/money-back-guarantee.png"
