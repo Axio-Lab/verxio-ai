@@ -7,7 +7,6 @@ import { AimlFooter } from './_components/aiml-footer'
 import { CheckoutButton } from './_components/checkout-button'
 import { CtaArrows } from './_components/cta-arrows'
 import { AimlFileVideo, AimlPlayerScript } from './_components/aiml-youtube-video'
-import { MediaPlaceholder } from './_components/media-placeholder'
 import { StickyCheckoutBar } from './_components/sticky-checkout-bar'
 import {
   AIML_CLOSE,
@@ -15,7 +14,6 @@ import {
   AIML_GUARANTEE,
   AIML_INCLUDES_AFTER_VIDEO,
   AIML_INCLUDES_BEFORE_VIDEO,
-  AIML_MEDIA_SLOTS,
   AIML_OPPORTUNITY,
   AIML_PRICE,
   AIML_PRODUCT,
@@ -303,9 +301,16 @@ export default function AimlSalesPage() {
               className="h-52 w-52 object-contain sm:h-64 sm:w-64"
             />
           </div>
-          <div className="mx-auto mt-10 max-w-2xl">
-            <MediaPlaceholder label={AIML_MEDIA_SLOTS.final.label} hint={AIML_MEDIA_SLOTS.final.hint} />
-          </div>
+          <figure className="mx-auto mt-10 max-w-2xl overflow-hidden rounded-3xl border border-gray-200 bg-[#0b1220] shadow-[0_20px_50px_rgba(15,23,42,0.18)]">
+            <Image
+              src={AIML_GUARANTEE.testimonial.src}
+              alt={AIML_GUARANTEE.testimonial.alt}
+              width={1024}
+              height={531}
+              className="h-auto w-full max-w-full object-contain"
+              sizes="(min-width: 768px) 42rem, 100vw"
+            />
+          </figure>
         </div>
       </section>
 

@@ -242,12 +242,9 @@ export const AIML_GUARANTEE = {
   body: 'If you use the library, do your part, and can document that the product itself did not work, you can request your money back. The library is an AI skill toolkit, not a magic wand. Lack of results from unused skills or skipped work does not trigger the guarantee.',
   termsLabel: 'Read the full guarantee terms',
   termsHref: '/terms-of-service#money-back-guarantee',
-} as const
-
-export const AIML_MEDIA_SLOTS = {
-  final: {
-    label: 'Final testimonial / proof screenshot',
-    hint: 'Add a final proof screenshot here.',
+  testimonial: {
+    src: '/aiml/testimonial-bookkeeping-setup.png',
+    alt: 'Customer chat: I used the AI Expert Skill to set up AI bookkeeping for my own business, and other business owners now pay me to set it up for them.',
   },
 } as const
 
