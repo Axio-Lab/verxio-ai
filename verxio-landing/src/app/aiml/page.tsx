@@ -7,7 +7,6 @@ import { AimlFooter } from './_components/aiml-footer'
 import { CheckoutButton } from './_components/checkout-button'
 import { CtaArrows } from './_components/cta-arrows'
 import { AimlFileVideo, AimlPlayerScript } from './_components/aiml-youtube-video'
-import { StickyCheckoutBar } from './_components/sticky-checkout-bar'
 import {
   AIML_CLOSE,
   AIML_FROM_AI,
@@ -72,7 +71,7 @@ function IncludeList({
 
 export default function AimlSalesPage() {
   return (
-    <div className="min-h-screen bg-white pb-28">
+    <div className="min-h-screen bg-white">
       <AimlPlayerScript />
 
       <section className="px-6 pb-16 pt-14">
@@ -325,7 +324,6 @@ export default function AimlSalesPage() {
       </section>
 
       <AimlFooter />
-      <StickyCheckoutBar />
     </div>
   )
 }
