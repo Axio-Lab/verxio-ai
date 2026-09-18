@@ -89,17 +89,36 @@ export default function AimlSalesPage() {
       <section className="border-y border-gray-100 bg-gray-50 px-6 py-16">
         <div className="mx-auto max-w-3xl">
           <h2 className="text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl">{AIML_PROOF.title}</h2>
-          <div className="mt-8 grid gap-4 sm:grid-cols-3">
+          <div className="mt-8 space-y-8">
             {AIML_PROOF.results.map((item) => (
-              <article key={item.label} className="rounded-2xl border border-gray-200 bg-white p-6 text-center">
-                <p className="text-3xl font-bold tracking-tight text-gray-900">{item.amount}</p>
-                <p className="mt-2 text-base font-medium leading-relaxed text-gray-600 sm:text-lg">{item.label}</p>
+              <article key={item.label} className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+                <div className="px-6 py-5 text-center">
+                  <p className="text-3xl font-bold tracking-tight text-gray-900">{item.amount}</p>
+                  <p className="mt-2 text-base font-medium leading-relaxed text-gray-600 sm:text-lg">{item.label}</p>
+                </div>
+                <figure className="border-t border-gray-200 bg-[#0b1220]">
+                  <Image
+                    src={item.src}
+                    alt={item.alt}
+                    width={1024}
+                    height={576}
+                    className="h-auto w-full object-contain"
+                    sizes="(min-width: 768px) 48rem, 100vw"
+                  />
+                </figure>
               </article>
             ))}
           </div>
-          <div className="mt-8">
-            <MediaPlaceholder label={AIML_MEDIA_SLOTS.payment.label} hint={AIML_MEDIA_SLOTS.payment.hint} />
-          </div>
+          <figure className="mt-8 overflow-hidden rounded-3xl border border-gray-200 bg-[#0b1220] shadow-[0_20px_50px_rgba(15,23,42,0.18)]">
+            <Image
+              src={AIML_PROOF.payment.src}
+              alt={AIML_PROOF.payment.alt}
+              width={818}
+              height={722}
+              className="h-auto w-full object-contain"
+              sizes="(min-width: 768px) 48rem, 100vw"
+            />
+          </figure>
         </div>
       </section>
 

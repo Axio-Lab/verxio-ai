@@ -73,18 +73,28 @@ export const AIML_PROOF = {
   title: "Look at what's possible:",
   results: [
     {
-      amount: '₦[RESULT]',
+      amount: '₦120,000',
       label: 'For ONE AI-assisted service',
+      src: '/aiml/testimonial-offer-120k.png',
+      alt: 'Customer chat: The Offer Creation Skill helped me sell my first package for ₦120,000.',
     },
     {
-      amount: '₦[RESULT]/mo',
+      amount: '₦300,000/mo',
       label: "A client's monthly payment",
+      src: '/aiml/testimonial-300k-month.png',
+      alt: 'Customer chat: The AI Expert Skills helped me earn ₦300k per month from two clients.',
     },
     {
-      amount: '₦[RESULT]',
+      amount: '₦200,000',
       label: 'From ONE business service',
+      src: '/aiml/testimonial-femi-200k.png',
+      alt: 'Customer chat: Femi from Ibadan closed a ₦200,000 setup fee plus monthly support.',
     },
   ],
+  payment: {
+    src: '/aiml/proof-blessing-email.png',
+    alt: 'Email from Blessing Isiong: using the AI Expert Skill Library to set up an AI Bookkeeper for a POS business in Benin.',
+  },
 } as const
 
 export const AIML_STORY = {
@@ -210,10 +220,6 @@ export const AIML_GUARANTEE = {
 } as const
 
 export const AIML_MEDIA_SLOTS = {
-  payment: {
-    label: 'Testimonial / payment screenshot',
-    hint: 'Add a payment or result screenshot here.',
-  },
   afterFromAi: [
     {
       label: 'Testimonial screenshot',
