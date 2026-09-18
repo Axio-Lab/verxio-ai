@@ -46,12 +46,13 @@ Verxio stores metadata in Turso. It does not store Hermes memory bytes, session 
 
 ## Auth And Email Codes
 
-Passwords are stored as salted one-way PBKDF2-SHA256 hashes. Verification, login, and password reset codes are stored as HMAC-SHA256 hashes with expiry and attempt limits.
+Passwords are stored as salted one-way PBKDF2-SHA256 hashes. Verification, login, and password reset codes are stored as HMAC-SHA256 hashes with expiry and attempt limits. Signup requires the shared beta invite in `VERXIO_SIGNUP_INVITE_CODE` (default `12345`). Rotate that value when you need to invalidate old invites.
 
 Configure production email delivery with SMTP:
 
 ```bash
 export VERXIO_AUTH_CODE_SECRET=change-this-long-random-secret
+export VERXIO_SIGNUP_INVITE_CODE=12345
 export VERXIO_SMTP_HOST=smtp.example.com
 export VERXIO_SMTP_PORT=587
 export VERXIO_SMTP_USERNAME=your-smtp-username

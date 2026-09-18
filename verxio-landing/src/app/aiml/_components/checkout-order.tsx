@@ -22,7 +22,7 @@ export function CheckoutOrder() {
             <div>
               <p className="font-medium text-gray-900">{AIML_PRODUCT.name}</p>
               <p className="mt-1 text-sm text-gray-500">
-                {AIML_PRODUCT.skillCount} expert skills
+                {AIML_PRODUCT.format}
               </p>
             </div>
             <p className="text-base font-semibold text-gray-900">{AIML_PRODUCT.priceLabel}</p>
@@ -100,7 +100,7 @@ function PayButton({ href, total }: { href: string; total: number }) {
       href={href}
       className="inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-primary px-6 py-3 text-sm font-semibold text-white shadow-md shadow-primary/20 transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
     >
-      Get Instant Access Now for {formatNgn(total)}
+      {AIML_PRODUCT.ctaLabel} for {formatNgn(total)}
     </a>
   )
 }

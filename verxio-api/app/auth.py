@@ -31,6 +31,7 @@ from app.models import (
 
 SESSION_COOKIE = os.getenv("VERXIO_SESSION_COOKIE", "verxio_session")
 SESSION_DAYS = int(os.getenv("VERXIO_SESSION_DAYS", "7"))
+DEFAULT_SIGNUP_INVITE_CODE = "97685"
 PBKDF2_ITERATIONS = 210_000
 AUTH_CODE_MAX_ATTEMPTS = int(os.getenv("VERXIO_AUTH_CODE_MAX_ATTEMPTS", "5"))
 SESSION_CACHE_TTL_SECONDS = max(0, int(os.getenv("VERXIO_SESSION_CACHE_TTL_SECONDS", "60")))
@@ -40,6 +41,20 @@ _SESSION_USER_CACHE: OrderedDict[str, tuple[dict[str, Any], str, float]] = Order
 
 def normalize_email(email: str) -> str:
     return email.strip().lower()
+
+
+def configured_signup_invite_code() -> str:
+    raw = os.getenv("VERXIO_SIGNUP_INVITE_CODE")
+    if raw is None or not raw.strip():
+        return DEFAULT_SIGNUP_INVITE_CODE
+    return raw.strip()
+
+
+def require_signup_invite_code(provided: str) -> None:
+    expected = configured_signup_invite_code()
+    actual = (provided or "").strip()
+    if not actual or len(actual) != len(expected) or not hmac.compare_digest(actual, expected):
+        raise HTTPException(status_code=403, detail="Invite code is invalid.")
 
 
 def hash_password(password: str) -> str:
@@ -332,6 +347,7 @@ def authenticated_response(
 
 
 def signup(payload: SignupRequest) -> AuthCodeChallengeResponse:
+    require_signup_invite_code(payload.invite_code)
     email = normalize_email(payload.email)
     existing = db.fetch_one("SELECT * FROM users WHERE email = ?", (email,))
     if existing and int(existing.get("email_verified") or 0) == 1:

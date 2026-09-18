@@ -85,6 +85,10 @@ function readableAuthError(error: unknown): string {
     return 'That code is incorrect or expired.'
   }
 
+  if (message.includes('Invite code is invalid')) {
+    return 'That invite code is incorrect.'
+  }
+
   if (message.includes('already exists')) {
     return 'An account with this email already exists.'
   }
@@ -192,6 +196,7 @@ export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
   const [auth, setAuth] = useState<VerxioAuthResponse | null>(null)
   const [email, setEmail] = useState('')
   const [displayName, setDisplayName] = useState('')
+  const [inviteCode, setInviteCode] = useState('')
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -254,6 +259,7 @@ export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
       setMode(nextMode)
       setCode('')
       setPassword('')
+      setInviteCode('')
       setError(null)
       setNotice(null)
     }
@@ -262,6 +268,7 @@ export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
       setMode(nextMode)
       setCode('')
       setPassword('')
+      setInviteCode('')
       setError(null)
       setNotice(null)
     }
@@ -314,7 +321,7 @@ export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
     }
 
     if (mode === 'signup') {
-      return isEmailValid && displayName.trim().length > 0 && password.length >= 8
+      return isEmailValid && displayName.trim().length > 0 && inviteCode.trim().length > 0 && password.length >= 8
     }
 
     if (mode === 'password-login') {
@@ -322,13 +329,14 @@ export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
     }
 
     return isEmailValid
-  }, [code.length, displayName, isEmailValid, mode, password.length, pendingPurpose])
+  }, [code.length, displayName, inviteCode, isEmailValid, mode, password.length, pendingPurpose])
 
   function resetMode(nextMode: AuthMode) {
     setMode(nextMode)
     setPendingPurpose(null)
     setCode('')
     setPassword('')
+    setInviteCode('')
     setError(null)
     setNotice(null)
 
@@ -379,7 +387,7 @@ export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
       }
 
       if (mode === 'signup') {
-        const challenge = await authSignup(normalizedEmail, password, displayName.trim())
+        const challenge = await authSignup(normalizedEmail, password, displayName.trim(), inviteCode)
         setEmail(challenge.email)
         setPendingPurpose(challenge.purpose)
         setCode('')
@@ -501,6 +509,24 @@ export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
                 placeholder="Donatus Prince"
                 spellCheck={false}
                 value={displayName}
+              />
+            </div>
+          )}
+
+          {mode === 'signup' && !pendingPurpose && (
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium" htmlFor="verxio-invite-code">
+                Invite code
+              </label>
+              <Input
+                autoComplete="off"
+                id="verxio-invite-code"
+                inputMode="numeric"
+                name="invite-code"
+                onChange={event => setInviteCode(event.target.value)}
+                required
+                spellCheck={false}
+                value={inviteCode}
               />
             </div>
           )}
