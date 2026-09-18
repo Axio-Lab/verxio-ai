@@ -102,7 +102,7 @@ export default function AimlSalesPage() {
                     alt={item.alt}
                     width={1024}
                     height={576}
-                    className="h-auto w-full object-contain"
+                    className="h-auto w-full max-w-full object-contain"
                     sizes="(min-width: 768px) 48rem, 100vw"
                   />
                 </figure>
@@ -115,7 +115,7 @@ export default function AimlSalesPage() {
               alt={AIML_PROOF.payment.alt}
               width={818}
               height={722}
-              className="h-auto w-full object-contain"
+              className="h-auto w-full max-w-full object-contain"
               sizes="(min-width: 768px) 48rem, 100vw"
             />
           </figure>
@@ -146,14 +146,26 @@ export default function AimlSalesPage() {
           <h2 className="text-4xl font-bold tracking-tight text-gray-900 sm:text-5xl">{AIML_FROM_AI.title}</h2>
           <div className="mt-6 space-y-4">
             {AIML_FROM_AI.paragraphs.map((paragraph) => (
-              <p key={paragraph} className="text-xl leading-relaxed text-gray-700 sm:text-2xl">
+              <p key={paragraph} className="whitespace-pre-line text-xl leading-relaxed text-gray-700 sm:text-2xl">
                 {paragraph}
               </p>
             ))}
           </div>
-          <div className="mt-8 grid gap-4 sm:grid-cols-2">
-            {AIML_MEDIA_SLOTS.afterFromAi.map((slot, index) => (
-              <MediaPlaceholder key={`${slot.label}-${index}`} label={slot.label} hint={slot.hint} />
+          <div className="mt-8 space-y-6">
+            {AIML_FROM_AI.testimonials.map((item) => (
+              <figure
+                key={item.src}
+                className="overflow-hidden rounded-3xl border border-gray-200 bg-[#0b1220] shadow-[0_20px_50px_rgba(15,23,42,0.18)]"
+              >
+                <Image
+                  src={item.src}
+                  alt={item.alt}
+                  width={1024}
+                  height={485}
+                  className="h-auto w-full max-w-full object-contain"
+                  sizes="(min-width: 768px) 48rem, 100vw"
+                />
+              </figure>
             ))}
           </div>
         </div>
@@ -198,7 +210,7 @@ export default function AimlSalesPage() {
                 alt={item.alt}
                 width={1024}
                 height={576}
-                className="h-auto w-full object-contain"
+                className="h-auto w-full max-w-full object-contain"
                 sizes="(min-width: 896px) 56rem, 100vw"
               />
             </figure>

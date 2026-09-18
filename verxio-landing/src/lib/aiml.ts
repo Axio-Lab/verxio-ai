@@ -124,7 +124,17 @@ export const AIML_FROM_AI = {
   title: 'From AI to money.',
   paragraphs: [
     "You'll discover practical AI skills you can use to create useful work for yourself or other businesses.",
-    "You'll learn the different things AI can help you do… how to use the skills… how to apply them to real business problems… and how to turn those skills into services people can pay you for.",
+    "You'll learn the different things AI can help you do…\n\nhow to use the skills…\n\nhow to apply them to real business problems…\n\nand how to turn those skills into services people can pay you for.",
+  ],
+  testimonials: [
+    {
+      src: '/aiml/testimonial-amaka-100k.png',
+      alt: 'Customer chat: Amaka used the AI Expert Skill Library to set up follow-up and reporting for a real estate company and was retained at ₦100,000 per month.',
+    },
+    {
+      src: '/aiml/testimonial-david-400k.png',
+      alt: 'Customer chat: David used the Competitor Analysis AI Skill to close a ₦400,000 marketing job.',
+    },
   ],
 } as const
 
@@ -220,16 +230,6 @@ export const AIML_GUARANTEE = {
 } as const
 
 export const AIML_MEDIA_SLOTS = {
-  afterFromAi: [
-    {
-      label: 'Testimonial screenshot',
-      hint: 'Add a customer testimonial screenshot here.',
-    },
-    {
-      label: 'Testimonial screenshot',
-      hint: 'Add a customer testimonial screenshot here.',
-    },
-  ],
   video: {
     label: 'Testimonial / video testimonial',
     hint: 'Add a written or video testimonial here.',
