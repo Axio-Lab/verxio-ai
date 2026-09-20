@@ -1,5 +1,6 @@
 export const AIML_PATH = '/aiml'
 export const AIML_CHECKOUT_PATH = '/aiml/checkout'
+export const AIML_META_PIXEL_ID = '749073419907960'
 
 export function formatNgn(amount: number): string {
   return `₦${amount.toLocaleString('en-NG')}`
