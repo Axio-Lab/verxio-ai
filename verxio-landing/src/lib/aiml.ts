@@ -1,6 +1,10 @@
 export const AIML_PATH = '/aiml'
 export const AIML_CHECKOUT_PATH = '/aiml/checkout'
+export const AIML_THANK_YOU_PATH = '/aiml/thank-you'
 export const AIML_META_PIXEL_ID = '749073419907960'
+export const AIML_TELEGRAM_URL =
+  process.env.NEXT_PUBLIC_AIML_TELEGRAM_URL?.replace(/\/$/, '') || 'https://t.me/verxioai'
+export const AIML_SUPPORT_EMAIL = 'support@verxio.xyz'
 
 export function formatNgn(amount: number): string {
   return `₦${amount.toLocaleString('en-NG')}`
@@ -236,6 +240,47 @@ export const AIML_CLOSE = {
   finalTitle: 'Stop hearing about what AI can do.',
   finalBody: 'Start learning what you can actually do with it.',
   finalCta: 'Get AI Money Library now',
+} as const
+
+export const AIML_THANK_YOU = {
+  title: 'THANK YOU FOR YOUR PURCHASE',
+  lead: "You're in. Here's exactly what happens next.",
+  steps: [
+    {
+      number: '01',
+      title: 'JOIN THE TELEGRAM',
+      body: 'This is the first thing you must do. Join the community now so you do not miss updates, trainings, or support.',
+      cta: 'JOIN THE TELEGRAM NOW',
+      href: AIML_TELEGRAM_URL,
+      external: true,
+    },
+    {
+      number: '02',
+      title: 'CHECK YOUR EMAIL',
+      body: 'Open the email address you used to buy AI Money Library. Your access and files were sent there. Check spam or promotions if you do not see it.',
+    },
+    {
+      number: '03',
+      title: 'USE THE PRODUCT',
+      body: 'Drag and drop the skills into ChatGPT, Claude, Gemini, or any AI agent. That is how you start using the library immediately.',
+    },
+    {
+      number: '04',
+      title: 'SIGN UP ON VERXIO',
+      body: 'You can also sign up and use the Verxio operator platform to put these skills to work.',
+      cta: 'SIGN UP ON VERXIO',
+      href: '/signup',
+      app: true,
+    },
+    {
+      number: '05',
+      title: 'NEED HELP?',
+      body: 'Any issue? Contact support@verxio.xyz for support or any clarification.',
+      cta: 'EMAIL SUPPORT',
+      href: `mailto:${AIML_SUPPORT_EMAIL}`,
+      external: true,
+    },
+  ],
 } as const
 
 export const AIML_GUARANTEE = {
