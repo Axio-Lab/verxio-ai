@@ -8,8 +8,8 @@ export function formatNgn(amount: number): string {
 export const AIML_PRODUCT = {
   name: 'AI Money Library',
   shortName: 'AIML',
-  headline: "If You Don't Start Using AI to Make Money Now, You May Regret It Soon.",
-  headlineAccent: 'You May Regret It Soon.',
+  headline: "If You Don't Start Using AI to Make Money Now, You May Regret It Soon",
+  headlineAccent: 'You May Regret It Soon',
   tagline:
     'Discover how smart Nigerians are using AI to create services, get customers and make money — even without being AI experts.',
   description:
