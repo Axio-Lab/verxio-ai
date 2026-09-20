@@ -3,7 +3,7 @@ export const AIML_CHECKOUT_PATH = '/aiml/checkout'
 export const AIML_THANK_YOU_PATH = '/aiml/thank-you'
 export const AIML_META_PIXEL_ID = '749073419907960'
 export const AIML_TELEGRAM_URL =
-  process.env.NEXT_PUBLIC_AIML_TELEGRAM_URL?.replace(/\/$/, '') || 'https://t.me/verxioai'
+  process.env.NEXT_PUBLIC_AIML_TELEGRAM_URL?.replace(/\/$/, '') || 'https://t.me/+XZYq5OzQXXQ2NDM0'
 export const AIML_SUPPORT_EMAIL = 'support@verxio.xyz'
 
 export function formatNgn(amount: number): string {

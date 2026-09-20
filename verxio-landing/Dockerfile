@@ -13,14 +13,26 @@ COPY . .
 
 ARG NEXT_PUBLIC_SITE_URL=https://www.verxio.xyz
 ARG NEXT_PUBLIC_APP_URL=https://app.verxio.xyz
+ARG NEXT_PUBLIC_AIML_TELEGRAM_URL=https://t.me/+XZYq5OzQXXQ2NDM0
 ENV NEXT_PUBLIC_SITE_URL=${NEXT_PUBLIC_SITE_URL}
 ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
+ENV NEXT_PUBLIC_AIML_TELEGRAM_URL=${NEXT_PUBLIC_AIML_TELEGRAM_URL}
 
 RUN npm run build
 
-FROM nginx:1.27-alpine
+FROM node:22-alpine
 
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /app/out /usr/share/nginx/html
+WORKDIR /app
+ENV NODE_ENV=production \
+    PORT=80 \
+    npm_config_update_notifier=false \
+    NO_UPDATE_NOTIFIER=1
+
+COPY --from=build /app/package.json /app/package-lock.json ./
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/.next ./.next
+COPY --from=build /app/public ./public
+COPY --from=build /app/next.config.mjs ./
 
 EXPOSE 80
+CMD ["npx", "next", "start", "-H", "0.0.0.0", "-p", "80"]
