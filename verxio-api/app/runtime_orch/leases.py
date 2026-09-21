@@ -1,4 +1,4 @@
-"""Distributed start leases (Phase 3). Redis when configured; SQLite/Turso otherwise."""
+"""Distributed start leases. Redis when configured; SQLite/Turso otherwise."""
 
 from __future__ import annotations
 
@@ -7,6 +7,8 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
+
+from app.infra.redis import get_redis, release_lease as redis_release, try_acquire_lease as redis_try_acquire
 
 
 @dataclass
@@ -23,7 +25,7 @@ class LeaseStore:
 
 
 class InMemoryLeaseStore(LeaseStore):
-    """Single-process only — prefer SqliteLeaseStore or Redis in production."""
+    """Single-process only — prefer Redis or SqliteLeaseStore in production."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -46,10 +48,20 @@ class InMemoryLeaseStore(LeaseStore):
                 del self._leases[lease.key]
 
 
+class RedisInfraLeaseStore(LeaseStore):
+    def try_acquire(self, key: str, *, ttl_seconds: float = 90.0) -> Lease | None:
+        token = redis_try_acquire(key, ttl_seconds=ttl_seconds)
+        if token is None:
+            return None
+        return Lease(key=key, token=token, expires_at=time.monotonic() + ttl_seconds)
+
+    def release(self, lease: Lease) -> None:
+        redis_release(lease.key, lease.token)
+
+
 class SqliteLeaseStore(LeaseStore):
     """Cross-worker leases via control-plane DB (works with uvicorn --workers N)."""
 
-    # Keyed by DB path so test fixtures that swap sqlite files still CREATE.
     _ensured_for: str | None = None
 
     def _ensure_table(self) -> None:
@@ -96,7 +108,6 @@ class SqliteLeaseStore(LeaseStore):
                     (key, token, expires),
                 )
             except Exception:
-                # Race: another worker inserted first.
                 return None
         row = db.fetch_one(
             "SELECT token FROM runtime_start_leases WHERE lease_key = ?",
@@ -143,13 +154,20 @@ def get_lease_store() -> LeaseStore:
     global _STORE
     if _STORE is not None:
         return _STORE
-    url = os.getenv("VERXIO_REDIS_URL", "").strip()
-    if url:
+    if get_redis() is not None or os.getenv("VERXIO_REDIS_URL", "").strip():
         try:
-            _STORE = RedisLeaseStore(url)
-            return _STORE
+            if get_redis() is not None:
+                _STORE = RedisInfraLeaseStore()
+                return _STORE
         except Exception:
             pass
+        url = os.getenv("VERXIO_REDIS_URL", "").strip()
+        if url:
+            try:
+                _STORE = RedisLeaseStore(url)
+                return _STORE
+            except Exception:
+                pass
     try:
         _STORE = SqliteLeaseStore()
     except Exception:
