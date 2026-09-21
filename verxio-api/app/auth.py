@@ -317,8 +317,41 @@ def get_current_user(request: Request) -> dict[str, Any] | None:
     return row
 
 
+async def aget_current_user(request: Request) -> dict[str, Any] | None:
+    token = request.cookies.get(SESSION_COOKIE)
+    if not token:
+        return None
+
+    token_hash = hash_session_token(token)
+    cached = _cached_session_user(token_hash)
+    if cached:
+        return cached
+
+    row = await db.afetch_one(
+        """
+        SELECT u.*, s.expires_at AS session_expires_at FROM sessions s
+        JOIN users u ON u.id = s.user_id
+        WHERE s.token_hash = ? AND s.expires_at > ?
+        LIMIT 1
+        """,
+        (token_hash, now_iso()),
+    )
+    if row:
+        expires_at = str(row.pop("session_expires_at", "") or "")
+        _cache_session_user(token_hash, row, expires_at)
+
+    return row
+
+
 def require_user(request: Request) -> dict[str, Any]:
     user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return user
+
+
+async def arequire_user(request: Request) -> dict[str, Any]:
+    user = await aget_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
     return user

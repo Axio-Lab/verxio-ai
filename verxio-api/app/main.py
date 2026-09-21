@@ -23,6 +23,8 @@ from starlette.websockets import WebSocketDisconnect
 
 from app import db
 from app.auth import (
+    aget_current_user,
+    arequire_user,
     get_current_user,
     login,
     logout,

@@ -478,6 +478,22 @@ def get_runtime_for_user(
     return runtime
 
 
+async def aget_context_for_user(
+    user: dict[str, Any], *, fresh: bool = False
+) -> tuple[Workspace, AgentProfile, RuntimeInstance]:
+    import asyncio
+
+    return await asyncio.to_thread(get_context_for_user, user, fresh=fresh)
+
+
+async def aget_runtime_for_user(
+    user: dict[str, Any], agent_id: str | None = None, *, fresh: bool = False
+) -> RuntimeInstance:
+    import asyncio
+
+    return await asyncio.to_thread(get_runtime_for_user, user, agent_id, fresh=fresh)
+
+
 def save_runtime(runtime: RuntimeInstance, **patch: Any) -> RuntimeInstance:
     allowed = {
         "status",

@@ -1258,3 +1258,42 @@ def transaction() -> Iterator[Any]:
             if hasattr(conn, "rollback"):
                 conn.rollback()
             raise
+
+
+async def aexecute(sql: str, params: Iterable[Any] = ()) -> None:
+    """Run ``execute`` off the event loop so Turso/SQLite never blocks uvicorn."""
+    import asyncio
+
+    await asyncio.to_thread(execute, sql, params)
+
+
+async def afetch_one(sql: str, params: Iterable[Any] = ()) -> dict[str, Any] | None:
+    import asyncio
+
+    return await asyncio.to_thread(fetch_one, sql, params)
+
+
+async def afetch_all(sql: str, params: Iterable[Any] = ()) -> list[dict[str, Any]]:
+    import asyncio
+
+    return await asyncio.to_thread(fetch_all, sql, params)
+
+
+async def atransaction(work):
+    """Run a sync transactional callable off the event loop.
+
+    ``work`` receives the open connection and may execute multiple statements.
+    """
+    import asyncio
+
+    def _run():
+        with transaction() as conn:
+            return work(conn)
+
+    return await asyncio.to_thread(_run)
+
+
+def ping() -> dict[str, Any]:
+    """Cheap connectivity probe for /api/health."""
+    row = fetch_one("SELECT 1 AS ok")
+    return {"ok": bool(row and row.get("ok") == 1), "mode": get_database_settings().mode}
