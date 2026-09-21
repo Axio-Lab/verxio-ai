@@ -348,12 +348,17 @@ def _decode_recording_payload(payload: NotepadRecordingUploadRequest) -> tuple[b
 
     return audio_bytes, mime_type
 
+def _env_on(name: str, default: str = "0") -> bool:
+    return os.getenv(name, default).strip().lower() not in {"0", "false", "no", "off"}
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    db.run_migrations()
+    setup_observability("verxio-api")
+    # Deploy runs ``python -m app.migrate``. Local/tests keep auto-migrate on.
+    if _env_on("VERXIO_AUTO_MIGRATE", "1"):
+        await asyncio.to_thread(db.run_migrations)
 
-    # Never block accept() on docker.sock — a busy daemon after deploy would make
-    # /api/health connection-refused until the probe finishes (or hangs).
     async def _warm() -> None:
         try:
             await warm_runtime_docker_network()
@@ -362,45 +367,49 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
     asyncio.create_task(_warm())
 
-    async def _run_workflow_scheduler() -> None:
-        try:
-            interval = max(5.0, float(os.getenv("VERXIO_WORKFLOW_SCHEDULER_INTERVAL_SECONDS", "15")))
-        except ValueError:
-            interval = 15.0
-        while True:
-            await asyncio.sleep(interval)
+    scale_tasks: list[asyncio.Task[None]] = []
+    scheduler_task = None
+    # Background loops belong in ``python -m app.scheduler``. Inline is a
+    # single-node fallback for local Docker without a scheduler replica.
+    if _env_on("VERXIO_INLINE_SCHEDULER", "0"):
+        async def _run_workflow_scheduler() -> None:
             try:
-                await tick_due_workflow_schedule_triggers()
+                interval = max(5.0, float(os.getenv("VERXIO_WORKFLOW_SCHEDULER_INTERVAL_SECONDS", "15")))
+            except ValueError:
+                interval = 15.0
+            while True:
+                await asyncio.sleep(interval)
+                try:
+                    await tick_due_workflow_schedule_triggers()
+                except Exception:
+                    logging.getLogger(__name__).exception("Workflow schedule tick failed")
+
+        if _env_on("VERXIO_WORKFLOW_SCHEDULER_ENABLED", "1"):
+            scheduler_task = asyncio.create_task(_run_workflow_scheduler())
+
+        from app.runtime_orch.workers import start_scale_workers
+
+        scale_tasks = start_scale_workers()
+
+        async def _reconcile_missing() -> None:
+            try:
+                from app.runtime_orch.lifecycle import reconcile_missing_runtimes
+
+                result = await reconcile_missing_runtimes(wake=True, reason="api.startup")
+                if result.get("missing"):
+                    logging.getLogger(__name__).info("Startup runtime reconcile %s", result)
             except Exception:
-                logging.getLogger(__name__).exception("Workflow schedule tick failed")
+                logging.getLogger(__name__).exception("Startup runtime reconcile failed")
 
-    scheduler_enabled = os.getenv("VERXIO_WORKFLOW_SCHEDULER_ENABLED", "1").strip().lower() not in {
-        "0",
-        "false",
-        "no",
-        "off",
-    }
-    scheduler_task = asyncio.create_task(_run_workflow_scheduler()) if scheduler_enabled else None
+        asyncio.create_task(_reconcile_missing())
 
-    from app.runtime_orch.workers import start_scale_workers, stop_scale_workers
-
-    scale_tasks = start_scale_workers()
-
-    async def _reconcile_missing() -> None:
-        try:
-            from app.runtime_orch.lifecycle import reconcile_missing_runtimes
-
-            result = await reconcile_missing_runtimes(wake=True, reason="api.startup")
-            if result.get("missing"):
-                logging.getLogger(__name__).info("Startup runtime reconcile %s", result)
-        except Exception:
-            logging.getLogger(__name__).exception("Startup runtime reconcile failed")
-
-    asyncio.create_task(_reconcile_missing())
     try:
         yield
     finally:
-        await stop_scale_workers(scale_tasks)
+        if scale_tasks:
+            from app.runtime_orch.workers import stop_scale_workers
+
+            await stop_scale_workers(scale_tasks)
         if scheduler_task is not None:
             scheduler_task.cancel()
             with suppress(asyncio.CancelledError):
