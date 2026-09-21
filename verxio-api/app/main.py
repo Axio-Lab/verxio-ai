@@ -1357,8 +1357,21 @@ async def ingest_workflow_webhook_route(trigger_id: str, request: Request) -> Wo
         raise HTTPException(status_code=400, detail="Invalid workflow webhook JSON.") from exc
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Workflow webhook payload must be an object.")
+    if not _env_on("VERXIO_WEBHOOK_INLINE", "1"):
+        from app.jobs import enqueue_webhook_delivery
+
+        enqueue_webhook_delivery(
+            workspace_id="",
+            kind="workflow_webhook",
+            payload={"trigger_id": trigger_id, "secret": secret, "body": payload},
+        )
+        raise HTTPException(status_code=202, detail="Webhook queued.")
     run = await run_webhook_trigger(trigger_id, secret, payload)
     return WorkflowWebhookIngestResponse(run=run)
+
+
+def _queued_hook_response() -> Response:
+    return Response(content=b'{"status":"queued"}', status_code=202, media_type="application/json")
 
 
 @app.post("/api/hooks/{workspace_id}/c/{connection_id}/{route_name}")
@@ -1368,6 +1381,21 @@ async def ingest_messaging_hook_connection_route(
     route_name: str,
     request: Request,
 ) -> Response:
+    if not _env_on("VERXIO_WEBHOOK_INLINE", "1"):
+        from app.jobs import enqueue_webhook_delivery
+
+        body = await request.body()
+        enqueue_webhook_delivery(
+            workspace_id=workspace_id,
+            kind="messaging_hook",
+            payload={
+                "route_name": route_name,
+                "connection_id": connection_id,
+                "body": body.decode("utf-8", "replace"),
+                "headers": dict(request.headers),
+            },
+        )
+        return _queued_hook_response()
     upstream = await ingest_public_hook(workspace_id, route_name, request, connection_id=connection_id)
     excluded = {"content-encoding", "content-length", "transfer-encoding", "connection"}
     headers = {key: value for key, value in upstream.headers.items() if key.lower() not in excluded}
@@ -1376,6 +1404,20 @@ async def ingest_messaging_hook_connection_route(
 
 @app.post("/api/hooks/{workspace_id}/{route_name}")
 async def ingest_messaging_hook_route(workspace_id: str, route_name: str, request: Request) -> Response:
+    if not _env_on("VERXIO_WEBHOOK_INLINE", "1"):
+        from app.jobs import enqueue_webhook_delivery
+
+        body = await request.body()
+        enqueue_webhook_delivery(
+            workspace_id=workspace_id,
+            kind="messaging_hook",
+            payload={
+                "route_name": route_name,
+                "body": body.decode("utf-8", "replace"),
+                "headers": dict(request.headers),
+            },
+        )
+        return _queued_hook_response()
     upstream = await ingest_public_hook(workspace_id, route_name, request)
     excluded = {"content-encoding", "content-length", "transfer-encoding", "connection"}
     headers = {key: value for key, value in upstream.headers.items() if key.lower() not in excluded}
@@ -1616,6 +1658,15 @@ async def ingest_composio_webhook_route(request: Request) -> WorkflowTriggerRuns
         webhook_signature=request.headers.get("webhook-signature", ""),
     )
     if not claim_composio_webhook(webhook_id):
+        return WorkflowTriggerRunsResponse(runs=[])
+    if not _env_on("VERXIO_WEBHOOK_INLINE", "1"):
+        from app.jobs import enqueue_webhook_delivery
+
+        enqueue_webhook_delivery(
+            workspace_id="",
+            kind="composio_webhook",
+            payload={"webhook_id": webhook_id, "event": payload},
+        )
         return WorkflowTriggerRunsResponse(runs=[])
     try:
         result = await run_workflow_composio_trigger_event(payload)
