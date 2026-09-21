@@ -107,7 +107,6 @@ from app.models import (
     AuthCodeChallengeResponse,
     AuthCodeVerifyRequest,
     AuthResponse,
-    AuditEvent,
     BootstrapResponse,
     ComposioAppsResponse,
     ComposioAppToolsResponse,
@@ -144,8 +143,6 @@ from app.models import (
     PasswordResetRequest,
     RuntimeInstance,
     PublicNotepadShareResponse,
-    RunRecord,
-    RunRequest,
     RuntimeControlResponse,
     RuntimeWorkspaceSyncRequest,
     SignupRequest,
@@ -221,7 +218,13 @@ from app.notepad import (
     update_folder,
     update_note,
 )
-from app.runtime import HermesRuntimeAdapter, hosted_runtime_status, is_hosted_control_plane
+from app.runtime import (
+    DEMO_PROFILE,
+    DEMO_WORKSPACE,
+    HermesRuntimeAdapter,
+    hosted_runtime_status,
+    is_hosted_control_plane,
+)
 from app.runtime_dashboard import soft_reload_runtime_mcp
 from app.runtime_manager import (
     DASHBOARD_UPSTREAM_SLOTS,
@@ -243,7 +246,8 @@ from app.runtime_orch.factory import get_runtime_manager
 from app.runtime_orch.idle import list_idle_policies, resolve_idle_policy
 from app.runtime_orch.lifecycle import drain_runtime, reap_idle_runtimes, touch_runtime_activity, wake_runtime
 from app.runtime_orch.states import RuntimeStatus
-from app.store import AUDIT_LOG, PROFILE, RUNS, WORKSPACE
+from app.observability import instrument_fastapi, setup_observability
+from app.rate_limit import RateLimitMiddleware
 from app.transcription_catalog import list_transcription_catalog
 from app.workflow_agents import (
     apply_setup_draft as apply_workflow_setup_draft,
@@ -432,6 +436,7 @@ if os.getenv("VERXIO_DESKTOP_CORS", "true").strip().lower() not in {"0", "false"
     if "null" not in cors_origins:
         cors_origins.append("null")
 
+app.add_middleware(RateLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
@@ -440,6 +445,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+instrument_fastapi(app)
 
 app.mount("/static", StaticFiles(directory=STATIC_ROOT), name="static")
 
@@ -448,16 +454,25 @@ async def index() -> FileResponse:
     return FileResponse(STATIC_ROOT / "index.html")
 
 @app.get("/api/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok", "service": "verxio-api"}
+async def health() -> dict[str, object]:
+    try:
+        ping = await asyncio.to_thread(db.ping)
+        db_ok = bool(ping.get("ok"))
+    except Exception as exc:
+        return {"status": "degraded", "service": "verxio-api", "database": "error", "detail": str(exc)}
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "service": "verxio-api",
+        "database": ping.get("mode") if db_ok else "down",
+    }
 
 @app.get("/api/bootstrap", response_model=BootstrapResponse)
 async def bootstrap(request: Request) -> BootstrapResponse:
-    user = get_current_user(request)
+    user = await aget_current_user(request)
     if user:
         workspace, profile, _runtime_instance = get_context_for_user(user)
     else:
-        workspace, profile = WORKSPACE, PROFILE
+        workspace, profile = DEMO_WORKSPACE, DEMO_PROFILE
 
     if is_hosted_control_plane():
         runtime = hosted_runtime_status()
@@ -469,8 +484,8 @@ async def bootstrap(request: Request) -> BootstrapResponse:
     return BootstrapResponse(
         workspace=workspace,
         profile=profile,
-        audit_log=sorted(AUDIT_LOG, key=lambda event: event.created_at, reverse=True),
-        runs=sorted(RUNS, key=lambda run: run.created_at, reverse=True),
+        audit_log=[],
+        runs=[],
         runtime=runtime,
         hermes=hermes,
     )
@@ -2219,132 +2234,9 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
         logger.exception("Runtime dashboard websocket proxy failed for path=%s", path)
         await _safe_websocket_close(websocket, 1011)
 
-def _find_run(run_id: str) -> RunRecord:
-    for run in RUNS:
-        if run.id == run_id:
-            return run
-    raise HTTPException(status_code=404, detail="Run not found")
-
-async def _refresh_run(run: RunRecord) -> RunRecord:
-    if (
-        run.provider != "hermes"
-        or not run.hermes_run_id
-        or run.status in {"completed", "failed", "cancelled"}
-    ):
-        return run
-
-    result = await HermesRuntimeAdapter().get_run_status(run.hermes_run_id)
-    run.status = result.status
-    run.output = result.output if result.output else result.error or run.output
-    run.usage = result.usage
-    if result.status in {"completed", "failed", "cancelled"}:
-        AUDIT_LOG.insert(
-            0,
-            AuditEvent(
-                agent_id=run.agent_id,
-                actor=PROFILE.name,
-                action="runtime.run.completed" if result.status == "completed" else "runtime.run.finished",
-                summary=result.error or f"Hermes run {run.hermes_run_id} is {result.status}.",
-                status="success" if result.status == "completed" else "warning",
-                metadata={
-                    "provider": result.provider,
-                    "run": run.id,
-                    "hermes_run": run.hermes_run_id or "",
-                },
-            ),
-        )
-    return run
-
-@app.post("/api/runs", response_model=RunRecord)
-async def create_run(payload: RunRequest) -> RunRecord:
-    if payload.workspace_id != WORKSPACE.id:
-        raise HTTPException(status_code=404, detail="Workspace not found")
-
-    if payload.agent_id != PROFILE.id:
-        raise HTTPException(status_code=404, detail="Agent profile not found")
-
-    if PROFILE.status != "active":
-        raise HTTPException(status_code=409, detail="Verxio Agent is not active")
-
-    AUDIT_LOG.insert(
-        0,
-        AuditEvent(
-            agent_id=PROFILE.id,
-            actor="Verxio",
-            action="runtime.run.requested",
-            summary="Submitted a Verxio Agent run to the Hermes runtime.",
-            status="pending",
-            metadata={"workspace": WORKSPACE.id},
-        ),
-    )
-
-    result = await HermesRuntimeAdapter().submit_agent_run(WORKSPACE, PROFILE, payload.input)
-    run = RunRecord(
-        workspace_id=WORKSPACE.id,
-        agent_id=PROFILE.id,
-        input=payload.input,
-        output=result.output if result.output else result.error or "",
-        provider=result.provider,
-        status=result.status,
-        hermes_run_id=result.hermes_run_id,
-        usage=result.usage,
-    )
-    RUNS.insert(0, run)
-
-    AUDIT_LOG.insert(
-        0,
-        AuditEvent(
-            agent_id=PROFILE.id,
-            actor=PROFILE.name,
-            action="runtime.run.completed" if result.status == "completed" else "runtime.run.started",
-            summary=result.error or f"Verxio Agent returned a {result.provider} runtime result.",
-            status="success" if result.status == "completed" else "pending",
-            metadata={
-                "provider": result.provider,
-                "run": run.id,
-                "hermes_run": result.hermes_run_id or "",
-            },
-        ),
-    )
-
-    return run
-
-@app.get("/api/runs/{run_id}", response_model=RunRecord)
-async def get_run(run_id: str) -> RunRecord:
-    run = _find_run(run_id)
-    return await _refresh_run(run)
-
-@app.post("/api/runs/{run_id}/stop", response_model=RunRecord)
-async def stop_run(run_id: str) -> RunRecord:
-    run = _find_run(run_id)
-    run = await _refresh_run(run)
-    if run.status in {"completed", "failed", "cancelled"}:
-        return run
-
-    if run.provider != "hermes" or not run.hermes_run_id:
-        run.status = "cancelled"
-        run.output = "Run cancelled."
-        return run
-
-    result = await HermesRuntimeAdapter().stop_run(run.hermes_run_id)
-    run.status = result.status
-    run.output = result.output if result.output else result.error or "Stop requested."
-    AUDIT_LOG.insert(
-        0,
-        AuditEvent(
-            agent_id=run.agent_id,
-            actor="Verxio",
-            action="runtime.run.stop_requested",
-            summary=f"Stop requested for Hermes run {run.hermes_run_id}.",
-            status="warning",
-            metadata={"run": run.id, "hermes_run": run.hermes_run_id},
-        ),
-    )
-    return run
-
-@app.get("/{full_path:path}", include_in_schema=False)
-async def spa_fallback(full_path: str) -> FileResponse:
-    if full_path.startswith("api/") or full_path.startswith("static/"):
+@app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)
+async def spa_fallback(full_path: str, request: Request) -> FileResponse:
+    if full_path.startswith("api/") or full_path.startswith("static/") or request.method != "GET":
         raise HTTPException(status_code=404, detail="Not found")
 
     return FileResponse(STATIC_ROOT / "index.html")

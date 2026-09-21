@@ -15,6 +15,35 @@ import httpx
 
 from app.models import AgentProfile, HermesRuntimeMetadata, RuntimeResult, RuntimeStatus, Workspace
 
+DEMO_WORKSPACE = Workspace(
+    id="local-verxio",
+    name="Verxio Local",
+    region="Local",
+    plan="Verxio runtime workspace",
+)
+
+DEMO_PROFILE = AgentProfile(
+    id="verxio-agent",
+    name="Verxio Agent",
+    role="Verxio assistant",
+    status="active",
+    description=(
+        "A Verxio AI agent with local chat, connected tools, memory, skills, "
+        "scheduled jobs, and messaging connections."
+    ),
+    capabilities=[
+        "Use the model and provider configured in Verxio",
+        "Run connected tools and apps exposed to Verxio",
+        "Use memory and skills when enabled in the runtime",
+        "Surface runtime readiness for setup and debugging",
+    ],
+    starters=[
+        "Help me understand this project and decide what to build next.",
+        "Use the available Verxio tools to inspect my current workspace.",
+        "Create a reusable plan for a task I repeat every week.",
+    ],
+)
+
 
 DEFAULT_HERMES_BASE_URL = "http://127.0.0.1:8642"
 WORKSPACE_ROOT = Path(__file__).resolve().parents[2]

@@ -49,6 +49,20 @@ def _body_for_purpose(*, code: str, purpose: AuthCodePurpose, expires_minutes: i
     )
 
 
+async def asend_auth_code_email(
+    *, to_email: str, purpose: AuthCodePurpose, code: str, expires_minutes: int
+) -> None:
+    import asyncio
+
+    await asyncio.to_thread(
+        send_auth_code_email,
+        to_email=to_email,
+        purpose=purpose,
+        code=code,
+        expires_minutes=expires_minutes,
+    )
+
+
 def send_auth_code_email(*, to_email: str, purpose: AuthCodePurpose, code: str, expires_minutes: int) -> None:
     subject = _subject_for_purpose(purpose)
     body = _body_for_purpose(code=code, purpose=purpose, expires_minutes=expires_minutes)
@@ -66,6 +80,27 @@ def send_auth_code_email(*, to_email: str, purpose: AuthCodePurpose, code: str, 
         print(f"[verxio-auth] {purpose} code for {to_email}: {code} (expires in {expires_minutes} minutes)")
         return
 
+    import asyncio
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if loop is not None and loop.is_running():
+        loop.create_task(
+            asyncio.to_thread(
+                _deliver_smtp,
+                to_email=to_email,
+                subject=subject,
+                body=body,
+            )
+        )
+        return
+
+    _deliver_smtp(to_email=to_email, subject=subject, body=body)
+
+
+def _deliver_smtp(*, to_email: str, subject: str, body: str) -> None:
     message = EmailMessage()
     message["From"] = os.getenv("VERXIO_SMTP_FROM", "").strip()
     message["To"] = to_email

@@ -148,7 +148,7 @@ def test_bootstrap_skips_shared_hermes_on_k8s_control_plane(client, monkeypatch)
     assert payload["hermes"]["errors"] == []
 
 
-def test_create_run_uses_demo_runtime(client):
+def test_legacy_runs_routes_are_gone(client):
     response = client.post(
         "/api/runs",
         json={
@@ -156,24 +156,6 @@ def test_create_run_uses_demo_runtime(client):
             "input": "Help me use Verxio instead of Hermes CLI.",
         },
     )
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["agent_id"] == "verxio-agent"
-    assert payload["provider"] == "demo"
-    assert payload["status"] == "completed"
-    assert "Verxio Agent" in payload["output"]
-
-
-def test_unknown_agent_returns_404(client):
-    response = client.post(
-        "/api/runs",
-        json={
-            "agent_id": "unknown",
-            "input": "Do something useful.",
-        },
-    )
-
     assert response.status_code == 404
 
 
