@@ -16,7 +16,23 @@ redis:
   url: redis://verxio-redis:6379/0
 
 sandbox:
+  # TLS Docker API on the dedicated sandbox hosts, e.g. tcp://sandbox.internal:2376
   dockerHost: ""
+  # Secret with ca.pem / cert.pem / key.pem (client certs for dockerHost).
+  # Leave empty only for dev clusters; allowInsecure must then be "1" or the
+  # Hermes sidecar refuses to start (hosted policy fails closed).
+  tlsSecret: ""
+  allowInsecure: "0"
+  image: verxio-sandbox:local
+  network: none
+  limits:
+    memoryMb: 1024
+    cpus: 1
+    pids: 256
+
+worker:
+  # emptyDir shared by the worker and its Hermes sidecar for tenant homes.
+  homesSizeLimit: 20Gi
 
 env:
   VERXIO_RUNTIME_MANAGER: pool

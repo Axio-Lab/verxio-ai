@@ -137,14 +137,38 @@ services:
     depends_on:
       - redis
 
+  # Local stand-in for the dedicated sandbox hosts: a docker-in-docker daemon
+  # on plaintext TCP. Production uses TLS (see deploy/sandbox/README.md), which
+  # is why the worker below opts in with VERXIO_SANDBOX_ALLOW_INSECURE=1.
+  verxio-sandbox:
+    image: docker:27-dind
+    profiles: [pool]
+    privileged: true
+    command: ['dockerd', '--host=tcp://0.0.0.0:2375', '--tls=false']
+    environment:
+      DOCKER_TLS_CERTDIR: ''
+    volumes:
+      - verxio_sandbox_docker:/var/lib/docker
+
   verxio-hermes-worker:
     image: ${VERXIO_HERMES_IMAGE:-verxio-hermes-runtime:local}
     profiles: [pool]
     environment:
       VERXIO_HOSTED: '1'
-      DOCKER_HOST: ${VERXIO_SANDBOX_DOCKER_HOST:-}
+      DOCKER_HOST: ${VERXIO_SANDBOX_DOCKER_HOST:-tcp://verxio-sandbox:2375}
+      DOCKER_TLS_VERIFY: ${VERXIO_SANDBOX_DOCKER_TLS_VERIFY:-}
+      DOCKER_CERT_PATH: ${VERXIO_SANDBOX_DOCKER_CERT_PATH:-}
+      VERXIO_SANDBOX_ALLOW_INSECURE: ${VERXIO_SANDBOX_ALLOW_INSECURE:-1}
       VERXIO_SANDBOX_IMAGE: ${VERXIO_SANDBOX_IMAGE:-verxio-sandbox:local}
+      VERXIO_SANDBOX_MEMORY_MB: ${VERXIO_SANDBOX_MEMORY_MB:-1024}
+      VERXIO_SANDBOX_CPUS: ${VERXIO_SANDBOX_CPUS:-1}
+      VERXIO_SANDBOX_PIDS: ${VERXIO_SANDBOX_PIDS:-256}
+      VERXIO_SANDBOX_NETWORK: ${VERXIO_SANDBOX_NETWORK:-none}
       VERXIO_INTERNAL_TOKEN: ${VERXIO_INTERNAL_TOKEN:-}
+    volumes:
+      - verxio_pool_homes:/var/lib/verxio/homes
+    depends_on:
+      - verxio-sandbox
 
   verxio-agent-worker:
     image: verxio-api:local
@@ -158,6 +182,11 @@ services:
       VERXIO_WORKER_ID: worker-0
       VERXIO_LOCAL_HERMES_URL: http://verxio-hermes-worker:9119
       VERXIO_INTERNAL_TOKEN: ${VERXIO_INTERNAL_TOKEN:-}
+      # Tenant homes/workspaces restored here must be visible to the Hermes
+      # sidecar at the same path (shared volume, like the k8s emptyDir).
+      VERXIO_WORKER_HOMES_ROOT: /var/lib/verxio/homes
+    volumes:
+      - verxio_pool_homes:/var/lib/verxio/homes
     depends_on:
       - redis
       - verxio-hermes-worker
@@ -175,3 +204,7 @@ services:
     depends_on:
       - redis
       - verxio-api
+
+volumes:
+  verxio_pool_homes:
+  verxio_sandbox_docker:

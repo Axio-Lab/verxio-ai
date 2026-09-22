@@ -90,12 +90,17 @@ spec:
               value: {{ .Values.redis.url | quote }}
             - name: VERXIO_LOCAL_HERMES_URL
               value: "http://127.0.0.1:9119"
+            - name: VERXIO_WORKER_HOMES_ROOT
+              value: /var/lib/verxio/homes
             - name: VERXIO_INTERNAL_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: verxio-internal
                   key: token
                   optional: true
+          volumeMounts:
+            - name: homes
+              mountPath: /var/lib/verxio/homes
         - name: hermes
           image: {{ .Values.images.hermes }}
           env:
@@ -103,6 +108,48 @@ spec:
               value: "1"
             - name: DOCKER_HOST
               value: {{ .Values.sandbox.dockerHost | quote }}
+            {{- if .Values.sandbox.tlsSecret }}
+            - name: DOCKER_TLS_VERIFY
+              value: "1"
+            - name: DOCKER_CERT_PATH
+              value: /etc/verxio/sandbox-certs
+            {{- else }}
+            - name: VERXIO_SANDBOX_ALLOW_INSECURE
+              value: {{ .Values.sandbox.allowInsecure | quote }}
+            {{- end }}
+            - name: VERXIO_SANDBOX_IMAGE
+              value: {{ .Values.sandbox.image | quote }}
+            - name: VERXIO_SANDBOX_MEMORY_MB
+              value: {{ .Values.sandbox.limits.memoryMb | quote }}
+            - name: VERXIO_SANDBOX_CPUS
+              value: {{ .Values.sandbox.limits.cpus | quote }}
+            - name: VERXIO_SANDBOX_PIDS
+              value: {{ .Values.sandbox.limits.pids | quote }}
+            - name: VERXIO_SANDBOX_NETWORK
+              value: {{ .Values.sandbox.network | quote }}
+            - name: VERXIO_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: verxio-internal
+                  key: token
+                  optional: true
+          volumeMounts:
+            - name: homes
+              mountPath: /var/lib/verxio/homes
+            {{- if .Values.sandbox.tlsSecret }}
+            - name: sandbox-certs
+              mountPath: /etc/verxio/sandbox-certs
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: homes
+          emptyDir:
+            sizeLimit: {{ .Values.worker.homesSizeLimit | quote }}
+        {{- if .Values.sandbox.tlsSecret }}
+        - name: sandbox-certs
+          secret:
+            secretName: {{ .Values.sandbox.tlsSecret }}
+        {{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
