@@ -51,6 +51,12 @@ class LocalArtifactStore:
     def exists(self, key: str) -> bool:
         return self._path(key).exists()
 
+    def signed_url(self, key: str, *, expires: int = 3600) -> str | None:
+        path = self._path(key)
+        if not path.exists():
+            return None
+        return str(path)
+
 
 class S3ArtifactStore:
     """S3-compatible snapshot store. Requires boto3 when enabled."""
@@ -114,6 +120,17 @@ class S3ArtifactStore:
             return True
         except Exception:
             return False
+
+    def signed_url(self, key: str, *, expires: int = 3600) -> str | None:
+        object_key = self._key(key) + ".tar.gz"
+        try:
+            return self._client.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": self.bucket, "Key": object_key},
+                ExpiresIn=expires,
+            )
+        except Exception:
+            return None
 
 
 def get_artifact_store() -> LocalArtifactStore | S3ArtifactStore:
