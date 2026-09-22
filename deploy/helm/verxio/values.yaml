@@ -1,0 +1,37 @@
+replicaCount:
+  api: 2
+  scheduler: 1
+  worker: 2
+  channelGateway: 2
+  web: 2
+
+images:
+  api: verxio-api:local
+  hermes: verxio-hermes-runtime:local
+  web: verxio-web:local
+  landing: verxio-landing:local
+
+redis:
+  enabled: true
+  url: redis://verxio-redis:6379/0
+
+sandbox:
+  dockerHost: ""
+
+env:
+  VERXIO_RUNTIME_MANAGER: pool
+  VERXIO_AUTO_MIGRATE: "0"
+  VERXIO_INLINE_SCHEDULER: "0"
+  VERXIO_WEBHOOK_INLINE: "0"
+  VERXIO_HOSTED: "1"
+
+cdn:
+  webBucket: ""
+  landingBucket: ""
+
+autoscaling:
+  worker:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 20
+    targetQueueDepth: 32
