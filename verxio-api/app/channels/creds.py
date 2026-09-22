@@ -2,37 +2,25 @@
 
 from __future__ import annotations
 
-import base64
-import hashlib
-import os
 from typing import Any
 
 from app import db
 from app.channels.shards import shard_key
 from app.control_plane import now_iso
 from app.models import new_id
+from app.secrets_box import decrypt_text, encrypt_text, is_sealed
 
 
-def _secret() -> bytes:
-    raw = (
-        os.getenv("VERXIO_CHANNEL_CRED_SECRET", "").strip()
-        or os.getenv("VERXIO_AUTH_CODE_SECRET", "").strip()
-        or "verxio-local-channel-secret"
-    )
-    return hashlib.sha256(raw.encode("utf-8")).digest()
+def _aad(workspace_id: str, agent_id: str, platform: str) -> str:
+    return f"channel:{workspace_id}:{agent_id}:{platform}"
 
 
-def _xor(data: bytes) -> bytes:
-    key = _secret()
-    return bytes(b ^ key[i % len(key)] for i, b in enumerate(data))
+def encrypt_blob(plaintext: str, *, workspace_id: str = "", agent_id: str = "", platform: str = "") -> str:
+    return encrypt_text(plaintext, aad=_aad(workspace_id, agent_id, platform))
 
 
-def encrypt_blob(plaintext: str) -> str:
-    return base64.urlsafe_b64encode(_xor(plaintext.encode("utf-8"))).decode("ascii")
-
-
-def decrypt_blob(ciphertext: str) -> str:
-    return _xor(base64.urlsafe_b64decode(ciphertext.encode("ascii"))).decode("utf-8")
+def decrypt_blob(ciphertext: str, *, workspace_id: str = "", agent_id: str = "", platform: str = "") -> str:
+    return decrypt_text(ciphertext, aad=_aad(workspace_id, agent_id, platform))
 
 
 def upsert_credential(
@@ -51,7 +39,7 @@ def upsert_credential(
         """,
         (workspace_id, agent_id, platform),
     )
-    blob = encrypt_blob(plaintext)
+    blob = encrypt_blob(plaintext, workspace_id=workspace_id, agent_id=agent_id, platform=platform)
     key = shard_key(workspace_id, agent_id)
     if existing:
         db.execute(
@@ -77,17 +65,57 @@ def upsert_credential(
     return cred_id
 
 
+def _open_row(row: dict[str, Any]) -> str:
+    workspace_id = str(row["workspace_id"])
+    agent_id = str(row["agent_id"])
+    platform = str(row["platform"])
+    blob = str(row["ciphertext"])
+    plaintext = decrypt_blob(blob, workspace_id=workspace_id, agent_id=agent_id, platform=platform)
+    if not is_sealed(blob):
+        # Re-seal legacy XOR rows with AES-GCM on first read.
+        db.execute(
+            "UPDATE channel_credentials SET ciphertext = ?, updated_at = ? WHERE id = ?",
+            (
+                encrypt_blob(plaintext, workspace_id=workspace_id, agent_id=agent_id, platform=platform),
+                now_iso(),
+                row["id"],
+            ),
+        )
+    return plaintext
+
+
 def load_credential(workspace_id: str, agent_id: str, platform: str) -> str | None:
     row = db.fetch_one(
         """
-        SELECT ciphertext FROM channel_credentials
+        SELECT * FROM channel_credentials
         WHERE workspace_id = ? AND agent_id = ? AND platform = ?
         """,
         (workspace_id, agent_id, platform),
     )
     if not row:
         return None
-    return decrypt_blob(str(row["ciphertext"]))
+    return _open_row(row)
+
+
+def delete_credential(workspace_id: str, agent_id: str, platform: str) -> bool:
+    row = db.fetch_one(
+        "SELECT id FROM channel_credentials WHERE workspace_id = ? AND agent_id = ? AND platform = ?",
+        (workspace_id, agent_id, platform),
+    )
+    if not row:
+        return False
+    db.execute("DELETE FROM channel_credentials WHERE id = ?", (row["id"],))
+    return True
+
+
+def mark_restored(workspace_id: str, agent_id: str, platform: str) -> None:
+    db.execute(
+        """
+        UPDATE channel_credentials SET restored_at = ?
+        WHERE workspace_id = ? AND agent_id = ? AND platform = ?
+        """,
+        (now_iso(), workspace_id, agent_id, platform),
+    )
 
 
 def list_shard_credentials(shard: str) -> list[dict[str, Any]]:
@@ -98,7 +126,7 @@ def list_shard_credentials(shard: str) -> list[dict[str, Any]]:
     out = []
     for row in rows:
         item = dict(row)
-        item["plaintext"] = decrypt_blob(str(row["ciphertext"]))
+        item["plaintext"] = _open_row(row)
         item.pop("ciphertext", None)
         out.append(item)
     return out

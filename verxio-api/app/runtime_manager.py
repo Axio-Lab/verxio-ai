@@ -428,18 +428,17 @@ def invalidate_runtime_caches(runtime: RuntimeInstance) -> None:
 
 
 def _runtime_manager_name(runtime: RuntimeInstance) -> str:
-    return (
-        runtime.manager
-        or os.getenv("VERXIO_RUNTIME_MANAGER", "local-docker")
-        or "local-docker"
-    ).strip().lower()
+    """Backend for this tenant, honouring the per-tenant plane flag."""
+    from app.runtime_orch.factory import manager_name_for_runtime
+
+    return manager_name_for_runtime(runtime)
 
 
 def _k8s_pod_env_map(runtime: RuntimeInstance) -> dict[str, str] | None:
     try:
         from app.runtime_orch.factory import get_runtime_manager
 
-        manager = get_runtime_manager()
+        manager = get_runtime_manager(runtime)
         read_pod_env = getattr(manager, "read_pod_env", None)
         if not callable(read_pod_env):
             return None
@@ -464,6 +463,17 @@ def _runtime_container_env_map(runtime: RuntimeInstance) -> dict[str, str] | Non
         env_map = _k8s_pod_env_map(runtime)
         if env_map is not None:
             _CONTAINER_ENV_CACHE[name] = (time.monotonic() + _CACHE_TTL_SECONDS, env_map)
+        return env_map
+    if _is_pool_runtime(runtime):
+        # No container: the sealed tenant env is what the worker materialises.
+        try:
+            from app.tenant_env import load_tenant_env
+
+            env_map = load_tenant_env(runtime.workspace_id, runtime.agent_id)
+        except Exception:
+            logger.debug("Tenant env load failed for %s", runtime.id, exc_info=True)
+            return None
+        _CONTAINER_ENV_CACHE[name] = (time.monotonic() + _CACHE_TTL_SECONDS, env_map)
         return env_map
 
     result = _run_docker(
@@ -513,8 +523,33 @@ def runtime_container_env_matches(runtime: RuntimeInstance, key: str, expected_v
     return env_map.get(key) == expected_value
 
 
+_POOL_MANAGERS = frozenset({"pool", "worker-pool", "workers"})
+
+
+def _is_pool_runtime(runtime: RuntimeInstance) -> bool:
+    return _runtime_manager_name(runtime) in _POOL_MANAGERS
+
+
+def pool_dashboard_base_url(runtime: RuntimeInstance) -> str | None:
+    """Live holder's dashboard for a pool tenant (``/p/{ws}:{agent}/``), else the DB copy."""
+    from app.infra.redis import lookup_tenant_holder
+    from app.runtime_orch.pool import _tenant_dashboard_url
+
+    holder = lookup_tenant_holder(runtime.workspace_id, runtime.agent_id)
+    if holder and holder.get("dashboard_url"):
+        return _tenant_dashboard_url(str(holder["dashboard_url"]), runtime)
+    return runtime.dashboard_url
+
+
 def runtime_live_dashboard_token(runtime: RuntimeInstance, fallback: str = "") -> str:
     """Prefer the token Hermes was actually started with over the DB copy."""
+
+    if _is_pool_runtime(runtime):
+        # Shared dashboard on pool workers: one process-wide session token;
+        # tenant identity comes from the /p/{tenant}/ prefix, never the token.
+        from app.runtime_orch.pool import pool_dashboard_token
+
+        return pool_dashboard_token() or fallback
 
     name = _container_name(runtime)
     cached = _cache_get(_LIVE_TOKEN_CACHE, name)
@@ -805,7 +840,9 @@ def runtime_dashboard_base_url(runtime: RuntimeInstance, *, ensure_network: bool
     ``ensure_network`` is for start/WS paths only — never on status polling.
     """
     manager = (runtime.manager or os.getenv("VERXIO_RUNTIME_MANAGER", "local-docker") or "local-docker").strip().lower()
-    if manager in {"k8s", "kubernetes", "pool", "worker-pool", "workers"}:
+    if manager in _POOL_MANAGERS:
+        return pool_dashboard_base_url(runtime)
+    if manager in {"k8s", "kubernetes"}:
         return runtime.dashboard_url
 
     if ensure_network:
@@ -827,7 +864,10 @@ def runtime_dashboard_ws_candidates(runtime: RuntimeInstance) -> list[str]:
     right when the browser opened the gateway socket.
     """
     manager = (runtime.manager or os.getenv("VERXIO_RUNTIME_MANAGER", "local-docker") or "local-docker").strip().lower()
-    if manager in {"k8s", "kubernetes", "pool", "worker-pool", "workers"}:
+    if manager in _POOL_MANAGERS:
+        live = pool_dashboard_base_url(runtime)
+        return [live] if live else []
+    if manager in {"k8s", "kubernetes"}:
         return [runtime.dashboard_url] if runtime.dashboard_url else []
 
     candidates: list[str] = []

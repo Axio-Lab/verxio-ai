@@ -7,6 +7,7 @@ import logging
 import mimetypes
 import os
 import re
+import secrets
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
@@ -16,16 +17,16 @@ from urllib.parse import parse_qsl, urlencode
 
 import httpx
 import websockets
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response, WebSocket
+from fastapi import FastAPI, HTTPException, Request, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 from starlette.websockets import WebSocketDisconnect
 
 from app import db
 from app.auth import (
     aget_current_user,
-    arequire_user,
     get_current_user,
     login,
     logout,
@@ -540,7 +541,7 @@ async def me_route(request: Request) -> AuthResponse:
 async def get_profile(request: Request):
     user = get_current_user(request)
     if not user:
-        return PROFILE
+        return DEMO_PROFILE
     _workspace, profile, _runtime_instance = get_context_for_user(user)
     return profile
 
@@ -569,7 +570,7 @@ async def get_slack_manifest(
 async def get_runtime(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
     runtime = get_runtime_for_user(user)
-    connected, detail = await get_runtime_manager().health(runtime)
+    connected, detail = await get_runtime_manager(runtime).health(runtime)
     if connected:
         runtime = touch_runtime_activity(runtime)
     elif runtime.status in {"running", "starting"}:
@@ -615,8 +616,8 @@ async def wake_runtime_route(request: Request) -> RuntimeControlResponse:
 @app.post("/api/runtime/stop", response_model=RuntimeControlResponse)
 async def stop_runtime_route(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
-    manager = get_runtime_manager()
-    runtime = await manager.stop(get_runtime_for_user(user))
+    current = get_runtime_for_user(user)
+    runtime = await get_runtime_manager(current).stop(current)
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
 
@@ -632,9 +633,9 @@ async def restart_runtime_route(request: Request) -> RuntimeControlResponse:
     user = require_user(request)
     await _sync_composio_bridge_for_user(user)
     await _sync_inference_bridge_for_user(user, refresh_running=True)
-    manager = get_runtime_manager()
-    runtime = await manager.restart(
-        get_runtime_for_user(user),
+    current = get_runtime_for_user(user)
+    runtime = await get_runtime_manager(current).restart(
+        current,
         extra_env=runtime_env_for_user(str(user["id"])),
     )
     connected, detail = await runtime_health(runtime)
@@ -676,15 +677,128 @@ async def enqueue_runtime_turn_route(request: Request) -> dict[str, object]:
     return {"ok": True, "job_id": job_id}
 
 
+@app.get("/api/runtime/deliveries")
+async def poll_runtime_deliveries_route(request: Request, wait: int = 25) -> dict[str, object]:
+    """Long-poll for the next outbound message of this runtime's tenant.
+
+    Called by channel gateways in remote-exec mode. Returns ``{"delivery": null}``
+    on timeout so clients loop without backoff.
+    """
+    from app.jobs import pop_delivery
+    from app.runtime_auth import require_runtime_token
+
+    runtime = require_runtime_token(request)
+    timeout = float(max(1, min(int(wait), 30)))
+    item = await asyncio.to_thread(
+        pop_delivery, runtime.workspace_id, runtime.agent_id, timeout_seconds=timeout
+    )
+    return {"delivery": item}
+
+
+@app.post("/api/runtime/deliveries/{job_id}/ack")
+async def ack_runtime_delivery_route(job_id: str, request: Request) -> dict[str, object]:
+    from app.jobs import get_job, mark_job
+    from app.runtime_auth import require_runtime_token
+
+    runtime = require_runtime_token(request)
+    job = await asyncio.to_thread(get_job, job_id)
+    if not job or str(job.get("workspace_id")) != runtime.workspace_id or str(job.get("agent_id")) != runtime.agent_id:
+        raise HTTPException(status_code=404, detail="Delivery not found.")
+    body = await request.json()
+    ok = bool(body.get("ok")) if isinstance(body, dict) else False
+    error = str(body.get("error") or "")[:500] if isinstance(body, dict) and body.get("error") else None
+    await asyncio.to_thread(mark_job, job_id, status="delivered" if ok else "failed", error=error)
+    return {"ok": True}
+
+
 @app.get("/api/channels/pairing/{workspace_id}/{agent_id}")
 async def channel_pairing_route(workspace_id: str, agent_id: str, request: Request) -> dict[str, object]:
-    require_user(request)
+    user = require_user(request)
     from app.channels.shards import pairing_url, shard_for
 
+    # Only the tenant's own user may learn its shard placement.
+    _workspace, agent, _runtime = get_context_for_user(user)
+    if agent.workspace_id != workspace_id or agent.id != agent_id:
+        raise HTTPException(status_code=404, detail="Agent not found.")
     return {
         "shard": shard_for(workspace_id, agent_id),
         "url": pairing_url(workspace_id, agent_id, "api/status"),
     }
+
+
+def _require_internal_token(request: Request) -> None:
+    expected = os.getenv("VERXIO_INTERNAL_TOKEN", "").strip()
+    provided = (request.headers.get("X-Verxio-Internal-Token") or "").strip()
+    if not expected or not secrets.compare_digest(provided, expected):
+        raise HTTPException(status_code=401, detail="Internal token required.")
+
+
+@app.get("/api/internal/shards/{shard}/tenants")
+async def shard_tenants_route(shard: int, request: Request) -> dict[str, object]:
+    """Bootstrap payload for a channel-gateway shard: tenants + decrypted creds.
+
+    Internal-token only (never reachable through the public ingress). Returns
+    every tenant hashed to ``shard`` with its runtime token and per-platform
+    credential blobs so the shard can rebuild profiles and WhatsApp sessions.
+    """
+    _require_internal_token(request)
+    from app.channels.creds import list_shard_credentials
+
+    rows = await asyncio.to_thread(list_shard_credentials, f"shard-{shard}")
+    tenants: dict[str, dict[str, object]] = {}
+    for row in rows:
+        key = f"{row['workspace_id']}:{row['agent_id']}"
+        entry = tenants.get(key)
+        if entry is None:
+            runtime_row = await asyncio.to_thread(
+                db.fetch_one,
+                "SELECT dashboard_token FROM runtime_instances WHERE workspace_id = ? AND agent_id = ?",
+                (row["workspace_id"], row["agent_id"]),
+            )
+            entry = tenants[key] = {
+                "workspace_id": row["workspace_id"],
+                "agent_id": row["agent_id"],
+                "tenant_id": row["tenant_id"],
+                "runtime_token": str((runtime_row or {}).get("dashboard_token") or ""),
+                "credentials": [],
+            }
+        entry["credentials"].append(  # type: ignore[union-attr]
+            {"platform": row["platform"], "plaintext": row["plaintext"], "updated_at": row["updated_at"]}
+        )
+    return {"shard": shard, "tenants": list(tenants.values())}
+
+
+class ChannelCredentialWrite(BaseModel):
+    platform: str = Field(min_length=1, max_length=40)
+    plaintext: str = Field(min_length=1)
+
+
+@app.put("/api/runtime/channels/credentials")
+async def write_channel_credential_route(payload: ChannelCredentialWrite, request: Request) -> dict[str, object]:
+    """Write-back from a gateway: WhatsApp creds.json, bot tokens set in the dashboard."""
+    from app.channels.creds import upsert_credential
+    from app.runtime_auth import require_runtime_token
+
+    runtime = require_runtime_token(request)
+    cred_id = await asyncio.to_thread(
+        upsert_credential,
+        tenant_id=runtime.tenant_id,
+        workspace_id=runtime.workspace_id,
+        agent_id=runtime.agent_id,
+        platform=payload.platform.strip().lower(),
+        plaintext=payload.plaintext,
+    )
+    return {"ok": True, "id": cred_id}
+
+
+@app.delete("/api/runtime/channels/credentials/{platform}")
+async def delete_channel_credential_route(platform: str, request: Request) -> dict[str, object]:
+    from app.channels.creds import delete_credential
+    from app.runtime_auth import require_runtime_token
+
+    runtime = require_runtime_token(request)
+    removed = await asyncio.to_thread(delete_credential, runtime.workspace_id, runtime.agent_id, platform.lower())
+    return {"ok": True, "removed": removed}
 
 
 @app.post("/api/channels/telegram/{workspace_id}")
@@ -784,10 +898,54 @@ async def get_transcription_catalog_route(request: Request, refresh: bool = Fals
 async def list_artifacts(request: Request) -> ArtifactListResponse:
     user = require_user(request)
     runtime = get_runtime_for_user(user)
+    if _runtime_is_pool(runtime):
+        # Pool tenants are indexed on write by the worker; the API only reads.
+        from app.artifacts_index import list_indexed_artifacts
+
+        return ArtifactListResponse(artifacts=await asyncio.to_thread(list_indexed_artifacts, runtime))
     # Indexing walks the workspace and may docker-exec; keep it off the event loop
     # so a large React scaffold cannot wedge health/auth and return HTML 502 pages.
     artifacts = await asyncio.to_thread(index_artifacts, runtime)
     return ArtifactListResponse(artifacts=artifacts)
+
+
+def _runtime_is_pool(runtime: RuntimeInstance) -> bool:
+    from app.runtime_orch.factory import manager_name_for_runtime
+
+    return manager_name_for_runtime(runtime) == "pool"
+
+
+async def _objstore_artifact_response(
+    runtime: RuntimeInstance, artifact_id: str, *, disposition: str
+) -> Response | None:
+    """Serve an index-on-write artifact: signed redirect (S3) or local stream."""
+    from app.artifacts_index import objstore_artifact, signed_download_url
+    from app.runtime_orch.artifacts_store import get_artifact_store
+
+    try:
+        record, key = await asyncio.to_thread(objstore_artifact, runtime, artifact_id)
+    except KeyError:
+        return None
+    store = get_artifact_store()
+    local = store.local_file(key)
+    if local is not None:
+        return FileResponse(
+            local,
+            media_type=record.content_type,
+            filename=record.file_name,
+            content_disposition_type=disposition,
+        )
+    url = await asyncio.to_thread(signed_download_url, key)
+    if url:
+        return RedirectResponse(url, status_code=307)
+    data = await asyncio.to_thread(store.read_bytes, key)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Artifact object not found.")
+    return Response(
+        content=data,
+        media_type=record.content_type,
+        headers={"Content-Disposition": f'{disposition}; filename="{record.file_name}"'},
+    )
 
 @app.post("/api/notepad/recordings", response_model=NotepadRecordingUploadResponse)
 async def upload_notepad_recording(
@@ -834,7 +992,12 @@ async def get_artifact(artifact_id: str, request: Request):
     try:
         record, _path = artifact_file(runtime, artifact_id)
     except (FileNotFoundError, KeyError) as exc:
-        raise HTTPException(status_code=404, detail="Artifact not found.") from exc
+        from app.artifacts_index import objstore_artifact
+
+        try:
+            record, _key = await asyncio.to_thread(objstore_artifact, runtime, artifact_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Artifact not found.") from exc
     return record
 
 @app.delete("/api/artifacts/{artifact_id}")
@@ -844,7 +1007,19 @@ async def delete_artifact(artifact_id: str, request: Request):
     try:
         _record, path = artifact_file(runtime, artifact_id)
     except (FileNotFoundError, KeyError) as exc:
-        raise HTTPException(status_code=404, detail="Artifact not found.") from exc
+        from app.artifacts_index import objstore_artifact
+        from app.runtime_orch.artifacts_store import get_artifact_store
+
+        try:
+            _record, key = await asyncio.to_thread(objstore_artifact, runtime, artifact_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Artifact not found.") from exc
+        await asyncio.to_thread(get_artifact_store().delete, key)
+        db.execute(
+            "DELETE FROM artifacts WHERE id = ? AND workspace_id = ? AND agent_id = ?",
+            (artifact_id, runtime.workspace_id, runtime.agent_id),
+        )
+        return {"ok": True}
 
     try:
         path.unlink()
@@ -863,12 +1038,15 @@ async def delete_artifact(artifact_id: str, request: Request):
     return {"ok": True}
 
 @app.get("/api/artifacts/{artifact_id}/preview")
-async def preview_artifact(artifact_id: str, request: Request) -> FileResponse:
+async def preview_artifact(artifact_id: str, request: Request) -> Response:
     user = require_user(request)
     runtime = get_runtime_for_user(user)
     try:
         record, path = artifact_file(runtime, artifact_id)
     except (FileNotFoundError, KeyError) as exc:
+        remote = await _objstore_artifact_response(runtime, artifact_id, disposition="inline")
+        if remote is not None:
+            return remote
         raise HTTPException(status_code=404, detail="Artifact not found.") from exc
     # Inline so browsers/img tags open a viewer instead of forcing a download.
     # Use /download when the client wants an attachment.
@@ -880,12 +1058,15 @@ async def preview_artifact(artifact_id: str, request: Request) -> FileResponse:
     )
 
 @app.get("/api/artifacts/{artifact_id}/download")
-async def download_artifact(artifact_id: str, request: Request) -> FileResponse:
+async def download_artifact(artifact_id: str, request: Request) -> Response:
     user = require_user(request)
     runtime = get_runtime_for_user(user)
     try:
         record, path = artifact_file(runtime, artifact_id)
     except (FileNotFoundError, KeyError) as exc:
+        remote = await _objstore_artifact_response(runtime, artifact_id, disposition="attachment")
+        if remote is not None:
+            return remote
         raise HTTPException(status_code=404, detail="Artifact not found.") from exc
     return FileResponse(
         path,
@@ -1653,7 +1834,7 @@ async def _sync_composio_bridge_for_user(user: dict, *, apply_live: bool = False
 
     if allow_restart and runtime.status == "running" and runtime_env_changed:
         # Env injection requires a new runtime process (docker or k8s).
-        await get_runtime_manager().restart(
+        await get_runtime_manager(runtime).restart(
             runtime, extra_env=runtime_env_for_user(str(user["id"]))
         )
     elif apply_live and runtime.status in {"running", "starting"} and (bridge.changed or bridge.enabled):
@@ -1699,7 +1880,7 @@ async def _sync_inference_bridge_for_user(
     bridge, runtime_env, runtime_env_changed = await asyncio.to_thread(_prepare)
 
     if allow_restart and runtime.status == "running" and (runtime_env_changed or (refresh_running and bridge.changed)):
-        await get_runtime_manager().restart(runtime, extra_env=runtime_env)
+        await get_runtime_manager(runtime).restart(runtime, extra_env=runtime_env)
 
     return bridge
 
@@ -1976,6 +2157,34 @@ def _dashboard_path_is_gateway_ui_fast_path(path: str) -> bool:
         or normalized.startswith("api/cron/")
     )
 
+def _dashboard_path_is_channel_scoped(path: str) -> bool:
+    """Dashboard paths that live with the tenant's *connections*, not its agent.
+
+    In the worker pool the agent runs on a worker while WhatsApp/Discord
+    sockets live on a channel-gateway shard. Pairing (QR), messaging
+    connections and platform status must be answered by that shard.
+    """
+    normalized = path.strip("/")
+    return (
+        normalized == "api/pairing"
+        or normalized.startswith("api/pairing/")
+        or normalized.startswith("api/messaging/")
+        or normalized.startswith("api/whatsapp")
+        or normalized.startswith("api/platforms")
+    )
+
+
+def _channel_shard_dashboard_base(runtime: RuntimeInstance, path: str) -> str | None:
+    """Shard dashboard (``/p/{tenant}/``) for channel-scoped paths on pool tenants."""
+    if not _runtime_is_pool(runtime) or not _dashboard_path_is_channel_scoped(path):
+        return None
+    if not os.getenv("VERXIO_CHANNEL_SHARD_URL", "").strip() and not os.getenv("VERXIO_CHANNEL_SHARDS", "").strip():
+        return None
+    from app.channels.shards import pairing_url
+
+    return pairing_url(runtime.workspace_id, runtime.agent_id, f"p/{runtime.workspace_id}:{runtime.agent_id}/")
+
+
 def _dashboard_path_needs_inference_sync(path: str) -> bool:
     """Model info needs the hosted default written into Hermes config.yaml.
 
@@ -2126,7 +2335,7 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
                     detail="Runtime dashboard is starting. Retry shortly.",
                 ) from None
 
-    base = runtime_dashboard_base_url(runtime, ensure_network=False)
+    base = _channel_shard_dashboard_base(runtime, path) or runtime_dashboard_base_url(runtime, ensure_network=False)
     if not base:
         if skip_start_lock:
             _schedule_runtime_ensure(user)
