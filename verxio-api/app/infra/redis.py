@@ -278,6 +278,117 @@ def lookup_holder(key: str) -> str | None:
         return token
 
 
+_MEMORY_LISTS: dict[str, deque[str]] = defaultdict(deque)
+_MEMORY_LIST_CV = threading.Condition(_MEMORY_LOCK)
+
+
+def list_push(key: str, payload: dict[str, Any], *, maxlen: int = 10_000, ttl_seconds: float = 86_400.0) -> None:
+    """Append to a per-tenant FIFO (RPUSH) with a bounded length and TTL."""
+    body = json.dumps(payload, separators=(",", ":"))
+    client = get_redis()
+    if client is not None:
+        pipe = client.pipeline()
+        pipe.rpush(f"verxio:list:{key}", body)
+        pipe.ltrim(f"verxio:list:{key}", -maxlen, -1)
+        pipe.expire(f"verxio:list:{key}", max(1, int(ttl_seconds)))
+        pipe.execute()
+        return
+    with _MEMORY_LIST_CV:
+        queue = _MEMORY_LISTS[key]
+        queue.append(body)
+        while len(queue) > maxlen:
+            queue.popleft()
+        _MEMORY_LIST_CV.notify_all()
+
+
+def list_pop(key: str, *, timeout_seconds: float = 25.0) -> dict[str, Any] | None:
+    """Blocking left-pop (BLPOP) of one payload; None on timeout."""
+    client = get_redis()
+    if client is not None:
+        item = client.blpop([f"verxio:list:{key}"], timeout=max(1, int(timeout_seconds)))
+        if not item:
+            return None
+        _name, body = item
+        try:
+            parsed = json.loads(body)
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+    deadline = time.monotonic() + timeout_seconds
+    with _MEMORY_LIST_CV:
+        while True:
+            queue = _MEMORY_LISTS[key]
+            if queue:
+                body = queue.popleft()
+                try:
+                    parsed = json.loads(body)
+                except json.JSONDecodeError:
+                    return None
+                return parsed if isinstance(parsed, dict) else None
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            _MEMORY_LIST_CV.wait(timeout=min(remaining, 0.5))
+
+
+def list_length(key: str) -> int:
+    client = get_redis()
+    if client is not None:
+        return int(client.llen(f"verxio:list:{key}") or 0)
+    with _MEMORY_LOCK:
+        return len(_MEMORY_LISTS[key])
+
+
+def tenant_lease_key(workspace_id: str, agent_id: str) -> str:
+    """Lease key whose token is the worker id currently serving the tenant."""
+    return f"tenant:{workspace_id}:{agent_id}"
+
+
+def worker_stream(worker: str) -> str:
+    """Per-worker turn stream so turns for a leased tenant land on its holder."""
+    return f"{STREAM_TURNS}:w:{worker}"
+
+
+def worker_control_channel(worker: str) -> str:
+    """Pub/sub channel the API uses to nudge a specific worker (detach, env refresh)."""
+    return f"verxio:worker:{worker}:control"
+
+
+def register_worker(worker: str, info: dict[str, Any], *, ttl_seconds: float = 45.0) -> None:
+    """Advertise a worker's reachable addresses (dashboard/api) with a TTL heartbeat."""
+    cache_set(f"worker:{worker}", json.dumps(info, separators=(",", ":")), ttl_seconds=ttl_seconds)
+
+
+def lookup_worker(worker: str) -> dict[str, Any] | None:
+    raw = cache_get(f"worker:{worker}")
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def unregister_worker(worker: str) -> None:
+    cache_delete(f"worker:{worker}")
+
+
+def lookup_tenant_holder(workspace_id: str, agent_id: str) -> dict[str, Any] | None:
+    """Return ``{"worker": id, **advertised}`` for the live holder of a tenant, else None.
+
+    A lease whose worker registration has expired is treated as orphaned: the
+    caller should re-enqueue an attach rather than route traffic into the void.
+    """
+    holder = lookup_holder(tenant_lease_key(workspace_id, agent_id))
+    if not holder:
+        return None
+    info = lookup_worker(holder)
+    if info is None:
+        return None
+    return {"worker": holder, **info}
+
+
 def _stringify(value: Any) -> str:
     if isinstance(value, str):
         return value

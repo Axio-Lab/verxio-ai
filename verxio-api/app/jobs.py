@@ -13,24 +13,31 @@ from app.infra.redis import (
     STREAM_TURNS,
     STREAM_WEBHOOKS,
     enqueue,
+    list_pop,
+    list_push,
+    lookup_tenant_holder,
+    worker_stream,
 )
 from app.models import new_id
 
 logger = logging.getLogger(__name__)
 
 
-def enqueue_job(
+def deliver_list_key(workspace_id: str, agent_id: str) -> str:
+    return f"deliver:{workspace_id}:{agent_id}"
+
+
+def _persist_job(
     *,
+    job_id: str,
     stream: str,
     kind: str,
-    tenant_id: str = "",
-    workspace_id: str = "",
-    agent_id: str = "",
-    payload: dict[str, Any] | None = None,
-) -> str:
-    job_id = new_id("job")
+    tenant_id: str,
+    workspace_id: str,
+    agent_id: str,
+    body: dict[str, Any],
+) -> None:
     created = now_iso()
-    body = payload or {}
     db.execute(
         """
         INSERT INTO platform_jobs (
@@ -51,18 +58,56 @@ def enqueue_job(
             created,
         ),
     )
+
+
+def _stream_fields(
+    *, job_id: str, kind: str, tenant_id: str, workspace_id: str, agent_id: str, body: dict[str, Any]
+) -> dict[str, Any]:
+    return {
+        "job_id": job_id,
+        "kind": kind,
+        "tenant_id": tenant_id,
+        "workspace_id": workspace_id,
+        "agent_id": agent_id,
+        "payload": body,
+    }
+
+
+def enqueue_job(
+    *,
+    stream: str,
+    kind: str,
+    tenant_id: str = "",
+    workspace_id: str = "",
+    agent_id: str = "",
+    payload: dict[str, Any] | None = None,
+) -> str:
+    job_id = new_id("job")
+    body = payload or {}
+    _persist_job(
+        job_id=job_id,
+        stream=stream,
+        kind=kind,
+        tenant_id=tenant_id,
+        workspace_id=workspace_id,
+        agent_id=agent_id,
+        body=body,
+    )
     enqueue(
         stream,
-        {
-            "job_id": job_id,
-            "kind": kind,
-            "tenant_id": tenant_id,
-            "workspace_id": workspace_id,
-            "agent_id": agent_id,
-            "payload": body,
-        },
+        _stream_fields(
+            job_id=job_id, kind=kind, tenant_id=tenant_id, workspace_id=workspace_id, agent_id=agent_id, body=body
+        ),
     )
     return job_id
+
+
+def route_turn_stream(workspace_id: str, agent_id: str) -> str:
+    """Per-holder stream when a live worker leases the tenant, else the shared stream."""
+    holder = lookup_tenant_holder(workspace_id, agent_id)
+    if holder and holder.get("worker"):
+        return worker_stream(str(holder["worker"]))
+    return STREAM_TURNS
 
 
 def enqueue_turn(
@@ -73,13 +118,44 @@ def enqueue_turn(
     source: str,
     payload: dict[str, Any],
 ) -> str:
-    return enqueue_job(
+    job_id = new_id("job")
+    body = {"source": source, **payload}
+    _persist_job(
+        job_id=job_id,
         stream=STREAM_TURNS,
         kind="turn",
         tenant_id=tenant_id,
         workspace_id=workspace_id,
         agent_id=agent_id,
-        payload={"source": source, **payload},
+        body=body,
+    )
+    enqueue(
+        route_turn_stream(workspace_id, agent_id),
+        _stream_fields(
+            job_id=job_id, kind="turn", tenant_id=tenant_id, workspace_id=workspace_id, agent_id=agent_id, body=body
+        ),
+    )
+    return job_id
+
+
+def requeue_turn_to(stream: str, fields: dict[str, Any]) -> None:
+    """Move an already-persisted turn to another stream (holder hand-off)."""
+    payload = fields.get("payload")
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except json.JSONDecodeError:
+            payload = {}
+    enqueue(
+        stream,
+        _stream_fields(
+            job_id=str(fields.get("job_id") or ""),
+            kind=str(fields.get("kind") or "turn"),
+            tenant_id=str(fields.get("tenant_id") or ""),
+            workspace_id=str(fields.get("workspace_id") or ""),
+            agent_id=str(fields.get("agent_id") or ""),
+            body=payload if isinstance(payload, dict) else {},
+        ),
     )
 
 
@@ -109,14 +185,34 @@ def enqueue_deliver(
     payload: dict[str, Any],
     tenant_id: str = "",
 ) -> str:
-    return enqueue_job(
+    """Queue an outbound message for the tenant's channel gateway.
+
+    Deliveries are per-tenant FIFOs (the gateway that owns the tenant's
+    connections long-polls its own list), with a receipt in ``platform_jobs``.
+    """
+    job_id = new_id("job")
+    body = {"platform": platform, **payload}
+    _persist_job(
+        job_id=job_id,
         stream=STREAM_DELIVER,
         kind="deliver",
         tenant_id=tenant_id,
         workspace_id=workspace_id,
         agent_id=agent_id,
-        payload={"platform": platform, **payload},
+        body=body,
     )
+    list_push(
+        deliver_list_key(workspace_id, agent_id),
+        {"job_id": job_id, "workspace_id": workspace_id, "agent_id": agent_id, **body},
+    )
+    return job_id
+
+
+def pop_delivery(workspace_id: str, agent_id: str, *, timeout_seconds: float = 25.0) -> dict[str, Any] | None:
+    item = list_pop(deliver_list_key(workspace_id, agent_id), timeout_seconds=timeout_seconds)
+    if item and item.get("job_id"):
+        mark_job(str(item["job_id"]), status="delivering")
+    return item
 
 
 def mark_job(job_id: str, *, status: str, error: str | None = None) -> None:
@@ -128,3 +224,7 @@ def mark_job(job_id: str, *, status: str, error: str | None = None) -> None:
         """,
         (status, error, now_iso(), job_id),
     )
+
+
+def get_job(job_id: str) -> dict[str, Any] | None:
+    return db.fetch_one("SELECT * FROM platform_jobs WHERE id = ?", (job_id,))

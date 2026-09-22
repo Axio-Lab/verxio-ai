@@ -125,6 +125,44 @@ def enqueue_due_cron_jobs(*, limit: int = 50) -> list[str]:
     return fired
 
 
+def record_cron_result(
+    cron_job_id: str,
+    *,
+    status: str,
+    output: str = "",
+    error: str | None = None,
+) -> None:
+    """Worker post-back after a cron-triggered turn (visible in Hermes cron UI)."""
+    db.execute(
+        """
+        UPDATE tenant_cron_jobs
+        SET last_status = ?, last_output = ?, last_error = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (status, output[:20_000], error, now_iso(), cron_job_id),
+    )
+
+
+def list_cron_jobs(workspace_id: str, agent_id: str) -> list[dict[str, Any]]:
+    rows = db.fetch_all(
+        """
+        SELECT * FROM tenant_cron_jobs
+        WHERE workspace_id = ? AND agent_id = ?
+        ORDER BY name ASC
+        """,
+        (workspace_id, agent_id),
+    )
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        try:
+            item["metadata"] = json.loads(str(item.pop("metadata_json", "") or "{}"))
+        except json.JSONDecodeError:
+            item["metadata"] = {}
+        out.append(item)
+    return out
+
+
 def _next_run_at(schedule: str, after: datetime | None = None) -> str:
     after = after or datetime.now(timezone.utc)
     try:
