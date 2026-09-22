@@ -27,7 +27,6 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/verxio
 
 jobs:
   build:
@@ -63,13 +62,16 @@ jobs:
               HERMES_INSTALL_BROWSER=0
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
+      prefix: ${{ steps.meta.outputs.prefix }}
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
       - id: meta
+        # GHCR repository names must be lowercase (owner may be "Axio-Lab").
         run: |
           echo "tag=sha-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+          echo "prefix=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/verxio" >> "$GITHUB_OUTPUT"
           echo "hermes_sha=$(git -C hermes-agent rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
@@ -87,8 +89,8 @@ jobs:
             HERMES_GIT_SHA=${{ steps.meta.outputs.hermes_sha }}
             ${{ matrix.build_args }}
           tags: |
-            ${{ env.IMAGE_PREFIX }}-${{ matrix.name }}:${{ steps.meta.outputs.tag }}
-            ${{ github.ref_name == 'main' && format('{0}-{1}:latest', env.IMAGE_PREFIX, matrix.name) || '' }}
+            ${{ steps.meta.outputs.prefix }}-${{ matrix.name }}:${{ steps.meta.outputs.tag }}
+            ${{ github.ref_name == 'main' && format('{0}-{1}:latest', steps.meta.outputs.prefix, matrix.name) || '' }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
@@ -116,14 +118,14 @@ jobs:
           push: true
           provenance: false
           build-args: |
-            BASE=${{ env.IMAGE_PREFIX }}-hermes-base:${{ needs.build.outputs.tag }}
+            BASE=${{ needs.build.outputs.prefix }}-hermes-base:${{ needs.build.outputs.tag }}
           tags: |
-            ${{ env.IMAGE_PREFIX }}-hermes:${{ needs.build.outputs.tag }}
-            ${{ github.ref_name == 'main' && format('{0}-hermes:latest', env.IMAGE_PREFIX) || '' }}
+            ${{ needs.build.outputs.prefix }}-hermes:${{ needs.build.outputs.tag }}
+            ${{ github.ref_name == 'main' && format('{0}-hermes:latest', needs.build.outputs.prefix) || '' }}
       - name: Verify hosted policy is baked in
         run: |
           docker run --rm --entrypoint python \
-            "${IMAGE_PREFIX}-hermes:${{ needs.build.outputs.tag }}" \
+            "${{ needs.build.outputs.prefix }}-hermes:${{ needs.build.outputs.tag }}" \
             -c "import hermes_cli.verxio_hosted_policy, hermes_cli.dynamic_profiles, gateway.verxio_channel_shard; print('ok')"
 
   staging:
@@ -133,6 +135,8 @@ jobs:
     environment: staging
     permissions:
       contents: read
+    env:
+      IMAGE_PREFIX: ${{ needs.build.outputs.prefix }}
     steps:
       - uses: actions/checkout@v4
       - uses: azure/setup-helm@v4
