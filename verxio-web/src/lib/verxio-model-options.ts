@@ -345,39 +345,64 @@ export async function getScopedModelOptions(
   // Avoid unhandled rejection if we abandon a slow runtime catalog fetch.
   void runtimeOptionsPromise.catch(() => undefined)
 
-  try {
+  const loadHosted = async () => {
     const [settings, catalog] = await Promise.all([getInferenceSettings(), getInferenceCatalog()])
     const hosted = hostedModelOptionsFromInference(settings, catalog)
-    const hostedUsable = hosted && (hosted.providers?.length ?? 0) > 0 ? hosted : null
-    const runtime = await withBudget(runtimeOptionsPromise, HOSTED_RUNTIME_OPTIONS_BUDGET_MS)
 
-    if (hostedUsable && runtime) {
-      return prioritizeLinkedProviders(mergeHostedAndRuntimeModelOptions(hostedUsable, runtime))
+    return hosted && (hosted.providers?.length ?? 0) > 0 ? hosted : null
+  }
+
+  let hostedUsable: ModelOptionsResponse | null = null
+
+  try {
+    hostedUsable = await loadHosted()
+  } catch {
+    // Control plane hiccup. One retry, then fall through to the runtime catalog.
+    try {
+      hostedUsable = await loadHosted()
+    } catch {
+      hostedUsable = null
+    }
+  }
+
+  const paintHosted = (hosted: ModelOptionsResponse, partial: boolean): ModelOptionsResponse => {
+    if (hooks.onLateRuntimeOptions) {
+      const onLate = hooks.onLateRuntimeOptions
+
+      void runtimeOptionsPromise
+        .then(lateRuntime => {
+          if (lateRuntime && (lateRuntime.providers?.length ?? 0) > 0) {
+            onLate(prioritizeLinkedProviders(mergeHostedAndRuntimeModelOptions(hosted, lateRuntime)))
+          }
+        })
+        .catch(() => undefined)
+    }
+
+    return { ...prioritizeLinkedProviders(hosted), partial }
+  }
+
+  try {
+    const runtime = await withBudget(runtimeOptionsPromise, HOSTED_RUNTIME_OPTIONS_BUDGET_MS)
+    const runtimeUsable = runtime && (runtime.providers?.length ?? 0) > 0 ? runtime : null
+
+    if (hostedUsable && runtimeUsable) {
+      return prioritizeLinkedProviders(mergeHostedAndRuntimeModelOptions(hostedUsable, runtimeUsable))
     }
 
     if (hostedUsable) {
-      // Runtime catalog is still building (fresh boot). Paint hosted rows now
-      // and let the BYOK/linked providers land when Hermes answers.
-      if (hooks.onLateRuntimeOptions) {
-        const onLate = hooks.onLateRuntimeOptions
-
-        void runtimeOptionsPromise
-          .then(lateRuntime => {
-            if (lateRuntime && (lateRuntime.providers?.length ?? 0) > 0) {
-              onLate(prioritizeLinkedProviders(mergeHostedAndRuntimeModelOptions(hostedUsable, lateRuntime)))
-            }
-          })
-          .catch(() => undefined)
-      }
-
-      return { ...prioritizeLinkedProviders(hostedUsable), partial: true }
+      // Hermes /api/model/options hangs while it enumerates BYOK providers.
+      // Hosted Gemini/Qwen must still show; linked providers merge in later.
+      return paintHosted(hostedUsable, true)
     }
 
-    // Control-plane hosted catalog unavailable — fall back to runtime providers.
-    return ensureByokDefaultModel(prioritizeLinkedProviders(await runtimeOptionsPromise))
-  } catch {
-    // If the Verxio control-plane call hiccups, keep the model picker usable.
-  }
+    const resolved = runtime ?? (await runtimeOptionsPromise)
 
-  return ensureByokDefaultModel(prioritizeLinkedProviders(await runtimeOptionsPromise))
+    return ensureByokDefaultModel(prioritizeLinkedProviders(resolved))
+  } catch (error) {
+    if (hostedUsable) {
+      return paintHosted(hostedUsable, true)
+    }
+
+    throw error
+  }
 }

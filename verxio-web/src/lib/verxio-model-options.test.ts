@@ -375,6 +375,23 @@ describe('getScopedModelOptions', () => {
       slug: 'gemini'
     })
   })
+
+  it('still returns hosted models when the runtime catalog rejects', async () => {
+    const { getInferenceCatalog, getInferenceSettings } = await import('./verxio-api')
+    vi.mocked(getInferenceSettings).mockResolvedValue({
+      defaultModelId: 'verxio-qwen',
+      mode: 'hosted',
+      monthlyCreditUsd: 0,
+      overageEnabled: false,
+      spendingLimitUsd: null
+    })
+    vi.mocked(getInferenceCatalog).mockResolvedValue(catalog)
+
+    const result = await getScopedModelOptions(() => Promise.reject(new Error('backend timed out')))
+
+    expect(result.partial).toBe(true)
+    expect(result.providers?.some(provider => provider.is_verxio_hosted)).toBe(true)
+  })
 })
 
 describe('ensureByokDefaultModel', () => {

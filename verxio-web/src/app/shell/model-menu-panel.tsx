@@ -82,7 +82,10 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
     modelOptions.data
   )
 
-  const loading = modelOptions.isPending && !modelOptions.data
+  // An in-flight refetch after a wiped cache used to render "No models found"
+  // for the whole Hermes catalog timeout. Keep the skeleton up until rows exist.
+  const loading =
+    modelOptions.isPending || (modelOptions.isFetching && (modelOptions.data?.providers?.length ?? 0) === 0)
 
   const error = modelOptions.error
     ? modelOptions.error instanceof Error
