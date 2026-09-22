@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, master, verxio/web, verxio/architecture]
+    branches: [main, master, verxio/web, verxio/architecture, verxio/scale]
   pull_request:
-    branches: [main, master, verxio/web, verxio/architecture]
+    branches: [main, master, verxio/web, verxio/architecture, verxio/scale]
 
 jobs:
   verify:
@@ -71,3 +71,25 @@ jobs:
 
       - name: Verxio workflow hook tests
         run: ./scripts/run_tests.sh tests/gateway/test_verxio_workflow_hook.py tests/agent/test_oneshot.py
+
+      - name: Verxio tenant isolation
+        run: ./scripts/run_tests.sh tests/verxio/test_tenant_isolation.py
+
+  platform-scale:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: verxio-api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Sync verxio-api (dev)
+        run: uv sync --extra dev
+      - name: Platform scale tests
+        run: uv run pytest tests/test_platform_scale.py -q
+        env:
+          VERXIO_DATABASE_MODE: sqlite
+          VERXIO_DATABASE_PATH: /tmp/verxio-scale.sqlite3
