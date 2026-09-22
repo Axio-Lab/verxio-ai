@@ -44,3 +44,20 @@ A live runtime keeps the backend that started it until it stops; stop it
 4. `scripts/deploy-ecs.sh` skips the per-user container wipe when the manager is `pool`.
 
 Roll back a tenant with `app.plane set <ws> <agent> docker`.
+
+### Deleting the legacy planes (after the staging soak)
+
+The soak gate is `python -m app.plane legacy-usage` (exit 0 = nothing flagged,
+defaulting, or live on docker/k8s; `deploy-ecs.sh` prints it on every pool deploy).
+
+1. Set `VERXIO_LEGACY_PLANES=0` and `VERXIO_DOCKER_SOCK=/dev/null` on the API and
+   scheduler. The factory now raises `LegacyPlaneDisabled` for any docker/k8s request
+   and `app.plane set` refuses non-pool planes. Run one more soak with this on.
+2. Build the API image with `--build-arg WITH_DOCKER_CLI=0` (no `docker` binary).
+3. Delete in one PR: `verxio-api/app/runtime_orch/local_docker.py`,
+   `verxio-api/app/runtime_orch/k8s.py`, the docker inspect/network helpers in
+   `verxio-api/app/runtime_manager.py`, the `docker_cli` stage in `verxio-api/Dockerfile`,
+   the `VERXIO_DOCKER_SOCK` volume and `docker-compose.kind.yml`, the legacy wipe branch in
+   `scripts/deploy-ecs.sh`, and the `docker`/`k8s` aliases in `app/plane.py` / `factory.py`.
+4. Drop the `hermes_home_path`-based restore fallback in `app/homes.py` once
+   `python -m app.migrate_homes` has uploaded every legacy home.

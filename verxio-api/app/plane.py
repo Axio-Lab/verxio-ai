@@ -11,6 +11,7 @@ single row update:
     python -m app.plane set <workspace_id> <agent_id> pool
     python -m app.plane list [--plane pool]
     python -m app.plane migrate-all pool   # flip every tenant without a row
+    python -m app.plane legacy-usage       # exit 3 while anything still needs docker/k8s
 
 Lookups are cached for a short TTL (in Redis when available, else in-process)
 because the WS proxy and artifact routes hit this on every request.
@@ -106,6 +107,11 @@ def tenant_uses_pool(workspace_id: str, agent_id: str) -> bool:
 
 def set_plane(workspace_id: str, agent_id: str, plane: str) -> str:
     normalized = normalize_plane(plane)
+    if normalized != "pool":
+        from app.runtime_orch.factory import legacy_planes_enabled
+
+        if not legacy_planes_enabled():
+            raise ValueError("legacy planes are disabled (VERXIO_LEGACY_PLANES=0); only 'pool' is allowed")
     db.execute(
         """
         INSERT INTO runtime_plane_flags (workspace_id, agent_id, plane, updated_at)
@@ -148,6 +154,26 @@ def tenants_without_flag() -> Iterable[tuple[str, str]]:
     return [(row["workspace_id"], row["agent_id"]) for row in rows]
 
 
+def legacy_usage() -> dict[str, list[dict]]:
+    """What still depends on the docker/k8s planes (must be empty before deletion)."""
+    flagged = db.fetch_all(
+        "SELECT workspace_id, agent_id, plane, updated_at FROM runtime_plane_flags WHERE plane != 'pool' ORDER BY updated_at DESC"
+    )
+    unflagged = [
+        {"workspace_id": ws, "agent_id": ag, "plane": default_plane()}
+        for ws, ag in tenants_without_flag()
+        if default_plane() != "pool"
+    ]
+    live = db.fetch_all(
+        """
+        SELECT id, workspace_id, agent_id, manager, status FROM runtime_instances
+        WHERE status IN ('running', 'starting', 'draining')
+          AND COALESCE(manager, '') NOT IN ('pool', 'worker-pool', 'workers')
+        """
+    )
+    return {"flagged_legacy": flagged, "unflagged_defaulting_to_legacy": unflagged, "live_legacy_runtimes": live}
+
+
 def migrate_all(plane: str) -> int:
     count = 0
     for workspace_id, agent_id in tenants_without_flag():
@@ -170,6 +196,7 @@ def main(argv: list[str] | None = None) -> int:
     p_list.add_argument("--plane", default=None)
     p_mig = sub.add_parser("migrate-all")
     p_mig.add_argument("plane", choices=sorted(_ALIASES))
+    sub.add_parser("legacy-usage")
     args = parser.parse_args(argv)
 
     if args.cmd == "get":
@@ -180,6 +207,12 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(list_planes(args.plane), indent=2))
     elif args.cmd == "migrate-all":
         print(f"flagged {migrate_all(args.plane)} tenant(s) -> {normalize_plane(args.plane)}")
+    elif args.cmd == "legacy-usage":
+        report = legacy_usage()
+        print(json.dumps(report, indent=2))
+        total = sum(len(v) for v in report.values())
+        print(f"legacy dependents: {total}", file=sys.stderr)
+        return 0 if total == 0 else 3
     return 0
 
 

@@ -187,7 +187,15 @@ fi
 echo "    verified: session-token WS auth present in image"
 
 if [[ "${VERXIO_RUNTIME_MANAGER:-local-docker}" == "pool" ]]; then
-  echo "==> Pool runtime manager: skipping per-user container wipe"
+  # Pool plane: there are no per-user containers to wipe. Roll the pool
+  # services instead — workers sync tenant homes to object storage on SIGTERM
+  # and release their leases, so the new image picks tenants up cleanly.
+  echo "==> Pool runtime manager: applying migrations and rolling pool services"
+  docker exec -i verxio-ai-verxio-api-1 python -m app.migrate
+  "${COMPOSE[@]}" --profile pool up -d --force-recreate \
+    verxio-scheduler verxio-hermes-worker verxio-agent-worker verxio-channel-gateway
+  echo "==> Legacy-plane usage (should be empty before deleting docker/k8s managers)"
+  docker exec -i verxio-ai-verxio-api-1 python -m app.plane legacy-usage || true
 elif [[ "${HERMES_BEFORE}" == "${HERMES_AFTER}" && "${VERXIO_FORCE_RUNTIME_WIPE:-}" != "1" ]]; then
   echo "==> Hermes image unchanged; leaving per-user runtimes running"
 else

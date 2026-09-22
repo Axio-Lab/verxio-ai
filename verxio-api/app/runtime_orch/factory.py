@@ -44,12 +44,28 @@ def configured_manager_name() -> str:
     return (os.getenv("VERXIO_RUNTIME_MANAGER", "local-docker") or "local-docker").strip().lower()
 
 
+class LegacyPlaneDisabled(RuntimeError):
+    """A docker/k8s manager was requested after the legacy plane was switched off."""
+
+
+def legacy_planes_enabled() -> bool:
+    """Cutover switch. ``VERXIO_LEGACY_PLANES=0`` makes any attempt to build a
+    per-user docker/k8s manager fail fast, so operators can prove nothing still
+    depends on them before the modules (and docker.sock) are deleted."""
+    return os.getenv("VERXIO_LEGACY_PLANES", "1").strip().lower() not in {"0", "false", "no", "off"}
+
+
 def build_runtime_manager(name: str | None = None) -> RuntimeManager:
     key = normalize_manager_name(name or configured_manager_name())
     if key == "pool":
         from app.runtime_orch.pool import PoolRuntimeManager
 
         return PoolRuntimeManager()
+    if not legacy_planes_enabled():
+        raise LegacyPlaneDisabled(
+            f"runtime manager {key!r} requested but VERXIO_LEGACY_PLANES=0; "
+            "flip the tenant with `python -m app.plane set <ws> <agent> pool`"
+        )
     if key == "local-docker":
         from app.runtime_orch.local_docker import LocalDockerRuntimeManager
 

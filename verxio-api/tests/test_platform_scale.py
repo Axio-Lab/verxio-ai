@@ -182,3 +182,33 @@ def test_cron_store_schedules_delivery_and_postback(monkeypatch, tmp_path):
     assert final["last_status"] == "completed" and final["last_output"] == "done"
     mirrored = _json.loads((home / "cron" / "jobs.json").read_text())["jobs"][0]
     assert mirrored["last_status"] == "ok" and mirrored["stats"]["completed"] == 1 and mirrored["last_run_at"]
+
+
+def test_legacy_plane_switch_blocks_docker_and_reports_usage(monkeypatch, tmp_path):
+    monkeypatch.setenv("VERXIO_DATABASE_MODE", "sqlite")
+    monkeypatch.setenv("VERXIO_DATABASE_PATH", str(tmp_path / "legacy.sqlite3"))
+    monkeypatch.setenv("VERXIO_RUNTIME_MANAGER", "local-docker")
+    monkeypatch.delenv("VERXIO_REDIS_URL", raising=False)
+    import pytest
+
+    from app import db, plane
+    from app.runtime_orch import factory
+
+    db.run_migrations()
+    factory.reset_runtime_manager_for_tests()
+    plane.set_plane("ws", "ag", "docker")
+    report = plane.legacy_usage()
+    assert [r["agent_id"] for r in report["flagged_legacy"]] == ["ag"]
+    assert plane.main(["legacy-usage"]) == 3
+
+    monkeypatch.setenv("VERXIO_LEGACY_PLANES", "0")
+    with pytest.raises(factory.LegacyPlaneDisabled):
+        factory.build_runtime_manager("local-docker")
+    with pytest.raises(factory.LegacyPlaneDisabled):
+        factory.build_runtime_manager("k8s")
+    with pytest.raises(ValueError):
+        plane.set_plane("ws", "ag", "docker")
+    assert plane.set_plane("ws", "ag", "pool") == "pool"
+    monkeypatch.setenv("VERXIO_RUNTIME_MANAGER", "pool")
+    assert plane.main(["legacy-usage"]) == 0
+    factory.reset_runtime_manager_for_tests()

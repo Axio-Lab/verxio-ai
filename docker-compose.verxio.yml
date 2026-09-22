@@ -66,10 +66,14 @@ services:
       COMPOSIO_API_BASE_URL: ${COMPOSIO_API_BASE_URL:-https://backend.composio.dev/api/v3}
       COMPOSIO_TOOLS_API_BASE_URL: ${COMPOSIO_TOOLS_API_BASE_URL:-https://backend.composio.dev/api/v3.1}
       VERXIO_HERMES_REPO: /opt/hermes-agent
+      # Cutover switch: 0 refuses to build docker/k8s managers (pool only).
+      VERXIO_LEGACY_PLANES: ${VERXIO_LEGACY_PLANES:-1}
     volumes:
       - ${VERXIO_STATE_DIR:-./.verxio}:/app/.verxio
       - ./hermes-agent:/opt/hermes-agent:ro
-      - /var/run/docker.sock:/var/run/docker.sock
+      # Legacy per-user plane only. On the pool plane set
+      # VERXIO_DOCKER_SOCK=/dev/null so the API has no Docker access at all.
+      - ${VERXIO_DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock
       # Desktop-synced workspaces live under the host home (e.g. Documents).
       # Without this bind, the API container cannot index generated images there.
       - ${VERXIO_HOST_HOME_BIND:-${HOME}}:${VERXIO_HOST_HOME_BIND:-${HOME}}
