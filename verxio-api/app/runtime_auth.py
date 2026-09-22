@@ -68,6 +68,14 @@ def get_context_for_request(
     raise HTTPException(status_code=401, detail="Authentication required")
 
 
+def require_runtime_token(request: Request) -> RuntimeInstance:
+    token = bearer_token(request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Runtime token required")
+    _workspace, _agent, runtime = get_context_for_runtime_token(token)
+    return runtime
+
+
 def require_user_or_runtime(request: Request) -> dict[str, Any] | None:
     """Return the cookie user when present; otherwise validate runtime bearer.
 

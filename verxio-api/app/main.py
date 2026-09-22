@@ -630,6 +630,45 @@ async def restart_runtime_route(request: Request) -> RuntimeControlResponse:
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
 
+@app.get("/api/channels/pairing/{workspace_id}/{agent_id}")
+async def channel_pairing_route(workspace_id: str, agent_id: str, request: Request) -> dict[str, object]:
+    require_user(request)
+    from app.channels.shards import pairing_url, shard_for
+
+    return {
+        "shard": shard_for(workspace_id, agent_id),
+        "url": pairing_url(workspace_id, agent_id, "api/status"),
+    }
+
+
+@app.post("/api/channels/telegram/{workspace_id}")
+async def telegram_webhook_route(workspace_id: str, request: Request) -> dict[str, str]:
+    from app.jobs import enqueue_webhook_delivery
+
+    body = await request.json()
+    enqueue_webhook_delivery(
+        workspace_id=workspace_id,
+        kind="telegram",
+        payload=body if isinstance(body, dict) else {"body": body},
+    )
+    return {"status": "queued"}
+
+
+@app.post("/api/channels/slack/{workspace_id}")
+async def slack_events_route(workspace_id: str, request: Request) -> dict[str, object]:
+    from app.jobs import enqueue_webhook_delivery
+
+    body = await request.json()
+    if isinstance(body, dict) and body.get("type") == "url_verification":
+        return {"challenge": body.get("challenge")}
+    enqueue_webhook_delivery(
+        workspace_id=workspace_id,
+        kind="slack",
+        payload=body if isinstance(body, dict) else {"body": body},
+    )
+    return {"status": "queued"}
+
+
 @app.post("/api/runtime/idle/reap")
 async def reap_idle_runtimes_route(request: Request) -> dict[str, object]:
     """Operator/cron endpoint: drain idle warm runtimes. Auth required."""
