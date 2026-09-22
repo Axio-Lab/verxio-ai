@@ -630,6 +630,42 @@ async def restart_runtime_route(request: Request) -> RuntimeControlResponse:
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
 
+@app.post("/api/runtime/cron")
+async def sync_runtime_cron_route(request: Request) -> dict[str, object]:
+    from app.cron_store import upsert_cron_jobs
+    from app.runtime_auth import require_runtime_token
+
+    runtime = require_runtime_token(request)
+    payload = await request.json()
+    jobs = payload.get("jobs") if isinstance(payload, dict) else []
+    count = upsert_cron_jobs(
+        tenant_id=runtime.tenant_id,
+        workspace_id=runtime.workspace_id,
+        agent_id=runtime.agent_id,
+        jobs=list(jobs or []),
+    )
+    return {"ok": True, "jobs": count}
+
+
+@app.post("/api/runtime/turns")
+async def enqueue_runtime_turn_route(request: Request) -> dict[str, object]:
+    from app.jobs import enqueue_turn
+    from app.runtime_auth import require_runtime_token
+
+    runtime = require_runtime_token(request)
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Turn payload must be an object.")
+    job_id = enqueue_turn(
+        tenant_id=runtime.tenant_id,
+        workspace_id=runtime.workspace_id,
+        agent_id=runtime.agent_id,
+        source=str(payload.get("source") or "channel"),
+        payload=payload,
+    )
+    return {"ok": True, "job_id": job_id}
+
+
 @app.get("/api/channels/pairing/{workspace_id}/{agent_id}")
 async def channel_pairing_route(workspace_id: str, agent_id: str, request: Request) -> dict[str, object]:
     require_user(request)
