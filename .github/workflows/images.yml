@@ -39,7 +39,8 @@ jobs:
       matrix:
         include:
           - name: api
-            context: verxio-api
+            # Dockerfile copies verxio-api/* and hermes-agent/ from the repo root.
+            context: .
             file: verxio-api/Dockerfile
             # Pool control plane never talks to a docker socket.
             build_args: |
