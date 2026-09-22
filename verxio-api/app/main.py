@@ -31,6 +31,7 @@ from app.auth import (
     login,
     logout,
     me,
+    renew_session_cookie_if_needed,
     request_login_code,
     request_password_reset,
     resend_verification,
@@ -223,6 +224,7 @@ from app.notepad import (
     update_folder,
     update_note,
 )
+from app.runtime_phase import phase_for_status
 from app.runtime import (
     DEMO_PROFILE,
     DEMO_WORKSPACE,
@@ -442,6 +444,15 @@ if os.getenv("VERXIO_DESKTOP_CORS", "true").strip().lower() not in {"0", "false"
         cors_origins.append("null")
 
 app.add_middleware(RateLimitMiddleware)
+
+
+@app.middleware("http")
+async def sliding_session_middleware(request: Request, call_next):
+    """Re-issue the auth cookie when this request extended the session (sliding expiry)."""
+    response = await call_next(request)
+    renew_session_cookie_if_needed(request, response)
+    return response
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
@@ -573,12 +584,23 @@ async def get_slack_manifest(
 async def get_runtime(request: Request) -> RuntimeControlResponse:
     user = await arequire_user(request)
     runtime = await aget_runtime_for_user(user)
-    connected, detail = await get_runtime_manager(runtime).health(runtime)
+    manager = get_runtime_manager(runtime)
+    connected, detail = await manager.health(runtime)
     if connected:
         runtime = touch_runtime_activity(runtime)
     elif runtime.status in {"running", "starting"}:
         _schedule_runtime_ensure(user)
-    return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
+    phase, phase_detail = await asyncio.to_thread(
+        phase_for_status,
+        runtime.workspace_id,
+        runtime.agent_id,
+        status=runtime.status,
+        connected=connected,
+        pool=getattr(manager, "name", "") == "pool",
+    )
+    return RuntimeControlResponse(
+        runtime=runtime, connected=connected, detail=detail, phase=phase, phase_detail=phase_detail
+    )
 
 @app.post("/api/runtime/touch")
 async def touch_runtime_route(request: Request) -> dict[str, bool]:

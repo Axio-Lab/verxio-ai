@@ -2413,6 +2413,35 @@ def test_login_creates_turso_backed_session(client):
     assert len(session_rows) == 1
 
 
+def test_session_expiry_slides_and_cookie_is_reissued(client):
+    from datetime import timedelta
+
+    from app import auth as auth_mod
+    from app.models import utc_now
+
+    payload, token = signup(client, "slide@example.com")
+    token_hash = auth_mod.hash_session_token(token)
+
+    # Fresh session: no renewal, no Set-Cookie on a plain authenticated request.
+    fresh = client.get("/api/auth/me")
+    assert fresh.status_code == 200
+    assert fresh.cookies.get(SESSION_COOKIE) is None
+
+    # Age the session past the renewal threshold (over half of its lifetime used).
+    nearly = (utc_now() + timedelta(hours=6)).isoformat()
+    db.execute("UPDATE sessions SET expires_at = ? WHERE token_hash = ?", (nearly, token_hash))
+    auth_mod._invalidate_session_user(token_hash)
+
+    renewed = client.get("/api/auth/me")
+    assert renewed.status_code == 200
+    assert renewed.cookies.get(SESSION_COOKIE) == token
+
+    row = db.fetch_one("SELECT expires_at FROM sessions WHERE token_hash = ?", (token_hash,))
+    assert row is not None
+    assert str(row["expires_at"]) > nearly
+    assert db.fetch_one("SELECT COUNT(*) AS n FROM sessions WHERE user_id = ?", (payload["user"]["id"],))["n"] == 1
+
+
 def test_password_login_for_unverified_user_resends_verification_code(client):
     response = client.post(
         "/api/auth/signup",

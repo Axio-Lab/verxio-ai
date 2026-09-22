@@ -36,6 +36,7 @@ from app.infra.redis import (
 )
 from app.models import RuntimeInstance
 from app.runtime_orch.states import RuntimeStatus
+from app.runtime_phase import PHASE_QUEUED, set_phase
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +123,7 @@ class PoolRuntimeManager:
         dashboard_token = await asyncio.to_thread(self._seal_env, runtime, extra_env)
         holder = await asyncio.to_thread(self.holder, runtime)
         if holder is None:
+            await asyncio.to_thread(set_phase, runtime.workspace_id, runtime.agent_id, PHASE_QUEUED)
             await asyncio.to_thread(self._enqueue_attach, runtime)
             starting = save_runtime(
                 runtime,

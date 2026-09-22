@@ -18,7 +18,13 @@ from pathlib import Path
 
 from app import db
 from app.control_plane import runtime_from_row
-from app.homes import local_home_path, local_workspace_path, restore_home, sync_home, write_home_env
+from app.homes import (
+    local_home_path,
+    local_workspace_path,
+    restore_home,
+    sync_home,
+    write_home_env,
+)
 from app.infra.redis import (
     heartbeat_lease,
     lookup_holder,
@@ -31,6 +37,15 @@ from app.infra.redis import (
     worker_id,
 )
 from app.models import RuntimeInstance
+from app.runtime_phase import (
+    PHASE_ATTACHING_PROFILE,
+    PHASE_FAILED,
+    PHASE_PREPARING_ENV,
+    PHASE_READY,
+    PHASE_RESTORING_HOME,
+    clear_phase,
+    set_phase,
+)
 from app.tenant_env import load_tenant_env, tenant_env_updated_at
 from app.worker import hermes_client
 
@@ -170,13 +185,20 @@ class TenantRegistry:
 
             tenant = AttachedTenant(runtime=runtime)
             try:
+                await asyncio.to_thread(set_phase, workspace_id, agent_id, PHASE_RESTORING_HOME)
                 await asyncio.to_thread(restore_home, runtime, only_if_missing=True)
+                await asyncio.to_thread(set_phase, workspace_id, agent_id, PHASE_PREPARING_ENV)
                 await self._materialize_env(tenant)
                 local_workspace_path(runtime).mkdir(parents=True, exist_ok=True)
+                await asyncio.to_thread(set_phase, workspace_id, agent_id, PHASE_ATTACHING_PROFILE)
                 await hermes_client.attach_profile(name, str(local_home_path(runtime)))
-            except Exception:
+            except Exception as exc:
+                await asyncio.to_thread(
+                    set_phase, workspace_id, agent_id, PHASE_FAILED, detail=str(exc)[:200] or exc.__class__.__name__
+                )
                 await asyncio.to_thread(release_lease, lease_key, self.worker)
                 raise
+            await asyncio.to_thread(set_phase, workspace_id, agent_id, PHASE_READY)
             self._tenants[name] = tenant
             self.register()
             publish(
@@ -222,6 +244,7 @@ class TenantRegistry:
         except Exception:
             logger.warning("Hermes detach failed tenant=%s", name, exc_info=True)
         await asyncio.to_thread(release_lease, tenant.lease_key, self.worker)
+        await asyncio.to_thread(clear_phase, tenant.runtime.workspace_id, tenant.runtime.agent_id)
         self.register()
         publish(
             f"verxio:attach:{tenant.runtime.workspace_id}:{tenant.runtime.agent_id}",

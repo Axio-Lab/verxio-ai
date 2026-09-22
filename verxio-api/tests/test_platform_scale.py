@@ -212,3 +212,35 @@ def test_legacy_plane_switch_blocks_docker_and_reports_usage(monkeypatch, tmp_pa
     monkeypatch.setenv("VERXIO_RUNTIME_MANAGER", "pool")
     assert plane.main(["legacy-usage"]) == 0
     factory.reset_runtime_manager_for_tests()
+
+
+def test_runtime_phase_tracks_worker_attach_steps(monkeypatch):
+    monkeypatch.delenv("VERXIO_REDIS_URL", raising=False)
+    from app import runtime_phase as rp
+
+    rp.clear_phase("ws", "ag")
+    # Nothing recorded yet on the pool: the tenant is queued for a worker.
+    assert rp.phase_for_status("ws", "ag", status="starting", connected=False, pool=True) == (rp.PHASE_QUEUED, None)
+    # Legacy container planes have no finer detail than "starting".
+    assert rp.phase_for_status("ws", "ag", status="starting", connected=False, pool=False) == (rp.PHASE_STARTING, None)
+    assert rp.phase_for_status("ws", "ag", status="stopped", connected=False, pool=True) == (rp.PHASE_STOPPED, None)
+
+    rp.set_phase("ws", "ag", rp.PHASE_RESTORING_HOME)
+    assert rp.get_phase("ws", "ag")["phase"] == rp.PHASE_RESTORING_HOME
+    assert rp.phase_for_status("ws", "ag", status="starting", connected=False, pool=True)[0] == rp.PHASE_RESTORING_HOME
+
+    rp.set_phase("ws", "ag", rp.PHASE_FAILED, detail="home restore: boom")
+    assert rp.phase_for_status("ws", "ag", status="starting", connected=False, pool=True) == (
+        rp.PHASE_FAILED,
+        "home restore: boom",
+    )
+
+    # Worker said ready but the API probe cannot see a holder: report a re-attach, not a stale ready.
+    rp.set_phase("ws", "ag", rp.PHASE_READY)
+    phase, detail = rp.phase_for_status("ws", "ag", status="running", connected=False, pool=True)
+    assert phase == rp.PHASE_QUEUED and detail
+    # Connected always wins.
+    assert rp.phase_for_status("ws", "ag", status="running", connected=True, pool=True) == (rp.PHASE_READY, None)
+
+    rp.clear_phase("ws", "ag")
+    assert rp.get_phase("ws", "ag") is None

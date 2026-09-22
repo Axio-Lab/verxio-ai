@@ -112,6 +112,10 @@ class RuntimeControlResponse(BaseModel):
     runtime: RuntimeInstance
     connected: bool
     detail: str
+    # Spin-up step for the UI: queued | restoring_home | preparing_env |
+    # attaching_profile | ready | failed | starting | stopped.
+    phase: str | None = None
+    phase_detail: str | None = None
 
 class RuntimeWorkspaceSyncRequest(BaseModel):
     workspace_path: str = Field(min_length=1)
