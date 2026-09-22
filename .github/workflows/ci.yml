@@ -93,3 +93,26 @@ jobs:
         env:
           VERXIO_DATABASE_MODE: sqlite
           VERXIO_DATABASE_PATH: /tmp/verxio-scale.sqlite3
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.15.0
+      - name: Lint chart
+        run: helm lint deploy/helm/verxio -f deploy/helm/verxio/values-staging.yaml
+      - name: Render (CPU HPA)
+        run: |
+          helm template verxio deploy/helm/verxio > /tmp/hpa.yaml
+          grep -q "kind: HorizontalPodAutoscaler" /tmp/hpa.yaml
+      - name: Render (KEDA + ingress, staging overlay)
+        run: |
+          helm template verxio deploy/helm/verxio -f deploy/helm/verxio/values-staging.yaml > /tmp/keda.yaml
+          grep -q "kind: ScaledObject" /tmp/keda.yaml
+          grep -q "kind: Ingress" /tmp/keda.yaml
+          grep -q "kind: StatefulSet" /tmp/keda.yaml
+          ! grep -q "kind: HorizontalPodAutoscaler" /tmp/keda.yaml

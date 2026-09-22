@@ -1,0 +1,177 @@
+name: Images
+
+# Builds and pushes the platform images to GHCR, then rolls the staging
+# Helm release. Images are tagged with the commit SHA (and `latest` on the
+# default branch) so a rollout is a single `helm upgrade --set images.*`.
+
+on:
+  push:
+    branches: [main, verxio/scale]
+    paths:
+      - 'verxio-api/**'
+      - 'verxio-web/**'
+      - 'verxio-landing/**'
+      - 'hermes-agent'
+      - 'deploy/helm/**'
+      - '.github/workflows/images.yml'
+  workflow_dispatch:
+    inputs:
+      deploy_staging:
+        description: Roll the staging release after the build
+        type: boolean
+        default: true
+
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/verxio
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api
+            context: verxio-api
+            file: verxio-api/Dockerfile
+            # Pool control plane never talks to a docker socket.
+            build_args: |
+              INSTALL_TURSO=1
+              INSTALL_SCALE=1
+              WITH_DOCKER_CLI=
+          - name: web
+            context: verxio-web
+            file: verxio-web/Dockerfile
+            build_args: ''
+          - name: landing
+            context: verxio-landing
+            file: verxio-landing/Dockerfile
+            build_args: ''
+          - name: hermes-base
+            context: hermes-agent
+            file: hermes-agent/Dockerfile
+            # Browser-less base; ffmpeg stays for audio tools.
+            build_args: |
+              HERMES_INSTALL_BROWSER=0
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - id: meta
+        run: |
+          echo "tag=sha-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+          echo "hermes_sha=$(git -C hermes-agent rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          push: true
+          provenance: false
+          build-args: |
+            HERMES_GIT_SHA=${{ steps.meta.outputs.hermes_sha }}
+            ${{ matrix.build_args }}
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.name }}:${{ steps.meta.outputs.tag }}
+            ${{ github.ref_name == 'main' && format('{0}-{1}:latest', env.IMAGE_PREFIX, matrix.name) || '' }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  hermes-hosted:
+    # Slim multi-tenant worker/channel image layered on the browser-less base.
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: hermes-agent
+          file: hermes-agent/Dockerfile.verxio-hosted
+          push: true
+          provenance: false
+          build-args: |
+            BASE=${{ env.IMAGE_PREFIX }}-hermes-base:${{ needs.build.outputs.tag }}
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-hermes:${{ needs.build.outputs.tag }}
+            ${{ github.ref_name == 'main' && format('{0}-hermes:latest', env.IMAGE_PREFIX) || '' }}
+      - name: Verify hosted policy is baked in
+        run: |
+          docker run --rm --entrypoint python \
+            "${IMAGE_PREFIX}-hermes:${{ needs.build.outputs.tag }}" \
+            -c "import hermes_cli.verxio_hosted_policy, hermes_cli.dynamic_profiles, gateway.verxio_channel_shard; print('ok')"
+
+  staging:
+    needs: [build, hermes-hosted]
+    if: github.event_name == 'push' || inputs.deploy_staging
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.15.0
+      - name: Configure kubeconfig
+        env:
+          KUBECONFIG_B64: ${{ secrets.STAGING_KUBECONFIG }}
+        run: |
+          if [ -z "$KUBECONFIG_B64" ]; then
+            echo "STAGING_KUBECONFIG secret is not set; skipping rollout." >&2
+            echo "skip=1" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          mkdir -p ~/.kube
+          echo "$KUBECONFIG_B64" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+      - name: Run migrations
+        if: env.skip != '1'
+        run: |
+          kubectl -n verxio-staging delete job verxio-migrate --ignore-not-found
+          kubectl -n verxio-staging create job verxio-migrate \
+            --image="${IMAGE_PREFIX}-api:${{ needs.build.outputs.tag }}" \
+            -- python -m app.migrate
+          kubectl -n verxio-staging wait --for=condition=complete --timeout=300s job/verxio-migrate
+      - name: Helm upgrade
+        if: env.skip != '1'
+        run: |
+          helm upgrade --install verxio deploy/helm/verxio \
+            --namespace verxio-staging --create-namespace \
+            --wait --timeout 10m \
+            --set images.api="${IMAGE_PREFIX}-api:${{ needs.build.outputs.tag }}" \
+            --set images.web="${IMAGE_PREFIX}-web:${{ needs.build.outputs.tag }}" \
+            --set images.landing="${IMAGE_PREFIX}-landing:${{ needs.build.outputs.tag }}" \
+            --set images.hermes="${IMAGE_PREFIX}-hermes:${{ needs.build.outputs.tag }}" \
+            -f deploy/helm/verxio/values-staging.yaml
+      - name: Smoke
+        if: env.skip != '1'
+        run: |
+          kubectl -n verxio-staging rollout status deploy/verxio-api --timeout=300s
+          kubectl -n verxio-staging run smoke --rm -i --restart=Never --image=curlimages/curl:8.8.0 -- \
+            -fsS -m 10 http://verxio-api:8787/api/health

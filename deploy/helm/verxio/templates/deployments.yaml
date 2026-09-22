@@ -39,6 +39,15 @@ spec:
               value: {{ .Values.env.VERXIO_INLINE_SCHEDULER | quote }}
             - name: VERXIO_WEBHOOK_INLINE
               value: {{ .Values.env.VERXIO_WEBHOOK_INLINE | quote }}
+            - name: VERXIO_CHANNEL_SHARDS
+              value: {{ .Values.channelGateway.shards | quote }}
+            # StatefulSet pod DNS via the headless service.
+            - name: VERXIO_CHANNEL_SHARD_URL
+              value: "http://verxio-channel-gateway-{i}.verxio-channel-gateway:9119"
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secrets.name }}
+                optional: true
           readinessProbe:
             httpGet:
               path: /api/health
@@ -66,6 +75,12 @@ spec:
           env:
             - name: VERXIO_REDIS_URL
               value: {{ .Values.redis.url | quote }}
+            - name: VERXIO_RUNTIME_MANAGER
+              value: {{ .Values.env.VERXIO_RUNTIME_MANAGER | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secrets.name }}
+                optional: true
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -92,12 +107,20 @@ spec:
               value: "http://127.0.0.1:9119"
             - name: VERXIO_WORKER_HOMES_ROOT
               value: /var/lib/verxio/homes
+            - name: VERXIO_WORKER_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
             - name: VERXIO_INTERNAL_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: verxio-internal
                   key: token
                   optional: true
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secrets.name }}
+                optional: true
           volumeMounts:
             - name: homes
               mountPath: /var/lib/verxio/homes
@@ -151,12 +174,30 @@ spec:
             secretName: {{ .Values.sandbox.tlsSecret }}
         {{- end }}
 ---
-apiVersion: apps/v1
-kind: Deployment
+# Channel shards: a StatefulSet so each pod owns a stable shard index
+# (VERXIO_CHANNEL_SHARD = ordinal) and a persistent volume for WhatsApp
+# session files between restarts. Replicas must equal VERXIO_CHANNEL_SHARDS
+# on the API, which is what shard_for() hashes tenants against.
+apiVersion: v1
+kind: Service
 metadata:
   name: verxio-channel-gateway
 spec:
-  replicas: {{ .Values.replicaCount.channelGateway }}
+  clusterIP: None
+  selector:
+    app: verxio-channel-gateway
+  ports:
+    - port: 9119
+      targetPort: 9119
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: verxio-channel-gateway
+spec:
+  serviceName: verxio-channel-gateway
+  replicas: {{ .Values.channelGateway.shards }}
+  podManagementPolicy: Parallel
   selector:
     matchLabels:
       app: verxio-channel-gateway
@@ -165,19 +206,74 @@ spec:
       labels:
         app: verxio-channel-gateway
     spec:
+      terminationGracePeriodSeconds: 60
       containers:
         - name: gateway
           image: {{ .Values.images.hermes }}
-          args: ["gateway", "run"]
+          # Image ENTRYPOINT is s6 /init with CMD ["gateway", "run"]; the shard
+          # derives its ordinal from VERXIO_POD_NAME (see shard_index()).
+          ports:
+            - containerPort: 9119
           env:
+            - name: VERXIO_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
             - name: VERXIO_REMOTE_EXEC
               value: "1"
             - name: VERXIO_HOSTED
               value: "1"
+            - name: VERXIO_API_URL
+              value: "http://verxio-api:8787"
+            - name: VERXIO_CHANNEL_SHARDS
+              value: {{ .Values.channelGateway.shards | quote }}
             - name: VERXIO_REDIS_URL
               value: {{ .Values.redis.url | quote }}
+            - name: VERXIO_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: verxio-internal
+                  key: token
+                  optional: true
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secrets.name }}
+                optional: true
+          volumeMounts:
+            - name: shard-data
+              mountPath: /opt/data
+  volumeClaimTemplates:
+    - metadata:
+        name: shard-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.channelGateway.storageSize }}
 ---
 {{- if .Values.autoscaling.worker.enabled }}
+{{- if .Values.autoscaling.worker.keda.enabled }}
+# Queue-depth autoscaling: pending entries on the shared turn stream.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: verxio-agent-worker
+spec:
+  scaleTargetRef:
+    name: verxio-agent-worker
+  minReplicaCount: {{ .Values.autoscaling.worker.minReplicas }}
+  maxReplicaCount: {{ .Values.autoscaling.worker.maxReplicas }}
+  pollingInterval: {{ .Values.autoscaling.worker.keda.pollingInterval }}
+  cooldownPeriod: {{ .Values.autoscaling.worker.keda.cooldownPeriod }}
+  triggers:
+    - type: redis-streams
+      metadata:
+        address: {{ .Values.autoscaling.worker.keda.address | quote }}
+        stream: {{ .Values.autoscaling.worker.keda.stream | quote }}
+        consumerGroup: {{ .Values.autoscaling.worker.keda.consumerGroup | quote }}
+        pendingEntriesCount: {{ .Values.autoscaling.worker.keda.pendingEntriesPerWorker | quote }}
+        activationLagCount: "1"
+{{- else }}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -195,5 +291,6 @@ spec:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 70
+          averageUtilization: {{ .Values.autoscaling.worker.cpuUtilization }}
+{{- end }}
 {{- end }}

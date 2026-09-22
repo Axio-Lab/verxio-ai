@@ -1,0 +1,174 @@
+{{- if .Values.redis.enabled }}
+# Redis: streams, leases, caches, pub/sub. Single replica with AOF; point
+# redis.url at a managed instance for production and set enabled: false.
+apiVersion: v1
+kind: Service
+metadata:
+  name: verxio-redis
+spec:
+  ports:
+    - port: 6379
+      targetPort: 6379
+  selector:
+    app: verxio-redis
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: verxio-redis
+spec:
+  serviceName: verxio-redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app: verxio-redis
+  template:
+    metadata:
+      labels:
+        app: verxio-redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+          ports:
+            - containerPort: 6379
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 2Gi
+---
+{{- end }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: verxio-web
+spec:
+  ports:
+    - port: 80
+      targetPort: 80
+  selector:
+    app: verxio-web
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: verxio-web
+spec:
+  replicas: {{ .Values.replicaCount.web }}
+  selector:
+    matchLabels:
+      app: verxio-web
+  template:
+    metadata:
+      labels:
+        app: verxio-web
+    spec:
+      containers:
+        - name: web
+          image: {{ .Values.images.web }}
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: verxio-landing
+spec:
+  ports:
+    - port: 80
+      targetPort: 80
+  selector:
+    app: verxio-landing
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: verxio-landing
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: verxio-landing
+  template:
+    metadata:
+      labels:
+        app: verxio-landing
+    spec:
+      containers:
+        - name: landing
+          image: {{ .Values.images.landing }}
+          ports:
+            - containerPort: 80
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secrets.name }}
+                optional: true
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            periodSeconds: 10
+{{- if .Values.ingress.enabled }}
+---
+# The web image's nginx proxies /api/ and the dashboard WebSocket to
+# verxio-api itself, so a single host routes to verxio-web. Long-lived WS
+# needs the read timeout raised at the ingress too.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: verxio
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-body-size: "64m"
+    {{- range $k, $v := .Values.ingress.annotations }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tlsSecret }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.host }}
+        - {{ .Values.ingress.landingHost }}
+      secretName: {{ .Values.ingress.tlsSecret }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: verxio-web
+                port:
+                  number: 80
+    - host: {{ .Values.ingress.landingHost }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: verxio-landing
+                port:
+                  number: 80
+{{- end }}

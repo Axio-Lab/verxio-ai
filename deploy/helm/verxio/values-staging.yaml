@@ -1,0 +1,33 @@
+# Staging overlay used by .github/workflows/images.yml. Images are injected
+# with --set from the workflow; everything here is topology.
+replicaCount:
+  api: 1
+  scheduler: 1
+  worker: 1
+  web: 1
+
+channelGateway:
+  shards: 1
+
+autoscaling:
+  worker:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 4
+    keda:
+      enabled: true
+      pendingEntriesPerWorker: 4
+
+sandbox:
+  dockerHost: tcp://verxio-sandbox.verxio-staging.svc:2376
+  tlsSecret: verxio-sandbox-tls
+  allowInsecure: '0'
+  image: ghcr.io/axio-lab/verxio-sandbox:latest
+
+ingress:
+  enabled: true
+  host: staging.app.verxio.xyz
+  landingHost: staging.verxio.xyz
+  tlsSecret: verxio-staging-tls
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt

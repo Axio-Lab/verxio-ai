@@ -22,6 +22,28 @@ Socket channels (WhatsApp Baileys, Discord) are sticky by `shard_for(workspace, 
 Workers call `restore_home` on attach when the local directory is empty.
 Snapshots exclude `cache/`, `audio_cache/`, `config.yaml.bak-*`, and cloned audit repos.
 
+## Images and rollout
+
+`.github/workflows/images.yml` builds and pushes `ghcr.io/<org>/verxio-{api,web,landing,hermes-base,hermes}`
+tagged `sha-<12>` on every push to `main`/`verxio/scale`. The API is built with
+`WITH_DOCKER_CLI=` (no docker binary); `hermes-base` is built with `HERMES_INSTALL_BROWSER=0`
+and `hermes` layers `Dockerfile.verxio-hosted` on it. The `staging` job (GitHub environment
+`staging`, secret `STAGING_KUBECONFIG`) runs `python -m app.migrate` as a Job, then
+`helm upgrade --install verxio deploy/helm/verxio -f values-staging.yaml` and smokes `/api/health`.
+
+Chart topology:
+
+- `verxio-agent-worker` scales on queue depth with KEDA (`autoscaling.worker.keda.enabled`,
+  `redis-streams` trigger on pending entries of `verxio:turns` / group `workers`); with KEDA
+  disabled it falls back to a CPU HPA.
+- `verxio-channel-gateway` is a StatefulSet; each pod's shard ordinal comes from
+  `VERXIO_POD_NAME`, `channelGateway.shards` must match `VERXIO_CHANNEL_SHARDS` on the API,
+  and the API reaches shards at `verxio-channel-gateway-{i}.verxio-channel-gateway:9119`.
+- `redis.enabled` deploys a single AOF Redis StatefulSet; set it to `false` and point
+  `redis.url` (and `autoscaling.worker.keda.address`) at a managed instance in production.
+- All app pods `envFrom` the `secrets.name` Secret (Turso, `VERXIO_SECRETS_KEY`,
+  `VERXIO_POOL_DASHBOARD_TOKEN`, SMTP).
+
 ## Cutover (dual-run)
 
 `VERXIO_RUNTIME_MANAGER` is only the default plane. Every (workspace, agent) can be

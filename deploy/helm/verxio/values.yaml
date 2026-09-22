@@ -17,12 +17,12 @@ redis:
 
 sandbox:
   # TLS Docker API on the dedicated sandbox hosts, e.g. tcp://sandbox.internal:2376
-  dockerHost: ""
+  dockerHost: ''
   # Secret with ca.pem / cert.pem / key.pem (client certs for dockerHost).
   # Leave empty only for dev clusters; allowInsecure must then be "1" or the
   # Hermes sidecar refuses to start (hosted policy fails closed).
-  tlsSecret: ""
-  allowInsecure: "0"
+  tlsSecret: ''
+  allowInsecure: '0'
   image: verxio-sandbox:local
   network: none
   limits:
@@ -36,18 +36,51 @@ worker:
 
 env:
   VERXIO_RUNTIME_MANAGER: pool
-  VERXIO_AUTO_MIGRATE: "0"
-  VERXIO_INLINE_SCHEDULER: "0"
-  VERXIO_WEBHOOK_INLINE: "0"
-  VERXIO_HOSTED: "1"
+  VERXIO_AUTO_MIGRATE: '0'
+  VERXIO_INLINE_SCHEDULER: '0'
+  VERXIO_WEBHOOK_INLINE: '0'
+  VERXIO_HOSTED: '1'
 
 cdn:
-  webBucket: ""
-  landingBucket: ""
+  webBucket: ''
+  landingBucket: ''
 
 autoscaling:
   worker:
     enabled: true
     minReplicas: 2
     maxReplicas: 20
-    targetQueueDepth: 32
+    # Queue-depth scaling via KEDA (redis-streams trigger on the shared turn
+    # stream's pending entries). When keda.enabled is false the chart falls
+    # back to a CPU HPA.
+    keda:
+      enabled: false
+      pollingInterval: 10
+      cooldownPeriod: 120
+      # Pending turns per worker before adding a replica.
+      pendingEntriesPerWorker: 8
+      stream: 'verxio:turns'
+      consumerGroup: 'workers'
+      # Redis host:port for the KEDA scaler (no scheme).
+      address: 'verxio-redis:6379'
+    cpuUtilization: 70
+
+channelGateway:
+  # Shard count == StatefulSet replicas; each pod gets VERXIO_CHANNEL_SHARD from
+  # its ordinal so WhatsApp/Discord sockets stay sticky across restarts.
+  shards: 2
+  storageSize: 5Gi
+
+secrets:
+  # Secret holding TURSO_DATABASE_URL / TURSO_AUTH_TOKEN / VERXIO_SECRETS_KEY /
+  # VERXIO_POOL_DASHBOARD_TOKEN / SMTP creds. Mounted via envFrom on api,
+  # scheduler and workers.
+  name: verxio-app-env
+
+ingress:
+  enabled: false
+  className: nginx
+  host: app.verxio.example
+  landingHost: verxio.example
+  tlsSecret: ''
+  annotations: {}
