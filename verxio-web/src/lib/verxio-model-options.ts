@@ -325,8 +325,17 @@ function withBudget<T>(promise: Promise<T>, ms: number): Promise<T | null> {
   })
 }
 
+export interface ScopedModelOptionsHooks {
+  /**
+   * Fired when the runtime catalog resolves after the hosted budget expired.
+   * Receives the fully merged catalog so callers can patch their cache.
+   */
+  onLateRuntimeOptions?: (options: ModelOptionsResponse) => void
+}
+
 export async function getScopedModelOptions(
-  loadRuntimeOptions: RuntimeModelOptionsLoader = getGlobalModelOptions
+  loadRuntimeOptions: RuntimeModelOptionsLoader = getGlobalModelOptions,
+  hooks: ScopedModelOptionsHooks = {}
 ): Promise<ModelOptionsResponse> {
   if (!verxioApiEnabled()) {
     return loadRuntimeOptions()
@@ -347,7 +356,21 @@ export async function getScopedModelOptions(
     }
 
     if (hostedUsable) {
-      return prioritizeLinkedProviders(hostedUsable)
+      // Runtime catalog is still building (fresh boot). Paint hosted rows now
+      // and let the BYOK/linked providers land when Hermes answers.
+      if (hooks.onLateRuntimeOptions) {
+        const onLate = hooks.onLateRuntimeOptions
+
+        void runtimeOptionsPromise
+          .then(lateRuntime => {
+            if (lateRuntime && (lateRuntime.providers?.length ?? 0) > 0) {
+              onLate(prioritizeLinkedProviders(mergeHostedAndRuntimeModelOptions(hostedUsable, lateRuntime)))
+            }
+          })
+          .catch(() => undefined)
+      }
+
+      return { ...prioritizeLinkedProviders(hostedUsable), partial: true }
     }
 
     // Control-plane hosted catalog unavailable — fall back to runtime providers.

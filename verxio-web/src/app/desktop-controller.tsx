@@ -12,6 +12,7 @@ import { RemoteDisplayBanner } from '@/components/remote-display-banner'
 import { WebLocalFolderPicker } from '@/components/web-local-folder-picker'
 import { readVerxioAuthScope } from '@/lib/auth-scope'
 import { clearModelOptionsQueries, refreshModelOptionsQueries } from '@/lib/model-options-cache'
+import { warmModelOptions } from '@/lib/model-options-query'
 import { cn } from '@/lib/utils'
 import { useSkinCommand } from '@/themes/use-skin-command'
 
@@ -747,6 +748,12 @@ export function DesktopController() {
         window.setTimeout(() => void refreshHermesConfig().catch(() => undefined), 250),
         window.setTimeout(() => void refreshCurrentModel().catch(() => undefined), 450),
         window.setTimeout(() => void refreshActiveProfile().catch(() => undefined), 650),
+        // Warm the model catalog so the bottom-right menu lists models the
+        // moment the runtime turns green instead of on first open.
+        window.setTimeout(
+          () => void warmModelOptions({ gateway: gatewayRef.current, queryClient, sessionId: null }),
+          900
+        ),
         window.setTimeout(() => void refreshCronJobs().catch(() => undefined), 1_200)
       ]
 
@@ -754,7 +761,15 @@ export function DesktopController() {
         timers.forEach(timer => window.clearTimeout(timer))
       }
     }
-  }, [gatewayState, refreshCronJobs, refreshCurrentModel, refreshHermesConfig, refreshSessions])
+  }, [
+    gatewayRef,
+    gatewayState,
+    queryClient,
+    refreshCronJobs,
+    refreshCurrentModel,
+    refreshHermesConfig,
+    refreshSessions
+  ])
 
   // Cross-device sync: devices share one runtime state DB but have no push channel.
   // Poll the newest session id and re-fetch when another device creates a chat,

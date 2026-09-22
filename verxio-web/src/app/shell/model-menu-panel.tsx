@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createContext, useContext, useMemo, useState } from 'react'
 
 import { Codicon } from '@/components/ui/codicon'
@@ -16,13 +16,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { HermesGateway } from '@/hermes'
-import { getGlobalModelOptions } from '@/hermes'
 import { useI18n } from '@/i18n'
-import {
-  consumeModelOptionsForceRefresh,
-  readCachedModelOptions,
-  writeCachedModelOptions
-} from '@/lib/model-options-cache'
+import { modelOptionsQueryOptions } from '@/lib/model-options-query'
 import {
   currentPickerSelection,
   displayModelName,
@@ -30,7 +25,6 @@ import {
   reasoningEffortLabel
 } from '@/lib/model-status-label'
 import { cn } from '@/lib/utils'
-import { getScopedModelOptions } from '@/lib/verxio-model-options'
 import { $modelPresets, applyModelPreset, modelPresetKey } from '@/store/model-presets'
 import {
   $visibleModels,
@@ -48,7 +42,7 @@ import {
   $currentProvider,
   $currentReasoningEffort
 } from '@/store/session'
-import type { ModelOptionProvider, ModelOptionsResponse } from '@/types/hermes'
+import type { ModelOptionProvider } from '@/types/hermes'
 
 import { ModelEditSubmenu, resolveFastControl } from './model-edit-submenu'
 
@@ -78,32 +72,9 @@ export function ModelMenuPanel({ gateway, onSelectModel, requestGateway }: Model
   const currentReasoningEffort = useStore($currentReasoningEffort)
   const modelPresets = useStore($modelPresets)
   const visibleModels = useStore($visibleModels)
-  const modelOptionsScope = activeSessionId || 'global'
+  const queryClient = useQueryClient()
 
-  const modelOptions = useQuery({
-    queryKey: ['model-options', modelOptionsScope],
-    queryFn: async (): Promise<ModelOptionsResponse> => {
-      const refresh = consumeModelOptionsForceRefresh()
-      let next: ModelOptionsResponse
-
-      next = await getScopedModelOptions(() =>
-        gateway && activeSessionId
-          ? gateway.request<ModelOptionsResponse>('model.options', {
-              session_id: activeSessionId,
-              refresh
-            })
-          : getGlobalModelOptions({ refresh })
-      )
-
-      writeCachedModelOptions(modelOptionsScope, next)
-
-      return next
-    },
-    // localStorage seed must not count as fresh under the global 60s staleTime
-    initialData: () => readCachedModelOptions(modelOptionsScope),
-    initialDataUpdatedAt: 0,
-    staleTime: 0
-  })
+  const modelOptions = useQuery(modelOptionsQueryOptions({ gateway, queryClient, sessionId: activeSessionId }))
 
   const { model: optionsModel, provider: optionsProvider } = currentPickerSelection(
     !!activeSessionId,
