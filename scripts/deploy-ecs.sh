@@ -186,7 +186,9 @@ if ! docker run --rm --entrypoint grep "${HERMES_IMAGE}" -q \
 fi
 echo "    verified: session-token WS auth present in image"
 
-if [[ "${HERMES_BEFORE}" == "${HERMES_AFTER}" && "${VERXIO_FORCE_RUNTIME_WIPE:-}" != "1" ]]; then
+if [[ "${VERXIO_RUNTIME_MANAGER:-local-docker}" == "pool" ]]; then
+  echo "==> Pool runtime manager: skipping per-user container wipe"
+elif [[ "${HERMES_BEFORE}" == "${HERMES_AFTER}" && "${VERXIO_FORCE_RUNTIME_WIPE:-}" != "1" ]]; then
   echo "==> Hermes image unchanged; leaving per-user runtimes running"
 else
   echo "==> Removing per-user Hermes runtimes (they recreate on next use with the new image)"

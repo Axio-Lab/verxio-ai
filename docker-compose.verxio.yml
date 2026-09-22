@@ -116,3 +116,62 @@ services:
     profiles:
       - image
     command: ['true']
+
+  redis:
+    image: redis:7-alpine
+    profiles: [pool]
+    ports:
+      - '127.0.0.1:6379:6379'
+
+  verxio-scheduler:
+    image: verxio-api:local
+    profiles: [pool]
+    command: ['python', '-m', 'app.scheduler']
+    environment:
+      VERXIO_DATABASE_MODE: ${VERXIO_DATABASE_MODE:-turso}
+      TURSO_DATABASE_URL: ${TURSO_DATABASE_URL:-}
+      TURSO_AUTH_TOKEN: ${TURSO_AUTH_TOKEN:-}
+      VERXIO_REDIS_URL: ${VERXIO_REDIS_URL:-redis://redis:6379/0}
+      VERXIO_AUTO_MIGRATE: '1'
+      VERXIO_RUNTIME_MANAGER: ${VERXIO_RUNTIME_MANAGER:-pool}
+    depends_on:
+      - redis
+
+  verxio-hermes-worker:
+    image: ${VERXIO_HERMES_IMAGE:-verxio-hermes-runtime:local}
+    profiles: [pool]
+    environment:
+      VERXIO_HOSTED: '1'
+      DOCKER_HOST: ${VERXIO_SANDBOX_DOCKER_HOST:-}
+      VERXIO_SANDBOX_IMAGE: ${VERXIO_SANDBOX_IMAGE:-verxio-sandbox:local}
+      VERXIO_INTERNAL_TOKEN: ${VERXIO_INTERNAL_TOKEN:-}
+
+  verxio-agent-worker:
+    image: verxio-api:local
+    profiles: [pool]
+    command: ['python', '-m', 'app.worker.runner']
+    environment:
+      VERXIO_REDIS_URL: ${VERXIO_REDIS_URL:-redis://redis:6379/0}
+      VERXIO_DATABASE_MODE: ${VERXIO_DATABASE_MODE:-turso}
+      TURSO_DATABASE_URL: ${TURSO_DATABASE_URL:-}
+      TURSO_AUTH_TOKEN: ${TURSO_AUTH_TOKEN:-}
+      VERXIO_WORKER_ID: worker-0
+      VERXIO_LOCAL_HERMES_URL: http://verxio-hermes-worker:9119
+      VERXIO_INTERNAL_TOKEN: ${VERXIO_INTERNAL_TOKEN:-}
+    depends_on:
+      - redis
+      - verxio-hermes-worker
+
+  verxio-channel-gateway:
+    image: ${VERXIO_HERMES_IMAGE:-verxio-hermes-runtime:local}
+    profiles: [pool]
+    command: ['gateway', 'run']
+    environment:
+      VERXIO_HOSTED: '1'
+      VERXIO_REMOTE_EXEC: '1'
+      VERXIO_API_URL: http://verxio-api:8787
+      VERXIO_REDIS_URL: ${VERXIO_REDIS_URL:-redis://redis:6379/0}
+      VERXIO_CHANNEL_SHARD: '0'
+    depends_on:
+      - redis
+      - verxio-api
