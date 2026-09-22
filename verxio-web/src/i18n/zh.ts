@@ -52,6 +52,15 @@ export const zh: Translations = {
       startingDesktopConnection: '正在启动桌面连接',
       startingHermesDesktop: '正在启动 Verxio…'
     },
+    runtimePhase: {
+      attaching_profile: '正在加载你的智能体…',
+      failed: '启动失败，正在重试…',
+      preparing_env: '正在准备环境…',
+      queued: '正在寻找可用的工作节点…',
+      ready: '智能体已就绪',
+      restoring_home: '正在恢复你的工作区…',
+      starting: '正在启动你的智能体…'
+    },
     errors: {
       backgroundExited: 'Verxio 后端已退出。',
       backgroundExitedDuringStartup: 'Verxio 后端在启动期间退出。',

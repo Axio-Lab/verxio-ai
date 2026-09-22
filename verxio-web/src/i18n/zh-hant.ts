@@ -52,6 +52,15 @@ export const zhHant = defineLocale({
       startingDesktopConnection: '正在啟動桌面連線',
       startingHermesDesktop: '正在啟動 Verxio…'
     },
+    runtimePhase: {
+      attaching_profile: '正在載入你的代理…',
+      failed: '啟動失敗，正在重試…',
+      preparing_env: '正在準備環境…',
+      queued: '正在尋找可用的工作節點…',
+      ready: '代理已就緒',
+      restoring_home: '正在還原你的工作區…',
+      starting: '正在啟動你的代理…'
+    },
     errors: {
       backgroundExited: 'Verxio 後端已結束。',
       backgroundExitedDuringStartup: 'Verxio 後端在啟動期間結束。',

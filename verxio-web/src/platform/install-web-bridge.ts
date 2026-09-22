@@ -23,7 +23,7 @@ import type {
   HermesTerminalExit,
   HermesTerminalSession
 } from '@/global'
-import { verxioApiBaseUrl, verxioApiEnabled, verxioApiUrl } from '@/lib/verxio-api'
+import { verxioApiBaseUrl, verxioApiEnabled, verxioApiUrl, type VerxioRuntimeControlResponse } from '@/lib/verxio-api'
 import { verxioArtifactPreviewTarget } from '@/lib/verxio-artifact-preview'
 import {
   getStoredWebLocalRoot,
@@ -35,6 +35,7 @@ import {
   restoreRootHandle,
   WEB_LOCAL_STORAGE_KEY
 } from '@/lib/web-local-fs'
+import { applyRuntimeStatus, resetRuntimePhase } from '@/store/runtime-phase'
 import { $currentCwd, setCurrentCwd } from '@/store/session'
 
 /** Captured before the clipboard shim can wrap `navigator.clipboard.writeText`. */
@@ -440,6 +441,11 @@ async function fetchDashboardStatus(timeoutMs = 5_000): Promise<Response> {
   return fetchDashboardPath('/api/status', timeoutMs)
 }
 
+/**
+ * Probe the control plane while the dashboard is unreachable. Publishes the
+ * pool spin-up phase (queued / restoring_home / …) for the connecting overlay
+ * and reports whether the runtime is still coming up so the wait can extend.
+ */
 async function runtimeIsStarting(): Promise<boolean> {
   if (!verxioApiEnabled()) {
     return false
@@ -455,7 +461,8 @@ async function runtimeIsStarting(): Promise<boolean> {
       return false
     }
 
-    const body = (await res.json()) as { runtime?: { status?: string } }
+    const body = (await res.json()) as VerxioRuntimeControlResponse
+    applyRuntimeStatus(body)
     const status = body.runtime?.status
 
     return status === 'starting' || status === 'running'
@@ -504,6 +511,7 @@ async function waitForDashboardReadyInner(): Promise<void> {
 
       if (healthz.ok) {
         dashboardReadyAt = Date.now()
+        resetRuntimePhase()
 
         return
       }
@@ -512,6 +520,7 @@ async function waitForDashboardReadyInner(): Promise<void> {
 
       if (res.ok) {
         dashboardReadyAt = Date.now()
+        resetRuntimePhase()
 
         return
       }

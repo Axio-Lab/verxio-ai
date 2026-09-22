@@ -183,6 +183,8 @@ async function fetchDashboardStatus(timeoutMs = 5_000) {
 
 let dashboardReadyAt = 0
 const DASHBOARD_READY_TTL_MS = 120_000
+let lastBackendTouchAt = 0
+const BACKEND_TOUCH_MIN_INTERVAL_MS = 20_000
 
 async function waitForDashboardReady() {
   const deadline = Date.now() + (verxioApiEnabled() ? 90_000 : 30_000)
@@ -308,7 +310,42 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
   getConnection,
   revalidateConnection: getConnection,
   verxioApiBaseUrl,
-  touchBackend: async () => ({ ok: true }),
+  // Keepalive for the hosted idle reaper: the shell pings this every minute
+  // while a chat is open so a long build never gets its runtime drained.
+  // Throttled so several open sessions don't fan out into a request storm.
+  touchBackend: async () => {
+    if (!verxioApiEnabled()) {
+      return { ok: true }
+    }
+
+    const now = Date.now()
+
+    if (now - lastBackendTouchAt < BACKEND_TOUCH_MIN_INTERVAL_MS) {
+      return { ok: true }
+    }
+
+    lastBackendTouchAt = now
+
+    try {
+      const controller = new AbortController()
+      const timeout = window.setTimeout(() => controller.abort(), 8_000)
+
+      try {
+        const response = await fetch(verxioApiUrl('/api/runtime/touch'), {
+          credentials: fetchCredentials(),
+          method: 'POST',
+          signal: controller.signal
+        })
+
+        return { ok: response.ok }
+      } finally {
+        window.clearTimeout(timeout)
+      }
+    } catch {
+      // Best effort — the websocket proxy also refreshes activity on traffic.
+      return { ok: false }
+    }
+  },
   getGatewayWsUrl: async () => {
     const conn = await getConnection()
 

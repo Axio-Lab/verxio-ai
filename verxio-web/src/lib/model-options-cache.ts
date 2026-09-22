@@ -82,11 +82,6 @@ export function shouldForceModelOptionsRefresh(): boolean {
   return forceRefreshActive
 }
 
-/** @deprecated Prefer shouldForceModelOptionsRefresh — kept for call sites mid-migration. */
-export function consumeModelOptionsForceRefresh(): boolean {
-  return forceRefreshActive
-}
-
 /** Immediately clear statusbar/picker lists (e.g. after disconnect). */
 export function clearModelOptionsQueries(queryClient: QueryClient): void {
   clearCachedModelOptions()

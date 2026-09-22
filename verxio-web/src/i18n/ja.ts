@@ -52,6 +52,15 @@ export const ja = defineLocale({
       startingDesktopConnection: 'デスクトップ接続を開始中',
       startingHermesDesktop: 'Verxio を起動中…'
     },
+    runtimePhase: {
+      attaching_profile: 'エージェントを読み込み中…',
+      failed: '起動に失敗しました。再試行中…',
+      preparing_env: '環境を準備中…',
+      queued: 'エージェントワーカーを探しています…',
+      ready: 'エージェントの準備ができました',
+      restoring_home: 'ワークスペースを復元中…',
+      starting: 'エージェントを起動中…'
+    },
     errors: {
       backgroundExited: 'Verxio バックグラウンドプロセスが終了しました。',
       backgroundExitedDuringStartup: '起動中に Verxio バックグラウンドプロセスが終了しました。',

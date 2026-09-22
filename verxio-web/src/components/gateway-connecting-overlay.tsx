@@ -1,9 +1,12 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 
+import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
+import { getVerxioRuntime, verxioApiEnabled } from '@/lib/verxio-api'
 import { $desktopBoot } from '@/store/boot'
 import { $desktopOnboarding } from '@/store/onboarding'
+import { $runtimePhase, applyRuntimeStatus, resetRuntimePhase, runtimePhaseProgress } from '@/store/runtime-phase'
 import { $gatewayState } from '@/store/session'
 
 // Static, always-legible prefix; only TAIL ever scrambles. Splitting them at
@@ -23,6 +26,8 @@ const OVERLAY_OUT_MS = 520
 // Preview-only: how long to "connect" for, and the pause before replaying.
 const PREVIEW_CONNECT_MS = 2600
 const PREVIEW_REPLAY_MS = 1100
+// Hosted spin-up: how often to ask the control plane which step the worker is on.
+const RUNTIME_PHASE_POLL_MS = 2500
 
 type Phase = 'live' | 'text-out' | 'overlay-out' | 'gone'
 
@@ -47,9 +52,11 @@ function scrambledTail(resolvedCount: number): string {
 }
 
 export function GatewayConnectingOverlay() {
+  const { t } = useI18n()
   const gatewayState = useStore($gatewayState)
   const boot = useStore($desktopBoot)
   const onboarding = useStore($desktopOnboarding)
+  const runtimePhase = useStore($runtimePhase)
   const [previewing] = useState(forcedPreview)
   const [tail, setTail] = useState(TAIL)
   const [phase, setPhase] = useState<Phase>('live')
@@ -67,6 +74,41 @@ export function GatewayConnectingOverlay() {
   if (previewing || connecting) {
     shownRef.current = true
   }
+
+  // Hosted runtimes: poll GET /api/runtime while the socket is down so the
+  // overlay can say "Restoring your workspace…" instead of a bare CONNECTING.
+  // Same code path on web and desktop (both render this component).
+  useEffect(() => {
+    if (!connecting || previewing || !verxioApiEnabled()) {
+      if (!connecting) {
+        resetRuntimePhase()
+      }
+
+      return
+    }
+
+    let cancelled = false
+
+    const probe = () => {
+      getVerxioRuntime()
+        .then(status => {
+          if (!cancelled) {
+            applyRuntimeStatus(status)
+          }
+        })
+        .catch(() => {
+          // Not signed in yet or API briefly unreachable — keep the last phase.
+        })
+    }
+
+    probe()
+    const id = window.setInterval(probe, RUNTIME_PHASE_POLL_MS)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [connecting, previewing])
 
   // Decode loop — only while live (freeze the resolved word during the exit).
   useEffect(() => {
@@ -165,6 +207,11 @@ export function GatewayConnectingOverlay() {
 
   const leaving = phase !== 'live'
   const overlayHidden = phase === 'overlay-out' || phase === 'gone'
+  // Hosted spin-up: the pool worker reports which step it is on. Hidden for
+  // plain socket reconnects (phase null) so a warm reload stays minimal.
+  const spinUp = runtimePhase.phase && runtimePhase.phase !== 'stopped' ? runtimePhase.phase : null
+  const spinUpLabel = spinUp ? t.boot.runtimePhase[spinUp] : null
+  const spinUpProgress = runtimePhaseProgress(spinUp)
 
   return (
     <div
@@ -174,20 +221,45 @@ export function GatewayConnectingOverlay() {
       )}
     >
       <style>{'@keyframes gco-cursor { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }'}</style>
-      <span
+      <div
         className={cn(
-          'inline-flex items-center pl-[0.4em] font-mono text-[0.64rem] font-semibold uppercase tracking-[0.4em] tabular-nums text-(--theme-primary) transition duration-300 ease-out',
+          'flex flex-col items-center gap-3 transition duration-300 ease-out',
           leaving ? 'translate-y-2 opacity-0 saturate-0' : 'translate-y-0 opacity-100 saturate-100'
         )}
       >
-        {PREFIX}
-        {tail}
-        <span
-          aria-hidden="true"
-          className="dither ml-0.5 inline-block size-2 shrink-0 -translate-y-px rounded-[1px]"
-          style={{ animation: 'gco-cursor 1s step-end infinite' }}
-        />
-      </span>
+        <span className="inline-flex items-center pl-[0.4em] font-mono text-[0.64rem] font-semibold uppercase tracking-[0.4em] tabular-nums text-(--theme-primary)">
+          {PREFIX}
+          {tail}
+          <span
+            aria-hidden="true"
+            className="dither ml-0.5 inline-block size-2 shrink-0 -translate-y-px rounded-[1px]"
+            style={{ animation: 'gco-cursor 1s step-end infinite' }}
+          />
+        </span>
+        {spinUpLabel ? (
+          <div className="flex w-56 flex-col items-center gap-1.5" data-phase={spinUp} data-testid="runtime-spin-up">
+            <div className="h-px w-full overflow-hidden bg-(--theme-primary)/15">
+              <div
+                className="h-full bg-(--theme-primary) transition-[width] duration-500 ease-out"
+                style={{ width: `${spinUpProgress}%` }}
+              />
+            </div>
+            <span
+              className={cn(
+                'font-mono text-[0.6rem] tracking-[0.12em] text-(--theme-primary)/70',
+                spinUp === 'failed' && 'text-(--theme-danger,--theme-primary)'
+              )}
+            >
+              {spinUpLabel}
+            </span>
+            {runtimePhase.detail ? (
+              <span className="max-w-full truncate font-mono text-[0.55rem] tracking-[0.08em] text-(--theme-primary)/45">
+                {runtimePhase.detail}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }

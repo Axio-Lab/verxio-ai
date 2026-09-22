@@ -52,6 +52,15 @@ export const en: Translations = {
       startingDesktopConnection: 'Starting desktop connection',
       startingHermesDesktop: 'Starting Verxio…'
     },
+    runtimePhase: {
+      attaching_profile: 'Loading your agent…',
+      failed: 'Start failed, retrying…',
+      preparing_env: 'Preparing your environment…',
+      queued: 'Finding an agent worker…',
+      ready: 'Agent ready',
+      restoring_home: 'Restoring your workspace…',
+      starting: 'Starting your agent…'
+    },
     errors: {
       backgroundExited: 'Verxio backend exited.',
       backgroundExitedDuringStartup: 'Verxio backend exited during startup.',

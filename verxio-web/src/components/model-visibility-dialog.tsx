@@ -1,5 +1,5 @@
 import { useStore } from '@nanostores/react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 
 import { BrailleSpinner } from '@/components/ui/braille-spinner'
@@ -7,15 +7,9 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
 import type { HermesGateway } from '@/hermes'
-import { getGlobalModelOptions } from '@/hermes'
 import { useI18n } from '@/i18n'
-import {
-  consumeModelOptionsForceRefresh,
-  readCachedModelOptions,
-  writeCachedModelOptions
-} from '@/lib/model-options-cache'
+import { modelOptionsQueryOptions } from '@/lib/model-options-query'
 import { displayModelName, modelDisplayParts } from '@/lib/model-status-label'
-import { getScopedModelOptions } from '@/lib/verxio-model-options'
 import {
   $visibleModels,
   collapseModelFamilies,
@@ -23,7 +17,7 @@ import {
   modelVisibilityKey,
   setVisibleModels
 } from '@/store/model-visibility'
-import type { ModelOptionProvider, ModelOptionsResponse } from '@/types/hermes'
+import type { ModelOptionProvider } from '@/types/hermes'
 
 interface ModelVisibilityDialogProps {
   gw?: HermesGateway
@@ -44,28 +38,11 @@ export function ModelVisibilityDialog({
   const copy = t.modelVisibility
   const [search, setSearch] = useState('')
   const stored = useStore($visibleModels)
-  const modelOptionsScope = sessionId || 'global'
+  const queryClient = useQueryClient()
 
   const modelOptions = useQuery({
-    queryKey: ['model-options', modelOptionsScope],
-    queryFn: async (): Promise<ModelOptionsResponse> => {
-      const refresh = consumeModelOptionsForceRefresh()
-      let next: ModelOptionsResponse
-
-      next = await getScopedModelOptions(() =>
-        gw && sessionId
-          ? gw.request<ModelOptionsResponse>('model.options', { session_id: sessionId, refresh })
-          : getGlobalModelOptions({ refresh })
-      )
-
-      writeCachedModelOptions(modelOptionsScope, next)
-
-      return next
-    },
-    enabled: open,
-    initialData: () => readCachedModelOptions(modelOptionsScope),
-    initialDataUpdatedAt: 0,
-    staleTime: 0
+    ...modelOptionsQueryOptions({ gateway: gw, queryClient, sessionId }),
+    enabled: open
   })
 
   const providers = useMemo(

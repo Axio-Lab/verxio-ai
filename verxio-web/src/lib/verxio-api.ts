@@ -816,6 +816,16 @@ export async function verxioFetch<T>(path: string, init: RequestInit & { timeout
   }
 }
 
+export type VerxioRuntimePhase =
+  | 'attaching_profile'
+  | 'failed'
+  | 'preparing_env'
+  | 'queued'
+  | 'ready'
+  | 'restoring_home'
+  | 'starting'
+  | 'stopped'
+
 export interface VerxioRuntimeControlResponse {
   runtime: {
     id: string
@@ -825,6 +835,9 @@ export interface VerxioRuntimeControlResponse {
   }
   connected: boolean
   detail: string
+  /** Spin-up step reported by the pool worker (see app/runtime_phase.py). */
+  phase?: VerxioRuntimePhase | null
+  phase_detail?: string | null
 }
 
 export function syncRuntimeWorkspace(workspacePath: string): Promise<VerxioRuntimeControlResponse> {

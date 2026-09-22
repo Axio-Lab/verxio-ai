@@ -10,6 +10,7 @@ import {
   resolveStatusbarModel,
   shouldClearStaleStatusbarModel
 } from '@/lib/hosted-default-model'
+import { modelOptionsQueryKey } from '@/lib/model-options-query'
 import {
   getInferenceCatalog,
   getInferenceSettings,
@@ -79,10 +80,10 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
     (provider: string, model: string, includeGlobal: boolean) => {
       const patch = (prev: ModelOptionsResponse | undefined) => ({ ...(prev ?? {}), provider, model })
 
-      queryClient.setQueryData<ModelOptionsResponse>(['model-options', activeSessionId || 'global'], patch)
+      queryClient.setQueryData<ModelOptionsResponse>(modelOptionsQueryKey(activeSessionId), patch)
 
       if (includeGlobal) {
-        queryClient.setQueryData<ModelOptionsResponse>(['model-options', 'global'], patch)
+        queryClient.setQueryData<ModelOptionsResponse>(modelOptionsQueryKey(null), patch)
       }
     },
     [activeSessionId, queryClient]

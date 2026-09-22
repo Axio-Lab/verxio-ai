@@ -67,6 +67,15 @@ export interface Translations {
       startingDesktopConnection: string
       startingHermesDesktop: string
     }
+    runtimePhase: {
+      attaching_profile: string
+      failed: string
+      preparing_env: string
+      queued: string
+      ready: string
+      restoring_home: string
+      starting: string
+    }
     errors: {
       backgroundExited: string
       backgroundExitedDuringStartup: string
