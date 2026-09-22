@@ -7,6 +7,7 @@ import logging
 import mimetypes
 import os
 import re
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
@@ -574,6 +575,15 @@ async def get_runtime(request: Request) -> RuntimeControlResponse:
     elif runtime.status in {"running", "starting"}:
         _schedule_runtime_ensure(user)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
+
+@app.post("/api/runtime/touch")
+async def touch_runtime_route(request: Request) -> dict[str, bool]:
+    """Keepalive from an open chat. Refreshes idle-reaper activity without a health probe."""
+    user = require_user(request)
+    runtime = get_runtime_for_user(user)
+    if runtime.status in {"running", "starting"}:
+        await asyncio.to_thread(touch_runtime_activity, runtime)
+    return {"ok": True}
 
 @app.post("/api/runtime/start", response_model=RuntimeControlResponse)
 async def start_runtime_route(request: Request) -> RuntimeControlResponse:
@@ -2209,6 +2219,31 @@ def _runtime_ws_open_timeout_seconds() -> float:
     except ValueError:
         return 8.0
 
+def _runtime_ws_ping_timeout_seconds() -> float:
+    # Hermes runs tool calls on its own loop; a long build can delay pong frames
+    # well past the websockets default (20s). Dropping the socket there is what
+    # users see as "Reconnecting" in the middle of a build.
+    raw = os.getenv("VERXIO_RUNTIME_WS_PING_TIMEOUT_SECONDS", "120").strip()
+    try:
+        return max(20.0, float(raw))
+    except ValueError:
+        return 120.0
+
+_WS_ACTIVITY_TOUCHED_AT: dict[str, float] = {}
+_WS_ACTIVITY_TOUCH_INTERVAL_SECONDS = 60.0
+
+def _touch_runtime_activity_throttled(runtime: RuntimeInstance) -> None:
+    """Keep the idle reaper away from a runtime that is actively streaming."""
+    now = time.monotonic()
+    last = _WS_ACTIVITY_TOUCHED_AT.get(runtime.id, 0.0)
+    if now - last < _WS_ACTIVITY_TOUCH_INTERVAL_SECONDS:
+        return
+    _WS_ACTIVITY_TOUCHED_AT[runtime.id] = now
+    try:
+        touch_runtime_activity(runtime)
+    except Exception:
+        logger.debug("Runtime activity touch failed runtime=%s", runtime.id, exc_info=True)
+
 async def _safe_websocket_close(websocket: WebSocket, code: int) -> None:
     try:
         await websocket.close(code=code)
@@ -2265,6 +2300,9 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
                         additional_headers={"X-Hermes-Session-Token": token},
                         open_timeout=_runtime_ws_open_timeout_seconds(),
                         close_timeout=2,
+                        ping_interval=20,
+                        ping_timeout=_runtime_ws_ping_timeout_seconds(),
+                        max_size=None,
                     ),
                     timeout=_runtime_ws_open_timeout_seconds() + 2.0,
                 )
@@ -2299,6 +2337,9 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
                         await websocket.send_bytes(message)
                     else:
                         await websocket.send_text(str(message))
+                    # Streaming output is activity: a long build with no HTTP
+                    # polling must not be idle-reaped mid-run.
+                    await asyncio.to_thread(_touch_runtime_activity_throttled, runtime)
 
             await asyncio.gather(client_to_runtime(), runtime_to_client())
         finally:

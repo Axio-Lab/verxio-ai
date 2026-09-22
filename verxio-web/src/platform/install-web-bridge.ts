@@ -608,7 +608,25 @@ export function installWebBridge(): void {
 
   window.hermesDesktop = {
     getConnection: async () => getConnection(),
-    touchBackend: async () => ({ ok: true }),
+    // Keepalive for the hosted idle reaper: the shell pings this every minute
+    // while a chat is open so a long build never gets its runtime drained.
+    touchBackend: async () => {
+      if (!verxioApiEnabled()) {
+        return { ok: true }
+      }
+
+      try {
+        await fetch(verxioApiUrl('/api/runtime/touch'), {
+          credentials: 'include',
+          method: 'POST',
+          signal: AbortSignal.timeout(8_000)
+        })
+      } catch {
+        // Best effort — the websocket proxy also refreshes activity on traffic.
+      }
+
+      return { ok: true }
+    },
     getGatewayWsUrl: async () => {
       if (verxioApiEnabled()) {
         await waitForDashboardReady()
