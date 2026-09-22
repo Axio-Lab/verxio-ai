@@ -18,11 +18,15 @@ def configured_manager_name() -> str:
 
 def build_runtime_manager(name: str | None = None) -> RuntimeManager:
     key = (name or configured_manager_name()).strip().lower()
+    if key in {"pool", "worker-pool", "workers"}:
+        from app.runtime_orch.pool import PoolRuntimeManager
+
+        return PoolRuntimeManager()
     if key in {"local-docker", "docker", "local"}:
         return LocalDockerRuntimeManager()
     if key in {"k8s", "kubernetes"}:
         return K8sRuntimeManager()
-    raise ValueError(f"Unknown VERXIO_RUNTIME_MANAGER={key!r} (expected local-docker|k8s)")
+    raise ValueError(f"Unknown VERXIO_RUNTIME_MANAGER={key!r} (expected pool|local-docker|k8s)")
 
 
 def get_runtime_manager() -> RuntimeManager:

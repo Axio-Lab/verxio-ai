@@ -60,6 +60,8 @@ def is_hosted_control_plane() -> bool:
         "local-docker",
         "k8s",
         "kubernetes",
+        "pool",
+        "worker-pool",
     }
 
 
