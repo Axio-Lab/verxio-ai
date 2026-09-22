@@ -15,6 +15,14 @@ class ArtifactStore(Protocol):
 
     def exists(self, key: str) -> bool: ...
 
+    def put_file(self, key: str, local_file: Path, *, content_type: str = "") -> str: ...
+
+    def local_file(self, key: str) -> Path | None: ...
+
+    def read_bytes(self, key: str) -> bytes | None: ...
+
+    def delete(self, key: str) -> None: ...
+
 
 class LocalArtifactStore:
     """Stores snapshots under VERXIO_ARTIFACT_SNAPSHOT_ROOT (default .verxio/snapshots)."""
@@ -56,6 +64,31 @@ class LocalArtifactStore:
         if not path.exists():
             return None
         return str(path)
+
+    # Single-object operations (artifact index-on-write).
+    def put_file(self, key: str, local_file: Path, *, content_type: str = "") -> str:
+        dest = self._path(key)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_name(f".{dest.name}.tmp")
+        shutil.copy2(local_file, tmp)
+        os.replace(tmp, dest)
+        return str(dest)
+
+    def local_file(self, key: str) -> Path | None:
+        """Local filesystem path for streaming (None for remote stores)."""
+        path = self._path(key)
+        return path if path.is_file() else None
+
+    def read_bytes(self, key: str) -> bytes | None:
+        path = self._path(key)
+        return path.read_bytes() if path.is_file() else None
+
+    def delete(self, key: str) -> None:
+        path = self._path(key)
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
+        elif path.exists():
+            path.unlink()
 
 
 class S3ArtifactStore:
@@ -121,8 +154,8 @@ class S3ArtifactStore:
         except Exception:
             return False
 
-    def signed_url(self, key: str, *, expires: int = 3600) -> str | None:
-        object_key = self._key(key) + ".tar.gz"
+    def signed_url(self, key: str, *, expires: int = 3600, raw: bool = False) -> str | None:
+        object_key = self._key(key) if raw else self._key(key) + ".tar.gz"
         try:
             return self._client.generate_presigned_url(
                 "get_object",
@@ -131,6 +164,33 @@ class S3ArtifactStore:
             )
         except Exception:
             return None
+
+    # Single-object operations (artifact index-on-write).
+    def put_file(self, key: str, local_file: Path, *, content_type: str = "") -> str:
+        object_key = self._key(key)
+        extra = {"ContentType": content_type} if content_type else None
+        with local_file.open("rb") as handle:
+            self._client.upload_fileobj(handle, self.bucket, object_key, ExtraArgs=extra)
+        return f"s3://{self.bucket}/{object_key}"
+
+    def local_file(self, key: str) -> Path | None:
+        return None
+
+    def read_bytes(self, key: str) -> bytes | None:
+        import io
+
+        buf = io.BytesIO()
+        try:
+            self._client.download_fileobj(self.bucket, self._key(key), buf)
+        except Exception:
+            return None
+        return buf.getvalue()
+
+    def delete(self, key: str) -> None:
+        try:
+            self._client.delete_object(Bucket=self.bucket, Key=self._key(key))
+        except Exception:
+            pass
 
 
 def get_artifact_store() -> LocalArtifactStore | S3ArtifactStore:
