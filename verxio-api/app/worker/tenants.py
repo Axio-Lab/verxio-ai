@@ -105,6 +105,10 @@ class AttachedTenant:
     def lease_key(self) -> str:
         return tenant_lease_key(self.runtime.workspace_id, self.runtime.agent_id)
 
+    @property
+    def home(self) -> Path:
+        return local_home_path(self.runtime)
+
 
 class TenantRegistry:
     def __init__(self) -> None:

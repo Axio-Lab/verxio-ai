@@ -133,6 +133,9 @@ async def _execute_turn(tenant: AttachedTenant, job_id: str, payload: dict[str, 
     runtime = tenant.runtime
     source = str(payload.get("source") or "web")
     channel = _events_channel(runtime.workspace_id, runtime.agent_id)
+    if source.startswith("workflow:") and payload.get("run_id"):
+        await _execute_workflow_turn(tenant, job_id, payload, source)
+        return
     text = str(payload.get("text") or payload.get("prompt") or payload.get("input") or "").strip()
     if not text:
         if job_id:
@@ -193,6 +196,115 @@ async def _execute_turn(tenant: AttachedTenant, job_id: str, payload: dict[str, 
     await _post_turn(tenant, job_id, payload, source, output, error)
 
 
+def _local_bindings(tenant: AttachedTenant):
+    """Route ``run_agent_via_dashboard`` / ``send_message_via_dashboard`` to
+    this worker's Hermes sidecar and the tenant delivery queue."""
+    from app.runtime_dashboard import local_runtime_bindings
+
+    runtime = tenant.runtime
+
+    async def _oneshot(_workspace, _profile, user_input, instructions, images) -> str:
+        text = user_input
+        if images:
+            text = f"{user_input}\n\nAttached images:\n" + "\n".join(str(ref) for ref in images)
+        result = await hermes_client.run_turn(
+            tenant=tenant.name,
+            text=text,
+            session_id=None,  # one-shot: fresh context per workflow step
+            instructions=str(instructions) if instructions else None,
+        )
+        if result.status != "completed":
+            raise hermes_client.HermesRunError(result.error or result.status)
+        return result.output
+
+    async def _send(_workspace, _profile, platform, connection_id, destination, message) -> dict[str, object]:
+        job_id = await asyncio.to_thread(
+            enqueue_deliver,
+            workspace_id=runtime.workspace_id,
+            agent_id=runtime.agent_id,
+            tenant_id=runtime.tenant_id,
+            platform=str(platform),
+            payload={
+                "chat_id": destination,
+                "connection_id": connection_id or "default",
+                "text": message,
+            },
+        )
+        return {"ok": True, "queued": True, "job_id": job_id, "platform": platform, "destination": destination}
+
+    return local_runtime_bindings(oneshot=_oneshot, sender=_send)
+
+
+async def _execute_workflow_turn(tenant: AttachedTenant, job_id: str, payload: dict[str, Any], source: str) -> None:
+    """Execute a queued workflow run (created by the API) on this worker."""
+    from app.control_plane import agent_from_row, workspace_from_row
+    from app.workflow_agents import execute_workflow_run, get_agent, load_workflow_run
+
+    runtime = tenant.runtime
+    channel = _events_channel(runtime.workspace_id, runtime.agent_id)
+    run_id = str(payload.get("run_id") or "")
+    trigger_type = source.split(":", 1)[1] or "manual"
+
+    def _load():
+        run = load_workflow_run(run_id)
+        workspace_row = db.fetch_one("SELECT * FROM workspaces WHERE id = ?", (runtime.workspace_id,))
+        agent_row = db.fetch_one("SELECT * FROM agents WHERE id = ?", (runtime.agent_id,))
+        if not run or not workspace_row or not agent_row:
+            return None
+        workspace = workspace_from_row(workspace_row)
+        profile = agent_from_row(agent_row)
+        agent = get_agent(workspace, profile, str(payload.get("workflow_agent_id") or run.workflow_agent_id))
+        return run, workspace, profile, agent
+
+    loaded = await asyncio.to_thread(_load)
+    if loaded is None:
+        if job_id:
+            mark_job(job_id, status="failed", error=f"workflow run {run_id} not found")
+        return
+    run, workspace, profile, agent = loaded
+    if run.status in {"completed", "failed"}:
+        # Redelivered job for a finished run — nothing to do.
+        if job_id:
+            mark_job(job_id, status="completed")
+        return
+
+    tenant.active_runs += 1
+    REGISTRY.mark_activity(tenant)
+    if job_id:
+        mark_job(job_id, status="running")
+    publish(channel, {"status": "started", "source": source, "job_id": job_id, "run_id": run_id, "worker": REGISTRY.worker})
+    error: str | None = None
+    output = ""
+    try:
+        with _local_bindings(tenant):
+            finished = await execute_workflow_run(
+                workspace,
+                profile,
+                agent,
+                run,
+                run.input if isinstance(run.input, dict) else dict(payload.get("input") or {}),
+                trigger_type=trigger_type,
+                trigger_id=str(payload.get("trigger_id") or "") or None,
+            )
+        output = finished.output_text or ""
+        if finished.status != "completed":
+            error = finished.error or finished.status
+    except Exception as exc:
+        logger.exception("Workflow run crashed run=%s job=%s", run_id, job_id)
+        error = str(exc)
+    finally:
+        tenant.active_runs = max(0, tenant.active_runs - 1)
+        REGISTRY.mark_activity(tenant)
+
+    if job_id:
+        mark_job(job_id, status="completed" if error is None else "failed", error=error)
+    publish(
+        channel,
+        {"status": "completed" if error is None else "failed", "job_id": job_id, "source": source, "run_id": run_id, "error": error},
+    )
+    await _post_turn(tenant, job_id, payload, source, output, error)
+
+
 def _session_id_for(payload: dict[str, Any], source: str) -> str | None:
     explicit = str(payload.get("session_id") or "").strip()
     if explicit:
@@ -244,6 +356,7 @@ async def _post_turn(
             status="completed" if error is None else "failed",
             output=output,
             error=error,
+            home=tenant.home,
         )
         deliver = payload.get("deliver") if isinstance(payload.get("deliver"), dict) else None
         if deliver and deliver.get("platform") and deliver.get("chat_id") and output.strip() and error is None:

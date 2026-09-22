@@ -2532,19 +2532,57 @@ async def run_agent(
     agent = get_agent(workspace, profile, agent_id)
     if not agent.enabled:
         raise HTTPException(status_code=409, detail="Workflow agent is disabled.")
+    run = _create_run_row(workspace, profile, agent, trigger_type, payload.input, trigger_id)
     from app.plane import tenant_uses_pool
 
-    if tenant_uses_pool(workspace.id, profile.id):
+    if tenant_uses_pool(workspace.id, profile.id) and not _executing_locally():
+        # Pool tenants execute on an agent worker holding the tenant lease;
+        # the API only records the queued run and hands the job over.
         from app.jobs import enqueue_turn
 
-        enqueue_turn(
-            tenant_id=workspace.tenant_id if hasattr(workspace, "tenant_id") else "",
+        job_id = enqueue_turn(
+            tenant_id=workspace.tenant_id,
             workspace_id=workspace.id,
             agent_id=profile.id,
             source=f"workflow:{trigger_type}",
-            payload={"workflow_agent_id": agent_id, "input": payload.input, "trigger_id": trigger_id or ""},
+            payload={
+                "workflow_agent_id": agent_id,
+                "run_id": run.id,
+                "input": payload.input,
+                "trigger_id": trigger_id or "",
+            },
         )
-    run = _create_run_row(workspace, profile, agent, trigger_type, payload.input, trigger_id)
+        _record_run_event(run, "dispatched", "Workflow run handed to the agent worker pool.", {"job_id": job_id})
+        return _run_from_row(db.fetch_one("SELECT * FROM workflow_runs WHERE id = ?", (run.id,)) or {})
+    return await execute_workflow_run(
+        workspace, profile, agent, run, payload.input, trigger_type=trigger_type, trigger_id=trigger_id
+    )
+
+
+def _executing_locally() -> bool:
+    """True inside a pool worker job (local Hermes bindings installed)."""
+    from app.runtime_dashboard import _LOCAL_ONESHOT
+
+    return _LOCAL_ONESHOT.get() is not None
+
+
+def load_workflow_run(run_id: str) -> WorkflowRunRecord | None:
+    row = db.fetch_one("SELECT * FROM workflow_runs WHERE id = ?", (run_id,))
+    return _run_from_row(row) if row else None
+
+
+async def execute_workflow_run(
+    workspace: Workspace,
+    profile: AgentProfile,
+    agent: WorkflowAgentRecord,
+    run: WorkflowRunRecord,
+    run_input: dict[str, Any],
+    *,
+    trigger_type: str,
+    trigger_id: str | None = None,
+) -> WorkflowRunRecord:
+    """Run an already-recorded workflow run to completion (API inline or pool worker)."""
+    payload = WorkflowRunCreateRequest(input=run_input)
     if agent.model_id:
         _record_run_event(run, "model_selected", "Selected workflow agent brain model.", {"model_id": agent.model_id})
     _set_run_status(run.id, "running")

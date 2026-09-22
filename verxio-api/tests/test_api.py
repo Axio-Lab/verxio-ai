@@ -3687,3 +3687,68 @@ def test_secure_session_cookie_uses_samesite_none(client, monkeypatch):
     assert "samesite=none" in set_cookie.lower()
     assert "secure" in set_cookie.lower()
     assert response.cookies.get(SESSION_COOKIE)
+
+
+def test_workflow_run_on_pool_tenant_is_dispatched_then_executed_by_worker(client, monkeypatch):
+    """Pool tenants: API records a queued run + turn job; the worker finishes it
+    through ``execute_workflow_run`` with local Hermes bindings installed."""
+    monkeypatch.delenv("VERXIO_REDIS_URL", raising=False)
+    from app import plane
+    from app.infra.redis import STREAM_TURNS, read_group
+    from app.runtime_dashboard import local_runtime_bindings
+
+    _payload, token = signup(client, "workflow-pool@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+    bootstrap = client.get("/api/bootstrap", headers=headers).json()
+    workspace_id = bootstrap["workspace"]["id"]
+    profile_id = bootstrap["profile"]["id"]
+    plane.set_plane(workspace_id, profile_id, "pool")
+
+    dashboard_calls = []
+
+    async def never_called(*args, **kwargs):  # the API must not run the turn inline
+        dashboard_calls.append(args)
+        raise AssertionError("inline dashboard run on a pool tenant")
+
+    monkeypatch.setattr(workflow_agents, "run_agent_via_dashboard", never_called)
+
+    agent = client.post("/api/workflow-agents", headers=headers, json={"name": "Pool Agent"}).json()
+    run = client.post(f"/api/workflow-agents/{agent['id']}/runs", headers=headers, json={"input": {"customer": "Ada"}})
+    assert run.status_code == 200
+    assert run.json()["status"] == "queued"
+    assert not dashboard_calls
+    events = client.get(f"/api/workflow-agents/{agent['id']}/runs/{run.json()['id']}/events", headers=headers).json()["events"]
+    assert [event["event_type"] for event in events] == ["queued", "dispatched"]
+
+    messages = read_group(STREAM_TURNS, "test-wf", "c", count=5, block_ms=50)
+    assert messages
+    raw = messages[-1][1]["payload"]
+    body = json.loads(raw) if isinstance(raw, str) else raw
+    assert body["source"] == "workflow:manual" and body["run_id"] == run.json()["id"]
+
+    # Worker side: local bindings route the oneshot to the sidecar.
+    async def sidecar_oneshot(workspace, profile, user_input, instructions, images):
+        return "Pool output ready."
+
+    async def sidecar_send(workspace, profile, platform, connection_id, destination, message):
+        return {"ok": True, "queued": True}
+
+    from app import runtime_dashboard
+
+    monkeypatch.setattr(workflow_agents, "run_agent_via_dashboard", runtime_dashboard.run_agent_via_dashboard)
+    from app.control_plane import agent_from_row, workspace_from_row
+
+    workspace = workspace_from_row(db.fetch_one("SELECT * FROM workspaces WHERE id = ?", (workspace_id,)))
+    profile = agent_from_row(db.fetch_one("SELECT * FROM agents WHERE id = ?", (profile_id,)))
+    wf_agent = workflow_agents.get_agent(workspace, profile, agent["id"])
+    queued = workflow_agents.load_workflow_run(run.json()["id"])
+
+    async def _worker_execute():
+        with local_runtime_bindings(oneshot=sidecar_oneshot, sender=sidecar_send):
+            return await workflow_agents.execute_workflow_run(
+                workspace, profile, wf_agent, queued, body["input"], trigger_type="manual"
+            )
+
+    finished = asyncio.run(_worker_execute())
+    assert finished.status == "completed"
+    assert finished.output_text == "Pool output ready."
