@@ -2532,6 +2532,16 @@ async def run_agent(
     agent = get_agent(workspace, profile, agent_id)
     if not agent.enabled:
         raise HTTPException(status_code=409, detail="Workflow agent is disabled.")
+    if os.getenv("VERXIO_RUNTIME_MANAGER", "").strip().lower() in {"pool", "worker-pool", "workers"}:
+        from app.jobs import enqueue_turn
+
+        enqueue_turn(
+            tenant_id=workspace.tenant_id if hasattr(workspace, "tenant_id") else "",
+            workspace_id=workspace.id,
+            agent_id=profile.id,
+            source=f"workflow:{trigger_type}",
+            payload={"workflow_agent_id": agent_id, "input": payload.input, "trigger_id": trigger_id or ""},
+        )
     run = _create_run_row(workspace, profile, agent, trigger_type, payload.input, trigger_id)
     if agent.model_id:
         _record_run_event(run, "model_selected", "Selected workflow agent brain model.", {"model_id": agent.model_id})
