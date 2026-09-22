@@ -75,3 +75,42 @@ def test_credential_store(monkeypatch, tmp_path):
         plaintext='{"me":"1"}',
     )
     assert load_credential("ws", "ag", "whatsapp") == '{"me":"1"}'
+
+
+def test_plane_flag_selects_manager(monkeypatch, tmp_path):
+    monkeypatch.setenv("VERXIO_DATABASE_MODE", "sqlite")
+    monkeypatch.setenv("VERXIO_DATABASE_PATH", str(tmp_path / "plane.sqlite3"))
+    monkeypatch.setenv("VERXIO_RUNTIME_MANAGER", "local-docker")
+    monkeypatch.delenv("VERXIO_REDIS_URL", raising=False)
+    from app import db, plane
+    from app.runtime_orch.factory import manager_name_for_runtime
+
+    db.run_migrations()
+    runtime = RuntimeInstance(
+        id="rt",
+        tenant_id="t",
+        workspace_id="ws",
+        agent_id="ag",
+        mode="hermes",
+        status="stopped",
+        hermes_home_path="/tmp/h",
+        workspace_path="/tmp/w",
+        artifact_path="/tmp/a",
+    )
+    assert plane.resolve_plane("ws", "ag") == "docker"
+    assert manager_name_for_runtime(runtime) == "local-docker"
+
+    assert plane.set_plane("ws", "ag", "pool") == "pool"
+    assert plane.resolve_plane("ws", "ag") == "pool"
+    assert plane.tenant_uses_pool("ws", "ag")
+    assert manager_name_for_runtime(runtime) == "pool"
+
+    # A live runtime keeps the backend that started it until it stops.
+    live = runtime.model_copy(update={"status": "running", "manager": "local-docker"})
+    assert manager_name_for_runtime(live) == "local-docker"
+    stopped = live.model_copy(update={"status": "stopped"})
+    assert manager_name_for_runtime(stopped) == "pool"
+
+    assert plane.main(["get", "ws", "ag"]) == 0
+    assert plane.migrate_all("pool") == 0
+    assert [row["agent_id"] for row in plane.list_planes("pool")] == ["ag"]

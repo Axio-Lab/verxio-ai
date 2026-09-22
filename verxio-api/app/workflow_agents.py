@@ -2532,7 +2532,9 @@ async def run_agent(
     agent = get_agent(workspace, profile, agent_id)
     if not agent.enabled:
         raise HTTPException(status_code=409, detail="Workflow agent is disabled.")
-    if os.getenv("VERXIO_RUNTIME_MANAGER", "").strip().lower() in {"pool", "worker-pool", "workers"}:
+    from app.plane import tenant_uses_pool
+
+    if tenant_uses_pool(workspace.id, profile.id):
         from app.jobs import enqueue_turn
 
         enqueue_turn(

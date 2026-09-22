@@ -211,7 +211,7 @@ def test_wake_runtime_injects_hosted_keys_when_caller_omits_extra_env(monkeypatc
             captured["extra_env"] = extra_env
             return runtime
 
-    monkeypatch.setattr(lifecycle, "get_runtime_manager", lambda: FakeManager())
+    monkeypatch.setattr(lifecycle, "get_runtime_manager", lambda *_a, **_k: FakeManager())
     asyncio.run(lifecycle.wake_runtime(_rt(status="stopped"), reason="test.roll"))
     assert captured["extra_env"]["GEMINI_API_KEY"] == "hosted-gemini"
     assert captured["extra_env"]["GOOGLE_API_KEY"] == "hosted-gemini"
@@ -316,7 +316,7 @@ def test_reconcile_missing_runtimes_marks_stopped_and_wakes(monkeypatch):
         async def health(self, runtime):
             return runtime.id == "rt_live", "ok"
 
-    monkeypatch.setattr(lifecycle, "get_runtime_manager", lambda: FakeManager())
+    monkeypatch.setattr(lifecycle, "get_runtime_manager", lambda *_a, **_k: FakeManager())
     monkeypatch.setattr(
         lifecycle.db,
         "fetch_all",

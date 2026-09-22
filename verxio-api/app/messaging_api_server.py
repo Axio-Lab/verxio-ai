@@ -61,7 +61,7 @@ def _swap_url_port(url: str, port: int) -> str:
 async def resolve_api_server_base(runtime: RuntimeInstance) -> str | None:
     from app.runtime_orch.factory import get_runtime_manager
 
-    manager = get_runtime_manager()
+    manager = get_runtime_manager(runtime)
     address = await manager.api_server_address(runtime)
     if address:
         return address.rstrip("/")

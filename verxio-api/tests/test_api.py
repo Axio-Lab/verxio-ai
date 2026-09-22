@@ -1804,7 +1804,7 @@ def test_dashboard_env_put_does_not_restart_runtime(client, monkeypatch):
         async def request(self, *args, **kwargs):
             return _FakeUpstream()
 
-    monkeypatch.setattr(main, "get_runtime_manager", lambda: _FakeManager())
+    monkeypatch.setattr(main, "get_runtime_manager", lambda *_a, **_k: _FakeManager())
     monkeypatch.setattr(main, "get_runtime_for_user", lambda _user, fresh=False: runtime)
     monkeypatch.setattr(main, "runtime_env_for_user", lambda _user_id: {"GEMINI_API_KEY": "hosted"})
     monkeypatch.setattr(main, "runtime_dashboard_base_url", lambda _runtime, ensure_network=False: "http://127.0.0.1:19119")
@@ -3145,7 +3145,7 @@ def test_composio_connections_restart_stale_runtime_env(client, monkeypatch):
             restarted.append(runtime.id)
             return runtime
 
-    monkeypatch.setattr(main, "get_runtime_manager", lambda: _FakeManager())
+    monkeypatch.setattr(main, "get_runtime_manager", lambda *_a, **_k: _FakeManager())
 
     response = client.get("/api/composio/connections", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
 
@@ -3190,7 +3190,7 @@ def test_composio_bridge_sync_restarts_stale_runtime_env_without_apply_live(clie
             restarted.append(runtime.id)
             return runtime
 
-    monkeypatch.setattr(main, "get_runtime_manager", lambda: _FakeManager())
+    monkeypatch.setattr(main, "get_runtime_manager", lambda *_a, **_k: _FakeManager())
 
     import asyncio
 
@@ -3248,7 +3248,7 @@ def test_composio_connection_change_soft_reloads_mcp_without_docker_restart(clie
         soft_reloads.append(runtime.id)
         return {"ok": True, "message": "Reloaded MCP servers (3 tool(s)).", "toolCount": 3}
 
-    monkeypatch.setattr(main, "get_runtime_manager", lambda: _FakeManager())
+    monkeypatch.setattr(main, "get_runtime_manager", lambda *_a, **_k: _FakeManager())
     monkeypatch.setattr(main, "soft_reload_runtime_mcp", fake_soft_reload)
 
     response = client.get("/api/composio/connections", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
