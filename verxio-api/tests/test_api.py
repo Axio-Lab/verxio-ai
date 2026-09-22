@@ -1805,7 +1805,10 @@ def test_dashboard_env_put_does_not_restart_runtime(client, monkeypatch):
             return _FakeUpstream()
 
     monkeypatch.setattr(main, "get_runtime_manager", lambda *_a, **_k: _FakeManager())
-    monkeypatch.setattr(main, "get_runtime_for_user", lambda _user, fresh=False: runtime)
+    async def _runtime_for_user(_user, *_a, **_k):
+        return runtime
+
+    monkeypatch.setattr(main, "aget_runtime_for_user", _runtime_for_user)
     monkeypatch.setattr(main, "runtime_env_for_user", lambda _user_id: {"GEMINI_API_KEY": "hosted"})
     monkeypatch.setattr(main, "runtime_dashboard_base_url", lambda _runtime, ensure_network=False: "http://127.0.0.1:19119")
     monkeypatch.setattr(main, "_runtime_dashboard_token_async", fake_token)

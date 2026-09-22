@@ -27,13 +27,12 @@ from starlette.websockets import WebSocketDisconnect
 from app import db
 from app.auth import (
     aget_current_user,
-    get_current_user,
+    arequire_user,
     login,
     logout,
     me,
     request_login_code,
     request_password_reset,
-    require_user,
     resend_verification,
     reset_password,
     signup,
@@ -58,7 +57,11 @@ from app.composio_catalog import (
     sync_composio_runtime_bridge,
     verify_composio_webhook,
 )
-from app.control_plane import ensure_runtime_directories, get_context_for_user, get_runtime_for_user
+from app.control_plane import (
+    aget_context_for_user,
+    aget_runtime_for_user,
+    ensure_runtime_directories,
+)
 from app.inference import (
     inference_usage,
     list_inference_catalog,
@@ -472,7 +475,7 @@ async def health() -> dict[str, object]:
 async def bootstrap(request: Request) -> BootstrapResponse:
     user = await aget_current_user(request)
     if user:
-        workspace, profile, _runtime_instance = get_context_for_user(user)
+        workspace, profile, _runtime_instance = await aget_context_for_user(user)
     else:
         workspace, profile = DEMO_WORKSPACE, DEMO_PROFILE
 
@@ -534,15 +537,15 @@ async def logout_route(request: Request, response: Response) -> dict[str, bool]:
 
 @app.get("/api/auth/me", response_model=AuthResponse)
 async def me_route(request: Request) -> AuthResponse:
-    user = require_user(request)
+    user = await arequire_user(request)
     return me(user)
 
 @app.get("/api/profile")
 async def get_profile(request: Request):
-    user = get_current_user(request)
+    user = await aget_current_user(request)
     if not user:
         return DEMO_PROFILE
-    _workspace, profile, _runtime_instance = get_context_for_user(user)
+    _workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return profile
 
 @app.get("/api/hermes")
@@ -556,7 +559,7 @@ async def get_slack_manifest(
     description: str | None = None,
     include_assistant: bool = True,
 ):
-    require_user(request)
+    await arequire_user(request)
     try:
         return build_slack_manifest(
             name=name or "Verxio",
@@ -568,8 +571,8 @@ async def get_slack_manifest(
 
 @app.get("/api/runtime", response_model=RuntimeControlResponse)
 async def get_runtime(request: Request) -> RuntimeControlResponse:
-    user = require_user(request)
-    runtime = get_runtime_for_user(user)
+    user = await arequire_user(request)
+    runtime = await aget_runtime_for_user(user)
     connected, detail = await get_runtime_manager(runtime).health(runtime)
     if connected:
         runtime = touch_runtime_activity(runtime)
@@ -580,19 +583,19 @@ async def get_runtime(request: Request) -> RuntimeControlResponse:
 @app.post("/api/runtime/touch")
 async def touch_runtime_route(request: Request) -> dict[str, bool]:
     """Keepalive from an open chat. Refreshes idle-reaper activity without a health probe."""
-    user = require_user(request)
-    runtime = get_runtime_for_user(user)
+    user = await arequire_user(request)
+    runtime = await aget_runtime_for_user(user)
     if runtime.status in {"running", "starting"}:
         await asyncio.to_thread(touch_runtime_activity, runtime)
     return {"ok": True}
 
 @app.post("/api/runtime/start", response_model=RuntimeControlResponse)
 async def start_runtime_route(request: Request) -> RuntimeControlResponse:
-    user = require_user(request)
+    user = await arequire_user(request)
     await _sync_composio_bridge_for_user(user)
     await _sync_inference_bridge_for_user(user, refresh_running=True)
     runtime = await wake_runtime(
-        get_runtime_for_user(user),
+        await aget_runtime_for_user(user),
         extra_env=runtime_env_for_user(str(user["id"])),
         reason="api.start",
     )
@@ -602,11 +605,11 @@ async def start_runtime_route(request: Request) -> RuntimeControlResponse:
 @app.post("/api/runtime/wake", response_model=RuntimeControlResponse)
 async def wake_runtime_route(request: Request) -> RuntimeControlResponse:
     """Alias of start with explicit wake semantics for channels/cron."""
-    user = require_user(request)
+    user = await arequire_user(request)
     await _sync_composio_bridge_for_user(user)
     await _sync_inference_bridge_for_user(user, refresh_running=True)
     runtime = await wake_runtime(
-        get_runtime_for_user(user),
+        await aget_runtime_for_user(user),
         extra_env=runtime_env_for_user(str(user["id"])),
         reason="api.wake",
     )
@@ -615,25 +618,25 @@ async def wake_runtime_route(request: Request) -> RuntimeControlResponse:
 
 @app.post("/api/runtime/stop", response_model=RuntimeControlResponse)
 async def stop_runtime_route(request: Request) -> RuntimeControlResponse:
-    user = require_user(request)
-    current = get_runtime_for_user(user)
+    user = await arequire_user(request)
+    current = await aget_runtime_for_user(user)
     runtime = await get_runtime_manager(current).stop(current)
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
 
 @app.post("/api/runtime/drain", response_model=RuntimeControlResponse)
 async def drain_runtime_route(request: Request) -> RuntimeControlResponse:
-    user = require_user(request)
-    runtime = await drain_runtime(get_runtime_for_user(user))
+    user = await arequire_user(request)
+    runtime = await drain_runtime(await aget_runtime_for_user(user))
     connected, detail = await runtime_health(runtime)
     return RuntimeControlResponse(runtime=runtime, connected=connected, detail=detail)
 
 @app.post("/api/runtime/restart", response_model=RuntimeControlResponse)
 async def restart_runtime_route(request: Request) -> RuntimeControlResponse:
-    user = require_user(request)
+    user = await arequire_user(request)
     await _sync_composio_bridge_for_user(user)
     await _sync_inference_bridge_for_user(user, refresh_running=True)
-    current = get_runtime_for_user(user)
+    current = await aget_runtime_for_user(user)
     runtime = await get_runtime_manager(current).restart(
         current,
         extra_env=runtime_env_for_user(str(user["id"])),
@@ -644,9 +647,9 @@ async def restart_runtime_route(request: Request) -> RuntimeControlResponse:
 @app.post("/api/runtime/cron")
 async def sync_runtime_cron_route(request: Request) -> dict[str, object]:
     from app.cron_store import upsert_cron_jobs
-    from app.runtime_auth import require_runtime_token
+    from app.runtime_auth import arequire_runtime_token
 
-    runtime = require_runtime_token(request)
+    runtime = await arequire_runtime_token(request)
     payload = await request.json()
     jobs = payload.get("jobs") if isinstance(payload, dict) else []
     count = upsert_cron_jobs(
@@ -660,14 +663,14 @@ async def sync_runtime_cron_route(request: Request) -> dict[str, object]:
 
 @app.post("/api/runtime/turns")
 async def enqueue_runtime_turn_route(request: Request) -> dict[str, object]:
-    from app.jobs import enqueue_turn
-    from app.runtime_auth import require_runtime_token
+    from app.jobs import aenqueue_turn
+    from app.runtime_auth import arequire_runtime_token
 
-    runtime = require_runtime_token(request)
+    runtime = await arequire_runtime_token(request)
     payload = await request.json()
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Turn payload must be an object.")
-    job_id = enqueue_turn(
+    job_id = await aenqueue_turn(
         tenant_id=runtime.tenant_id,
         workspace_id=runtime.workspace_id,
         agent_id=runtime.agent_id,
@@ -684,40 +687,38 @@ async def poll_runtime_deliveries_route(request: Request, wait: int = 25) -> dic
     Called by channel gateways in remote-exec mode. Returns ``{"delivery": null}``
     on timeout so clients loop without backoff.
     """
-    from app.jobs import pop_delivery
-    from app.runtime_auth import require_runtime_token
+    from app.jobs import apop_delivery
+    from app.runtime_auth import arequire_runtime_token
 
-    runtime = require_runtime_token(request)
+    runtime = await arequire_runtime_token(request)
     timeout = float(max(1, min(int(wait), 30)))
-    item = await asyncio.to_thread(
-        pop_delivery, runtime.workspace_id, runtime.agent_id, timeout_seconds=timeout
-    )
+    item = await apop_delivery(runtime.workspace_id, runtime.agent_id, timeout_seconds=timeout)
     return {"delivery": item}
 
 
 @app.post("/api/runtime/deliveries/{job_id}/ack")
 async def ack_runtime_delivery_route(job_id: str, request: Request) -> dict[str, object]:
-    from app.jobs import get_job, mark_job
-    from app.runtime_auth import require_runtime_token
+    from app.jobs import amark_job, get_job
+    from app.runtime_auth import arequire_runtime_token
 
-    runtime = require_runtime_token(request)
+    runtime = await arequire_runtime_token(request)
     job = await asyncio.to_thread(get_job, job_id)
     if not job or str(job.get("workspace_id")) != runtime.workspace_id or str(job.get("agent_id")) != runtime.agent_id:
         raise HTTPException(status_code=404, detail="Delivery not found.")
     body = await request.json()
     ok = bool(body.get("ok")) if isinstance(body, dict) else False
     error = str(body.get("error") or "")[:500] if isinstance(body, dict) and body.get("error") else None
-    await asyncio.to_thread(mark_job, job_id, status="delivered" if ok else "failed", error=error)
+    await amark_job(job_id, status="delivered" if ok else "failed", error=error)
     return {"ok": True}
 
 
 @app.get("/api/channels/pairing/{workspace_id}/{agent_id}")
 async def channel_pairing_route(workspace_id: str, agent_id: str, request: Request) -> dict[str, object]:
-    user = require_user(request)
+    user = await arequire_user(request)
     from app.channels.shards import pairing_url, shard_for
 
     # Only the tenant's own user may learn its shard placement.
-    _workspace, agent, _runtime = get_context_for_user(user)
+    _workspace, agent, _runtime = await aget_context_for_user(user)
     if agent.workspace_id != workspace_id or agent.id != agent_id:
         raise HTTPException(status_code=404, detail="Agent not found.")
     return {
@@ -777,9 +778,9 @@ class ChannelCredentialWrite(BaseModel):
 async def write_channel_credential_route(payload: ChannelCredentialWrite, request: Request) -> dict[str, object]:
     """Write-back from a gateway: WhatsApp creds.json, bot tokens set in the dashboard."""
     from app.channels.creds import upsert_credential
-    from app.runtime_auth import require_runtime_token
+    from app.runtime_auth import arequire_runtime_token
 
-    runtime = require_runtime_token(request)
+    runtime = await arequire_runtime_token(request)
     cred_id = await asyncio.to_thread(
         upsert_credential,
         tenant_id=runtime.tenant_id,
@@ -794,19 +795,19 @@ async def write_channel_credential_route(payload: ChannelCredentialWrite, reques
 @app.delete("/api/runtime/channels/credentials/{platform}")
 async def delete_channel_credential_route(platform: str, request: Request) -> dict[str, object]:
     from app.channels.creds import delete_credential
-    from app.runtime_auth import require_runtime_token
+    from app.runtime_auth import arequire_runtime_token
 
-    runtime = require_runtime_token(request)
+    runtime = await arequire_runtime_token(request)
     removed = await asyncio.to_thread(delete_credential, runtime.workspace_id, runtime.agent_id, platform.lower())
     return {"ok": True, "removed": removed}
 
 
 @app.post("/api/channels/telegram/{workspace_id}")
 async def telegram_webhook_route(workspace_id: str, request: Request) -> dict[str, str]:
-    from app.jobs import enqueue_webhook_delivery
+    from app.jobs import aenqueue_webhook_delivery
 
     body = await request.json()
-    enqueue_webhook_delivery(
+    await aenqueue_webhook_delivery(
         workspace_id=workspace_id,
         kind="telegram",
         payload=body if isinstance(body, dict) else {"body": body},
@@ -816,12 +817,12 @@ async def telegram_webhook_route(workspace_id: str, request: Request) -> dict[st
 
 @app.post("/api/channels/slack/{workspace_id}")
 async def slack_events_route(workspace_id: str, request: Request) -> dict[str, object]:
-    from app.jobs import enqueue_webhook_delivery
+    from app.jobs import aenqueue_webhook_delivery
 
     body = await request.json()
     if isinstance(body, dict) and body.get("type") == "url_verification":
         return {"challenge": body.get("challenge")}
-    enqueue_webhook_delivery(
+    await aenqueue_webhook_delivery(
         workspace_id=workspace_id,
         kind="slack",
         payload=body if isinstance(body, dict) else {"body": body},
@@ -832,13 +833,13 @@ async def slack_events_route(workspace_id: str, request: Request) -> dict[str, o
 @app.post("/api/runtime/idle/reap")
 async def reap_idle_runtimes_route(request: Request) -> dict[str, object]:
     """Operator/cron endpoint: drain idle warm runtimes. Auth required."""
-    require_user(request)
+    await arequire_user(request)
     drained = await reap_idle_runtimes()
     return {"drained": drained, "count": len(drained)}
 
 @app.get("/api/runtime/idle/policies")
 async def idle_policies_route(request: Request) -> dict[str, object]:
-    require_user(request)
+    await arequire_user(request)
     policies = [
         {
             "name": p.name,
@@ -855,8 +856,8 @@ async def idle_policies_route(request: Request) -> dict[str, object]:
 async def sync_runtime_workspace_route(
     request: Request, body: RuntimeWorkspaceSyncRequest
 ) -> RuntimeControlResponse:
-    user = require_user(request)
-    runtime = get_runtime_for_user(user, fresh=True)
+    user = await arequire_user(request)
+    runtime = await aget_runtime_for_user(user, fresh=True)
     try:
         runtime = await sync_runtime_workspace(runtime, body.workspace_path)
     except ValueError as exc:
@@ -866,38 +867,38 @@ async def sync_runtime_workspace_route(
 
 @app.get("/api/inference/catalog", response_model=InferenceCatalogResponse)
 async def get_inference_catalog_route(request: Request) -> InferenceCatalogResponse:
-    require_user(request)
+    await arequire_user(request)
     return list_inference_catalog()
 
 @app.get("/api/inference/settings", response_model=InferenceSettings)
 async def get_inference_settings_route(request: Request) -> InferenceSettings:
-    user = require_user(request)
+    user = await arequire_user(request)
     return ensure_inference_settings(str(user["id"]))
 
 @app.put("/api/inference/settings", response_model=InferenceSettings)
 async def put_inference_settings_route(
     payload: InferenceSettingsUpdate, request: Request
 ) -> InferenceSettings:
-    user = require_user(request)
+    user = await arequire_user(request)
     settings = update_inference_settings(str(user["id"]), payload)
     await _sync_inference_bridge_for_user(user, refresh_running=True)
     return settings
 
 @app.get("/api/inference/usage", response_model=InferenceUsageResponse)
 async def get_inference_usage_route(request: Request) -> InferenceUsageResponse:
-    user = require_user(request)
+    user = await arequire_user(request)
     return inference_usage(str(user["id"]))
 
 @app.get("/api/transcription/catalog", response_model=TranscriptionCatalogResponse)
 async def get_transcription_catalog_route(request: Request, refresh: bool = False) -> TranscriptionCatalogResponse:
-    user = require_user(request)
-    runtime = get_runtime_for_user(user)
+    user = await arequire_user(request)
+    runtime = await aget_runtime_for_user(user)
     return await list_transcription_catalog(runtime, refresh=refresh)
 
 @app.get("/api/artifacts", response_model=ArtifactListResponse)
 async def list_artifacts(request: Request) -> ArtifactListResponse:
-    user = require_user(request)
-    runtime = get_runtime_for_user(user)
+    user = await arequire_user(request)
+    runtime = await aget_runtime_for_user(user)
     if _runtime_is_pool(runtime):
         # Pool tenants are indexed on write by the worker; the API only reads.
         from app.artifacts_index import list_indexed_artifacts
@@ -951,8 +952,8 @@ async def _objstore_artifact_response(
 async def upload_notepad_recording(
     payload: NotepadRecordingUploadRequest, request: Request
 ) -> NotepadRecordingUploadResponse:
-    user = require_user(request)
-    runtime = get_runtime_for_user(user)
+    user = await arequire_user(request)
+    runtime = await aget_runtime_for_user(user)
     ensure_runtime_directories(runtime)
 
     audio_bytes, mime_type = _decode_recording_payload(payload)
@@ -987,8 +988,8 @@ async def upload_notepad_recording(
 
 @app.get("/api/artifacts/{artifact_id}")
 async def get_artifact(artifact_id: str, request: Request):
-    user = require_user(request)
-    runtime = get_runtime_for_user(user)
+    user = await arequire_user(request)
+    runtime = await aget_runtime_for_user(user)
     try:
         record, _path = artifact_file(runtime, artifact_id)
     except (FileNotFoundError, KeyError) as exc:
@@ -1002,8 +1003,8 @@ async def get_artifact(artifact_id: str, request: Request):
 
 @app.delete("/api/artifacts/{artifact_id}")
 async def delete_artifact(artifact_id: str, request: Request):
-    user = require_user(request)
-    runtime = get_runtime_for_user(user)
+    user = await arequire_user(request)
+    runtime = await aget_runtime_for_user(user)
     try:
         _record, path = artifact_file(runtime, artifact_id)
     except (FileNotFoundError, KeyError) as exc:
@@ -1039,8 +1040,8 @@ async def delete_artifact(artifact_id: str, request: Request):
 
 @app.get("/api/artifacts/{artifact_id}/preview")
 async def preview_artifact(artifact_id: str, request: Request) -> Response:
-    user = require_user(request)
-    runtime = get_runtime_for_user(user)
+    user = await arequire_user(request)
+    runtime = await aget_runtime_for_user(user)
     try:
         record, path = artifact_file(runtime, artifact_id)
     except (FileNotFoundError, KeyError) as exc:
@@ -1059,8 +1060,8 @@ async def preview_artifact(artifact_id: str, request: Request) -> Response:
 
 @app.get("/api/artifacts/{artifact_id}/download")
 async def download_artifact(artifact_id: str, request: Request) -> Response:
-    user = require_user(request)
-    runtime = get_runtime_for_user(user)
+    user = await arequire_user(request)
+    runtime = await aget_runtime_for_user(user)
     try:
         record, path = artifact_file(runtime, artifact_id)
     except (FileNotFoundError, KeyError) as exc:
@@ -1171,25 +1172,25 @@ async def public_notepad_share_route(token: str) -> PublicNotepadShareResponse:
 
 @app.get("/api/workflow-agents", response_model=WorkflowAgentsResponse)
 async def list_workflow_agents_route(request: Request) -> WorkflowAgentsResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return list_workflow_agents(workspace, profile)
 
 @app.get("/api/workflow-agents/capabilities/skills", response_model=WorkflowSkillCapabilitiesResponse)
 async def list_workflow_skill_capabilities_route(request: Request) -> WorkflowSkillCapabilitiesResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return await list_workflow_skill_capabilities(workspace, profile)
 
 @app.get("/api/workflow-agents/capabilities/tools", response_model=WorkflowToolCapabilitiesResponse)
 async def list_workflow_tool_capabilities_route(request: Request) -> WorkflowToolCapabilitiesResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return await list_workflow_tool_capabilities(workspace, profile)
 
 @app.get("/api/workflow-agents/capabilities/integrations", response_model=WorkflowIntegrationCapabilitiesResponse)
 async def list_workflow_integration_capabilities_route(request: Request) -> WorkflowIntegrationCapabilitiesResponse:
-    user = require_user(request)
+    user = await arequire_user(request)
     return list_workflow_integration_capabilities(str(user["id"]))
 
 @app.post("/api/workflow-agents/draft", response_model=WorkflowAgentSetupDraftResponse)
@@ -1197,8 +1198,8 @@ async def create_workflow_agent_setup_draft_route(
     payload: WorkflowAgentSetupDraftRequest,
     request: Request,
 ) -> WorkflowAgentSetupDraftResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return create_workflow_setup_draft(workspace, profile, payload)
 
 @app.post("/api/workflow-agents/{agent_id}/draft-update", response_model=WorkflowAgentSetupDraftResponse)
@@ -1207,8 +1208,8 @@ async def create_workflow_agent_setup_update_draft_route(
     payload: WorkflowAgentSetupDraftUpdateRequest,
     request: Request,
 ) -> WorkflowAgentSetupDraftResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return create_workflow_setup_update_draft(workspace, profile, agent_id, payload)
 
 @app.post("/api/workflow-agents/setup-actions/approve", response_model=WorkflowAgentSetupApprovalResponse)
@@ -1216,8 +1217,8 @@ async def approve_workflow_agent_setup_actions_route(
     payload: WorkflowAgentSetupApprovalRequest,
     request: Request,
 ) -> WorkflowAgentSetupApprovalResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return update_workflow_setup_approvals(workspace, profile, payload)
 
 @app.post("/api/workflow-agents/setup-actions/apply", response_model=WorkflowAgentSetupApplyResponse)
@@ -1225,20 +1226,20 @@ async def apply_workflow_agent_setup_draft_route(
     payload: WorkflowAgentSetupApplyRequest,
     request: Request,
 ) -> WorkflowAgentSetupApplyResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return apply_workflow_setup_draft(workspace, profile, payload, request)
 
 @app.delete("/api/workflow-agents/setup-drafts/{draft_id}")
 async def delete_workflow_agent_setup_draft_route(draft_id: str, request: Request) -> dict[str, bool]:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return delete_workflow_setup_draft(workspace, profile, draft_id)
 
 @app.get("/api/knowledge-bases", response_model=KnowledgeBasesResponse)
 async def list_knowledge_bases_route(request: Request) -> KnowledgeBasesResponse:
-    user = require_user(request)
-    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, _profile, _runtime_instance = await aget_context_for_user(user)
     return list_knowledge_bases(workspace)
 
 @app.post("/api/knowledge-bases", response_model=KnowledgeBaseRecord)
@@ -1246,20 +1247,20 @@ async def create_knowledge_base_route(
     payload: KnowledgeBaseCreateRequest,
     request: Request,
 ) -> KnowledgeBaseRecord:
-    user = require_user(request)
-    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, _profile, _runtime_instance = await aget_context_for_user(user)
     return create_knowledge_base(workspace, payload)
 
 @app.delete("/api/knowledge-bases/{knowledge_base_id}")
 async def delete_knowledge_base_route(knowledge_base_id: str, request: Request) -> dict[str, bool]:
-    user = require_user(request)
-    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, _profile, _runtime_instance = await aget_context_for_user(user)
     return delete_knowledge_base(workspace, knowledge_base_id)
 
 @app.get("/api/knowledge-bases/{knowledge_base_id}/documents", response_model=KnowledgeDocumentsResponse)
 async def list_knowledge_documents_route(knowledge_base_id: str, request: Request) -> KnowledgeDocumentsResponse:
-    user = require_user(request)
-    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, _profile, _runtime_instance = await aget_context_for_user(user)
     return list_knowledge_documents(workspace, knowledge_base_id)
 
 @app.post("/api/knowledge-bases/{knowledge_base_id}/documents", response_model=KnowledgeDocumentRecord)
@@ -1268,8 +1269,8 @@ async def create_knowledge_document_route(
     payload: KnowledgeDocumentCreateRequest,
     request: Request,
 ) -> KnowledgeDocumentRecord:
-    user = require_user(request)
-    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, _profile, _runtime_instance = await aget_context_for_user(user)
     return create_knowledge_document(workspace, knowledge_base_id, payload)
 
 @app.post("/api/workflow-agents/from-template", response_model=WorkflowAgentRecord)
@@ -1277,8 +1278,8 @@ async def create_workflow_agent_from_template_route(
     payload: WorkflowAgentFromTemplateRequest,
     request: Request,
 ) -> WorkflowAgentRecord:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return create_workflow_agent_from_template(workspace, profile, payload)
 
 
@@ -1287,14 +1288,14 @@ async def create_workflow_agent_route(
     payload: WorkflowAgentCreateRequest,
     request: Request,
 ) -> WorkflowAgentRecord:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return create_workflow_agent(workspace, profile, payload)
 
 @app.get("/api/workflow-agents/custom-tools", response_model=WorkflowCustomToolsResponse)
 async def list_workflow_custom_tools_route(request: Request) -> WorkflowCustomToolsResponse:
-    user = require_user(request)
-    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, _profile, _runtime_instance = await aget_context_for_user(user)
     return list_workflow_custom_tools(workspace)
 
 @app.post("/api/workflow-agents/custom-tools", response_model=WorkflowCustomToolRecord)
@@ -1302,8 +1303,8 @@ async def create_workflow_custom_tool_route(
     payload: WorkflowCustomToolCreateRequest,
     request: Request,
 ) -> WorkflowCustomToolRecord:
-    user = require_user(request)
-    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, _profile, _runtime_instance = await aget_context_for_user(user)
     return create_workflow_custom_tool(workspace, payload)
 
 @app.put("/api/workflow-agents/custom-tools/{tool_id}", response_model=WorkflowCustomToolRecord)
@@ -1312,20 +1313,20 @@ async def update_workflow_custom_tool_route(
     payload: WorkflowCustomToolUpdateRequest,
     request: Request,
 ) -> WorkflowCustomToolRecord:
-    user = require_user(request)
-    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, _profile, _runtime_instance = await aget_context_for_user(user)
     return update_workflow_custom_tool(workspace, tool_id, payload)
 
 @app.delete("/api/workflow-agents/custom-tools/{tool_id}")
 async def delete_workflow_custom_tool_route(tool_id: str, request: Request) -> dict[str, bool]:
-    user = require_user(request)
-    workspace, _profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, _profile, _runtime_instance = await aget_context_for_user(user)
     return delete_workflow_custom_tool(workspace, tool_id)
 
 @app.get("/api/workflow-agents/{agent_id}", response_model=WorkflowAgentRecord)
 async def get_workflow_agent_route(agent_id: str, request: Request) -> WorkflowAgentRecord:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return get_workflow_agent(workspace, profile, agent_id)
 
 @app.put("/api/workflow-agents/{agent_id}", response_model=WorkflowAgentRecord)
@@ -1334,14 +1335,14 @@ async def update_workflow_agent_route(
     payload: WorkflowAgentUpdateRequest,
     request: Request,
 ) -> WorkflowAgentRecord:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return update_workflow_agent(workspace, profile, agent_id, payload)
 
 @app.delete("/api/workflow-agents/{agent_id}")
 async def delete_workflow_agent_route(agent_id: str, request: Request) -> dict[str, bool]:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return delete_workflow_agent(workspace, profile, agent_id)
 
 @app.get("/api/workflow-agents/{agent_id}/sdr-contacts", response_model=SdrContactsResponse)
@@ -1350,8 +1351,8 @@ async def list_workflow_sdr_contacts_route(
     request: Request,
     channel: str = "",
 ) -> SdrContactsResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return list_workflow_sdr_contacts(workspace, profile, agent_id, channel)
 
 @app.get("/api/workflow-agents/{agent_id}/sdr-contacts/export", response_model=SdrContactsExportResponse)
@@ -1360,14 +1361,14 @@ async def export_workflow_sdr_contacts_route(
     request: Request,
     channel: str = "",
 ) -> SdrContactsExportResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return export_workflow_sdr_contacts(workspace, profile, agent_id, channel)
 
 @app.get("/api/workflow-agents/{agent_id}/micromgr/tasks", response_model=MicromgrTasksResponse)
 async def list_micromgr_tasks_route(agent_id: str, request: Request) -> MicromgrTasksResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return list_micromgr_tasks(workspace, profile, agent_id)
 
 @app.post("/api/workflow-agents/{agent_id}/micromgr/tasks", response_model=MicromgrTaskRecord)
@@ -1376,8 +1377,8 @@ async def create_micromgr_task_route(
     payload: MicromgrTaskCreateRequest,
     request: Request,
 ) -> MicromgrTaskRecord:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return create_micromgr_task(workspace, profile, agent_id, payload)
 
 @app.put("/api/workflow-agents/{agent_id}/micromgr/tasks/{task_id}", response_model=MicromgrTaskRecord)
@@ -1387,20 +1388,20 @@ async def update_micromgr_task_route(
     payload: MicromgrTaskUpdateRequest,
     request: Request,
 ) -> MicromgrTaskRecord:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return update_micromgr_task(workspace, profile, agent_id, task_id, payload)
 
 @app.delete("/api/workflow-agents/{agent_id}/micromgr/tasks/{task_id}")
 async def delete_micromgr_task_route(agent_id: str, task_id: str, request: Request) -> dict[str, bool]:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return delete_micromgr_task(workspace, profile, agent_id, task_id)
 
 @app.get("/api/workflow-agents/{agent_id}/micromgr/workers", response_model=MicromgrWorkersResponse)
 async def list_micromgr_workers_route(agent_id: str, request: Request, task_id: str = "") -> MicromgrWorkersResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return list_micromgr_workers(workspace, profile, agent_id, task_id)
 
 @app.post("/api/workflow-agents/{agent_id}/micromgr/workers", response_model=MicromgrWorkerRecord)
@@ -1409,8 +1410,8 @@ async def add_micromgr_worker_route(
     payload: MicromgrWorkerCreateRequest,
     request: Request,
 ) -> MicromgrWorkerRecord:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return await add_micromgr_worker(workspace, profile, agent_id, payload)
 
 @app.put("/api/workflow-agents/{agent_id}/micromgr/workers/{worker_id}", response_model=MicromgrWorkerRecord)
@@ -1420,14 +1421,14 @@ async def update_micromgr_worker_route(
     payload: MicromgrWorkerUpdateRequest,
     request: Request,
 ) -> MicromgrWorkerRecord:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return update_micromgr_worker(workspace, profile, agent_id, worker_id, payload)
 
 @app.delete("/api/workflow-agents/{agent_id}/micromgr/workers/{worker_id}")
 async def delete_micromgr_worker_route(agent_id: str, worker_id: str, request: Request) -> dict[str, bool]:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return delete_micromgr_worker(workspace, profile, agent_id, worker_id)
 
 @app.get("/api/workflow-agents/{agent_id}/micromgr/liveboard", response_model=MicromgrLiveboardResponse)
@@ -1436,14 +1437,14 @@ async def list_micromgr_liveboard_route(
     request: Request,
     task_id: str = "",
 ) -> MicromgrLiveboardResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return list_micromgr_liveboard(workspace, profile, agent_id, task_id)
 
 @app.get("/api/workflow-agents/{agent_id}/micromgr/flags", response_model=MicromgrFlagsResponse)
 async def list_micromgr_flags_route(agent_id: str, request: Request, status: str = "") -> MicromgrFlagsResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return list_micromgr_flags(workspace, profile, agent_id, status)
 
 @app.put("/api/workflow-agents/{agent_id}/micromgr/flags/{flag_id}", response_model=MicromgrFlagRecord)
@@ -1453,26 +1454,26 @@ async def update_micromgr_flag_route(
     payload: MicromgrFlagUpdateRequest,
     request: Request,
 ) -> MicromgrFlagRecord:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return update_micromgr_flag(workspace, profile, agent_id, flag_id, status=payload.status, note=payload.note)
 
 @app.get("/api/workflow-agents/{agent_id}/micromgr/reports", response_model=MicromgrReportsResponse)
 async def list_micromgr_reports_route(agent_id: str, request: Request, task_id: str = "") -> MicromgrReportsResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return list_micromgr_reports(workspace, profile, agent_id, task_id)
 
 @app.post("/api/workflow-agents/{agent_id}/micromgr/tasks/{task_id}/report", response_model=MicromgrReportRecord)
 async def trigger_micromgr_report_route(agent_id: str, task_id: str, request: Request) -> MicromgrReportRecord:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return await trigger_micromgr_report(workspace, profile, agent_id, task_id)
 
 @app.get("/api/workflow-agents/{agent_id}/triggers", response_model=WorkflowTriggersResponse)
 async def list_workflow_triggers_route(agent_id: str, request: Request) -> WorkflowTriggersResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return list_workflow_triggers(workspace, profile, agent_id, request)
 
 @app.post("/api/workflow-agents/{agent_id}/triggers", response_model=WorkflowTriggerRecord)
@@ -1481,8 +1482,8 @@ async def create_workflow_trigger_route(
     payload: WorkflowTriggerCreateRequest,
     request: Request,
 ) -> WorkflowTriggerRecord:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return create_workflow_trigger(workspace, profile, agent_id, payload, request)
 
 @app.put("/api/workflow-agents/{agent_id}/triggers/{trigger_id}", response_model=WorkflowTriggerRecord)
@@ -1492,20 +1493,20 @@ async def update_workflow_trigger_route(
     payload: WorkflowTriggerUpdateRequest,
     request: Request,
 ) -> WorkflowTriggerRecord:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return update_workflow_trigger(workspace, profile, agent_id, trigger_id, payload, request)
 
 @app.delete("/api/workflow-agents/{agent_id}/triggers/{trigger_id}")
 async def delete_workflow_trigger_route(agent_id: str, trigger_id: str, request: Request) -> dict[str, bool]:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return delete_workflow_trigger(workspace, profile, agent_id, trigger_id)
 
 @app.get("/api/workflow-agents/{agent_id}/deliveries", response_model=WorkflowDeliveriesResponse)
 async def list_workflow_deliveries_route(agent_id: str, request: Request) -> WorkflowDeliveriesResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return list_workflow_deliveries(workspace, profile, agent_id)
 
 @app.post("/api/workflow-agents/{agent_id}/deliveries", response_model=WorkflowDeliveryRecord)
@@ -1514,8 +1515,8 @@ async def create_workflow_delivery_route(
     payload: WorkflowDeliveryCreateRequest,
     request: Request,
 ) -> WorkflowDeliveryRecord:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return create_workflow_delivery(workspace, profile, agent_id, payload)
 
 @app.put("/api/workflow-agents/{agent_id}/deliveries/{delivery_id}", response_model=WorkflowDeliveryRecord)
@@ -1525,20 +1526,20 @@ async def update_workflow_delivery_route(
     payload: WorkflowDeliveryUpdateRequest,
     request: Request,
 ) -> WorkflowDeliveryRecord:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return update_workflow_delivery(workspace, profile, agent_id, delivery_id, payload)
 
 @app.delete("/api/workflow-agents/{agent_id}/deliveries/{delivery_id}")
 async def delete_workflow_delivery_route(agent_id: str, delivery_id: str, request: Request) -> dict[str, bool]:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return delete_workflow_delivery(workspace, profile, agent_id, delivery_id)
 
 @app.get("/api/workflow-agents/{agent_id}/embed", response_model=WorkflowAgentEmbedConfigRecord)
 async def get_workflow_embed_config_route(agent_id: str, request: Request) -> WorkflowAgentEmbedConfigRecord:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return get_workflow_embed_config(workspace, profile, agent_id, request)
 
 @app.put("/api/workflow-agents/{agent_id}/embed", response_model=WorkflowAgentEmbedConfigRecord)
@@ -1547,8 +1548,8 @@ async def update_workflow_embed_config_route(
     payload: WorkflowAgentEmbedConfigUpdateRequest,
     request: Request,
 ) -> WorkflowAgentEmbedConfigRecord:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return update_workflow_embed_config(workspace, profile, agent_id, payload, request)
 
 @app.post("/api/workflow-agents/{agent_id}/embed/asset", response_model=WorkflowAgentEmbedConfigRecord)
@@ -1557,20 +1558,20 @@ async def upload_workflow_embed_asset_route(
     payload: WorkflowAgentEmbedAssetRequest,
     request: Request,
 ) -> WorkflowAgentEmbedConfigRecord:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return upload_workflow_embed_asset(workspace, profile, agent_id, payload, request)
 
 @app.get("/api/workflow-agents/{agent_id}/runs", response_model=WorkflowRunsResponse)
 async def list_workflow_runs_route(agent_id: str, request: Request, limit: int = 50) -> WorkflowRunsResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return list_workflow_runs(workspace, profile, agent_id, limit)
 
 @app.get("/api/workflow-agents/{agent_id}/runs/{run_id}/events", response_model=WorkflowRunEventsResponse)
 async def list_workflow_run_events_route(agent_id: str, run_id: str, request: Request) -> WorkflowRunEventsResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return list_workflow_run_events(workspace, profile, agent_id, run_id)
 
 @app.post("/api/workflow-agents/{agent_id}/runs", response_model=WorkflowRunRecord)
@@ -1579,8 +1580,8 @@ async def run_workflow_agent_route(
     payload: WorkflowRunCreateRequest,
     request: Request,
 ) -> WorkflowRunRecord:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return await run_workflow_agent(workspace, profile, agent_id, payload)
 
 @app.post("/api/workflow-agents/triggers/api", response_model=WorkflowTriggerRunsResponse)
@@ -1588,8 +1589,8 @@ async def run_workflow_api_triggers_route(
     payload: WorkflowTriggerRunRequest,
     request: Request,
 ) -> WorkflowTriggerRunsResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return await run_matching_workflow_triggers(workspace, profile, "api", payload.event_name, payload.input)
 
 @app.post("/api/workflow-agents/triggers/chat", response_model=WorkflowTriggerRunsResponse)
@@ -1597,8 +1598,8 @@ async def run_workflow_chat_triggers_route(
     payload: WorkflowTriggerRunRequest,
     request: Request,
 ) -> WorkflowTriggerRunsResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return await run_matching_workflow_triggers(workspace, profile, "chat", payload.event_name, payload.input)
 
 @app.post("/api/workflow-agents/triggers/messaging", response_model=WorkflowTriggerRunsResponse)
@@ -1619,14 +1620,14 @@ async def run_workflow_app_event_triggers_route(
     payload: WorkflowTriggerRunRequest,
     request: Request,
 ) -> WorkflowTriggerRunsResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return await run_matching_workflow_triggers(workspace, profile, "app_event", payload.event_name, payload.input)
 
 @app.post("/api/workflow-agents/triggers/schedules/tick", response_model=WorkflowTriggerRunsResponse)
 async def tick_workflow_schedule_triggers_route(request: Request) -> WorkflowTriggerRunsResponse:
-    user = require_user(request)
-    workspace, profile, _runtime_instance = get_context_for_user(user)
+    user = await arequire_user(request)
+    workspace, profile, _runtime_instance = await aget_context_for_user(user)
     return await tick_due_workflow_schedule_triggers(workspace, profile)
 
 @app.post("/api/workflow-webhooks/{trigger_id}", response_model=WorkflowWebhookIngestResponse)
@@ -1639,9 +1640,9 @@ async def ingest_workflow_webhook_route(trigger_id: str, request: Request) -> Wo
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Workflow webhook payload must be an object.")
     if not _env_on("VERXIO_WEBHOOK_INLINE", "1"):
-        from app.jobs import enqueue_webhook_delivery
+        from app.jobs import aenqueue_webhook_delivery
 
-        enqueue_webhook_delivery(
+        await aenqueue_webhook_delivery(
             workspace_id="",
             kind="workflow_webhook",
             payload={"trigger_id": trigger_id, "secret": secret, "body": payload},
@@ -1663,10 +1664,10 @@ async def ingest_messaging_hook_connection_route(
     request: Request,
 ) -> Response:
     if not _env_on("VERXIO_WEBHOOK_INLINE", "1"):
-        from app.jobs import enqueue_webhook_delivery
+        from app.jobs import aenqueue_webhook_delivery
 
         body = await request.body()
-        enqueue_webhook_delivery(
+        await aenqueue_webhook_delivery(
             workspace_id=workspace_id,
             kind="messaging_hook",
             payload={
@@ -1686,10 +1687,10 @@ async def ingest_messaging_hook_connection_route(
 @app.post("/api/hooks/{workspace_id}/{route_name}")
 async def ingest_messaging_hook_route(workspace_id: str, route_name: str, request: Request) -> Response:
     if not _env_on("VERXIO_WEBHOOK_INLINE", "1"):
-        from app.jobs import enqueue_webhook_delivery
+        from app.jobs import aenqueue_webhook_delivery
 
         body = await request.body()
-        enqueue_webhook_delivery(
+        await aenqueue_webhook_delivery(
             workspace_id=workspace_id,
             kind="messaging_hook",
             payload={
@@ -1707,7 +1708,7 @@ async def ingest_messaging_hook_route(workspace_id: str, route_name: str, reques
 
 @app.get("/api/messaging/api-server")
 async def get_messaging_api_server_route(request: Request) -> dict[str, Any]:
-    return await get_messaging_api_server(request, require_user(request))
+    return await get_messaging_api_server(request, await arequire_user(request))
 
 
 @app.api_route(
@@ -1720,22 +1721,22 @@ async def proxy_messaging_openai_route(workspace_id: str, path: str, request: Re
 
 @app.get("/api/messaging/webhooks")
 async def list_messaging_webhooks_route(request: Request) -> dict[str, Any]:
-    return await list_messaging_webhooks(request, require_user(request))
+    return await list_messaging_webhooks(request, await arequire_user(request))
 
 
 @app.post("/api/messaging/webhooks/enable")
 async def enable_messaging_webhooks_route(request: Request) -> dict[str, Any]:
-    return await enable_messaging_webhooks(require_user(request))
+    return await enable_messaging_webhooks(await arequire_user(request))
 
 
 @app.post("/api/messaging/webhooks")
 async def create_messaging_webhook_route(payload: MessagingWebhookCreate, request: Request) -> dict[str, Any]:
-    return await create_messaging_webhook(request, require_user(request), payload)
+    return await create_messaging_webhook(request, await arequire_user(request), payload)
 
 
 @app.delete("/api/messaging/webhooks/{name}")
 async def delete_messaging_webhook_route(name: str, request: Request) -> dict[str, Any]:
-    return await delete_messaging_webhook(require_user(request), name)
+    return await delete_messaging_webhook(await arequire_user(request), name)
 
 
 @app.put("/api/messaging/webhooks/{name}/enabled")
@@ -1744,7 +1745,7 @@ async def set_messaging_webhook_enabled_route(
     payload: MessagingWebhookEnabledToggle,
     request: Request,
 ) -> dict[str, Any]:
-    return await set_messaging_webhook_enabled(require_user(request), name, payload.enabled)
+    return await set_messaging_webhook_enabled(await arequire_user(request), name, payload.enabled)
 
 
 @app.get("/api/public/workflow-agents/{public_token}", response_model=WorkflowAgentPublicInfo)
@@ -1815,7 +1816,7 @@ async def _sync_composio_bridge_for_user(user: dict, *, apply_live: bool = False
     - Only Docker-restarts when COMPOSIO_API_KEY is missing from the container
       (cannot hot-inject env vars).
     """
-    runtime = get_runtime_for_user(user, fresh=True)
+    runtime = await aget_runtime_for_user(user, fresh=True)
 
     def _prepare() -> tuple:
         accounts = list_composio_accounts(str(user["id"]))
@@ -1852,7 +1853,7 @@ async def _sync_inference_bridge_for_user(
     refresh_running: bool = False,
     allow_restart: bool = True,
 ):
-    runtime = get_runtime_for_user(user, fresh=True)
+    runtime = await aget_runtime_for_user(user, fresh=True)
 
     def _prepare() -> tuple:
         bridge = sync_inference_runtime_bridge(runtime, str(user["id"]))
@@ -1886,7 +1887,7 @@ async def _sync_inference_bridge_for_user(
 
 @app.get("/api/composio/connections", response_model=ComposioConnectionsResponse)
 async def list_composio_connections_route(request: Request) -> ComposioConnectionsResponse:
-    user = require_user(request)
+    user = await arequire_user(request)
     accounts, bridge = await _sync_composio_bridge_for_user(user, apply_live=True)
     return ComposioConnectionsResponse(
         accounts=accounts,
@@ -1896,7 +1897,7 @@ async def list_composio_connections_route(request: Request) -> ComposioConnectio
 
 @app.get("/api/composio/connections/apps", response_model=ComposioAppsResponse)
 async def list_composio_apps_route(request: Request) -> ComposioAppsResponse:
-    require_user(request)
+    await arequire_user(request)
     apps = list_composio_apps()
     return ComposioAppsResponse(
         apps=apps,
@@ -1909,7 +1910,7 @@ async def list_composio_apps_route(request: Request) -> ComposioAppsResponse:
 async def list_composio_app_tools_route(
     app_slug: str, request: Request, limit: int = 4
 ) -> ComposioAppToolsResponse:
-    require_user(request)
+    await arequire_user(request)
     return ComposioAppToolsResponse(
         tools=list_composio_app_tools(app_slug, limit=limit),
         configured=is_composio_configured(),
@@ -1925,7 +1926,7 @@ async def list_composio_trigger_types_route(
     app_slug: str,
     request: Request,
 ) -> ComposioTriggerTypesResponse:
-    require_user(request)
+    await arequire_user(request)
     return list_composio_trigger_types(app_slug)
 
 @app.post("/api/composio/webhooks", response_model=WorkflowTriggerRunsResponse)
@@ -1941,9 +1942,9 @@ async def ingest_composio_webhook_route(request: Request) -> WorkflowTriggerRuns
     if not claim_composio_webhook(webhook_id):
         return WorkflowTriggerRunsResponse(runs=[])
     if not _env_on("VERXIO_WEBHOOK_INLINE", "1"):
-        from app.jobs import enqueue_webhook_delivery
+        from app.jobs import aenqueue_webhook_delivery
 
-        enqueue_webhook_delivery(
+        await aenqueue_webhook_delivery(
             workspace_id="",
             kind="composio_webhook",
             payload={"webhook_id": webhook_id, "event": payload},
@@ -1964,14 +1965,14 @@ async def ingest_composio_webhook_route(request: Request) -> WorkflowTriggerRuns
 async def get_composio_connection_setup_route(
     app_slug: str, request: Request
 ) -> ComposioConnectionSetupResponse:
-    require_user(request)
+    await arequire_user(request)
     return get_composio_connection_setup(app_slug)
 
 @app.post("/api/composio/connections/initiate", response_model=ComposioInitiateResponse)
 async def initiate_composio_connection_route(
     payload: ComposioInitiateRequest, request: Request
 ) -> ComposioInitiateResponse:
-    user = require_user(request)
+    user = await arequire_user(request)
     return initiate_composio_connection(str(user["id"]), payload.appSlug, payload.callbackUrl)
 
 @app.post(
@@ -1981,14 +1982,14 @@ async def initiate_composio_connection_route(
 async def complete_composio_connection_route(
     payload: ComposioCompleteConnectionRequest, request: Request
 ) -> ComposioCompleteConnectionResponse:
-    user = require_user(request)
+    user = await arequire_user(request)
     result = complete_composio_connection(str(user["id"]), payload.appSlug, payload.credentials)
     await _sync_composio_bridge_for_user(user, apply_live=True)
     return result
 
 @app.delete("/api/composio/connections/{account_id}")
 async def delete_composio_connection_route(account_id: str, request: Request) -> dict[str, str]:
-    user = require_user(request)
+    user = await arequire_user(request)
     if not account_id:
         raise HTTPException(status_code=400, detail="account_id is required.")
     if not is_composio_configured():
@@ -2242,7 +2243,7 @@ def _schedule_runtime_ensure(user: dict) -> None:
     async def _run() -> None:
         try:
             runtime = await wake_runtime(
-                get_runtime_for_user(user),
+                await aget_runtime_for_user(user),
                 extra_env=runtime_env_for_user(str(user["id"])),
                 wait_ready=False,
                 reason="background.ensure",
@@ -2262,7 +2263,7 @@ logger = logging.getLogger(__name__)
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 )
 async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
-    user = require_user(request)
+    user = await arequire_user(request)
     lightweight = _dashboard_request_is_read(request.method) and _dashboard_path_is_lightweight(path)
     medium_read = _dashboard_request_is_read(request.method) and _dashboard_path_is_medium_read(path)
     model_options = medium_read  # alias used by older start-lock / sync branches
@@ -2298,7 +2299,7 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     # Model-options + toolset/session fast-path also skip the shared start lock
     # when already running.
     if skip_start_lock:
-        runtime = get_runtime_for_user(user)
+        runtime = await aget_runtime_for_user(user)
         if runtime.status != "running":
             _schedule_runtime_ensure(user)
             # Session delete/rename must never await the start lock — a stuck
@@ -2321,14 +2322,14 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     else:
         try:
             runtime = await wake_runtime(
-                get_runtime_for_user(user),
+                await aget_runtime_for_user(user),
                 extra_env=runtime_env_for_user(str(user["id"])),
                 wait_ready=False,
                 reason="dashboard.proxy",
             )
         except Exception:
             logger.exception("wake_runtime failed during dashboard proxy")
-            runtime = get_runtime_for_user(user)
+            runtime = await aget_runtime_for_user(user)
             if not runtime_dashboard_base_url(runtime, ensure_network=False):
                 raise HTTPException(
                     status_code=503,
@@ -2462,7 +2463,7 @@ async def _safe_websocket_close(websocket: WebSocket, code: int) -> None:
 
 @app.websocket("/api/runtime/dashboard/ws/{path:path}")
 async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
-    user = get_current_user(websocket)  # type: ignore[arg-type]
+    user = await aget_current_user(websocket)  # type: ignore[arg-type]
     if not user:
         await _safe_websocket_close(websocket, 4401)
         return
@@ -2472,7 +2473,7 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
     await websocket.accept()
 
     try:
-        runtime = get_runtime_for_user(user)
+        runtime = await aget_runtime_for_user(user)
         base = runtime_dashboard_base_url(runtime, ensure_network=False)
         # Never await docker run on the WS path. Try upstream directly so a
         # stale DB status does not block reconnect while ensure runs in background.

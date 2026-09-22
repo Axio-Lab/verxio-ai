@@ -89,3 +89,14 @@ def require_user_or_runtime(request: Request) -> dict[str, Any] | None:
         get_context_for_runtime_token(token)
         return None
     raise HTTPException(status_code=401, detail="Authentication required")
+
+
+async def arequire_runtime_token(request: Request) -> RuntimeInstance:
+    """Event-loop friendly ``require_runtime_token`` (DB lookup off-loop)."""
+    import asyncio
+
+    token = bearer_token(request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Runtime token required")
+    _workspace, _agent, runtime = await asyncio.to_thread(get_context_for_runtime_token, token)
+    return runtime
