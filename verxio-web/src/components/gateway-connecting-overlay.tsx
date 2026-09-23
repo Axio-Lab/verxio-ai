@@ -5,6 +5,7 @@ import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 import { getVerxioRuntime, verxioApiEnabled } from '@/lib/verxio-api'
 import { $desktopBoot } from '@/store/boot'
+import { $gatewayLink } from '@/store/gateway-link'
 import { $desktopOnboarding } from '@/store/onboarding'
 import { $runtimePhase, applyRuntimeStatus, resetRuntimePhase, runtimePhaseProgress } from '@/store/runtime-phase'
 import { $gatewayState } from '@/store/session'
@@ -54,6 +55,7 @@ function scrambledTail(resolvedCount: number): string {
 export function GatewayConnectingOverlay() {
   const { t } = useI18n()
   const gatewayState = useStore($gatewayState)
+  const link = useStore($gatewayLink)
   const boot = useStore($desktopBoot)
   const onboarding = useStore($desktopOnboarding)
   const runtimePhase = useStore($runtimePhase)
@@ -61,7 +63,11 @@ export function GatewayConnectingOverlay() {
   const [tail, setTail] = useState(TAIL)
   const [phase, setPhase] = useState<Phase>('live')
 
-  const connecting = gatewayState !== 'open' && !boot.error
+  // First connect: overlay owns the screen until the socket opens. After that a
+  // drop is a silent blip for RECONNECT_GRACE_MS (composer stays live, the
+  // reconnect loop runs in the background) and only a sustained outage brings
+  // the overlay back — no full-screen flash for a 2s proxy hiccup.
+  const connecting = gatewayState !== 'open' && !boot.error && (!link.everOpen || link.degraded)
   // Settings → Providers launches manual OAuth on top of the app. Don't
   // flash the full-screen gateway reconnect overlay over that flow — it reads
   // like the sign-in failed and the user lands back on the provider page.
@@ -138,6 +144,15 @@ export function GatewayConnectingOverlay() {
     }, TICK_MS)
 
     return () => window.clearInterval(id)
+  }, [phase, previewing, connecting])
+
+  // Sustained outage after a healthy boot (link degraded past the grace window):
+  // bring the overlay back so the hosted spin-up progress is visible again.
+  useEffect(() => {
+    if (!previewing && phase === 'gone' && connecting) {
+      setTail(TAIL)
+      setPhase('live')
+    }
   }, [phase, previewing, connecting])
 
   // Kick off the exit when connected: real connect, or a faked timer in preview.

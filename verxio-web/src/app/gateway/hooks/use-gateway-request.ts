@@ -4,8 +4,14 @@ import { useCallback, useEffect, useRef } from 'react'
 import type { HermesGateway } from '@/hermes'
 import { isGatewayReauthRequired, resolveGatewayWsUrl } from '@/lib/gateway-ws-url'
 import { $gateway, ensureActiveGatewayOpen, isActivePrimary } from '@/store/gateway'
+import { RECONNECT_GRACE_MS, waitForGatewayOpen } from '@/store/gateway-link'
 import { $activeGatewayProfile } from '@/store/profile'
 import { $gatewayState, setConnection } from '@/store/session'
+
+// How long a request issued during a socket blip waits for the reconnect loop
+// before surfacing the transport error. Covers the composer grace window plus
+// one capped backoff tick.
+const SEND_QUEUE_WAIT_MS = RECONNECT_GRACE_MS + 15_000
 
 export function useGatewayRequest() {
   const gatewayState = useStore($gatewayState)
@@ -113,7 +119,15 @@ export function useGatewayRequest() {
         // Primary keeps the OAuth-aware reconnect (remote gateways re-mint a
         // single-use ticket); background profiles are always local pool
         // backends, so the registry handles their reconnect with no reauth.
-        const recovered = isActivePrimary() ? await ensureGatewayOpen() : await ensureActiveGatewayOpen()
+        let recovered = isActivePrimary() ? await ensureGatewayOpen() : await ensureActiveGatewayOpen()
+
+        // The composer stays enabled through short drops, so a send can land
+        // mid-blip. Rather than failing it, park the request until the
+        // background reconnect loop reopens the socket (bounded by the grace
+        // window) — from the user's side the message simply goes through.
+        if (!recovered && !reauthErrorRef.current && (await waitForGatewayOpen(SEND_QUEUE_WAIT_MS))) {
+          recovered = gatewayRef.current
+        }
 
         if (!recovered) {
           // Prefer the reauth error from the failed reconnect (OAuth session

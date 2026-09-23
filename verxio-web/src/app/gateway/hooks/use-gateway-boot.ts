@@ -22,6 +22,7 @@ import {
   setPrimaryGateway,
   touchSecondaryGateways
 } from '@/store/gateway'
+import { reconnectDelayMs } from '@/store/gateway-link'
 import { notify, notifyError } from '@/store/notifications'
 import { $activeGatewayProfile, normalizeProfileKey, touchActiveGatewayBackend } from '@/store/profile'
 import {
@@ -181,8 +182,8 @@ export function useGatewayBoot({
         return
       }
 
-      // 1s, 2s, 4s … capped at 15s.
-      const delay = Math.min(15_000, 1_000 * 2 ** Math.min(reconnectAttempt, 4))
+      // 1s, 2s, 4s … capped at 15s with jitter; never gives up.
+      const delay = reconnectDelayMs(reconnectAttempt)
       reconnectAttempt += 1
       reconnectTimer = setTimeout(() => {
         reconnectTimer = null

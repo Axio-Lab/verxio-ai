@@ -3,6 +3,7 @@ import { atom } from 'nanostores'
 
 import { HermesGateway } from '@/hermes'
 import { resolveGatewayWsUrl } from '@/lib/gateway-ws-url'
+import { reconnectDelayMs } from '@/store/gateway-link'
 import { setGatewayState } from '@/store/session'
 
 // ── Multi-profile gateway routing ──────────────────────────────────────────
@@ -121,8 +122,8 @@ function scheduleReconnect(entry: Secondary): void {
     return
   }
 
-  // 1s, 2s, 4s … capped at 15s — same backoff shape as the primary.
-  const delay = Math.min(15_000, 1_000 * 2 ** Math.min(entry.reconnectAttempt, 4))
+  // 1s, 2s, 4s … capped at 15s with jitter — same backoff shape as the primary.
+  const delay = reconnectDelayMs(entry.reconnectAttempt)
   entry.reconnectAttempt += 1
   entry.reconnectTimer = setTimeout(() => {
     entry.reconnectTimer = null
