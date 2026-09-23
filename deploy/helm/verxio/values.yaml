@@ -12,8 +12,19 @@ images:
   landing: verxio-landing:local
 
 redis:
+  # In-cluster single-node AOF Redis. Fine for staging; for production set
+  # enabled: false and point `url` (plus autoscaling.worker.keda.address) at a
+  # managed, replicated instance (ElastiCache / Memorystore / Upstash). Redis
+  # holds tenant leases, the turn stream and pub/sub — losing it pauses every
+  # agent turn, so it must not be a single pod in production.
   enabled: true
   url: redis://verxio-redis:6379/0
+  # Managed Redis with TLS: rediss://:<password>@host:6379/0 and set
+  # keda.address / keda.enableTLS accordingly. Password can also come from the
+  # app Secret via VERXIO_REDIS_URL if you prefer not to inline it here.
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: '1', memory: 1Gi }
 
 sandbox:
   # TLS Docker API on the dedicated sandbox hosts, e.g. tcp://sandbox.internal:2376
@@ -33,6 +44,45 @@ sandbox:
 worker:
   # emptyDir shared by the worker and its Hermes sidecar for tenant homes.
   homesSizeLimit: 20Gi
+  # Tenants one worker pod will hold attached at once. KEDA adds pods on
+  # queue depth; this caps per-pod fan-in so one hot worker cannot starve
+  # the dashboard loop for everyone it hosts.
+  maxTenants: 40
+
+# Dashboard health probes for every Hermes container (worker sidecar, channel
+# shards). Period is 5s for startup/readiness and 10s for liveness, so the
+# thresholds below are: 180×5s = 15 min boot budget, 6×5s = 30s to unready,
+# 18×10s = 3 min before kubelet restarts the container. The in-image
+# dashboard-watchdog s6 service restarts just the dashboard well before that.
+hermesProbes:
+  startupFailureThreshold: 180
+  readinessFailureThreshold: 6
+  livenessFailureThreshold: 18
+
+# Requests/limits per container. Requests drive scheduling and HPA maths;
+# leave limits generous on the Hermes containers (agent turns burst).
+resources:
+  api:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: '2', memory: 2Gi }
+  scheduler:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { cpu: '1', memory: 1Gi }
+  worker:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { cpu: '2', memory: 2Gi }
+  hermes:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { cpu: '4', memory: 6Gi }
+  channelGateway:
+    requests: { cpu: 250m, memory: 768Mi }
+    limits: { cpu: '2', memory: 4Gi }
+  web:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { cpu: 500m, memory: 256Mi }
+  landing:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { cpu: 500m, memory: 512Mi }
 
 env:
   VERXIO_RUNTIME_MANAGER: pool
@@ -40,21 +90,45 @@ env:
   VERXIO_INLINE_SCHEDULER: '0'
   VERXIO_WEBHOOK_INLINE: '0'
   VERXIO_HOSTED: '1'
+  # Per-runtime upstream concurrency and the polled-read cache TTL on the
+  # dashboard proxy (see verxio-api/app/dashboard_proxy.py).
+  VERXIO_DASHBOARD_PROXY_CONCURRENCY: '2'
+  VERXIO_DASHBOARD_READ_CACHE_TTL_SECONDS: '2'
+  # Control-plane dashboard watchdog (scheduler): probe interval and the
+  # consecutive-failure rung at which the dashboard service is restarted.
+  VERXIO_RUNTIME_WATCHDOG_INTERVAL_SECONDS: '15'
+  VERXIO_RUNTIME_WATCHDOG_FAILURES: '4'
 
 cdn:
   webBucket: ''
   landingBucket: ''
 
 autoscaling:
+  api:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 30
+    cpuUtilization: 65
+    # Scale up fast, down slowly: a burst of reconnecting tabs must never wait
+    # for a 5-minute stabilization window.
+    scaleUpStabilizationSeconds: 0
+    scaleDownStabilizationSeconds: 300
+  web:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    cpuUtilization: 70
   worker:
     enabled: true
     minReplicas: 2
     maxReplicas: 20
     # Queue-depth scaling via KEDA (redis-streams trigger on the shared turn
-    # stream's pending entries). When keda.enabled is false the chart falls
-    # back to a CPU HPA.
+    # stream's pending entries). KEDA is on by default: CPU is a poor proxy for
+    # "turns waiting", and pool workers spend most of their time idle-waiting
+    # on model calls. Set keda.enabled: false to fall back to a CPU HPA on
+    # clusters without the KEDA operator.
     keda:
-      enabled: false
+      enabled: true
       pollingInterval: 10
       cooldownPeriod: 120
       # Pending turns per worker before adding a replica.
@@ -63,7 +137,29 @@ autoscaling:
       consumerGroup: 'workers'
       # Redis host:port for the KEDA scaler (no scheme).
       address: 'verxio-redis:6379'
+      enableTLS: 'false'
     cpuUtilization: 70
+
+# PodDisruptionBudgets so node drains and cluster upgrades never take every
+# replica of a tier down at once (which the UI sees as "Reconnecting").
+podDisruptionBudget:
+  enabled: true
+  api:
+    minAvailable: 1
+  worker:
+    minAvailable: 1
+  channelGateway:
+    # Shards are sticky; allow only one shard to move at a time.
+    maxUnavailable: 1
+  web:
+    minAvailable: 1
+
+# Spread replicas across nodes (and zones when the label exists) so one node
+# loss does not take a whole tier with it. ScheduleAnyway keeps small dev
+# clusters schedulable.
+topologySpread:
+  enabled: true
+  maxSkew: 1
 
 channelGateway:
   # Shard count == StatefulSet replicas; each pod gets VERXIO_CHANNEL_SHARD from
@@ -76,6 +172,20 @@ secrets:
   # VERXIO_POOL_DASHBOARD_TOKEN / SMTP creds. Mounted via envFrom on api,
   # scheduler and workers.
   name: verxio-app-env
+
+# Prometheus Operator integration (kube-prometheus-stack). ServiceMonitor
+# scrapes /metrics on the API; PrometheusRule carries the SLO alerts.
+monitoring:
+  enabled: false
+  serviceMonitor:
+    interval: 15s
+    labels: {}
+  prometheusRule:
+    labels: {}
+    # Alert when >2% of runtime health probes fail over 5 minutes.
+    healthFailRatio: 0.02
+    # Alert when the dashboard proxy p95 for lightweight reads exceeds this.
+    proxyP95Seconds: 1.5
 
 ingress:
   enabled: false

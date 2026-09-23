@@ -1,0 +1,44 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+# Voluntary disruptions (node drains, cluster upgrades, autoscaler scale-in)
+# must never remove every replica of a tier at once — the web client would see
+# that as "Reconnecting to Verxio" for the whole rollout.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: verxio-api
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.api.minAvailable }}
+  selector:
+    matchLabels:
+      app: verxio-api
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: verxio-agent-worker
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.worker.minAvailable }}
+  selector:
+    matchLabels:
+      app: verxio-agent-worker
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: verxio-channel-gateway
+spec:
+  maxUnavailable: {{ .Values.podDisruptionBudget.channelGateway.maxUnavailable }}
+  selector:
+    matchLabels:
+      app: verxio-channel-gateway
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: verxio-web
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.web.minAvailable }}
+  selector:
+    matchLabels:
+      app: verxio-web
+{{- end }}

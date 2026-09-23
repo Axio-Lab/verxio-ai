@@ -31,6 +31,7 @@ spec:
         - name: redis
           image: redis:7-alpine
           args: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+          resources: {{- toYaml .Values.redis.resources | nindent 12 }}
           ports:
             - containerPort: 6379
           readinessProbe:
@@ -75,17 +76,46 @@ spec:
       labels:
         app: verxio-web
     spec:
+      {{- include "verxio.topologySpread" (dict "root" . "app" "verxio-web") | nindent 6 }}
       containers:
         - name: web
           image: {{ .Values.images.web }}
           ports:
             - containerPort: 80
+          resources: {{- toYaml .Values.resources.web | nindent 12 }}
           readinessProbe:
             httpGet:
-              path: /
+              path: /healthz
               port: 80
             periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 80
+            periodSeconds: 20
+            failureThreshold: 3
 ---
+{{- if .Values.autoscaling.web.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: verxio-web
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: verxio-web
+  minReplicas: {{ .Values.autoscaling.web.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.web.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.web.cpuUtilization }}
+---
+{{- end }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -116,6 +146,7 @@ spec:
           image: {{ .Values.images.landing }}
           ports:
             - containerPort: 80
+          resources: {{- toYaml .Values.resources.landing | nindent 12 }}
           envFrom:
             - secretRef:
                 name: {{ .Values.secrets.name }}

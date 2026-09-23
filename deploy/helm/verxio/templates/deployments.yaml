@@ -2,9 +2,12 @@ apiVersion: v1
 kind: Service
 metadata:
   name: verxio-api
+  labels:
+    app: verxio-api
 spec:
   ports:
-    - port: 8787
+    - name: http
+      port: 8787
       targetPort: 8787
   selector:
     app: verxio-api
@@ -23,11 +26,15 @@ spec:
       labels:
         app: verxio-api
     spec:
+      {{- include "verxio.topologySpread" (dict "root" . "app" "verxio-api") | nindent 6 }}
+      # Let in-flight dashboard WebSockets drain before the pod goes away.
+      terminationGracePeriodSeconds: 45
       containers:
         - name: api
           image: {{ .Values.images.api }}
           ports:
             - containerPort: 8787
+          resources: {{- toYaml .Values.resources.api | nindent 12 }}
           env:
             - name: VERXIO_RUNTIME_MANAGER
               value: {{ .Values.env.VERXIO_RUNTIME_MANAGER | quote }}
@@ -44,6 +51,10 @@ spec:
             # StatefulSet pod DNS via the headless service.
             - name: VERXIO_CHANNEL_SHARD_URL
               value: "http://verxio-channel-gateway-{i}.verxio-channel-gateway:9119"
+            - name: VERXIO_DASHBOARD_PROXY_CONCURRENCY
+              value: {{ .Values.env.VERXIO_DASHBOARD_PROXY_CONCURRENCY | quote }}
+            - name: VERXIO_DASHBOARD_READ_CACHE_TTL_SECONDS
+              value: {{ .Values.env.VERXIO_DASHBOARD_READ_CACHE_TTL_SECONDS | quote }}
           envFrom:
             - secretRef:
                 name: {{ .Values.secrets.name }}
@@ -53,7 +64,45 @@ spec:
               path: /api/health
               port: 8787
             periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8787
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
 ---
+{{- if .Values.autoscaling.api.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: verxio-api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: verxio-api
+  minReplicas: {{ .Values.autoscaling.api.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.api.maxReplicas }}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: {{ .Values.autoscaling.api.scaleUpStabilizationSeconds }}
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+    scaleDown:
+      stabilizationWindowSeconds: {{ .Values.autoscaling.api.scaleDownStabilizationSeconds }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.api.cpuUtilization }}
+---
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -72,11 +121,16 @@ spec:
         - name: scheduler
           image: {{ .Values.images.api }}
           command: ["python", "-m", "app.scheduler"]
+          resources: {{- toYaml .Values.resources.scheduler | nindent 12 }}
           env:
             - name: VERXIO_REDIS_URL
               value: {{ .Values.redis.url | quote }}
             - name: VERXIO_RUNTIME_MANAGER
               value: {{ .Values.env.VERXIO_RUNTIME_MANAGER | quote }}
+            - name: VERXIO_RUNTIME_WATCHDOG_INTERVAL_SECONDS
+              value: {{ .Values.env.VERXIO_RUNTIME_WATCHDOG_INTERVAL_SECONDS | quote }}
+            - name: VERXIO_RUNTIME_WATCHDOG_FAILURES
+              value: {{ .Values.env.VERXIO_RUNTIME_WATCHDOG_FAILURES | quote }}
           envFrom:
             - secretRef:
                 name: {{ .Values.secrets.name }}
@@ -96,15 +150,21 @@ spec:
       labels:
         app: verxio-agent-worker
     spec:
+      {{- include "verxio.topologySpread" (dict "root" . "app" "verxio-agent-worker") | nindent 6 }}
+      # Turns in flight checkpoint their home before exit; give them time.
+      terminationGracePeriodSeconds: 120
       containers:
         - name: worker
           image: {{ .Values.images.api }}
           command: ["python", "-m", "app.worker.runner"]
+          resources: {{- toYaml .Values.resources.worker | nindent 12 }}
           env:
             - name: VERXIO_REDIS_URL
               value: {{ .Values.redis.url | quote }}
             - name: VERXIO_LOCAL_HERMES_URL
               value: "http://127.0.0.1:9119"
+            - name: VERXIO_WORKER_MAX_TENANTS
+              value: {{ .Values.worker.maxTenants | quote }}
             - name: VERXIO_WORKER_HOMES_ROOT
               value: /var/lib/verxio/homes
             - name: VERXIO_WORKER_ID
@@ -126,6 +186,10 @@ spec:
               mountPath: /var/lib/verxio/homes
         - name: hermes
           image: {{ .Values.images.hermes }}
+          ports:
+            - containerPort: 9119
+          resources: {{- toYaml .Values.resources.hermes | nindent 12 }}
+          {{- include "verxio.hermesProbes" . | nindent 10 }}
           env:
             - name: VERXIO_HOSTED
               value: "1"
@@ -214,6 +278,8 @@ spec:
           # derives its ordinal from VERXIO_POD_NAME (see shard_index()).
           ports:
             - containerPort: 9119
+          resources: {{- toYaml .Values.resources.channelGateway | nindent 12 }}
+          {{- include "verxio.hermesProbes" . | nindent 10 }}
           env:
             - name: VERXIO_POD_NAME
               valueFrom:
@@ -273,6 +339,7 @@ spec:
         consumerGroup: {{ .Values.autoscaling.worker.keda.consumerGroup | quote }}
         pendingEntriesCount: {{ .Values.autoscaling.worker.keda.pendingEntriesPerWorker | quote }}
         activationLagCount: "1"
+        enableTLS: {{ .Values.autoscaling.worker.keda.enableTLS | quote }}
 {{- else }}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler

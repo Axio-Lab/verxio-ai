@@ -43,6 +43,27 @@ Chart topology:
   `redis.url` (and `autoscaling.worker.keda.address`) at a managed instance in production.
 - All app pods `envFrom` the `secrets.name` Secret (Turso, `VERXIO_SECRETS_KEY`,
   `VERXIO_POOL_DASHBOARD_TOKEN`, SMTP).
+- `verxio-api` and `verxio-web` have CPU HPAs (`autoscaling.api`, `autoscaling.web`);
+  every tier has requests/limits (`resources.*`), a PodDisruptionBudget
+  (`podDisruptionBudget.*`) and node/zone `topologySpreadConstraints`
+  (`topologySpread.*`). KEDA is the default worker scaler.
+- Every Hermes container (worker sidecar, channel shards, per-tenant k8s pods) runs the
+  startup/readiness/liveness trio on `/api/healthz` (`hermesProbes.*`) plus the in-image
+  `dashboard-watchdog` s6 service, and the scheduler's runtime watchdog restarts the
+  dashboard service (then the compute) after `VERXIO_RUNTIME_WATCHDOG_FAILURES` failed probes.
+- `monitoring.enabled` adds a ServiceMonitor for `/metrics` on the API and a PrometheusRule
+  with the health-fail-rate and proxy-latency SLO alerts.
+
+### Production checklist
+
+1. Managed Redis: `redis.enabled=false`, `redis.url=rediss://…`, `autoscaling.worker.keda.address`
+   + `enableTLS=true`. The in-cluster StatefulSet is single-node.
+2. Sandbox tier: `sandbox.dockerHost` + `sandbox.tlsSecret` on every cluster. Pool workers
+   fail closed without it; only the legacy per-tenant planes fall back to in-container
+   low-priority tools (`VERXIO_SANDBOX_FALLBACK_LOCAL`).
+3. Database: Turso with the bounded API pool (`VERXIO_DB_POOL_SIZE`, default 16 per replica).
+   Moving to Postgres is a separate migration and is not covered by the chart.
+4. `monitoring.enabled=true` once kube-prometheus-stack is installed.
 
 ## Cutover (dual-run)
 
