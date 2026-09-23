@@ -844,6 +844,22 @@ def _get_persistent_connection(settings: DatabaseSettings) -> Any:
     return conn
 
 
+def _drop_persistent_connection() -> None:
+    """Forget this thread's cached connection so the next call reconnects.
+
+    Called after any error on a persistent (Turso) connection: a dropped TLS
+    session or a server-side timeout otherwise poisons the thread for good.
+    """
+    existing = getattr(_THREAD_LOCAL, "connection", None)
+    _THREAD_LOCAL.connection = None
+    _THREAD_LOCAL.connection_key = None
+    if existing is not None:
+        try:
+            _close_connection(existing)
+        except Exception:
+            pass
+
+
 @contextmanager
 def connection() -> Iterator[Any]:
     settings = get_database_settings()
@@ -859,9 +875,59 @@ def connection() -> Iterator[Any]:
         yield conn
         if hasattr(conn, "commit"):
             conn.commit()
+    except Exception:
+        if persistent:
+            _drop_persistent_connection()
+        raise
     finally:
         if not persistent and hasattr(conn, "close"):
             conn.close()
+
+
+# ── Bounded DB executor ──────────────────────────────────────────────────────
+# The async helpers below used to hop onto ``asyncio.to_thread``'s default
+# executor, which is shared with every other blocking call in the process and
+# sized min(32, cpu+4). Under a reconnect storm hundreds of requests queued
+# there behind docker/k8s calls, and each new thread minted its own Turso
+# connection. A dedicated executor gives the persistent per-thread connections
+# a fixed ceiling (a real pool of VERXIO_DB_POOL_SIZE connections) and keeps
+# DB latency independent of unrelated blocking work.
+_DB_EXECUTOR: Any = None
+_DB_EXECUTOR_LOCK = threading.Lock()
+
+
+def db_pool_size() -> int:
+    raw = os.getenv("VERXIO_DB_POOL_SIZE", "").strip()
+    try:
+        return max(1, int(raw)) if raw else 16
+    except ValueError:
+        return 16
+
+
+def _db_executor():
+    global _DB_EXECUTOR
+    if _DB_EXECUTOR is None:
+        from concurrent.futures import ThreadPoolExecutor
+
+        with _DB_EXECUTOR_LOCK:
+            if _DB_EXECUTOR is None:
+                _DB_EXECUTOR = ThreadPoolExecutor(max_workers=db_pool_size(), thread_name_prefix="verxio-db")
+    return _DB_EXECUTOR
+
+
+async def _run_db(fn, /, *args):
+    import asyncio
+
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_db_executor(), fn, *args)
+
+
+def reset_db_executor_for_tests() -> None:
+    global _DB_EXECUTOR
+    with _DB_EXECUTOR_LOCK:
+        if _DB_EXECUTOR is not None:
+            _DB_EXECUTOR.shutdown(wait=False, cancel_futures=True)
+        _DB_EXECUTOR = None
 
 
 def _cursor_to_dicts(cursor: Any) -> list[dict[str, Any]]:
@@ -1262,21 +1328,15 @@ def transaction() -> Iterator[Any]:
 
 async def aexecute(sql: str, params: Iterable[Any] = ()) -> None:
     """Run ``execute`` off the event loop so Turso/SQLite never blocks uvicorn."""
-    import asyncio
-
-    await asyncio.to_thread(execute, sql, params)
+    await _run_db(execute, sql, params)
 
 
 async def afetch_one(sql: str, params: Iterable[Any] = ()) -> dict[str, Any] | None:
-    import asyncio
-
-    return await asyncio.to_thread(fetch_one, sql, params)
+    return await _run_db(fetch_one, sql, params)
 
 
 async def afetch_all(sql: str, params: Iterable[Any] = ()) -> list[dict[str, Any]]:
-    import asyncio
-
-    return await asyncio.to_thread(fetch_all, sql, params)
+    return await _run_db(fetch_all, sql, params)
 
 
 async def atransaction(work):
@@ -1284,13 +1344,12 @@ async def atransaction(work):
 
     ``work`` receives the open connection and may execute multiple statements.
     """
-    import asyncio
 
     def _run():
         with transaction() as conn:
             return work(conn)
 
-    return await asyncio.to_thread(_run)
+    return await _run_db(_run)
 
 
 def ping() -> dict[str, Any]:
