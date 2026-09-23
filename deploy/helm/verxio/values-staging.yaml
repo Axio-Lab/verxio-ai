@@ -10,6 +10,13 @@ channelGateway:
   shards: 1
 
 autoscaling:
+  # Staging is a single replica of api/web (see replicaCount). Production HPAs
+  # in values.yaml would otherwise render here and fight that, and CI asserts
+  # this overlay contains a KEDA ScaledObject and no HorizontalPodAutoscaler.
+  api:
+    enabled: false
+  web:
+    enabled: false
   worker:
     enabled: true
     minReplicas: 1
