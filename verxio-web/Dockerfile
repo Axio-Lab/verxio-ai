@@ -19,7 +19,7 @@ ENV VITE_VERXIO_API_ENABLED=${VITE_VERXIO_API_ENABLED}
 ENV VITE_VERXIO_API_URL=${VITE_VERXIO_API_URL}
 ENV VITE_BASE=${VITE_BASE}
 
-RUN npm run build
+RUN npm run build && node scripts/precompress.mjs dist
 
 FROM nginx:1.27-alpine
 

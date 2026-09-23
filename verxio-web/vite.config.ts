@@ -62,7 +62,39 @@ export default defineConfig({
     chunkSizeWarningLimit: 5000,
     rolldownOptions: {
       output: {
-        codeSplitting: true
+        // Automatic splitting plus a few stable vendor groups. The main app
+        // chunk was ~1.9 MB and every deploy invalidated all of it; pinning
+        // rarely-changing vendors into their own hashed chunks means a UI
+        // release only re-downloads the app code, and the CDN keeps serving
+        // the cached vendor bundles. Groups are ordered by priority.
+        codeSplitting: {
+          groups: [
+            {
+              name: 'react',
+              test: /node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom)[\\/]/,
+              priority: 50
+            },
+            { name: 'xterm', test: /node_modules[\\/]@xterm[\\/]/, priority: 40 },
+            { name: 'katex', test: /node_modules[\\/]katex[\\/]/, priority: 40 },
+            {
+              name: 'markdown',
+              // Never capture shiki here: its ~300 grammars are dynamically
+              // imported and must stay as individual lazy chunks.
+              test: (id: string) =>
+                !/shiki/.test(id) &&
+                /node_modules[\\/](streamdown|@streamdown|@assistant-ui|unified|remark-|rehype-|micromark|mdast-|hast-|unist-|vfile|remend)/.test(
+                  id
+                ),
+              priority: 30
+            },
+            { name: 'icons', test: /node_modules[\\/](@tabler[\\/]icons-react|@icons-pack)[\\/]/, priority: 30 },
+            {
+              name: 'ui',
+              test: /node_modules[\\/](radix-ui|@radix-ui|cmdk|motion|framer-motion|@dnd-kit|react-arborist|leva|@tanstack)[\\/]/,
+              priority: 20
+            }
+          ]
+        }
       }
     }
   },
