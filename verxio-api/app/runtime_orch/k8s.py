@@ -19,6 +19,19 @@ from app.runtime_orch.states import RuntimeStatus, assert_transition
 
 logger = logging.getLogger(__name__)
 
+DASHBOARD_SERVICE_DIR = "/run/service/dashboard"
+S6_SVC = "/command/s6-svc"
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        return default
+
 
 def stop_leftover_docker_runtime(name: str) -> bool:
     """Stop a same-named local-docker Hermes so it cannot steal Telegram polling.
@@ -163,12 +176,37 @@ class K8sRuntimeManager:
 
         # /api/healthz is the cheap public liveness path. /api/status can stall
         # on a cold dashboard and mark a live pod unready.
-        readiness = {
-            "httpGet": {"path": "/api/healthz", "port": 9119},
-            "initialDelaySeconds": int(os.getenv("VERXIO_K8S_READINESS_DELAY", "15") or "15"),
+        #
+        # Three probes with distinct jobs:
+        #   startup   — owns the cold boot. Liveness/readiness stay silent
+        #               until it passes, so a slow first boot is never
+        #               mistaken for a wedge. Budget: period × failures.
+        #   readiness — flips Endpoints fast (≈30s) so the proxy stops
+        #               routing to a stalled dashboard.
+        #   liveness  — backstop behind the in-image s6 watchdog (which
+        #               restarts only the dashboard service). If even that
+        #               cannot recover healthz, kubelet restarts the
+        #               container instead of leaving the user on
+        #               "Reconnecting" forever.
+        healthz = {"path": "/api/healthz", "port": 9119}
+        startup = {
+            "httpGet": healthz,
             "periodSeconds": 5,
             "timeoutSeconds": 5,
-            "failureThreshold": 36,
+            "failureThreshold": _env_int("VERXIO_K8S_STARTUP_FAILURES", 180),  # 15 min
+        }
+        readiness = {
+            "httpGet": healthz,
+            "initialDelaySeconds": _env_int("VERXIO_K8S_READINESS_DELAY", 0),
+            "periodSeconds": 5,
+            "timeoutSeconds": 5,
+            "failureThreshold": _env_int("VERXIO_K8S_READINESS_FAILURES", 6),
+        }
+        liveness = {
+            "httpGet": healthz,
+            "periodSeconds": 10,
+            "timeoutSeconds": 5,
+            "failureThreshold": _env_int("VERXIO_K8S_LIVENESS_FAILURES", 18),  # 3 min
         }
 
         container: dict[str, Any] = {
@@ -178,7 +216,9 @@ class K8sRuntimeManager:
             "args": ["gateway", "run"],
             "ports": [dashboard_port, webhook_port, api_server_port],
             "env": env,
+            "startupProbe": startup,
             "readinessProbe": readiness,
+            "livenessProbe": liveness,
             "resources": {
                 "requests": {
                     "cpu": os.getenv("VERXIO_K8S_CPU_REQUEST", "250m"),
@@ -608,6 +648,48 @@ class K8sRuntimeManager:
                 invalidate_runtime_caches(runtime)
                 return False, "K8s pod is not running."
         return await runtime_health(runtime)
+
+    def _exec_in_pod(self, runtime: RuntimeInstance, command: list[str], *, timeout: float = 20.0) -> str:
+        from kubernetes.stream import stream
+
+        core = self._client()
+        return stream(
+            core.connect_get_namespaced_pod_exec,
+            self.pod_name(runtime),
+            self.namespace,
+            container="hermes",
+            command=command,
+            stderr=True,
+            stdin=False,
+            stdout=True,
+            tty=False,
+            _request_timeout=timeout,
+        )
+
+    async def restart_dashboard(self, runtime: RuntimeInstance, *, force: bool = False) -> bool:
+        """Restart only the s6 ``dashboard`` service inside a live pod.
+
+        Cheaper than a pod restart: agent turns and channel gateways keep
+        running while uvicorn comes back. ``force`` sends SIGKILL for a
+        dashboard whose event loop no longer services SIGTERM.
+        """
+        self._require_enabled()
+        flag = "-k" if force else "-r"
+
+        def _run() -> bool:
+            try:
+                self._exec_in_pod(runtime, [S6_SVC, flag, DASHBOARD_SERVICE_DIR])
+            except Exception:
+                logger.warning(
+                    "K8s dashboard restart exec failed for %s (force=%s)", runtime.id, force, exc_info=True
+                )
+                return False
+            return True
+
+        ok = await asyncio.to_thread(_run)
+        if ok:
+            logger.warning("Restarted dashboard service in pod %s (force=%s)", self.pod_name(runtime), force)
+        return ok
 
     def supports_publish_ports(self) -> bool:
         return self.connect_mode == "hostport"

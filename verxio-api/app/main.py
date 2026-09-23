@@ -233,9 +233,13 @@ from app.runtime import (
     is_hosted_control_plane,
 )
 from app.runtime_dashboard import soft_reload_runtime_mcp
+from app.dashboard_proxy import READ_CACHE as DASHBOARD_READ_CACHE
+from app.dashboard_proxy import CachedResponse, cacheable_read
+from app.metrics import HTTP_LATENCY, HTTP_REQUESTS, PROXY_ERRORS, PROXY_LATENCY, WS_CONNECTIONS
+from app.metrics import metrics_enabled, render as render_metrics, route_template
 from app.runtime_manager import (
-    DASHBOARD_UPSTREAM_SLOTS,
     artifact_file,
+    dashboard_upstream_slot,
     index_artifacts,
     mark_runtime_healthy,
     normalize_gateway_status_content,
@@ -402,6 +406,14 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
         scale_tasks = start_scale_workers()
 
+        if _env_on("VERXIO_RUNTIME_WATCHDOG_ENABLED", "1"):
+            from app.scheduler import _runtime_watchdog_loop
+
+            # Cancelled with the other scale tasks on shutdown.
+            scale_tasks.append(
+                asyncio.create_task(_runtime_watchdog_loop(asyncio.Event()), name="runtime-watchdog")
+            )
+
         async def _reconcile_missing() -> None:
             try:
                 from app.runtime_orch.lifecycle import reconcile_missing_runtimes
@@ -447,6 +459,25 @@ app.add_middleware(RateLimitMiddleware)
 
 
 @app.middleware("http")
+async def metrics_middleware(request: Request, call_next):
+    """Request count + latency per route template for the SLO dashboards."""
+    if not metrics_enabled():
+        return await call_next(request)
+    started = time.perf_counter()
+    status = "500"
+    try:
+        response = await call_next(request)
+        status = str(response.status_code)
+        return response
+    finally:
+        route = route_template(request.scope)
+        if route != "/metrics":
+            elapsed = time.perf_counter() - started
+            HTTP_LATENCY.observe(elapsed, route=route)
+            HTTP_REQUESTS.inc(method=request.method, route=route, status=status)
+
+
+@app.middleware("http")
 async def sliding_session_middleware(request: Request, call_next):
     """Re-issue the auth cookie when this request extended the session (sliding expiry)."""
     response = await call_next(request)
@@ -468,6 +499,15 @@ app.mount("/static", StaticFiles(directory=STATIC_ROOT), name="static")
 @app.get("/", include_in_schema=False)
 async def index() -> FileResponse:
     return FileResponse(STATIC_ROOT / "index.html")
+
+@app.get("/metrics", include_in_schema=False)
+async def prometheus_metrics() -> Response:
+    """Prometheus text exposition. Cluster-internal: the web nginx only
+    forwards /api/, so this is never reachable through the public ingress."""
+    if not metrics_enabled():
+        raise HTTPException(status_code=404, detail="Metrics disabled.")
+    return Response(content=render_metrics(), media_type="text/plain; version=0.0.4; charset=utf-8")
+
 
 @app.get("/api/health")
 async def health() -> dict[str, object]:
@@ -2386,24 +2426,54 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
         timeout = httpx.Timeout(20.0)
     else:
         timeout = httpx.Timeout(300.0)
-    try:
+    proxy_kind = (
+        "lightweight"
+        if lightweight
+        else "medium"
+        if medium_read
+        else "write"
+        if not _dashboard_request_is_read(request.method)
+        else "other"
+    )
+
+    async def _fetch_upstream() -> CachedResponse:
         async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
             async def _send() -> httpx.Response:
-                return await client.request(
-                    request.method,
-                    target,
-                    params=request.query_params,
-                    content=body,
-                    headers=_proxy_headers(request, token),
-                )
+                with PROXY_LATENCY.time(kind=proxy_kind):
+                    return await client.request(
+                        request.method,
+                        target,
+                        params=request.query_params,
+                        content=body,
+                        headers=_proxy_headers(request, token),
+                    )
 
             # Liveness must not sit behind config/session floods.
             if path.strip("/") == "api/healthz":
-                upstream = await _send()
+                raw = await _send()
             else:
-                async with DASHBOARD_UPSTREAM_SLOTS:
-                    upstream = await _send()
+                # Per-runtime slot: a slow tenant queues only its own reads.
+                async with dashboard_upstream_slot(runtime):
+                    raw = await _send()
+        if raw.status_code >= 500:
+            PROXY_ERRORS.inc(reason=f"upstream_{raw.status_code}")
+        return CachedResponse(
+            status_code=raw.status_code,
+            headers=tuple(raw.headers.items()),
+            content=raw.content,
+            stored_at=time.monotonic(),
+        )
+
+    try:
+        if cacheable_read(request.method, path):
+            # Timer polls from every open tab collapse into one upstream call
+            # and re-use it for a couple of seconds. Errors are never cached.
+            cache_key = DASHBOARD_READ_CACHE.key(runtime.id, path, str(request.url.query or ""))
+            upstream = await DASHBOARD_READ_CACHE.get_or_fetch(cache_key, _fetch_upstream)
+        else:
+            upstream = await _fetch_upstream()
     except (httpx.ConnectError, httpx.ConnectTimeout, httpx.RemoteProtocolError, httpx.ReadError, httpx.TimeoutException) as exc:
+        PROXY_ERRORS.inc(reason=type(exc).__name__)
         if skip_start_lock:
             _schedule_runtime_ensure(user)
         raise HTTPException(
@@ -2415,6 +2485,10 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
         mark_runtime_healthy(runtime)
     elif skip_start_lock and upstream.status_code >= 500:
         _schedule_runtime_ensure(user)
+    if not _dashboard_request_is_read(request.method) and upstream.status_code < 400:
+        # A write may change what the polled reads return; drop the runtime's
+        # cached reads so the next poll sees it immediately.
+        DASHBOARD_READ_CACHE.invalidate_runtime(runtime.id)
 
     # Intentionally no docker restart on env/toolset writes. Hermes already
     # preserves VERXIO_HOSTED inference env across `/api/env/reload`, and
@@ -2428,7 +2502,7 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
 
     response_headers = {
         key: value
-        for key, value in upstream.headers.items()
+        for key, value in upstream.headers
         if key.lower() not in {"content-encoding", "content-length", "set-cookie", "transfer-encoding"}
     }
     content = upstream.content
@@ -2548,9 +2622,11 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
                 )
 
         if upstream is None:
+            PROXY_ERRORS.inc(reason="ws_connect")
             _schedule_runtime_ensure(user)
             raise last_error or RuntimeError("No Hermes websocket upstream available")
 
+        WS_CONNECTIONS.inc()
         try:
             async def client_to_runtime() -> None:
                 while True:
@@ -2575,6 +2651,7 @@ async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
 
             await asyncio.gather(client_to_runtime(), runtime_to_client())
         finally:
+            WS_CONNECTIONS.dec()
             await upstream.close()
     except WebSocketDisconnect:
         logger.info("Runtime dashboard websocket client disconnected path=%s", path)

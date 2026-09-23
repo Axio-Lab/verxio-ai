@@ -78,6 +78,16 @@ class LocalDockerRuntimeManager:
             return False, "Runtime container is not running."
         return await runtime_health(runtime)
 
+    async def restart_dashboard(self, runtime: RuntimeInstance, *, force: bool = False) -> bool:
+        """Restart only the s6 ``dashboard`` service; the container stays up."""
+        from app.runtime_manager import _container_name, _run_docker_async
+
+        flag = "-k" if force else "-r"
+        result = await _run_docker_async(
+            ["exec", _container_name(runtime), "/command/s6-svc", flag, "/run/service/dashboard"]
+        )
+        return result.returncode == 0
+
     def supports_publish_ports(self) -> bool:
         return os.getenv("VERXIO_RUNTIME_PUBLISH_PORTS", "true").strip().lower() in {
             "1",

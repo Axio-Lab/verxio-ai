@@ -16,7 +16,7 @@ from app import db
 from app.control_plane import get_runtime_for_user, runtime_from_row
 from app.models import RuntimeInstance
 from app.runtime_manager import (
-    DASHBOARD_UPSTREAM_SLOTS,
+    dashboard_upstream_slot,
     runtime_dashboard_base_url,
     runtime_live_dashboard_token_async,
     runtime_webhook_base_url,
@@ -264,7 +264,7 @@ async def _dashboard_request(
     token = await _dashboard_token(runtime)
     url = f"{base.rstrip('/')}/{path.lstrip('/')}"
     try:
-        async with DASHBOARD_UPSTREAM_SLOTS:
+        async with dashboard_upstream_slot(runtime):
             async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=5.0)) as client:
                 return await client.request(
                     method,

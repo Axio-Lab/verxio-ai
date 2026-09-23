@@ -18,6 +18,9 @@ import httpx
 
 from app import db
 from app.control_plane import ensure_runtime_directories, now_iso, runtime_from_row, safe_path_part, save_runtime
+from app.dashboard_proxy import READ_CACHE
+from app.dashboard_proxy import UPSTREAM_LIMITER as DASHBOARD_UPSTREAM_LIMITER
+from app.metrics import HEALTH_PROBES
 from app.models import ArtifactRecord, RuntimeInstance, new_id
 
 logger = logging.getLogger(__name__)
@@ -33,10 +36,13 @@ _LIVE_TOKEN_CACHE: dict[str, tuple[float, str]] = {}
 _CONTAINER_ENV_CACHE: dict[str, tuple[float, dict[str, str]]] = {}
 _HEALTHY_UNTIL: dict[str, float] = {}
 _START_LOCKS: dict[str, asyncio.Lock] = {}
-# One Hermes dashboard loop: boot floods of config/sessions freeze healthz.
-DASHBOARD_UPSTREAM_SLOTS = asyncio.Semaphore(
-    max(1, int(os.getenv("VERXIO_DASHBOARD_PROXY_CONCURRENCY", "1") or "1"))
-)
+# One Hermes dashboard loop per runtime: boot floods of config/sessions
+# freeze healthz. Back-pressure is per runtime (see app.dashboard_proxy), so
+# one slow tenant never queues another tenant's reads on this replica.
+def dashboard_upstream_slot(runtime: RuntimeInstance | str):
+    """Async context manager bounding concurrent proxy calls to one runtime."""
+    runtime_id = runtime if isinstance(runtime, str) else runtime.id
+    return DASHBOARD_UPSTREAM_LIMITER.slot(runtime_id)
 _CACHE_TTL_SECONDS = 60.0
 _HEALTHY_TTL_SECONDS = 45.0
 _OPTIONAL_UNPAIRED_PLATFORM_ERRORS = {
@@ -148,6 +154,13 @@ def _verxio_api_internal_url() -> str:
 def _runtime_container_env(runtime: RuntimeInstance, extra_env: dict[str, str] | None = None) -> dict[str, str]:
     env: dict[str, str] = {
         "VERXIO_HOSTED": "1",
+        # Single-tenant planes (per-tenant pod / local docker) have no sandbox
+        # daemon. Let Hermes run tools in-container, but only under the
+        # low-priority isolated policy so builds can't starve the dashboard.
+        # Pool workers do NOT set this and fail closed without a sandbox.
+        "VERXIO_SANDBOX_FALLBACK_LOCAL": "1",
+        "HERMES_TOOL_NICE": os.getenv("VERXIO_TOOL_NICE", "10"),
+        "HERMES_TOOL_SCHED_BATCH": "1",
         "WHATSAPP_BROWSER_NAME": "Verxio Agent",
         "WHATSAPP_REPLY_PREFIX": "",
         # Lets Hermes tools reach the Verxio control plane (Notepad, shares).
@@ -425,6 +438,7 @@ def invalidate_runtime_caches(runtime: RuntimeInstance) -> None:
     _LIVE_TOKEN_CACHE.pop(name, None)
     _CONTAINER_ENV_CACHE.pop(name, None)
     _HEALTHY_UNTIL.pop(name, None)
+    READ_CACHE.invalidate_runtime(runtime.id)
 
 
 def _runtime_manager_name(runtime: RuntimeInstance) -> str:
@@ -927,8 +941,10 @@ async def runtime_health(runtime: RuntimeInstance) -> tuple[bool, str]:
                 # dashboard event loop and a kubelet/API stampede after
                 # rebuild is what wedges the UI on "Reconnecting to Verxio".
                 mark_runtime_healthy(runtime)
+                HEALTH_PROBES.inc(result="ok")
                 return True, "Verxio runtime is reachable."
             except Exception as exc:
+                HEALTH_PROBES.inc(result="fail")
                 errors.append(f"{root}/api/healthz: {exc}")
 
             try:

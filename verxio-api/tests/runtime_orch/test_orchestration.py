@@ -342,6 +342,100 @@ def test_reconcile_missing_runtimes_marks_stopped_and_wakes(monkeypatch):
     assert woken == ["rt_missing:test.wipe"]
 
 
+def test_k8s_manifest_has_startup_readiness_and_liveness_probes(monkeypatch):
+    monkeypatch.setenv("VERXIO_K8S_HOST_PATH_ROOT", "/verxio-runtimes")
+    monkeypatch.setenv("VERXIO_K8S_CONNECT_MODE", "hostPort")
+    monkeypatch.setenv("VERXIO_K8S_LIVENESS_FAILURES", "9")
+    mgr = K8sRuntimeManager(namespace="verxio-test")
+    container = mgr.render_pod_manifest(_rt(status="stopped"), dashboard_token="tok", host_port=19199)["spec"][
+        "containers"
+    ][0]
+    for key in ("startupProbe", "readinessProbe", "livenessProbe"):
+        assert container[key]["httpGet"] == {"path": "/api/healthz", "port": 9119}
+    # Startup owns the cold boot; readiness flips fast; liveness is the backstop.
+    assert container["startupProbe"]["failureThreshold"] * container["startupProbe"]["periodSeconds"] >= 600
+    assert container["readinessProbe"]["failureThreshold"] <= 6
+    assert container["livenessProbe"]["failureThreshold"] == 9
+    assert container["livenessProbe"]["periodSeconds"] >= 10
+
+
+def test_watchdog_escalates_dashboard_restart_then_compute(monkeypatch):
+    from app.runtime_orch import watchdog
+
+    watchdog.reset_for_tests()
+    monkeypatch.setenv("VERXIO_RUNTIME_WATCHDOG_FAILURES", "2")
+    rt = _rt(status="running", id="rt_wedged", dashboard_url="http://runtime:9119")
+    calls: list[str] = []
+
+    class FakeManager:
+        name = "k8s"
+
+        async def restart_dashboard(self, runtime, *, force=False):
+            calls.append(f"dashboard:{'kill' if force else 'term'}")
+            return True
+
+        async def restart(self, runtime, *, extra_env=None):
+            calls.append("compute")
+            return runtime
+
+    monkeypatch.setattr(watchdog, "get_runtime_manager", lambda *_a, **_k: FakeManager())
+    monkeypatch.setattr(watchdog.db, "fetch_all", lambda *_a, **_k: [rt.model_dump()])
+    monkeypatch.setattr(watchdog, "runtime_from_row", lambda row: _rt(**row))
+
+    healthy = {"ok": False}
+
+    async def fake_probe(runtime):
+        return healthy["ok"]
+
+    monkeypatch.setattr(watchdog, "probe_healthz", fake_probe)
+
+    async def tick():
+        return await watchdog.heal_unhealthy_runtimes()
+
+    results = [asyncio.run(tick()) for _ in range(6)]
+    # Threshold 2: term at 2, kill at 4, compute restart at 6.
+    assert calls == ["dashboard:term", "dashboard:kill", "compute"]
+    assert results[1]["healed"] == ["rt_wedged:restart-dashboard"]
+    assert results[3]["healed"] == ["rt_wedged:restart-dashboard-kill"]
+    assert results[5]["healed"] == ["rt_wedged:restart-compute"]
+    assert all(r["unhealthy"] == ["rt_wedged"] for r in results)
+
+    healthy["ok"] = True
+    ok = asyncio.run(tick())
+    assert ok == {"unhealthy": [], "healed": []}
+    assert watchdog.tracked_failures("rt_wedged") == 0
+
+
+def test_watchdog_skips_managers_without_dashboard_restart_until_top_rung(monkeypatch):
+    from app.runtime_orch import watchdog
+
+    watchdog.reset_for_tests()
+    monkeypatch.setenv("VERXIO_RUNTIME_WATCHDOG_FAILURES", "1")
+    rt = _rt(status="running", id="rt_pool", manager="pool")
+    calls: list[str] = []
+
+    class PoolManager:
+        name = "pool"
+
+        async def restart(self, runtime, *, extra_env=None):
+            calls.append("compute")
+            return runtime
+
+    monkeypatch.setattr(watchdog, "get_runtime_manager", lambda *_a, **_k: PoolManager())
+    monkeypatch.setattr(watchdog.db, "fetch_all", lambda *_a, **_k: [rt.model_dump()])
+    monkeypatch.setattr(watchdog, "runtime_from_row", lambda row: _rt(**row))
+
+    async def never_ok(runtime):
+        return False
+
+    monkeypatch.setattr(watchdog, "probe_healthz", never_ok)
+    for _ in range(2):
+        asyncio.run(watchdog.heal_unhealthy_runtimes())
+    assert calls == []
+    asyncio.run(watchdog.heal_unhealthy_runtimes())
+    assert calls == ["compute"]
+
+
 def test_k8s_webhook_address_uses_service_dns_in_cluster_mode(monkeypatch):
     monkeypatch.setenv("VERXIO_K8S_CONNECT_MODE", "cluster")
     monkeypatch.setenv("VERXIO_K8S_NAMESPACE", "verxio-test")

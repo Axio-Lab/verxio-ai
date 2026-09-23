@@ -69,6 +69,24 @@ async def _reconcile_loop(stop: asyncio.Event) -> None:
             continue
 
 
+async def _runtime_watchdog_loop(stop: asyncio.Event) -> None:
+    """Restart wedged dashboards before users see 'Reconnecting'."""
+    from app.runtime_orch.watchdog import heal_unhealthy_runtimes
+
+    interval = max(5.0, float(os.getenv("VERXIO_RUNTIME_WATCHDOG_INTERVAL_SECONDS", "15")))
+    while not stop.is_set():
+        try:
+            result = await heal_unhealthy_runtimes()
+            if result["healed"]:
+                logger.warning("Runtime watchdog healed: %s", ", ".join(result["healed"]))
+        except Exception:
+            logger.exception("Runtime watchdog tick failed")
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=interval)
+        except asyncio.TimeoutError:
+            continue
+
+
 async def _cron_loop(stop: asyncio.Event) -> None:
     from app.cron_store import enqueue_due_cron_jobs
 
@@ -136,6 +154,8 @@ async def run_scheduler() -> None:
             tasks.append(asyncio.create_task(_idle_reaper_loop(lost), name="idle-reaper"))
         if _env_truthy("VERXIO_RECONCILE_ENABLED", "1"):
             tasks.append(asyncio.create_task(_reconcile_loop(lost), name="reconcile"))
+        if _env_truthy("VERXIO_RUNTIME_WATCHDOG_ENABLED", "1"):
+            tasks.append(asyncio.create_task(_runtime_watchdog_loop(lost), name="runtime-watchdog"))
         wait_stop = asyncio.create_task(stop.wait())
         wait_lost = asyncio.create_task(lost.wait())
         done, pending = await asyncio.wait({wait_stop, wait_lost}, return_when=asyncio.FIRST_COMPLETED)
