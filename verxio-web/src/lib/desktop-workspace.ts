@@ -6,12 +6,27 @@ export { isVerxioDesktop } from '@/lib/platform'
 /** Verxio runtime cwd inside Docker, not a real path on the user's machine. */
 export const RUNTIME_WORKSPACE_ROOT = '/workspace'
 
+/** Hermes home inside the hosted runtime. Same idea as `/workspace`: not a folder on the Mac. */
+export const RUNTIME_HOME_ROOT = '/opt/data'
+
+const RUNTIME_ROOTS = [RUNTIME_WORKSPACE_ROOT, RUNTIME_HOME_ROOT]
+
 let cachedDesktopWorkspaceRoot: string | null = null
 
-export function isRuntimeWorkspacePath(pathValue: string): boolean {
-  const trimmed = pathValue.trim()
+function matchingRuntimeRoot(pathValue: string): string | null {
+  const trimmed = pathValue.trim().replace(/\/+$/, '')
 
-  return trimmed === RUNTIME_WORKSPACE_ROOT || trimmed.startsWith(`${RUNTIME_WORKSPACE_ROOT}/`)
+  for (const root of RUNTIME_ROOTS) {
+    if (trimmed === root || trimmed.startsWith(`${root}/`)) {
+      return root
+    }
+  }
+
+  return null
+}
+
+export function isRuntimeWorkspacePath(pathValue: string): boolean {
+  return matchingRuntimeRoot(pathValue) !== null
 }
 
 export function setDesktopWorkspaceRoot(root: string | null) {
@@ -31,13 +46,14 @@ export function resolveDesktopWorkspaceCwd(currentCwd?: string | null, localRoot
   }
 
   const trimmed = currentCwd?.trim()
+  const runtimeRoot = trimmed ? matchingRuntimeRoot(trimmed) : null
 
-  if (!trimmed || isRuntimeWorkspacePath(trimmed)) {
-    if (!trimmed || trimmed === RUNTIME_WORKSPACE_ROOT) {
+  if (!trimmed || runtimeRoot) {
+    if (!trimmed || trimmed === runtimeRoot) {
       return local
     }
 
-    const relative = trimmed.slice(RUNTIME_WORKSPACE_ROOT.length + 1)
+    const relative = trimmed.slice(runtimeRoot!.length + 1)
 
     return relative ? `${local.replace(/\/+$/, '')}/${relative}` : local
   }
@@ -45,11 +61,11 @@ export function resolveDesktopWorkspaceCwd(currentCwd?: string | null, localRoot
   return trimmed
 }
 
-const RUNTIME_PATH_IN_TEXT_RE = /\/workspace(?:\/[\w./-]+)*/g
+const RUNTIME_PATH_IN_TEXT_RE = /\/(?:workspace|opt\/data)(?:\/[\w./-]+)*/g
 
 /** Replace Docker `/workspace` paths with the user's local project folder in UI copy. */
 export function rewriteRuntimePathsInText(text: string): string {
-  if (!isVerxioDesktop() || !text.includes('/workspace')) {
+  if (!isVerxioDesktop() || (!text.includes('/workspace') && !text.includes('/opt/data'))) {
     return text
   }
 

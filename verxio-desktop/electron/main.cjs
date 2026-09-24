@@ -181,6 +181,7 @@ const terminalSessions = new Map()
 const fileWatches = new Map()
 
 const RUNTIME_WORKSPACE_ROOT = '/workspace'
+const RUNTIME_HOME_ROOT = '/opt/data'
 const DESKTOP_WORKSPACE_NAME = 'Verxio'
 
 function settingsPath() {
@@ -238,14 +239,16 @@ function resolveLocalFsPath(inputPath) {
     return defaultProjectDir()
   }
 
-  if (trimmed === RUNTIME_WORKSPACE_ROOT || trimmed.startsWith(`${RUNTIME_WORKSPACE_ROOT}/`)) {
-    const workspace = defaultProjectDir()
+  for (const root of [RUNTIME_WORKSPACE_ROOT, RUNTIME_HOME_ROOT]) {
+    if (trimmed === root || trimmed.startsWith(`${root}/`)) {
+      const workspace = defaultProjectDir()
 
-    if (trimmed === RUNTIME_WORKSPACE_ROOT) {
-      return workspace
+      if (trimmed === root) {
+        return workspace
+      }
+
+      return path.join(workspace, trimmed.slice(root.length + 1))
     }
-
-    return path.join(workspace, trimmed.slice(RUNTIME_WORKSPACE_ROOT.length + 1))
   }
 
   return resolvePath(trimmed)

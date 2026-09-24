@@ -20,6 +20,8 @@ describe('desktop-workspace', () => {
   it('detects runtime workspace paths', () => {
     expect(isRuntimeWorkspacePath('/workspace')).toBe(true)
     expect(isRuntimeWorkspacePath('/workspace/src')).toBe(true)
+    expect(isRuntimeWorkspacePath('/opt/data')).toBe(true)
+    expect(isRuntimeWorkspacePath('/opt/data/sessions')).toBe(true)
     expect(isRuntimeWorkspacePath('/Users/me/Verxio')).toBe(false)
   })
 
@@ -28,6 +30,8 @@ describe('desktop-workspace', () => {
 
     expect(resolveDesktopWorkspaceCwd('/workspace', local)).toBe(local)
     expect(resolveDesktopWorkspaceCwd('/workspace/src', local)).toBe(`${local}/src`)
+    expect(resolveDesktopWorkspaceCwd('/opt/data', local)).toBe(local)
+    expect(resolveDesktopWorkspaceCwd('/opt/data/notes', local)).toBe(`${local}/notes`)
     expect(resolveDesktopWorkspaceCwd('/Users/me/projects/app', local)).toBe('/Users/me/projects/app')
   })
 
