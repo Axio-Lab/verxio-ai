@@ -97,7 +97,7 @@ export function GatewayConnectingOverlay() {
       applyRuntimeStatus({
         connected: !boot.running && !boot.error && boot.progress >= 94,
         phase: boot.error ? 'failed' : boot.running ? 'starting' : 'ready',
-        phase_detail: boot.message
+        phase_detail: boot.error ? boot.message : null
       })
 
       return
