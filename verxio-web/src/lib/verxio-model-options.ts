@@ -1,4 +1,5 @@
 import { getGlobalModelOptions, setModelAssignment } from '@/hermes'
+import { hermesGatewayModelForHostedSelection } from '@/lib/hosted-default-model'
 import {
   getInferenceCatalog,
   getInferenceSettings,
@@ -404,5 +405,29 @@ export async function getScopedModelOptions(
     }
 
     throw error
+  }
+}
+
+/** Hosted picker rows talk to local Hermes as gateway model ids, not native providers. */
+export async function modelAssignmentForHermes(
+  model: string,
+  provider: string
+): Promise<{ model: string; provider: string }> {
+  const current = { model: model.trim(), provider: provider.trim() }
+
+  if (!verxioApiEnabled() || !current.model) {
+    return current
+  }
+
+  try {
+    const [settings, catalog] = await Promise.all([getInferenceSettings(), getInferenceCatalog()])
+
+    if (settings.mode !== 'hosted') {
+      return current
+    }
+
+    return hermesGatewayModelForHostedSelection(current.model, current.provider, catalog) ?? current
+  } catch {
+    return current
   }
 }

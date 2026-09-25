@@ -8,6 +8,7 @@ import { type ChatMessage, chatMessageText, preserveLocalAssistantErrors, toChat
 import { normalizePersonalityValue } from '@/lib/chat-runtime'
 import { cwdForGatewaySubmission } from '@/lib/desktop-workspace'
 import { embeddedImageUrls, textWithoutEmbeddedImages } from '@/lib/embedded-images'
+import { modelAssignmentForHermes } from '@/lib/verxio-model-options'
 import { ensureSessionYoloEnabled } from '@/lib/yolo-session'
 import { clearComposerAttachments, clearComposerDraft } from '@/store/composer'
 import { clearQueuedPrompts } from '@/store/composer-queue'
@@ -410,12 +411,15 @@ export function useSessionActions({
         const uiProvider = $currentProvider.get().trim()
         const uiEffort = $currentReasoningEffort.get().trim()
         const uiFast = $currentFastMode.get()
+        const hermesModel = uiModel ? await modelAssignmentForHermes(uiModel, uiProvider) : null
 
         const created = await requestGateway<SessionCreateResponse>('session.create', {
           cols: 96,
           ...(cwd && { cwd }),
           ...(newChatProfile ? { profile: newChatProfile } : {}),
-          ...(uiModel ? { model: uiModel, ...(uiProvider ? { provider: uiProvider } : {}) } : {}),
+          ...(hermesModel?.model
+            ? { model: hermesModel.model, ...(hermesModel.provider ? { provider: hermesModel.provider } : {}) }
+            : {}),
           ...(uiEffort ? { reasoning_effort: uiEffort } : {}),
           ...(uiFast ? { fast: true } : {})
         })

@@ -269,6 +269,56 @@ export function resolveHostedDefaultModel(
 }
 
 /**
+ * Local Hermes has no DashScope or Gemini key. A hosted picker row must be
+ * sent as the Verxio gateway model id on the custom endpoint in config.yaml.
+ */
+export function hermesGatewayModelForHostedSelection(
+  model: string,
+  provider: string,
+  catalog: Pick<VerxioInferenceCatalogResponse, 'models'> | null | undefined
+): HostedDefaultModelSelection | null {
+  const targetModel = model.trim()
+
+  if (!targetModel || !catalog?.models?.length) {
+    return null
+  }
+
+  const targetProvider = provider.trim().toLowerCase()
+  const hosted = catalog.models.filter(entry => entry.hostedAvailable && entry.id?.trim())
+  const match =
+    hosted.find(entry => {
+      const ids = [entry.id, entry.upstreamModelId, ...(entry.availableModelIds ?? [])]
+        .map(id => id?.trim())
+        .filter((id): id is string => Boolean(id))
+
+      if (!ids.includes(targetModel)) {
+        return false
+      }
+
+      const slug = String(entry.providerSlug || '')
+        .trim()
+        .toLowerCase()
+
+      return !targetProvider || targetProvider === 'custom' || !slug || slug === targetProvider
+    }) ??
+    // A leftover provider (Qwen/alibaba) can sit next to a Gemini model id.
+    // Hosted mode still has to use the catalog row the model id belongs to.
+    hosted.find(entry => {
+      const ids = [entry.id, entry.upstreamModelId, ...(entry.availableModelIds ?? [])]
+        .map(id => id?.trim())
+        .filter((id): id is string => Boolean(id))
+
+      return ids.includes(targetModel)
+    })
+
+  if (!match?.id) {
+    return null
+  }
+
+  return { model: match.id, provider: 'custom' }
+}
+
+/**
  * Correct an empty/invalid statusbar pin after refresh.
  *
  * Keep the user's persisted pick when it is any valid Verxio Hosted catalog

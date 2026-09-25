@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  hermesGatewayModelForHostedSelection,
   isSelectableModel,
   isSelectedHostedFamilyModel,
   isVerxioHostedDefaultSelection,
@@ -60,6 +61,30 @@ describe('resolveHostedDefaultModel', () => {
       model: 'qwen3.6-plus',
       provider: 'alibaba'
     })
+  })
+})
+
+describe('hermesGatewayModelForHostedSelection', () => {
+  it('routes a hosted upstream model through the Verxio gateway', () => {
+    expect(hermesGatewayModelForHostedSelection('qwen3.6-plus', 'alibaba', catalog)).toEqual({
+      model: 'verxio-qwen',
+      provider: 'custom'
+    })
+    expect(hermesGatewayModelForHostedSelection('gemini-flash-lite-latest', 'gemini', catalog)).toEqual({
+      model: 'verxio-gemini',
+      provider: 'custom'
+    })
+  })
+
+  it('routes a Gemini model id even when the stored provider is still Qwen', () => {
+    expect(hermesGatewayModelForHostedSelection('verxio-gemini', 'alibaba', catalog)).toEqual({
+      model: 'verxio-gemini',
+      provider: 'custom'
+    })
+  })
+
+  it('leaves a bring-your-own-key model alone', () => {
+    expect(hermesGatewayModelForHostedSelection('gpt-5.4', 'openai-api', catalog)).toBeNull()
   })
 })
 

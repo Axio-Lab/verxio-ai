@@ -18,7 +18,7 @@ import {
   type VerxioInferenceCatalogResponse,
   type VerxioInferenceSettings
 } from '@/lib/verxio-api'
-import { getScopedModelOptions } from '@/lib/verxio-model-options'
+import { getScopedModelOptions, modelAssignmentForHermes } from '@/lib/verxio-model-options'
 import { notifyError } from '@/store/notifications'
 import { $currentModel, $currentProvider, setCurrentModel, setCurrentProvider } from '@/store/session'
 import type { ModelOptionsResponse } from '@/types/hermes'
@@ -238,12 +238,14 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
       updateModelOptionsCache(selection.provider, selection.model, includeGlobal)
 
       try {
+        const assignment = await modelAssignmentForHermes(selection.model, selection.provider)
+
         if (activeSessionId) {
           // Hermes defaults /model to persist unless --session is explicit.
           const scopeFlag = selection.persistGlobal ? ' --global' : ' --session'
           await requestGateway('slash.exec', {
             session_id: activeSessionId,
-            command: `/model ${selection.model} --provider ${selection.provider}${scopeFlag}`
+            command: `/model ${assignment.model} --provider ${assignment.provider}${scopeFlag}`
           })
 
           // Do not refreshCurrentModel while a session is live — session.info
@@ -255,7 +257,7 @@ export function useModelControls({ activeSessionId, queryClient, requestGateway 
           return true
         }
 
-        await setGlobalModel(selection.provider, selection.model)
+        await setGlobalModel(assignment.provider, assignment.model)
         void refreshCurrentModel()
         void queryClient.invalidateQueries({ queryKey: ['model-options'] })
 
