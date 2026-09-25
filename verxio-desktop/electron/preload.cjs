@@ -264,7 +264,7 @@ async function getConnection() {
   if (local) {
     emitBoot({
       phase: 'backend.ready',
-      message: 'Local Hermes is ready',
+      message: 'Verxio is ready',
       progress: 94,
       running: false,
       error: null

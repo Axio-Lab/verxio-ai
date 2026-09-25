@@ -112,10 +112,15 @@ function resolveHermesSource(options = {}) {
 }
 
 function resolvePython(root) {
-  const venvPython = path.join(root, 'venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python')
-  if (fileExists(venvPython)) {
-    return venvPython
+  const binary = process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'
+  const candidates = [path.join(root, '.venv', binary), path.join(root, 'venv', binary)]
+
+  for (const candidate of candidates) {
+    if (fileExists(candidate)) {
+      return candidate
+    }
   }
+
   return process.platform === 'win32' ? 'python' : 'python3'
 }
 
@@ -183,14 +188,14 @@ function createRuntime(options = {}) {
 
     emit('verxio:boot-progress', {
       phase: 'backend.spawn',
-      message: 'Starting local Hermes…',
+      message: 'Starting your agent…',
       progress: 40,
       running: true
     })
 
     const child = spawn(
       python,
-      ['-m', 'hermes_cli.main', 'dashboard', '--no-open', '--host', '127.0.0.1', '--port', '0'],
+      ['-m', 'hermes_cli.main', 'dashboard', '--no-open', '--host', '127.0.0.1', '--port', '9119'],
       {
         cwd: root,
         env,
@@ -204,12 +209,20 @@ function createRuntime(options = {}) {
     child.stdout?.on('data', chunk => log(chunk))
     child.stderr?.on('data', chunk => log(chunk))
 
-    const port = await waitForDashboardPort(child)
+    const port = await waitForDashboardPort(child).catch(error => {
+      const detail = state.logs.slice(-4).filter(Boolean).join(' | ')
+
+      if (!detail) {
+        throw error
+      }
+
+      throw new Error(`${error.message}: ${detail}`)
+    })
     state.port = port
     state.baseUrl = `http://127.0.0.1:${port}`
     emit('verxio:boot-progress', {
       phase: 'backend.ready',
-      message: 'Local Hermes is ready',
+      message: 'Verxio is ready',
       progress: 94,
       running: false
     })
@@ -276,5 +289,6 @@ module.exports = {
   parseReadyLine,
   resolveHermesSource,
   resolvePortAnnounceTimeoutMs,
+  resolvePython,
   waitForDashboardPort
 }
