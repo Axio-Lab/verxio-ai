@@ -34,6 +34,7 @@ from app.auth import (
     resend_verification,
     reset_password,
     signup,
+    signup_invite,
     verify_email,
     verify_login_code,
 )
@@ -167,6 +168,7 @@ from app.models import (
     PublicNotepadShareResponse,
     RuntimeControlResponse,
     RuntimeWorkspaceSyncRequest,
+    SignupInviteResponse,
     SignupRequest,
     TranscriptionCatalogResponse,
     WorkflowAgentCreateRequest,
@@ -560,6 +562,10 @@ async def bootstrap(request: Request) -> BootstrapResponse:
         runtime=runtime,
         hermes=hermes,
     )
+
+@app.get("/api/auth/signup-invite", response_model=SignupInviteResponse)
+async def signup_invite_route() -> SignupInviteResponse:
+    return signup_invite()
 
 @app.post("/api/auth/signup", response_model=AuthCodeChallengeResponse)
 async def signup_route(payload: SignupRequest) -> AuthCodeChallengeResponse:

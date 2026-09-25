@@ -22,6 +22,7 @@ from app.models import (
     EmailRequest,
     LoginRequest,
     PasswordResetRequest,
+    SignupInviteResponse,
     SignupRequest,
     UserPublic,
     new_id,
@@ -424,6 +425,10 @@ def authenticated_response(
         status="success",
     )
     return AuthResponse(user=user_public(user), workspace=workspace, profile=agent)
+
+
+def signup_invite() -> SignupInviteResponse:
+    return SignupInviteResponse(invite_code=configured_signup_invite_code())
 
 
 def signup(payload: SignupRequest) -> AuthCodeChallengeResponse:
