@@ -2314,6 +2314,13 @@ def test_signup_creates_user_workspace_agent_and_runtime(client):
     assert runtime_rows[0]["artifact_path"].endswith("/workspace/artifacts")
 
 
+def test_signup_invite_returns_configured_code(client, monkeypatch):
+    monkeypatch.setenv("VERXIO_SIGNUP_INVITE_CODE", "424242")
+    response = client.get("/api/auth/signup-invite")
+    assert response.status_code == 200
+    assert response.json() == {"invite_code": "424242"}
+
+
 def test_signup_requires_valid_invite_code(client):
     missing = client.post(
         "/api/auth/signup",
