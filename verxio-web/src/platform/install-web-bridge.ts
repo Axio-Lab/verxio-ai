@@ -173,25 +173,52 @@ function hermesDashboardBaseUrl(): string {
   return import.meta.env.VITE_HERMES_DASHBOARD_URL?.replace(/\/$/, '') ?? ''
 }
 
+// The browser has no Electron IPC, so it cannot learn the spawned Hermes port.
+// Dev chat talks to the loopback dashboard directly. Auth and the control plane
+// stay on the Verxio API. The hosted dashboard websocket proxy is gone.
+function directHermesBase(): string {
+  const configured = hermesDashboardBaseUrl()
+
+  if (configured) {
+    return configured
+  }
+
+  if (import.meta.env.DEV) {
+    return 'http://127.0.0.1:9119'
+  }
+
+  return ''
+}
+
+function usesControlPlane(path: string): boolean {
+  return (
+    path.startsWith('/api/auth') ||
+    path.startsWith('/api/artifacts') ||
+    path.startsWith('/api/bootstrap') ||
+    // `/api/healthz` is Hermes liveness. `startsWith('/api/health')` would
+    // steal it and 404 on the control plane, leaving the UI on CONNECTING.
+    path === '/api/health' ||
+    path.startsWith('/api/health?') ||
+    path.startsWith('/api/hermes') ||
+    path.startsWith('/api/messaging/slack/manifest') ||
+    path.startsWith('/api/messaging/webhooks') ||
+    path.startsWith('/api/messaging/api-server') ||
+    path === '/api/profile' ||
+    path.startsWith('/api/profile?') ||
+    path.startsWith('/api/runtime')
+  )
+}
+
 function buildApiUrl(path: string): string {
+  const direct = directHermesBase()
+
   if (verxioApiEnabled()) {
-    if (
-      path.startsWith('/api/auth') ||
-      path.startsWith('/api/artifacts') ||
-      path.startsWith('/api/bootstrap') ||
-      // `/api/healthz` is Hermes liveness. `startsWith('/api/health')` would
-      // steal it and 404 on the control plane, leaving the UI on CONNECTING.
-      path === '/api/health' ||
-      path.startsWith('/api/health?') ||
-      path.startsWith('/api/hermes') ||
-      path.startsWith('/api/messaging/slack/manifest') ||
-      path.startsWith('/api/messaging/webhooks') ||
-      path.startsWith('/api/messaging/api-server') ||
-      path === '/api/profile' ||
-      path.startsWith('/api/profile?') ||
-      path.startsWith('/api/runtime')
-    ) {
+    if (usesControlPlane(path)) {
       return verxioApiUrl(path)
+    }
+
+    if (direct && (path.startsWith('/api/') || path.startsWith('/dashboard-plugins'))) {
+      return `${direct}${path}`
     }
 
     if (path.startsWith('/api/') || path.startsWith('/dashboard-plugins')) {
@@ -201,16 +228,24 @@ function buildApiUrl(path: string): string {
     return verxioApiUrl(path)
   }
 
-  const base = hermesDashboardBaseUrl()
-
-  if (base) {
-    return `${base}${path}`
+  if (direct) {
+    return `${direct}${path}`
   }
 
   return path
 }
 
 function buildWsUrl(path: string, params: Record<string, string>): string {
+  const direct = directHermesBase()
+
+  if (direct) {
+    const parsed = new URL(direct)
+    const proto = parsed.protocol === 'https:' ? 'wss:' : 'ws:'
+    const qs = new URLSearchParams(params)
+
+    return `${proto}//${parsed.host}${path}?${qs.toString()}`
+  }
+
   if (verxioApiEnabled()) {
     const base = verxioApiBaseUrl()
     const origin = base || window.location.origin
@@ -222,21 +257,25 @@ function buildWsUrl(path: string, params: Record<string, string>): string {
     return `${proto}//${parsed.host}${pathname}/api/runtime/dashboard/ws${path}?${qs.toString()}`
   }
 
-  const base = hermesDashboardBaseUrl()
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const host = base ? new URL(base).host : window.location.host
-  const pathname = base ? new URL(base).pathname.replace(/\/$/, '') : ''
   const qs = new URLSearchParams(params)
 
-  return `${proto}//${host}${pathname}${path}?${qs.toString()}`
+  return `${proto}//${window.location.host}${path}?${qs.toString()}`
 }
 
 function authHeaders(): HeadersInit {
+  const token = getToken()
+
+  if (directHermesBase() && token) {
+    return {
+      Authorization: `Bearer ${token}`,
+      'X-Hermes-Session-Token': token
+    }
+  }
+
   if (verxioApiEnabled()) {
     return {}
   }
-
-  const token = getToken()
 
   if (!token) {
     return {}
@@ -252,10 +291,26 @@ function fetchCredentials(): RequestCredentials {
   return verxioApiEnabled() ? 'include' : 'same-origin'
 }
 
+function credentialsFor(url: string): RequestCredentials {
+  const direct = directHermesBase()
+
+  if (direct && url.startsWith(direct)) {
+    return 'omit'
+  }
+
+  return fetchCredentials()
+}
+
 const SESSION_TOKEN_RE = /window\.__HERMES_SESSION_TOKEN__\s*=\s*"([^"]+)"/
 const TOKEN_RELOAD_KEY = 'verxio.tokenReloadAttempted'
 
 function dashboardOrigin(): string {
+  const direct = directHermesBase()
+
+  if (direct) {
+    return direct
+  }
+
   if (verxioApiEnabled()) {
     const base = verxioApiBaseUrl()
 
@@ -266,16 +321,19 @@ function dashboardOrigin(): string {
     return window.location.origin
   }
 
-  return import.meta.env.VITE_HERMES_DASHBOARD_URL?.replace(/\/$/, '') ?? 'http://127.0.0.1:9119'
+  return 'http://127.0.0.1:9119'
 }
 
 async function refreshSessionToken(): Promise<boolean> {
-  if (verxioApiEnabled()) {
+  if (verxioApiEnabled() && !directHermesBase()) {
     return false
   }
 
   try {
-    const res = await fetch(`${dashboardOrigin()}/`, { headers: { accept: 'text/html' } })
+    const res = await fetch(`${dashboardOrigin()}/`, {
+      credentials: 'omit',
+      headers: { accept: 'text/html' }
+    })
     const html = await res.text()
     const match = html.match(SESSION_TOKEN_RE)
 
@@ -305,7 +363,7 @@ async function requestJson<T>(
   try {
     return await fetch(url, {
       ...init,
-      credentials: fetchCredentials(),
+      credentials: credentialsFor(url),
       signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
@@ -422,7 +480,7 @@ async function fetchDashboardPath(path: string, timeoutMs = 5_000): Promise<Resp
 
   try {
     return await fetch(buildApiUrl(path), {
-      credentials: fetchCredentials(),
+      credentials: credentialsFor(buildApiUrl(path)),
       headers: authHeaders(),
       signal: controller.signal
     })
@@ -487,7 +545,7 @@ async function waitForDashboardReadyInner(): Promise<void> {
   // Hosted runtimes can take longer after a container/pod start while the
   // dashboard binds. Keep polling so a brief 503 does not surface as
   // "Verxio couldn't start".
-  const hosted = verxioApiEnabled()
+  const hosted = verxioApiEnabled() && !directHermesBase()
   let deadline = Date.now() + (hosted ? 180_000 : 30_000)
   let delayMs = 250
 
@@ -553,9 +611,13 @@ async function waitForDashboardReadyInner(): Promise<void> {
 }
 
 async function getConnection(): Promise<HermesConnection> {
+  if (directHermesBase()) {
+    await refreshSessionToken()
+  }
+
   await waitForDashboardReady()
 
-  const token = verxioApiEnabled() ? 'verxio-proxy' : getToken()
+  const token = directHermesBase() ? getToken() : verxioApiEnabled() ? 'verxio-proxy' : getToken()
 
   if (!token) {
     throw new Error('Missing Verxio session token. Restart Verxio and reload.')
@@ -563,9 +625,11 @@ async function getConnection(): Promise<HermesConnection> {
 
   const wsUrl = buildWsUrl('/api/ws', { token })
 
-  const baseUrl = verxioApiEnabled()
-    ? verxioApiUrl('/api/runtime/dashboard')
-    : hermesDashboardBaseUrl() || window.location.origin
+  const baseUrl = directHermesBase()
+    ? directHermesBase()
+    : verxioApiEnabled()
+      ? verxioApiUrl('/api/runtime/dashboard')
+      : window.location.origin
 
   return {
     baseUrl,
@@ -637,11 +701,13 @@ export function installWebBridge(): void {
       return { ok: true }
     },
     getGatewayWsUrl: async () => {
-      if (verxioApiEnabled()) {
+      if (directHermesBase()) {
+        await refreshSessionToken()
+      } else if (verxioApiEnabled()) {
         await waitForDashboardReady()
       }
 
-      const token = verxioApiEnabled() ? 'verxio-proxy' : getToken()
+      const token = directHermesBase() ? getToken() : verxioApiEnabled() ? 'verxio-proxy' : getToken()
 
       if (!token) {
         throw new Error('Missing Verxio session token. Restart Verxio and reload.')
@@ -937,7 +1003,7 @@ export function installWebBridge(): void {
         const url = buildApiUrl(`/api/fs/${endpoint}?${params.toString()}`)
 
         const res = await fetch(url, {
-          credentials: fetchCredentials(),
+          credentials: credentialsFor(url),
           headers: authHeaders()
         })
 
