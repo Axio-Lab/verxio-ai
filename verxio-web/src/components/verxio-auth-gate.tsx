@@ -25,6 +25,7 @@ import {
   authResendVerification,
   authResetPassword,
   authSignup,
+  authSignupInvite,
   authVerifyEmail,
   authVerifyLoginCode,
   verxioApiEnabled,
@@ -33,6 +34,8 @@ import {
 } from '@/lib/verxio-api'
 
 type AuthMode = 'code-login' | 'password-login' | 'signup' | 'forgot-password'
+
+const DEFAULT_SIGNUP_INVITE_CODE = '97685'
 type AuthStatus = 'checking' | 'authenticated' | 'guest'
 
 interface VerxioAuthGateProps {
@@ -202,7 +205,8 @@ export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
   const [auth, setAuth] = useState<VerxioAuthResponse | null>(null)
   const [email, setEmail] = useState('')
   const [displayName, setDisplayName] = useState('')
-  const [inviteCode, setInviteCode] = useState('')
+  const [publishedInvite, setPublishedInvite] = useState(DEFAULT_SIGNUP_INVITE_CODE)
+  const [inviteCode, setInviteCode] = useState(DEFAULT_SIGNUP_INVITE_CODE)
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -212,6 +216,27 @@ export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
   const [notice, setNotice] = useState<string | null>(null)
 
   useEffect(() => {
+    let cancelled = false
+
+    authSignupInvite()
+      .then(result => {
+        const code = result.invite_code.trim()
+
+        if (cancelled || !code) {
+          return
+        }
+
+        setPublishedInvite(code)
+        setInviteCode(current => (current === DEFAULT_SIGNUP_INVITE_CODE || current.trim() === '' ? code : current))
+      })
+      .catch(() => undefined)
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
     if (!enabled) {
       return
     }
@@ -219,6 +244,7 @@ export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
     let cancelled = false
 
     const cached = readAuthMeCache<VerxioAuthResponse>()
+
     if (cached) {
       persistAuthScope(cached)
       setAuth(cached)
@@ -273,7 +299,7 @@ export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
       setMode(nextMode)
       setCode('')
       setPassword('')
-      setInviteCode('')
+      setInviteCode(publishedInvite)
       setError(null)
       setNotice(null)
     }
@@ -286,7 +312,7 @@ export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
       setError(null)
       setNotice(null)
     }
-  }, [enabled, location.pathname, mode, pendingPurpose, status])
+  }, [enabled, location.pathname, mode, pendingPurpose, publishedInvite, status])
 
   useEffect(() => {
     if (!enabled || status !== 'authenticated' || location.pathname !== SIGNOUT_ROUTE) {
@@ -350,7 +376,7 @@ export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
     setPendingPurpose(null)
     setCode('')
     setPassword('')
-    setInviteCode('')
+    setInviteCode(nextMode === 'signup' ? publishedInvite : '')
     setError(null)
     setNotice(null)
 
@@ -542,6 +568,7 @@ export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
                 spellCheck={false}
                 value={inviteCode}
               />
+              <p className="text-xs text-muted-foreground">Your invite code is {publishedInvite}.</p>
             </div>
           )}
 

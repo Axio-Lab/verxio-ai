@@ -868,6 +868,10 @@ export function authLogin(email: string, password: string): Promise<VerxioAuthRe
   })
 }
 
+export function authSignupInvite(): Promise<{ invite_code: string }> {
+  return verxioFetch<{ invite_code: string }>('/api/auth/signup-invite')
+}
+
 export function authSignup(
   email: string,
   password: string,
