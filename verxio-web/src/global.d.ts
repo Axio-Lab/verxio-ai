@@ -54,6 +54,18 @@ declare global {
       setTitleBarTheme?: (payload: HermesTitleBarTheme) => void
       setPreviewShortcutActive?: (active: boolean) => void
       openExternal: (url: string) => Promise<void>
+      agentBridgeStatus?: () => Promise<{ hasRuntimeToken?: boolean }>
+      applyCloudConfig?: (payload: {
+        agentPrompt?: string
+        apiKey?: string
+        apiUrl?: string
+        enabled?: boolean
+        mcpUrl?: string
+        prompt?: string
+        publicWebUrl?: string
+        runtimeToken?: string
+        soulPrompt?: string
+      }) => Promise<{ enabled?: boolean; ok?: boolean }>
       openComposioOAuth?: (authUrl: string, callbackUrl: string) => Promise<{ error?: string; ok: boolean }>
       onComposioOAuthComplete?: (callback: (href: string) => void) => () => void
       fetchLinkTitle: (url: string) => Promise<string>

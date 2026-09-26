@@ -216,7 +216,11 @@ class ComposioMcpSessionResponse(BaseModel):
     serverName: str = "composio"
     connectedApps: list[str] = Field(default_factory=list)
     mcpUrl: str | None = None
+    mcpApiKey: str | None = None
     prompt: str = ""
+    agentPrompt: str = ""
+    soulPrompt: str = ""
+    publicWebUrl: str | None = None
     message: str | None = None
 
 class AgentStateEntry(BaseModel):

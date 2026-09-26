@@ -2728,6 +2728,34 @@ def test_notepad_runtime_bearer_token_can_list_and_share(client):
         assert anon.get("/api/notepad", headers={"Authorization": "Bearer wrong"}).status_code == 401
 
 
+def test_notepad_device_token_can_list_and_share(client):
+    """Desktop Hermes uses a device token for the same Notepad and share URL."""
+    _payload, token = signup(client, "desktop-notes@example.com")
+    cookie_headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+    note = client.post(
+        "/api/notepad/notes",
+        json={"title": "Desktop note", "content": "From the desktop agent.", "summary": "Desktop summary."},
+        headers=cookie_headers,
+    )
+    assert note.status_code == 200
+    created = client.post(
+        "/api/auth/device",
+        json={"name": "Verxio Desktop", "platform": "desktop"},
+        headers=cookie_headers,
+    )
+    assert created.status_code == 200
+    device_token = created.json()["token"]
+
+    with TestClient(app) as anon:
+        bearer = {"Authorization": f"Bearer {device_token}"}
+        listing = anon.get("/api/notepad", headers=bearer)
+        assert listing.status_code == 200
+        assert any(item["id"] == note.json()["id"] for item in listing.json()["notes"])
+        share = anon.post(f"/api/notepad/notes/{note.json()['id']}/share", headers=bearer)
+        assert share.status_code == 200
+        assert share.json()["url"].endswith(f"/share/notepad/{share.json()['token']}")
+
+
 def test_notepad_summarize_uses_runtime_dashboard(client, monkeypatch):
     monkeypatch.setenv("VERXIO_RUNTIME_MODE", "auto")
 

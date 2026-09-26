@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { PaginationControl } from '@/components/ui/pagination'
 import { SearchField } from '@/components/ui/search-field'
+import { syncDesktopComposio } from '@/lib/desktop-composio'
 import { AlertTriangle, Check, Copy, ExternalLink, Loader2, PlugOff } from '@/lib/icons'
 import { isVerxioDesktop } from '@/lib/platform'
 import { cn } from '@/lib/utils'
@@ -357,6 +358,7 @@ export function ConnectionsPanel({
       if (callback.status === 'success') {
         onSearchChange('')
         void refreshConnections().then(() => {
+          void syncDesktopComposio().catch(() => {})
           notify({
             kind: 'success',
             message: callback.connectedAccountId
@@ -670,6 +672,7 @@ export function ConnectionsPanel({
       }
 
       onSearchChange('')
+      void syncDesktopComposio().catch(() => {})
       notify({
         kind: 'success',
         message: `${appToAuthorize.name} is connected. Agent tools were refreshed.`,
@@ -702,6 +705,7 @@ export function ConnectionsPanel({
     try {
       await disconnectComposioAccount(account.id)
       setAccounts(current => current.filter(row => row.id !== account.id))
+      void syncDesktopComposio().catch(() => {})
       notify({ kind: 'success', message: `${app.name} was disconnected.`, title: 'Connection removed' })
     } catch (err) {
       notifyError(err, `Could not disconnect ${app.name}`)

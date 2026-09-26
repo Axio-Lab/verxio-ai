@@ -617,6 +617,8 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
   setTitleBarTheme: payload => ipcRenderer.send('verxio:titlebar-theme', payload),
   setPreviewShortcutActive: active => ipcRenderer.send('verxio:previewShortcutActive', Boolean(active)),
   openExternal: url => ipcRenderer.invoke('verxio:openExternal', url),
+  agentBridgeStatus: () => ipcRenderer.invoke('verxio:agent:bridge-status'),
+  applyCloudConfig: payload => ipcRenderer.invoke('verxio:cloud:apply-config', payload),
   openComposioOAuth: (authUrl, callbackUrl) => ipcRenderer.invoke('verxio:composio:openOAuth', authUrl, callbackUrl),
   onComposioOAuthComplete: callback => {
     const listener = (_event, href) => callback(String(href || ''))

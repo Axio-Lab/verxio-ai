@@ -260,7 +260,8 @@ def test_default_cloud_plane_is_pool(monkeypatch):
     assert default_plane() == "pool"
 
 
-def test_composio_mcp_session_without_config(client):
+def test_composio_mcp_session_without_config(client, monkeypatch):
+    monkeypatch.delenv("COMPOSIO_API_KEY", raising=False)
     headers = _auth(client, "composio@example.com")
     created = client.post("/api/auth/device", json={"name": "Desktop"}, headers=headers)
     response = client.post(
@@ -279,6 +280,7 @@ def test_composio_mcp_session_returns_url(client, monkeypatch):
     monkeypatch.setattr(main, "is_composio_configured", lambda: True)
     from app import composio_catalog
 
+    monkeypatch.setenv("COMPOSIO_API_KEY", "test-composio-key")
     monkeypatch.setattr(composio_catalog, "is_composio_configured", lambda: True)
     monkeypatch.setattr(
         composio_catalog,
@@ -300,4 +302,9 @@ def test_composio_mcp_session_returns_url(client, monkeypatch):
     payload = response.json()
     assert payload["enabled"] is True
     assert payload["mcpUrl"] == "https://mcp.composio.dev/session/test"
+    assert payload["mcpApiKey"] == "test-composio-key"
     assert "gmail" in payload["connectedApps"]
+    assert "check that integration first" in payload["prompt"].lower()
+    assert "notepad" in payload["agentPrompt"].lower()
+    assert "public URL" in payload["agentPrompt"]
+    assert "Verxio Notepad" in payload["soulPrompt"]

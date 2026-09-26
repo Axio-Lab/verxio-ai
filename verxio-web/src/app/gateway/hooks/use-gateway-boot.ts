@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react'
 import type { HermesConnection } from '@/global'
 import { HermesGateway } from '@/hermes'
 import { translateNow } from '@/i18n'
+import { syncDesktopComposio } from '@/lib/desktop-composio'
 import { isGatewayReauthRequired, resolveGatewayWsUrl } from '@/lib/gateway-ws-url'
 import {
   $desktopBoot,
@@ -338,6 +339,7 @@ export function useGatewayBoot({
         // UI can paint now; remaining work continues without blocking the overlay.
         completeDesktopBoot()
         bootCompleted = true
+        void syncDesktopComposio().catch(() => {})
 
         try {
           const pref = await desktop.profile?.get?.()

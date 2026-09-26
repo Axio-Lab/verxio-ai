@@ -590,6 +590,20 @@ export interface ComposioConnectionsResponse {
   toolBridge?: ComposioToolBridgeStatus | null
 }
 
+export interface ComposioMcpSessionResponse {
+  configured: boolean
+  connectedApps?: string[]
+  enabled: boolean
+  agentPrompt?: string
+  mcpApiKey?: string | null
+  mcpUrl?: string | null
+  message?: string | null
+  prompt?: string
+  publicWebUrl?: string | null
+  serverName?: string
+  soulPrompt?: string
+}
+
 export interface ComposioAppsResponse {
   apps: ComposioApp[]
   configured: boolean
@@ -1576,6 +1590,17 @@ export async function runPublicWorkflowAgent(token: string, message: string): Pr
 
 export function listComposioConnections(): Promise<ComposioConnectionsResponse> {
   return verxioFetch<ComposioConnectionsResponse>('/api/composio/connections')
+}
+
+export function createComposioMcpSession(): Promise<ComposioMcpSessionResponse> {
+  return verxioFetch<ComposioMcpSessionResponse>('/api/composio/mcp-session', { method: 'POST' })
+}
+
+export function createDeviceToken(name = 'Verxio Desktop'): Promise<{ token: string }> {
+  return verxioFetch<{ token: string }>('/api/auth/device', {
+    body: JSON.stringify({ name, platform: 'desktop' }),
+    method: 'POST'
+  })
 }
 
 export function listComposioApps(): Promise<ComposioAppsResponse> {

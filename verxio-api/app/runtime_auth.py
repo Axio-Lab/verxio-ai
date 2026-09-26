@@ -63,7 +63,16 @@ def get_context_for_request(
 
     token = bearer_token(request)
     if token:
-        return get_context_for_runtime_token(token)
+        try:
+            return get_context_for_runtime_token(token)
+        except HTTPException as exc:
+            if exc.status_code != 401:
+                raise
+        from app.device_tokens import user_from_device_token
+
+        device_user = user_from_device_token(token)
+        if device_user:
+            return get_context_for_user(device_user)
 
     raise HTTPException(status_code=401, detail="Authentication required")
 
