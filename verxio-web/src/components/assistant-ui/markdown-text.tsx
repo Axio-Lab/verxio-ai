@@ -659,6 +659,31 @@ function useSmoothReveal(text: string, isRunning: boolean): string {
       return
     }
 
+    // Nothing reached the screen and the turn is over: show the answer.
+    // A cancelled frame used to leave this stuck empty until the session
+    // was reopened. If tokens already started painting, keep draining them
+    // below instead of dumping the rest in one block.
+    if (!isRunning && shownRef.current.length === 0 && text) {
+      if (frameRef.current !== null) {
+        cancelAnimationFrame(frameRef.current)
+        frameRef.current = null
+      }
+
+      shownRef.current = text
+      setDisplayed(text)
+
+      return
+    }
+
+    if (!isRunning && frameRef.current !== null) {
+      cancelAnimationFrame(frameRef.current)
+      frameRef.current = null
+
+      if (shownRef.current.length >= text.length) {
+        return
+      }
+    }
+
     // Non-extending change (regenerate / branch / history swap): restart from
     // empty while streaming, else snap to the replacement.
     if (!text.startsWith(shownRef.current)) {

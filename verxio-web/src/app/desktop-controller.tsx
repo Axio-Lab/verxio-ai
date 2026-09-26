@@ -24,7 +24,7 @@ import {
   type SessionInfo,
   triggerCronJob
 } from '../hermes'
-import { preserveLocalAssistantErrors, toChatMessages } from '../lib/chat-messages'
+import { chatMessageText, preserveLocalAssistantErrors, toChatMessages } from '../lib/chat-messages'
 import { storedSessionIdForNotification } from '../lib/session-ids'
 import { shouldRefreshSessions, withSessionListRetries } from '../lib/session-list-sync'
 import { setCronFocusJobId, setCronJobs } from '../store/cron'
@@ -522,22 +522,41 @@ export function DesktopController() {
     async (
       attempts = 1,
       storedSessionId = selectedStoredSessionIdRef.current,
-      runtimeSessionId = activeSessionIdRef.current
+      runtimeSessionId = activeSessionIdRef.current,
+      expectedText?: string
     ) => {
       if (!storedSessionId || !runtimeSessionId) {
         return
       }
 
       const storedProfile = $sessions.get().find(session => session.id === storedSessionId)?.profile
+      const needle = expectedText?.replace(/\s+/g, ' ').trim() ?? ''
 
       for (let index = 0; index < Math.max(1, attempts); index += 1) {
         try {
           const latest = await getSessionMessages(storedSessionId, storedProfile)
+          const nextMessages = preserveLocalAssistantErrors(toChatMessages(latest.messages), [])
+
+          const storedText = nextMessages
+            .map(message => chatMessageText(message))
+            .join('\n')
+            .replace(/\s+/g, ' ')
+
+          // Don't replace a live turn with a snapshot that hasn't landed the
+          // answer yet. Retry until the saved transcript includes it.
+          if (needle && !storedText.includes(needle)) {
+            if (index < attempts - 1) {
+              await new Promise(resolve => window.setTimeout(resolve, 250))
+            }
+
+            continue
+          }
+
           updateSessionState(
             runtimeSessionId,
             state => ({
               ...state,
-              messages: preserveLocalAssistantErrors(toChatMessages(latest.messages), state.messages)
+              messages: preserveLocalAssistantErrors(nextMessages, state.messages)
             }),
             storedSessionId
           )

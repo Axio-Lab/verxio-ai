@@ -2116,10 +2116,17 @@ function PoweredByVerxioFooter() {
   )
 }
 
-export function PublicNotepadShareView() {
+export function PublicNotepadShareView({
+  embedded = false,
+  token: tokenProp
+}: {
+  embedded?: boolean
+  token?: string
+} = {}) {
   const [payload, setPayload] = useState<VerxioPublicNotepadShareResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const token = decodeURIComponent(window.location.pathname.split('/').filter(Boolean).pop() || '')
+  const token = tokenProp || decodeURIComponent(window.location.pathname.split('/').filter(Boolean).pop() || '')
+  const frameClass = embedded ? 'h-full' : 'min-h-dvh'
 
   useEffect(() => {
     let cancelled = false
@@ -2145,7 +2152,7 @@ export function PublicNotepadShareView() {
     return (
       <>
         <main
-          className="grid min-h-dvh place-items-center bg-background px-4 pb-14 text-foreground"
+          className={`grid ${frameClass} place-items-center bg-background px-4 pb-14 text-foreground`}
           data-selectable-text="true"
         >
           <section className="w-full max-w-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-5">
@@ -2161,7 +2168,7 @@ export function PublicNotepadShareView() {
   if (!payload) {
     return (
       <>
-        <div className="grid min-h-dvh place-items-center bg-background pb-14 text-foreground">
+        <div className={`grid ${frameClass} place-items-center bg-background pb-14 text-foreground`}>
           <PageLoader label="Loading shared note" />
         </div>
         <PoweredByVerxioFooter />
@@ -2177,7 +2184,10 @@ export function PublicNotepadShareView() {
 
   return (
     <>
-      <main className="h-dvh overflow-y-auto bg-background pb-14 text-foreground" data-selectable-text="true">
+      <main
+        className={`${embedded ? 'h-full overflow-y-auto' : 'h-dvh overflow-y-auto'} bg-background pb-14 text-foreground`}
+        data-selectable-text="true"
+      >
         <article className="mx-auto max-w-4xl px-5 py-8">
           <div className="border-b border-(--ui-stroke-secondary) pb-5">
             <p className="text-xs font-medium text-muted-foreground">{payload.workspace_name}</p>

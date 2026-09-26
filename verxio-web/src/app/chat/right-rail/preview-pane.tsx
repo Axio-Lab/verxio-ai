@@ -1,11 +1,13 @@
 import { useStore } from '@nanostores/react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 
 import type { SetTitlebarToolGroup, TitlebarTool } from '@/app/shell/titlebar-controls'
+import { PageLoader } from '@/components/page-loader'
 import { Tip } from '@/components/ui/tooltip'
 import { type Translations, useI18n } from '@/i18n'
 import { Bug } from '@/lib/icons'
+import { notepadShareToken } from '@/lib/notepad-share-preview'
 import { cn } from '@/lib/utils'
 import { notify, notifyError } from '@/store/notifications'
 import { $previewServerRestart, failPreviewServerRestart, type PreviewTarget } from '@/store/preview'
@@ -20,6 +22,10 @@ import {
 } from './preview-console'
 import { type ConsoleEntry, createPreviewConsoleState } from './preview-console-state'
 import { LocalFilePreview, PreviewEmptyState } from './preview-file'
+
+const PublicNotepadShareView = lazy(async () => ({
+  default: (await import('@/app/notepad')).PublicNotepadShareView
+}))
 
 type PreviewWebview = HTMLElement & {
   closeDevTools?: () => void
@@ -153,8 +159,12 @@ export function PreviewPane({
     (target.previewKind === 'html' && target.renderMode === 'source') ||
     (target.kind === 'file' && target.previewKind === 'binary')
 
+  const shareToken = notepadShareToken(target.url)
+
   const isWebPreview =
-    !isInAppFilePreview && (target.kind === 'url' || (target.previewKind === 'html' && target.renderMode !== 'source'))
+    !shareToken &&
+    !isInAppFilePreview &&
+    (target.kind === 'url' || (target.previewKind === 'html' && target.renderMode !== 'source'))
 
   const currentLabel = compactUrl(currentUrl)
 
@@ -642,7 +652,21 @@ export function PreviewPane({
             )}
             ref={hostRef}
           />
-          {!isWebPreview && <LocalFilePreview reloadKey={localReloadKey} target={target} />}
+          {shareToken ? (
+            <div className="absolute inset-0 min-h-0 bg-background text-foreground">
+              <Suspense
+                fallback={
+                  <div className="grid h-full place-items-center">
+                    <PageLoader label="Loading shared note" />
+                  </div>
+                }
+              >
+                <PublicNotepadShareView embedded token={shareToken} />
+              </Suspense>
+            </div>
+          ) : (
+            !isWebPreview && <LocalFilePreview reloadKey={localReloadKey} target={target} />
+          )}
           {loadError && (
             <PreviewLoadError
               consoleHeight={consoleOpen ? consoleHeight : 0}
