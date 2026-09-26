@@ -817,6 +817,12 @@ export function installWebBridge(): void {
     // Electron/desktop fallback logic can recurse into this bridge method.
     verxioApiBaseUrl: () => import.meta.env.VITE_VERXIO_API_URL?.replace(/\/$/, '') ?? '',
     api: async <T>(request: HermesApiRequest) => {
+      // A token-less call 401s before Hermes adds CORS headers, which the
+      // browser surfaces as "Failed to fetch" and settings never loads.
+      if (directHermesBase() && (request.path.startsWith('/api/') || request.path.startsWith('/dashboard-plugins'))) {
+        await refreshSessionToken()
+      }
+
       const url = buildApiUrl(request.path)
 
       return fetchJson<T>(url, {

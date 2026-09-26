@@ -151,7 +151,7 @@ async function fetchJson(url, init = {}) {
   try {
     const response = await fetch(url, {
       ...init,
-      credentials: fetchCredentials(),
+      credentials: init.credentials ?? fetchCredentials(),
       signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
@@ -505,6 +505,20 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
   },
   api: async request => {
     const scope = request.scope === 'cloud' || isCloudDashboardPath(request.path) ? 'cloud' : 'local'
+    const local = scope === 'local' ? await getLocalHermesConnection() : null
+
+    if (local?.baseUrl && local?.token) {
+      return fetchJson(`${local.baseUrl.replace(/\/$/, '')}${request.path}`, {
+        method: request.method ?? 'GET',
+        body: request.body !== undefined ? JSON.stringify(request.body) : undefined,
+        timeoutMs: request.timeoutMs,
+        credentials: 'omit',
+        headers: {
+          'X-Hermes-Session-Token': local.token
+        }
+      })
+    }
+
     const url = scope === 'cloud' ? `${(await getCloudConnection()).baseUrl}${request.path}` : buildApiUrl(request.path)
 
     return fetchJson(url, {
