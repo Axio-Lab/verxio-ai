@@ -60,11 +60,8 @@ def normalize_plane(value: str | None) -> str:
 
 
 def default_plane() -> str:
-    raw = os.getenv("VERXIO_RUNTIME_MANAGER", "pool") or "pool"
-    try:
-        return normalize_plane(raw)
-    except ValueError:
-        return "docker"
+    """Cloud tenants always attach to the pool. Docker and Kubernetes aliases are ignored."""
+    return "pool"
 
 
 def manager_name_for_plane(plane: str) -> str:
@@ -93,9 +90,11 @@ def resolve_plane(workspace_id: str, agent_id: str) -> str:
     plane = default_plane()
     if row and row.get("plane"):
         try:
-            plane = normalize_plane(row["plane"])
+            stored = normalize_plane(row["plane"])
         except ValueError:
-            plane = default_plane()
+            stored = "pool"
+        # Leftover docker/k8s flags must not select a deleted manager.
+        plane = stored if stored == "pool" else "pool"
     _LOCAL[key] = (now + _CACHE_TTL, plane)
     infra.cache_set(_cache_key(workspace_id, agent_id), plane, ttl_seconds=_CACHE_TTL)
     return plane
@@ -108,10 +107,7 @@ def tenant_uses_pool(workspace_id: str, agent_id: str) -> bool:
 def set_plane(workspace_id: str, agent_id: str, plane: str) -> str:
     normalized = normalize_plane(plane)
     if normalized != "pool":
-        from app.runtime_orch.factory import legacy_planes_enabled
-
-        if not legacy_planes_enabled():
-            raise ValueError("legacy planes are disabled (VERXIO_LEGACY_PLANES=0); only 'pool' is allowed")
+        raise ValueError("only the pool plane is available")
     db.execute(
         """
         INSERT INTO runtime_plane_flags (workspace_id, agent_id, plane, updated_at)

@@ -35,5 +35,4 @@ See [PRODUCTION.md](./PRODUCTION.md).
 
 ```bash
 cd verxio-api && uv run pytest tests/runtime_orch -v
-bash scripts/scale/runtime_docker_test.sh   # real docker image required
 ```

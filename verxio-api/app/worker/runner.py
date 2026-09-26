@@ -26,7 +26,6 @@ from contextlib import suppress
 from typing import Any
 
 from app import db
-from app.artifacts_index import index_workspace_artifacts
 from app.infra.redis import (
     GROUP_WORKERS,
     STREAM_ATTACH,
@@ -42,7 +41,7 @@ from app.infra.redis import (
 from app.jobs import enqueue_deliver, enqueue_turn, mark_job, requeue_turn_to
 from app.runtime_orch.lifecycle import touch_runtime_activity
 from app.worker import hermes_client
-from app.worker.tenants import AttachRejected, AttachedTenant, TenantRegistry, workspace_dir
+from app.worker.tenants import AttachRejected, AttachedTenant, TenantRegistry
 
 logger = logging.getLogger("verxio.worker")
 
@@ -369,11 +368,6 @@ async def _post_turn(
                 payload={"chat_id": deliver["chat_id"], "text": output, "turn_job_id": job_id},
             )
 
-    # Index artifacts written during the turn and keep the idle reaper informed.
-    try:
-        await asyncio.to_thread(index_workspace_artifacts, runtime, workspace_dir(tenant), job_id=job_id)
-    except Exception:
-        logger.exception("Artifact index failed tenant=%s", tenant.name)
     try:
         await asyncio.to_thread(touch_runtime_activity, runtime)
     except Exception:

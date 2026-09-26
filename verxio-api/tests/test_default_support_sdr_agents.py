@@ -22,6 +22,7 @@ def client(monkeypatch, tmp_path):
     monkeypatch.delenv("VERXIO_SMTP_HOST", raising=False)
     monkeypatch.delenv("VERXIO_SMTP_FROM", raising=False)
     monkeypatch.setattr(control_plane, "RUNTIME_ROOT", tmp_path / "runtimes")
+    monkeypatch.setattr("app.plane.tenant_uses_pool", lambda *_args, **_kwargs: False)
     emailer.SENT_AUTH_EMAILS.clear()
     db.run_migrations()
 

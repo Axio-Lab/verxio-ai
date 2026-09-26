@@ -17,9 +17,11 @@ from tests.test_api import signup
 def client(monkeypatch, tmp_path):
     monkeypatch.setenv("VERXIO_DATABASE_MODE", "sqlite")
     monkeypatch.setenv("VERXIO_DATABASE_PATH", str(tmp_path / "verxio-control.sqlite3"))
-    monkeypatch.setenv("VERXIO_RUNTIME_MANAGER", "local-docker")
-    monkeypatch.setenv("VERXIO_LEGACY_PLANES", "1")
+    monkeypatch.setenv("VERXIO_RUNTIME_MANAGER", "pool")
     monkeypatch.setenv("VERXIO_RUNTIME_MODE", "demo")
+    # Pool tenants hand workflow runs to a worker. These tests execute the
+    # same inline path the worker uses, without a Redis turn queue.
+    monkeypatch.setattr("app.plane.tenant_uses_pool", lambda *_args, **_kwargs: False)
     monkeypatch.setenv("VERXIO_WORKFLOW_SCHEDULER_ENABLED", "0")
     monkeypatch.setenv("VERXIO_IDLE_REAPER_ENABLED", "0")
     monkeypatch.setenv("VERXIO_AUTH_CODE_SECRET", "test-auth-code-secret")

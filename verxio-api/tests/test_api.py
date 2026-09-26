@@ -68,6 +68,9 @@ def client(monkeypatch, tmp_path):
     monkeypatch.delenv("VERXIO_SMTP_HOST", raising=False)
     monkeypatch.delenv("VERXIO_SMTP_FROM", raising=False)
     monkeypatch.setattr(control_plane, "RUNTIME_ROOT", tmp_path / "runtimes")
+    # Production tenants dispatch workflow runs to the pool. These tests
+    # exercise the inline engine the worker runs after it claims a turn.
+    monkeypatch.setattr("app.plane.tenant_uses_pool", lambda *_args, **_kwargs: False)
     emailer.SENT_AUTH_EMAILS.clear()
     from app.runtime_orch.leases import reset_lease_store_for_tests
 
@@ -2516,102 +2519,6 @@ def test_forgot_password_code_resets_password_and_logs_in(client):
     assert new_login.status_code == 200
 
 
-def test_artifacts_are_indexed_from_runtime_workspace_and_isolated(client):
-    user_one, token_one = signup(client, "one@example.com")
-    user_two, token_two = signup(client, "two@example.com")
-
-    runtime_one = db.fetch_one(
-        "SELECT * FROM runtime_instances WHERE workspace_id = ? AND agent_id = ?",
-        (user_one["workspace"]["id"], user_one["profile"]["id"]),
-    )
-    assert runtime_one
-    artifact_path = Path(str(runtime_one["artifact_path"]))
-    artifact_path.mkdir(parents=True, exist_ok=True)
-    older = artifact_path / "daily-sales-dashboard.html"
-    older.write_text("<html><body>Daily sales</body></html>", encoding="utf-8")
-    png_bytes = base64.b64decode(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
-    )
-    newer = artifact_path / "man_in_pool_nano_banana.png"
-    newer.write_bytes(png_bytes)
-    # Distinct mtimes so listing is latest-first and reindex keeps file times.
-    older_mtime = time.time() - 7 * 24 * 3600
-    newer_mtime = time.time() - 3600
-    os.utime(older, (older_mtime, older_mtime))
-    os.utime(newer, (newer_mtime, newer_mtime))
-
-    user_one_response = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
-    user_two_response = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_two}"})
-
-    assert user_one_response.status_code == 200
-    assert user_two_response.status_code == 200
-    user_one_artifacts = user_one_response.json()["artifacts"]
-    assert {artifact["file_name"] for artifact in user_one_artifacts} == {
-        "daily-sales-dashboard.html",
-        "man_in_pool_nano_banana.png",
-    }
-    assert [artifact["file_name"] for artifact in user_one_artifacts] == [
-        "man_in_pool_nano_banana.png",
-        "daily-sales-dashboard.html",
-    ]
-    image_artifact = next(artifact for artifact in user_one_artifacts if artifact["file_name"].endswith(".png"))
-    assert image_artifact["content_type"] == "image/png"
-    first_updated = image_artifact["updated_at"]
-    # Reindex must not stamp every row with "now" (that made last week's files
-    # all show today's date in the Artifacts UI).
-    reindex = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
-    assert reindex.status_code == 200
-    reindexed_image = next(
-        artifact for artifact in reindex.json()["artifacts"] if artifact["file_name"].endswith(".png")
-    )
-    assert reindexed_image["updated_at"] == first_updated
-    assert user_two_response.json()["artifacts"] == []
-
-    # Byte-identical copies (renamed workspace file + runtime-home mirror) must
-    # collapse to a single Artifacts row so the UI is not cluttered.
-    (artifact_path / "man_in_pool_nano_banana-FINAL.png").write_bytes(png_bytes)
-    os.utime(artifact_path / "man_in_pool_nano_banana-FINAL.png", (newer_mtime, newer_mtime))
-    hermes_artifacts = Path(str(runtime_one["hermes_home_path"])) / "artifacts"
-    hermes_artifacts.mkdir(parents=True, exist_ok=True)
-    (hermes_artifacts / "man_in_pool_nano_banana.png").write_bytes(png_bytes)
-    os.utime(hermes_artifacts / "man_in_pool_nano_banana.png", (newer_mtime, newer_mtime))
-
-    deduped = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
-    assert deduped.status_code == 200
-    deduped_artifacts = deduped.json()["artifacts"]
-    png_names = [artifact["file_name"] for artifact in deduped_artifacts if artifact["file_name"].endswith(".png")]
-    assert png_names == ["man_in_pool_nano_banana-FINAL.png"]
-    image_artifact = next(artifact for artifact in deduped_artifacts if artifact["file_name"].endswith(".png"))
-
-    artifact_id = image_artifact["id"]
-    preview = client.get(f"/api/artifacts/{artifact_id}/preview", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
-    download = client.get(f"/api/artifacts/{artifact_id}/download", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
-    blocked = client.get(f"/api/artifacts/{artifact_id}/preview", headers={"Cookie": f"{SESSION_COOKIE}={token_two}"})
-
-    assert preview.status_code == 200
-    assert preview.headers["content-type"] == "image/png"
-    assert "inline" in preview.headers.get("content-disposition", "").lower()
-    assert preview.content == png_bytes
-    assert download.status_code == 200
-    assert "attachment" in download.headers.get("content-disposition", "").lower()
-    assert blocked.status_code == 404
-
-    blocked_delete = client.delete(f"/api/artifacts/{artifact_id}", headers={"Cookie": f"{SESSION_COOKIE}={token_two}"})
-    deleted = client.delete(f"/api/artifacts/{artifact_id}", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
-
-    assert blocked_delete.status_code == 404
-    assert deleted.status_code == 200
-    assert deleted.json() == {"ok": True}
-    assert not (artifact_path / "man_in_pool_nano_banana-FINAL.png").exists()
-
-    after_delete = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
-    assert after_delete.status_code == 200
-    # Delete removes only the preferred path; an identical workspace copy remains
-    # and still collapses with the runtime-home mirror to one row.
-    assert [artifact["file_name"] for artifact in after_delete.json()["artifacts"]] == [
-        "man_in_pool_nano_banana.png",
-        "daily-sales-dashboard.html",
-    ]
 
 
 def test_notepad_recording_upload_saves_audio_as_artifact(client):
@@ -2644,10 +2551,6 @@ def test_notepad_recording_upload_saves_audio_as_artifact(client):
     assert runtime_row
     saved = Path(str(runtime_row["artifact_path"])) / artifact["relative_path"]
     assert saved.read_bytes() == audio_bytes
-
-    artifacts = client.get("/api/artifacts", headers=headers)
-    assert artifacts.status_code == 200
-    assert artifact["relative_path"] in {item["relative_path"] for item in artifacts.json()["artifacts"]}
 
 
 def test_notepad_notes_folders_and_public_shares(client):
@@ -3475,25 +3378,20 @@ def test_composio_setup_returns_oauth_app_fields(client, monkeypatch):
     assert payload["inputFields"][0]["name"] == "client_id"
 
 
-def test_runtime_start_updates_registry_without_real_docker(client, monkeypatch):
-    monkeypatch.setenv("VERXIO_RUNTIME_DOCKER_ROOT", "/host/verxio/runtimes")
-    monkeypatch.setenv("VERXIO_RUNTIME_CONNECT_HOST", "127.0.0.1")
+def test_runtime_start_attaches_to_the_pool_without_docker(client, monkeypatch):
     payload, token = signup(client, "runtime@example.com")
     calls: list[list[str]] = []
 
     def fake_docker(args: list[str]) -> CompletedProcess[str]:
         calls.append(args)
-        if args[:2] == ["inspect", "-f"]:
-            return CompletedProcess(args, 1, "", "not found")
-        if args[:1] == ["run"]:
-            return CompletedProcess(args, 0, "container_123\n", "")
-        return CompletedProcess(args, 0, "", "")
+        return CompletedProcess(args, 1, "", "docker is not used")
 
     async def fake_health(_runtime):
         return True, "Hermes dashboard is reachable."
 
     monkeypatch.setattr(main, "runtime_health", fake_health)
     monkeypatch.setattr("app.runtime_manager._run_docker", fake_docker)
+    monkeypatch.setattr("app.runtime_orch.pool._attach_timeout_seconds", lambda: 0)
 
     response = client.post("/api/runtime/start", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
 
@@ -3501,21 +3399,17 @@ def test_runtime_start_updates_registry_without_real_docker(client, monkeypatch)
     body = response.json()
     assert body["connected"] is True
     assert body["runtime"]["status"] == "starting"
-    assert body["runtime"]["container_id"] == "container_123"
-    assert body["runtime"]["dashboard_url"].startswith("http://127.0.0.1:")
+    assert body["runtime"]["manager"] == "pool"
+    assert not body["runtime"].get("container_id")
+    assert calls == []
 
     runtime_row = db.fetch_one(
         "SELECT * FROM runtime_instances WHERE workspace_id = ?",
         (payload["workspace"]["id"],),
     )
     assert runtime_row
-    assert runtime_row["container_id"] == "container_123"
+    assert runtime_row["manager"] == "pool"
     assert runtime_row["dashboard_token"]
-    run_call = next(call for call in calls if call[:1] == ["run"])
-    assert "/host/verxio/runtimes" in " ".join(run_call)
-    assert "/workspace" in " ".join(run_call)
-    assert "HERMES_WRITE_SAFE_ROOT=" in run_call
-    assert "HERMES_MEDIA_ALLOW_DIRS=/workspace" in run_call
 
 
 def _runtime_for_health(**overrides) -> RuntimeInstance:
@@ -3735,6 +3629,7 @@ def test_workflow_run_on_pool_tenant_is_dispatched_then_executed_by_worker(clien
     workspace_id = bootstrap["workspace"]["id"]
     profile_id = bootstrap["profile"]["id"]
     plane.set_plane(workspace_id, profile_id, "pool")
+    monkeypatch.setattr("app.plane.tenant_uses_pool", lambda *_args, **_kwargs: True)
 
     dashboard_calls = []
 

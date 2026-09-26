@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Deploy Verxio on ECS: pull DEPLOY_REF (default main), rebuild services +
-# Hermes runtime image, recreate control plane, and wipe per-user runtimes so
-# they boot on the new image.
+# Deploy Verxio on ECS: pull DEPLOY_REF (default main), rebuild the control
+# plane and the pool Hermes image, then roll the always-on pool services.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -70,9 +69,15 @@ ensure_buildx() {
 build_hermes_image() {
   ensure_buildx
   docker buildx build --load \
-    -t "${HERMES_IMAGE}" \
+    -t verxio-hermes-base:local \
+    --build-arg HERMES_INSTALL_BROWSER=0 \
     --build-arg "HERMES_GIT_SHA=${HERMES_SHA}" \
     -f hermes-agent/Dockerfile \
+    hermes-agent
+  docker buildx build --load \
+    -t "${HERMES_IMAGE}" \
+    --build-arg BASE=verxio-hermes-base:local \
+    -f hermes-agent/Dockerfile.verxio-hosted \
     hermes-agent
 }
 
@@ -157,68 +162,17 @@ curl -sS -m 5 -w ' time=%{time_total}\n' http://127.0.0.1:8787/api/health
 curl -sS -m 5 -o /dev/null -w 'web time=%{time_total}\n' http://127.0.0.1:8080/
 curl -sS -m 5 -o /dev/null -w 'landing time=%{time_total}\n' http://127.0.0.1:8081/
 
-echo "==> Building Hermes runtime image (${HERMES_IMAGE})"
-HERMES_BEFORE="$(image_id "${HERMES_IMAGE}")"
-echo "    before: ${HERMES_BEFORE}"
-
+echo "==> Building pool Hermes image (${HERMES_IMAGE})"
 build_hermes_image
-
-# Keep compose's named service tag in sync for operators using compose later.
-"${COMPOSE[@]}" --profile image build \
-  --build-arg "HERMES_GIT_SHA=${HERMES_SHA}" \
-  hermes-runtime-image
-
-HERMES_AFTER="$(image_id "${HERMES_IMAGE}")"
-echo "    after:  ${HERMES_AFTER}"
-if [[ "${HERMES_AFTER}" == "(missing)" ]]; then
+if [[ "$(image_id "${HERMES_IMAGE}")" == "(missing)" ]]; then
   echo "ERROR: ${HERMES_IMAGE} was not produced by the Hermes build."
   exit 1
 fi
-docker images --format 'table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedSince}}' \
-  | grep -E "REPOSITORY|$(printf '%s' "${HERMES_IMAGE}" | cut -d: -f1)" || true
 
-# Confirm the baked image includes the Verxio session-token WS auth path.
-if ! docker run --rm --entrypoint grep "${HERMES_IMAGE}" -q \
-  "Headless control planes" /opt/hermes/hermes_cli/web_server.py; then
-  echo "ERROR: ${HERMES_IMAGE} is missing Verxio session-token WS auth (Headless control planes)."
-  echo "       hermes-agent checkout is too old or the image build used stale context."
-  exit 1
-fi
-echo "    verified: session-token WS auth present in image"
-
-if [[ "${VERXIO_RUNTIME_MANAGER:-local-docker}" == "pool" ]]; then
-  # Pool plane: there are no per-user containers to wipe. Roll the pool
-  # services instead — workers sync tenant homes to object storage on SIGTERM
-  # and release their leases, so the new image picks tenants up cleanly.
-  echo "==> Pool runtime manager: applying migrations and rolling pool services"
-  docker exec -i verxio-ai-verxio-api-1 python -m app.migrate
-  "${COMPOSE[@]}" --profile pool up -d --force-recreate \
-    verxio-scheduler verxio-hermes-worker verxio-agent-worker verxio-channel-gateway
-  echo "==> Legacy-plane usage (should be empty before deleting docker/k8s managers)"
-  docker exec -i verxio-ai-verxio-api-1 python -m app.plane legacy-usage || true
-elif [[ "${HERMES_BEFORE}" == "${HERMES_AFTER}" && "${VERXIO_FORCE_RUNTIME_WIPE:-}" != "1" ]]; then
-  echo "==> Hermes image unchanged; leaving per-user runtimes running"
-else
-  echo "==> Removing per-user Hermes runtimes (they recreate on next use with the new image)"
-  # Compose services are named like verxio-ai-verxio-api-1 — leave those alone.
-  # User runtimes are named verxio-{workspace}-{agent}, e.g. verxio-ws_xxx-agent_yyy.
-  mapfile -t RUNTIME_NAMES < <(docker ps -a --format '{{.Names}}' | grep -E '^verxio-' | grep -vE '^verxio-ai-' || true)
-  if ((${#RUNTIME_NAMES[@]})); then
-    printf '    removing: %s\n' "${RUNTIME_NAMES[@]}"
-    docker rm -f "${RUNTIME_NAMES[@]}"
-  else
-    echo "    none found"
-  fi
-  echo "==> Reconciling warm runtimes (mark missing stopped, wake channel-active)"
-  docker exec -i verxio-ai-verxio-api-1 python3 - <<'PY'
-import asyncio
-from app.runtime_orch.factory import reset_runtime_manager_for_tests
-from app.runtime_orch.lifecycle import reconcile_missing_runtimes
-
-reset_runtime_manager_for_tests()
-print(asyncio.run(reconcile_missing_runtimes(wake=True, inline=True, reason="deploy.wipe")))
-PY
-fi
+echo "==> Applying migrations and rolling pool services"
+docker exec -i verxio-ai-verxio-api-1 python -m app.migrate
+"${COMPOSE[@]}" --profile pool up -d --force-recreate \
+  verxio-scheduler verxio-hermes-worker verxio-agent-worker verxio-channel-gateway
 
 if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet caddy 2>/dev/null; then
   echo "==> Reloading Caddy"
@@ -230,6 +184,5 @@ echo "==> Status"
 docker images --format 'table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedSince}}' | grep -E 'REPOSITORY|verxio' || true
 
 echo
-echo "Done. Hermes image: ${HERMES_IMAGE} @ hermes-agent ${HERMES_SHA}"
-echo "Warm runtimes are reconciled and woken automatically after an image change."
+echo "Done. Pool Hermes image: ${HERMES_IMAGE} @ hermes-agent ${HERMES_SHA}"
 echo "Quick check: curl -sS -m 5 -w ' time=%{time_total}\\n' http://127.0.0.1:8787/api/health"

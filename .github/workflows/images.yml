@@ -42,11 +42,10 @@ jobs:
             # Dockerfile copies verxio-api/* and hermes-agent/ from the repo root.
             context: .
             file: verxio-api/Dockerfile
-            # Pool control plane never talks to a docker socket.
+            # Pool control plane. The image has no docker CLI.
             build_args: |
               INSTALL_TURSO=1
               INSTALL_SCALE=1
-              WITH_DOCKER_CLI=
           - name: web
             context: verxio-web
             file: verxio-web/Dockerfile

@@ -13,16 +13,13 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qsl, urlencode
 
 import httpx
-import websockets
-from fastapi import FastAPI, HTTPException, Request, Response, WebSocket
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from starlette.websockets import WebSocketDisconnect
 
 from app import db
 from app.auth import (
@@ -257,7 +254,6 @@ from app.dashboard_proxy import CachedResponse, cacheable_read
 from app.metrics import HTTP_LATENCY, HTTP_REQUESTS, PROXY_ERRORS, PROXY_LATENCY, WS_CONNECTIONS
 from app.metrics import metrics_enabled, render as render_metrics, route_template
 from app.runtime_manager import (
-    artifact_file,
     dashboard_upstream_slot,
     index_artifacts,
     mark_runtime_healthy,
@@ -1036,59 +1032,6 @@ async def get_transcription_catalog_route(request: Request, refresh: bool = Fals
     runtime = await aget_runtime_for_user(user)
     return await list_transcription_catalog(runtime, refresh=refresh)
 
-@app.get("/api/artifacts", response_model=ArtifactListResponse)
-async def list_artifacts(request: Request) -> ArtifactListResponse:
-    user = await arequire_user(request)
-    runtime = await aget_runtime_for_user(user)
-    if _runtime_is_pool(runtime):
-        # Pool tenants are indexed on write by the worker; the API only reads.
-        from app.artifacts_index import list_indexed_artifacts
-
-        return ArtifactListResponse(artifacts=await asyncio.to_thread(list_indexed_artifacts, runtime))
-    # Indexing walks the workspace and may docker-exec; keep it off the event loop
-    # so a large React scaffold cannot wedge health/auth and return HTML 502 pages.
-    artifacts = await asyncio.to_thread(index_artifacts, runtime)
-    return ArtifactListResponse(artifacts=artifacts)
-
-
-def _runtime_is_pool(runtime: RuntimeInstance) -> bool:
-    from app.runtime_orch.factory import manager_name_for_runtime
-
-    return manager_name_for_runtime(runtime) == "pool"
-
-
-async def _objstore_artifact_response(
-    runtime: RuntimeInstance, artifact_id: str, *, disposition: str
-) -> Response | None:
-    """Serve an index-on-write artifact: signed redirect (S3) or local stream."""
-    from app.artifacts_index import objstore_artifact, signed_download_url
-    from app.runtime_orch.artifacts_store import get_artifact_store
-
-    try:
-        record, key = await asyncio.to_thread(objstore_artifact, runtime, artifact_id)
-    except KeyError:
-        return None
-    store = get_artifact_store()
-    local = store.local_file(key)
-    if local is not None:
-        return FileResponse(
-            local,
-            media_type=record.content_type,
-            filename=record.file_name,
-            content_disposition_type=disposition,
-        )
-    url = await asyncio.to_thread(signed_download_url, key)
-    if url:
-        return RedirectResponse(url, status_code=307)
-    data = await asyncio.to_thread(store.read_bytes, key)
-    if data is None:
-        raise HTTPException(status_code=404, detail="Artifact object not found.")
-    return Response(
-        content=data,
-        media_type=record.content_type,
-        headers={"Content-Disposition": f'{disposition}; filename="{record.file_name}"'},
-    )
-
 @app.post("/api/notepad/recordings", response_model=NotepadRecordingUploadResponse)
 async def upload_notepad_recording(
     payload: NotepadRecordingUploadRequest, request: Request
@@ -1126,96 +1069,6 @@ async def upload_notepad_recording(
         raise HTTPException(status_code=500, detail="Recording was saved but could not be indexed.")
 
     return NotepadRecordingUploadResponse(artifact=artifact)
-
-@app.get("/api/artifacts/{artifact_id}")
-async def get_artifact(artifact_id: str, request: Request):
-    user = await arequire_user(request)
-    runtime = await aget_runtime_for_user(user)
-    try:
-        record, _path = artifact_file(runtime, artifact_id)
-    except (FileNotFoundError, KeyError) as exc:
-        from app.artifacts_index import objstore_artifact
-
-        try:
-            record, _key = await asyncio.to_thread(objstore_artifact, runtime, artifact_id)
-        except KeyError:
-            raise HTTPException(status_code=404, detail="Artifact not found.") from exc
-    return record
-
-@app.delete("/api/artifacts/{artifact_id}")
-async def delete_artifact(artifact_id: str, request: Request):
-    user = await arequire_user(request)
-    runtime = await aget_runtime_for_user(user)
-    try:
-        _record, path = artifact_file(runtime, artifact_id)
-    except (FileNotFoundError, KeyError) as exc:
-        from app.artifacts_index import objstore_artifact
-        from app.runtime_orch.artifacts_store import get_artifact_store
-
-        try:
-            _record, key = await asyncio.to_thread(objstore_artifact, runtime, artifact_id)
-        except KeyError:
-            raise HTTPException(status_code=404, detail="Artifact not found.") from exc
-        await asyncio.to_thread(get_artifact_store().delete, key)
-        db.execute(
-            "DELETE FROM artifacts WHERE id = ? AND workspace_id = ? AND agent_id = ?",
-            (artifact_id, runtime.workspace_id, runtime.agent_id),
-        )
-        return {"ok": True}
-
-    try:
-        path.unlink()
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Artifact not found.") from exc
-    except PermissionError as exc:
-        raise HTTPException(status_code=403, detail="Artifact file is not writable.") from exc
-    except OSError as exc:
-        raise HTTPException(status_code=500, detail=f"Could not delete artifact: {exc}") from exc
-
-    db.execute(
-        "DELETE FROM artifacts WHERE id = ? AND workspace_id = ? AND agent_id = ?",
-        (artifact_id, runtime.workspace_id, runtime.agent_id),
-    )
-
-    return {"ok": True}
-
-@app.get("/api/artifacts/{artifact_id}/preview")
-async def preview_artifact(artifact_id: str, request: Request) -> Response:
-    user = await arequire_user(request)
-    runtime = await aget_runtime_for_user(user)
-    try:
-        record, path = artifact_file(runtime, artifact_id)
-    except (FileNotFoundError, KeyError) as exc:
-        remote = await _objstore_artifact_response(runtime, artifact_id, disposition="inline")
-        if remote is not None:
-            return remote
-        raise HTTPException(status_code=404, detail="Artifact not found.") from exc
-    # Inline so browsers/img tags open a viewer instead of forcing a download.
-    # Use /download when the client wants an attachment.
-    return FileResponse(
-        path,
-        media_type=record.content_type,
-        filename=record.file_name,
-        content_disposition_type="inline",
-    )
-
-@app.get("/api/artifacts/{artifact_id}/download")
-async def download_artifact(artifact_id: str, request: Request) -> Response:
-    user = await arequire_user(request)
-    runtime = await aget_runtime_for_user(user)
-    try:
-        record, path = artifact_file(runtime, artifact_id)
-    except (FileNotFoundError, KeyError) as exc:
-        remote = await _objstore_artifact_response(runtime, artifact_id, disposition="attachment")
-        if remote is not None:
-            return remote
-        raise HTTPException(status_code=404, detail="Artifact not found.") from exc
-    return FileResponse(
-        path,
-        media_type=record.content_type,
-        filename=record.file_name,
-        content_disposition_type="attachment",
-    )
 
 def _share_url(_request: Request, token: str) -> str:
     public_base = os.getenv("VERXIO_PUBLIC_WEB_URL", "").strip().rstrip("/")
@@ -2321,6 +2174,12 @@ def _dashboard_path_is_channel_scoped(path: str) -> bool:
     )
 
 
+def _runtime_is_pool(runtime: RuntimeInstance) -> bool:
+    from app.runtime_orch.factory import manager_name_for_runtime
+
+    return manager_name_for_runtime(runtime) == "pool"
+
+
 def _channel_shard_dashboard_base(runtime: RuntimeInstance, path: str) -> str | None:
     """Shard dashboard (``/p/{tenant}/``) for channel-scoped paths on pool tenants."""
     if not _runtime_is_pool(runtime) or not _dashboard_path_is_channel_scoped(path):
@@ -2594,154 +2453,6 @@ async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
         content = normalize_gateway_status_content(content)
     return Response(content=content, status_code=upstream.status_code, headers=response_headers)
 
-def _ws_target_url(runtime_url: str, path: str, query: str, token: str) -> str:
-    parsed = httpx.URL(runtime_url)
-    scheme = "wss" if parsed.scheme == "https" else "ws"
-    params = [(key, value) for key, value in parse_qsl(query, keep_blank_values=True) if key != "token"]
-    params.append(("token", token))
-    return f"{scheme}://{parsed.host}:{parsed.port or 80}/{path}?{urlencode(params)}"
-
-def _runtime_ws_open_timeout_seconds() -> float:
-    # Keep this short: a hung docker-proxy/upstream must not stall the API worker.
-    raw = os.getenv("VERXIO_RUNTIME_WS_OPEN_TIMEOUT_SECONDS", "8").strip()
-    try:
-        return max(3.0, float(raw))
-    except ValueError:
-        return 8.0
-
-def _runtime_ws_ping_timeout_seconds() -> float:
-    # Hermes runs tool calls on its own loop; a long build can delay pong frames
-    # well past the websockets default (20s). Dropping the socket there is what
-    # users see as "Reconnecting" in the middle of a build.
-    raw = os.getenv("VERXIO_RUNTIME_WS_PING_TIMEOUT_SECONDS", "120").strip()
-    try:
-        return max(20.0, float(raw))
-    except ValueError:
-        return 120.0
-
-_WS_ACTIVITY_TOUCHED_AT: dict[str, float] = {}
-_WS_ACTIVITY_TOUCH_INTERVAL_SECONDS = 60.0
-
-def _touch_runtime_activity_throttled(runtime: RuntimeInstance) -> None:
-    """Keep the idle reaper away from a runtime that is actively streaming."""
-    now = time.monotonic()
-    last = _WS_ACTIVITY_TOUCHED_AT.get(runtime.id, 0.0)
-    if now - last < _WS_ACTIVITY_TOUCH_INTERVAL_SECONDS:
-        return
-    _WS_ACTIVITY_TOUCHED_AT[runtime.id] = now
-    try:
-        touch_runtime_activity(runtime)
-    except Exception:
-        logger.debug("Runtime activity touch failed runtime=%s", runtime.id, exc_info=True)
-
-async def _safe_websocket_close(websocket: WebSocket, code: int) -> None:
-    try:
-        await websocket.close(code=code)
-    except RuntimeError:
-        # Starlette rejects a second close after the socket is already gone.
-        pass
-
-@app.websocket("/api/runtime/dashboard/ws/{path:path}")
-async def proxy_runtime_dashboard_ws(path: str, websocket: WebSocket) -> None:
-    user = await aget_current_user(websocket)  # type: ignore[arg-type]
-    if not user:
-        await _safe_websocket_close(websocket, 4401)
-        return
-
-    # Finish the browser handshake before any runtime work — nginx and the
-    # renderer both time out if accept() waits on docker + bridge sync.
-    await websocket.accept()
-
-    try:
-        runtime = await aget_runtime_for_user(user)
-        base = runtime_dashboard_base_url(runtime, ensure_network=False)
-        # Never await docker run on the WS path. Try upstream directly so a
-        # stale DB status does not block reconnect while ensure runs in background.
-        if not base:
-            _schedule_runtime_ensure(user)
-            await _safe_websocket_close(websocket, 1013)
-            return
-        if runtime.status != "running":
-            _schedule_runtime_ensure(user)
-
-        async def _sync_bridges_in_background() -> None:
-            try:
-                # Never restart the container from the WS path — a Docker bounce
-                # mid-handshake is what turns a green status into "Reconnecting".
-                await _sync_composio_bridge_for_user(user, apply_live=True, allow_restart=False)
-                await _sync_inference_bridge_for_user(user, refresh_running=False, allow_restart=False)
-            except Exception:
-                logger.exception("Background runtime bridge sync failed after websocket connect")
-
-        asyncio.create_task(_sync_bridges_in_background())
-
-        # DB token only — live docker inspect on connect freezes the worker.
-        token = await _runtime_dashboard_token_async(runtime.id, runtime, prefer_live=False)
-        last_error: Exception | None = None
-        upstream = None
-        candidates = runtime_dashboard_ws_candidates(runtime) or ([base] if base else [])
-        for candidate in candidates:
-            target = _ws_target_url(candidate, path, websocket.url.query, token)
-            logger.info("Runtime dashboard websocket proxy connecting target=%s", target.split("?", 1)[0])
-            try:
-                upstream = await asyncio.wait_for(
-                    websockets.connect(
-                        target,
-                        additional_headers={"X-Hermes-Session-Token": token},
-                        open_timeout=_runtime_ws_open_timeout_seconds(),
-                        close_timeout=2,
-                        ping_interval=20,
-                        ping_timeout=_runtime_ws_ping_timeout_seconds(),
-                        max_size=None,
-                    ),
-                    timeout=_runtime_ws_open_timeout_seconds() + 2.0,
-                )
-                break
-            except Exception as exc:
-                last_error = exc
-                logger.warning(
-                    "Runtime dashboard websocket upstream failed target=%s error=%s",
-                    target.split("?", 1)[0],
-                    exc,
-                )
-
-        if upstream is None:
-            PROXY_ERRORS.inc(reason="ws_connect")
-            _schedule_runtime_ensure(user)
-            raise last_error or RuntimeError("No Hermes websocket upstream available")
-
-        WS_CONNECTIONS.inc()
-        try:
-            async def client_to_runtime() -> None:
-                while True:
-                    message = await websocket.receive()
-                    if message.get("type") == "websocket.disconnect":
-                        await upstream.close()
-                        return
-                    if "text" in message:
-                        await upstream.send(message["text"])
-                    elif "bytes" in message:
-                        await upstream.send(message["bytes"])
-
-            async def runtime_to_client() -> None:
-                async for message in upstream:
-                    if isinstance(message, bytes):
-                        await websocket.send_bytes(message)
-                    else:
-                        await websocket.send_text(str(message))
-                    # Streaming output is activity: a long build with no HTTP
-                    # polling must not be idle-reaped mid-run.
-                    await asyncio.to_thread(_touch_runtime_activity_throttled, runtime)
-
-            await asyncio.gather(client_to_runtime(), runtime_to_client())
-        finally:
-            WS_CONNECTIONS.dec()
-            await upstream.close()
-    except WebSocketDisconnect:
-        logger.info("Runtime dashboard websocket client disconnected path=%s", path)
-    except Exception:
-        logger.exception("Runtime dashboard websocket proxy failed for path=%s", path)
-        await _safe_websocket_close(websocket, 1011)
 
 @app.api_route("/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)
 async def spa_fallback(full_path: str, request: Request) -> FileResponse:

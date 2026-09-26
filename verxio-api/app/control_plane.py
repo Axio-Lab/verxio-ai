@@ -431,7 +431,7 @@ def ensure_runtime_instance(workspace: Workspace, agent: AgentProfile) -> Runtim
         created_at = now_iso()
         paths = runtime_paths(workspace.id, agent.id)
         runtime_id = new_id("rt")
-        manager = os.getenv("VERXIO_RUNTIME_MANAGER", "local-docker")
+        manager = "pool"
         cell = cell_for_tenant(workspace.tenant_id)
         with db.transaction() as conn:
             conn.execute(

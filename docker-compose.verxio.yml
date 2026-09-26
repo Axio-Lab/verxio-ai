@@ -109,14 +109,6 @@ services:
     ports:
       - '127.0.0.1:8081:80'
 
-  hermes-runtime-image:
-    build:
-      context: ./hermes-agent
-    image: ${VERXIO_HERMES_IMAGE:-verxio-hermes-runtime:local}
-    profiles:
-      - image
-    command: ['true']
-
   redis:
     image: redis:7-alpine
     profiles: [pool]

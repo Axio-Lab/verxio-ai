@@ -57,22 +57,13 @@ def legacy_planes_enabled() -> bool:
 
 def build_runtime_manager(name: str | None = None) -> RuntimeManager:
     key = normalize_manager_name(name or configured_manager_name())
-    if key == "pool":
-        from app.runtime_orch.pool import PoolRuntimeManager
-
-        return PoolRuntimeManager()
-    if not legacy_planes_enabled():
+    if key != "pool":
         raise LegacyPlaneDisabled(
-            f"runtime manager {key!r} requested but VERXIO_LEGACY_PLANES=0; "
-            "flip the tenant with `python -m app.plane set <ws> <agent> pool`"
+            f"runtime manager {key!r} was removed; the cloud agent runs on the pool plane only"
         )
-    if key == "local-docker":
-        from app.runtime_orch.local_docker import LocalDockerRuntimeManager
+    from app.runtime_orch.pool import PoolRuntimeManager
 
-        return LocalDockerRuntimeManager()
-    from app.runtime_orch.k8s import K8sRuntimeManager
-
-    return K8sRuntimeManager()
+    return PoolRuntimeManager()
 
 
 def manager_by_name(name: str | None) -> RuntimeManager:
@@ -93,9 +84,11 @@ def manager_name_for_runtime(runtime: "RuntimeInstance") -> str:
     # (or errored) the plane flag decides where it comes back up.
     if recorded and status in {"running", "starting", "draining"}:
         try:
-            return normalize_manager_name(recorded)
+            name = normalize_manager_name(recorded)
         except ValueError:
-            pass
+            name = "pool"
+        # Docker and Kubernetes managers are gone. A leftover row comes back on the pool.
+        return name if name == "pool" else "pool"
     from app.plane import manager_name_for_plane, resolve_plane
 
     return manager_name_for_plane(resolve_plane(runtime.workspace_id, runtime.agent_id))

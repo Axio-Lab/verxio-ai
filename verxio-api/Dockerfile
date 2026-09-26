@@ -1,9 +1,3 @@
-# Legacy per-user plane only: the docker CLI is copied into the image when
-# WITH_DOCKER_CLI=1 (default until cutover). Pool-plane images are built with
-# `--build-arg WITH_DOCKER_CLI=0` and carry no docker binary — the API talks
-# to workers over Redis and never mounts docker.sock.
-FROM docker:27-cli AS docker_cli
-
 FROM python:3.11-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -44,13 +38,6 @@ ENV PATH="/app/.venv/bin:${PATH}"
 ENV VERXIO_HERMES_REPO=/opt/hermes-agent
 
 WORKDIR /app
-
-ARG WITH_DOCKER_CLI=1
-# Legacy runtime manager shells out to `docker` via the mounted host socket.
-# Copy to a staging dir, then keep it only when the legacy plane is enabled.
-COPY --from=docker_cli /usr/local/bin/docker /opt/docker-cli/docker
-RUN if [ "$WITH_DOCKER_CLI" = "1" ]; then mv /opt/docker-cli/docker /usr/local/bin/docker; fi \
-    && rm -rf /opt/docker-cli
 
 COPY --from=builder /app/.venv /app/.venv
 

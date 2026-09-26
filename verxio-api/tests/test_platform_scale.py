@@ -97,17 +97,17 @@ def test_plane_flag_selects_manager(monkeypatch, tmp_path):
         workspace_path="/tmp/w",
         artifact_path="/tmp/a",
     )
-    assert plane.resolve_plane("ws", "ag") == "docker"
-    assert manager_name_for_runtime(runtime) == "local-docker"
+    assert plane.resolve_plane("ws", "ag") == "pool"
+    assert manager_name_for_runtime(runtime) == "pool"
 
     assert plane.set_plane("ws", "ag", "pool") == "pool"
     assert plane.resolve_plane("ws", "ag") == "pool"
     assert plane.tenant_uses_pool("ws", "ag")
     assert manager_name_for_runtime(runtime) == "pool"
 
-    # A live runtime keeps the backend that started it until it stops.
+    # A leftover docker row comes back on the pool. That manager no longer exists.
     live = runtime.model_copy(update={"status": "running", "manager": "local-docker"})
-    assert manager_name_for_runtime(live) == "local-docker"
+    assert manager_name_for_runtime(live) == "pool"
     stopped = live.model_copy(update={"status": "stopped"})
     assert manager_name_for_runtime(stopped) == "pool"
 
@@ -197,20 +197,13 @@ def test_legacy_plane_switch_blocks_docker_and_reports_usage(monkeypatch, tmp_pa
 
     db.run_migrations()
     factory.reset_runtime_manager_for_tests()
-    plane.set_plane("ws", "ag", "docker")
-    report = plane.legacy_usage()
-    assert [r["agent_id"] for r in report["flagged_legacy"]] == ["ag"]
-    assert plane.main(["legacy-usage"]) == 3
-
-    monkeypatch.setenv("VERXIO_LEGACY_PLANES", "0")
+    with pytest.raises(ValueError):
+        plane.set_plane("ws", "ag", "docker")
     with pytest.raises(factory.LegacyPlaneDisabled):
         factory.build_runtime_manager("local-docker")
     with pytest.raises(factory.LegacyPlaneDisabled):
         factory.build_runtime_manager("k8s")
-    with pytest.raises(ValueError):
-        plane.set_plane("ws", "ag", "docker")
     assert plane.set_plane("ws", "ag", "pool") == "pool"
-    monkeypatch.setenv("VERXIO_RUNTIME_MANAGER", "pool")
     assert plane.main(["legacy-usage"]) == 0
     factory.reset_runtime_manager_for_tests()
 
