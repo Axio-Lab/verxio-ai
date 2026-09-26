@@ -234,6 +234,25 @@ def test_expire_all_outputs_and_bounded_home_copy(tmp_path, monkeypatch):
     assert expire_all_outputs() == 0
 
 
+def test_prune_old_cloud_sessions(tmp_path):
+    import os
+    import time
+
+    from app.worker.tenants import prune_old_sessions
+
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    fresh = sessions / "fresh.json"
+    stale = sessions / "stale.json"
+    fresh.write_text("{}")
+    stale.write_text("{}")
+    old = time.time() - 20 * 86400
+    os.utime(stale, (old, old))
+    assert prune_old_sessions(tmp_path, max_age_days=14) == 1
+    assert fresh.exists()
+    assert not stale.exists()
+
+
 def test_default_cloud_plane_is_pool(monkeypatch):
     monkeypatch.delenv("VERXIO_RUNTIME_MANAGER", raising=False)
     from app.plane import default_plane

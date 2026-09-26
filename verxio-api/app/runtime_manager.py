@@ -154,11 +154,6 @@ def _verxio_api_internal_url() -> str:
 def _runtime_container_env(runtime: RuntimeInstance, extra_env: dict[str, str] | None = None) -> dict[str, str]:
     env: dict[str, str] = {
         "VERXIO_HOSTED": "1",
-        # Single-tenant planes (per-tenant pod / local docker) have no sandbox
-        # daemon. Let Hermes run tools in-container, but only under the
-        # low-priority isolated policy so builds can't starve the dashboard.
-        # Pool workers do NOT set this and fail closed without a sandbox.
-        "VERXIO_SANDBOX_FALLBACK_LOCAL": "1",
         "HERMES_TOOL_NICE": os.getenv("VERXIO_TOOL_NICE", "10"),
         "HERMES_TOOL_SCHED_BATCH": "1",
         "WHATSAPP_BROWSER_NAME": "Verxio Agent",
@@ -172,6 +167,10 @@ def _runtime_container_env(runtime: RuntimeInstance, extra_env: dict[str, str] |
 
     if not _runtime_whatsapp_paired(runtime):
         env["WHATSAPP_ENABLED"] = "false"
+    # Pool workers fail closed without a sandbox daemon. Legacy single-tenant
+    # planes have no daemon and may run tools in-process.
+    if not _is_pool_runtime(runtime):
+        env["VERXIO_SANDBOX_FALLBACK_LOCAL"] = "1"
 
     # Hosted Gemini/Qwen keys live on the control plane, not in the runtime
     # ``.env``. Reconcile / image rolls used to recreate pods without extra_env,

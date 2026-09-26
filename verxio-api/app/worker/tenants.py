@@ -306,7 +306,9 @@ class TenantRegistry:
     async def maintenance_loop(self, stop: asyncio.Event) -> None:
         """Heartbeat leases, advertise the worker, sync dirty homes, reap idle tenants."""
         interval = 15.0
+        ticks = 0
         while not stop.is_set():
+            ticks += 1
             try:
                 self.register()
                 now = time.monotonic()
@@ -330,12 +332,47 @@ class TenantRegistry:
                         await self.sync_if_due(tenant)
                     except Exception:
                         logger.exception("Home sync failed tenant=%s", tenant.name)
+                    if ticks % 240 == 0:
+                        try:
+                            removed = await asyncio.to_thread(prune_old_sessions, tenant.home)
+                            if removed:
+                                logger.info("Pruned %d old cloud sessions tenant=%s", removed, tenant.name)
+                        except Exception:
+                            logger.exception("Session prune failed tenant=%s", tenant.name)
             except Exception:
                 logger.exception("Tenant maintenance tick failed")
             try:
                 await asyncio.wait_for(stop.wait(), timeout=interval)
             except asyncio.TimeoutError:
                 continue
+
+
+def session_max_age_days() -> float:
+    return _float_env("VERXIO_CLOUD_SESSION_MAX_AGE_DAYS", 14.0, 1.0)
+
+
+def prune_old_sessions(home: Path, *, max_age_days: float | None = None) -> int:
+    """Drop cloud chat transcripts older than the retention window.
+
+    Interactive project chats live on the desktop. The cloud home only keeps
+    cron and messaging sessions, and those are pruned by file age.
+    """
+    sessions = home / "sessions"
+    if not sessions.is_dir():
+        return 0
+    cutoff = time.time() - (max_age_days if max_age_days is not None else session_max_age_days()) * 86400
+    removed = 0
+    for path in sessions.rglob("*"):
+        if not path.is_file():
+            continue
+        try:
+            if path.stat().st_mtime >= cutoff:
+                continue
+            path.unlink()
+            removed += 1
+        except OSError:
+            continue
+    return removed
 
 
 def workspace_dir(tenant: AttachedTenant) -> Path:
