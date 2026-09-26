@@ -14,7 +14,7 @@ import {
   validateProviderCredential
 } from '@/hermes'
 import { markModelOptionsForceRefresh } from '@/lib/model-options-cache'
-import { isProviderSetupErrorMessage } from '@/lib/provider-setup-errors'
+import { isProviderSetupErrorMessage, rewriteDesktopAuthMessage } from '@/lib/provider-setup-errors'
 import { evaluateRuntimeReadiness, type RuntimeReadinessResult } from '@/lib/runtime-readiness'
 import { verxioApiEnabled } from '@/lib/verxio-api'
 import { notify, notifyError } from '@/store/notifications'
@@ -439,7 +439,9 @@ async function refreshProviders() {
 }
 
 export function requestDesktopOnboarding(reason = DEFAULT_ONBOARDING_REASON) {
-  patch({ reason: reason.trim() || DEFAULT_ONBOARDING_REASON, requested: true })
+  const text = rewriteDesktopAuthMessage(reason.trim() || DEFAULT_ONBOARDING_REASON)
+
+  patch({ reason: text, requested: true })
 }
 
 // Open the onboarding provider selector on demand from an already-configured
