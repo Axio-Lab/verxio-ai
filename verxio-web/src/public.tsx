@@ -11,22 +11,31 @@ import { installStaleChunkReload } from './lib/stale-chunk'
 
 installStaleChunkReload()
 
+const downloadCtaClassName =
+  'inline-flex min-h-14 w-full max-w-md items-center justify-center gap-2 rounded-xl bg-primary px-6 py-5 text-center text-lg font-black uppercase tracking-wide text-white transition-colors hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-white sm:min-h-16 sm:max-w-xl sm:px-8 sm:text-2xl'
+
 function DownloadPage() {
   return (
-    <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center gap-4 px-6 py-16">
-      <p className="text-sm uppercase tracking-[0.2em] text-sky-600">Verxio Desktop</p>
-      <h1 className="text-4xl font-semibold tracking-tight">The agent lives on your machine.</h1>
-      <p className="text-base text-muted-foreground">
-        Download Verxio Desktop for chat, files, and Whisper. Cron, messaging, and workflow agents keep running in the
-        cloud while your Mac is off. Shared notes stay at this host.
-      </p>
-      <a
-        className="inline-flex w-fit rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white"
-        href="https://github.com/Axio-Lab/verxio-ai/releases"
-      >
-        Download Verxio
-      </a>
-    </main>
+    <div className="flex min-h-dvh items-center bg-white text-gray-900">
+      <main className="mx-auto flex w-full max-w-4xl flex-col items-center px-6 py-16 text-center sm:px-8">
+        <p className="text-base font-black uppercase tracking-[0.2em] text-primary sm:text-xl">Verxio Desktop</p>
+        <h1 className="mt-5 text-5xl font-black leading-[0.95] tracking-tight text-gray-900 sm:text-7xl lg:text-8xl">
+          Your AI agent lives on your machine.
+        </h1>
+        <a className={`mt-10 ${downloadCtaClassName}`} href="https://github.com/Axio-Lab/verxio-ai/releases">
+          Download Verxio
+          <svg aria-hidden="true" className="h-6 w-6 shrink-0" fill="none" viewBox="0 0 24 24">
+            <path
+              d="M7 17 17 7M9 7h8v8"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2.5"
+            />
+          </svg>
+        </a>
+      </main>
+    </div>
   )
 }
 
