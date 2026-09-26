@@ -175,6 +175,59 @@ class InferenceUsageResponse(BaseModel):
     settings: InferenceSettings
     usage: InferenceUsageSummary
 
+class DeviceTokenCreateRequest(BaseModel):
+    name: str = Field(default="", max_length=120)
+    platform: str = Field(default="", max_length=64)
+
+class DeviceToken(BaseModel):
+    id: str
+    name: str = ""
+    platform: str = ""
+    createdAt: str
+    lastUsedAt: str | None = None
+    revokedAt: str | None = None
+
+class DeviceTokenCreateResponse(BaseModel):
+    token: str
+    device: DeviceToken
+
+class DeviceTokenListResponse(BaseModel):
+    devices: list[DeviceToken]
+
+class GatewayModel(BaseModel):
+    id: str
+    object: Literal["model"] = "model"
+    owned_by: str = "verxio"
+    verxioModelId: str
+    providerSlug: str
+    hostedAvailable: bool
+
+class GatewayModelList(BaseModel):
+    object: Literal["list"] = "list"
+    data: list[GatewayModel]
+
+class ComposioMcpSessionResponse(BaseModel):
+    configured: bool
+    enabled: bool
+    serverName: str = "composio"
+    connectedApps: list[str] = Field(default_factory=list)
+    mcpUrl: str | None = None
+    prompt: str = ""
+    message: str | None = None
+
+class AgentStateEntry(BaseModel):
+    path: str
+    etag: str
+    sizeBytes: int
+    updatedBy: str
+    updatedAt: str
+    expiresAt: str | None = None
+
+class AgentStateManifest(BaseModel):
+    entries: list[AgentStateEntry]
+    usedBytes: int
+    quotaBytes: int
+
 TranscriptionProviderId = Literal["elevenlabs", "fishaudio", "groq", "mistral", "openai", "xai"]
 TranscriptionCatalogSource = Literal["fallback", "provider"]
 
