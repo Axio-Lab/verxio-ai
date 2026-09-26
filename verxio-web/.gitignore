@@ -3,6 +3,7 @@ node_modules.bak/
 packages/shared/node_modules/
 packages/shared/node_modules.bak/
 dist/
+dist-public/
 *.tsbuildinfo
 .DS_Store
 *.local
