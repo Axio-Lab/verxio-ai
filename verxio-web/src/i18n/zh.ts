@@ -1976,6 +1976,7 @@ export const zh: Translations = {
     files: '文件系统',
     terminal: '终端',
     noFolderSelected: '未选择文件夹',
+    agentHome: 'Verxio Agent',
     changeCwdTitle: '更改工作目录',
     folderTip: cwd => `${cwd} — 点击更改文件夹`,
     openFolder: '打开文件夹',

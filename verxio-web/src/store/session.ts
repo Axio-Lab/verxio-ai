@@ -3,7 +3,12 @@ import { atom } from 'nanostores'
 import type { ContextSuggestion } from '@/app/types'
 import type { HermesConnection } from '@/global'
 import type { ChatMessage } from '@/lib/chat-messages'
-import { getDesktopWorkspaceRoot, isRuntimeWorkspacePath, resolveDesktopWorkspaceCwd } from '@/lib/desktop-workspace'
+import {
+  getDesktopWorkspaceRoot,
+  isBundledAgentCheckout,
+  isRuntimeWorkspacePath,
+  resolveDesktopWorkspaceCwd
+} from '@/lib/desktop-workspace'
 import { isVerxioWeb } from '@/lib/platform'
 import { persistString, storedString } from '@/lib/storage'
 import { isWebLocalPath } from '@/lib/web-local-fs'
@@ -242,10 +247,10 @@ export const setCurrentCwd = (next: Updater<string>) => {
       const nextTrimmed = resolved.trim()
       const localRoot = getDesktopWorkspaceRoot()
 
-      if (localRoot && nextTrimmed && isRuntimeWorkspacePath(nextTrimmed)) {
+      if (localRoot && nextTrimmed && (isRuntimeWorkspacePath(nextTrimmed) || isBundledAgentCheckout(nextTrimmed))) {
         const mapped = resolveDesktopWorkspaceCwd(nextTrimmed, localRoot) || localRoot
 
-        if (currentTrimmed && !isRuntimeWorkspacePath(currentTrimmed)) {
+        if (currentTrimmed && !isRuntimeWorkspacePath(currentTrimmed) && !isBundledAgentCheckout(currentTrimmed)) {
           return currentTrimmed
         }
 

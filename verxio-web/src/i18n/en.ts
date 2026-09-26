@@ -1915,6 +1915,7 @@ export const en: Translations = {
     files: 'File system',
     terminal: 'Terminal',
     noFolderSelected: 'No folder selected',
+    agentHome: 'Verxio Agent',
     changeCwdTitle: 'Change working directory',
     folderTip: cwd => `${cwd} — click to change folder`,
     openFolder: 'Open folder',

@@ -259,31 +259,65 @@ async function getLocalHermesConnection() {
   return null
 }
 
-async function getConnection() {
-  const local = await getLocalHermesConnection()
-  if (local) {
-    emitBoot({
-      phase: 'backend.ready',
-      message: 'Verxio is ready',
-      progress: 94,
-      running: false,
-      error: null
-    })
-    const token = local.token
-    const parsed = new URL(local.baseUrl)
-    const proto = parsed.protocol === 'https:' ? 'wss:' : 'ws:'
-    return {
-      baseUrl: local.baseUrl,
-      token,
-      wsUrl: `${proto}//${parsed.host}/api/ws?token=${encodeURIComponent(token)}`,
-      mode: 'local',
-      authMode: 'token',
-      source: 'local',
-      logs: [],
-      isFullscreen: false,
-      nativeOverlayWidth: await ipcRenderer.invoke('verxio:window:nativeOverlayWidth'),
-      windowButtonPosition: await ipcRenderer.invoke('verxio:window:buttonPosition')
+async function waitForLocalHermesConnection() {
+  const deadline = Date.now() + 90_000
+  let delayMs = 200
+
+  while (Date.now() < deadline) {
+    if (bootProgress.phase === 'backend.error' && bootProgress.error) {
+      throw new Error(bootProgress.error)
     }
+
+    const local = await getLocalHermesConnection()
+
+    if (local) {
+      return local
+    }
+
+    await new Promise(resolve => window.setTimeout(resolve, delayMs))
+    delayMs = Math.min(1_000, Math.round(delayMs * 1.5))
+  }
+
+  return null
+}
+
+async function localHermesConnectionPayload(local) {
+  emitBoot({
+    phase: 'backend.ready',
+    message: 'Verxio is ready',
+    progress: 94,
+    running: false,
+    error: null
+  })
+  const token = local.token
+  const parsed = new URL(local.baseUrl)
+  const proto = parsed.protocol === 'https:' ? 'wss:' : 'ws:'
+  return {
+    baseUrl: local.baseUrl,
+    token,
+    wsUrl: `${proto}//${parsed.host}/api/ws?token=${encodeURIComponent(token)}`,
+    mode: 'local',
+    authMode: 'token',
+    source: 'local',
+    logs: [],
+    isFullscreen: false,
+    nativeOverlayWidth: await ipcRenderer.invoke('verxio:window:nativeOverlayWidth'),
+    windowButtonPosition: await ipcRenderer.invoke('verxio:window:buttonPosition')
+  }
+}
+
+async function getConnection() {
+  const config = readConnectionConfig()
+  const remote = config.mode === 'remote' && String(config.remoteUrl || '').trim()
+
+  if (!remote) {
+    const local = await waitForLocalHermesConnection()
+
+    if (local) {
+      return localHermesConnectionPayload(local)
+    }
+
+    throw new Error(bootProgress.error || 'Verxio did not finish starting. Retry to connect to the local agent.')
   }
 
   await waitForDashboardReady()
@@ -727,9 +761,9 @@ ipcRenderer.on('verxio:update-progress', (_event, payload) => {
 window.addEventListener('DOMContentLoaded', () => {
   emitBoot({
     phase: 'renderer.ready',
-    message: 'Verxio Desktop bridge is ready',
-    progress: 100,
-    running: false,
+    message: 'Starting your agent…',
+    progress: 20,
+    running: true,
     error: null
   })
 })

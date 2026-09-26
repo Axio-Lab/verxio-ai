@@ -778,12 +778,13 @@ function disposeTerminalSession(id) {
 }
 
 app.whenReady().then(() => {
-  ensureDesktopWorkspace()
+  const workspace = ensureDesktopWorkspace()
   Menu.setApplicationMenu(null)
   configureDisplayMediaCapture()
   createWindow()
   hermesRuntimeOptions.userData = USER_DATA_OVERRIDE || app.getPath('userData')
   hermesRuntimeOptions.hermesHome = path.join(hermesRuntimeOptions.userData, 'hermes-home')
+  hermesRuntimeOptions.workspaceCwd = workspace.dir
   hermesRuntime
     .start()
     .then(() => hermesRuntime.attachRestart())

@@ -1418,6 +1418,7 @@ export interface Translations {
     files: string
     terminal: string
     noFolderSelected: string
+    agentHome: string
     changeCwdTitle: string
     folderTip: (cwd: string) => string
     openFolder: string

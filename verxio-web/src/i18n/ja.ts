@@ -1820,6 +1820,7 @@ export const ja = defineLocale({
     files: 'ファイルシステム',
     terminal: 'ターミナル',
     noFolderSelected: 'フォルダーが選択されていません',
+    agentHome: 'Verxio Agent',
     changeCwdTitle: '作業ディレクトリを変更',
     folderTip: cwd => `${cwd} — クリックしてフォルダーを変更`,
     openFolder: 'フォルダーを開く',

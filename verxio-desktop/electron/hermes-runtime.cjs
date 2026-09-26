@@ -176,12 +176,14 @@ function createRuntime(options = {}) {
     fs.mkdirSync(hermesHome, { recursive: true })
     const token = crypto.randomBytes(24).toString('hex')
     const python = resolvePython(root)
+    const workspaceCwd = options.workspaceCwd && directoryExists(options.workspaceCwd) ? options.workspaceCwd : root
     const env = {
       ...process.env,
       HERMES_HOME: hermesHome,
       HERMES_DASHBOARD_SESSION_TOKEN: token,
       PYTHONUNBUFFERED: '1',
       PYTHONPATH: [root, process.env.PYTHONPATH || ''].filter(Boolean).join(path.delimiter),
+      TERMINAL_CWD: workspaceCwd,
       VERXIO_DESKTOP: '1',
       VERXIO_HOSTED: process.env.VERXIO_HOSTED || '0'
     }
@@ -197,7 +199,7 @@ function createRuntime(options = {}) {
       python,
       ['-m', 'hermes_cli.main', 'dashboard', '--no-open', '--host', '127.0.0.1', '--port', '9119'],
       {
-        cwd: root,
+        cwd: workspaceCwd,
         env,
         stdio: ['ignore', 'pipe', 'pipe']
       }

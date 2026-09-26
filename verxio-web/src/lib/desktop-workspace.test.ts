@@ -34,6 +34,7 @@ describe('desktop-workspace', () => {
     expect(resolveDesktopWorkspaceCwd('/opt/data', local)).toBe(local)
     expect(resolveDesktopWorkspaceCwd('/opt/data/notes', local)).toBe(`${local}/notes`)
     expect(resolveDesktopWorkspaceCwd('/Users/me/projects/app', local)).toBe('/Users/me/projects/app')
+    expect(resolveDesktopWorkspaceCwd('/Users/me/projects/verxio-ai/hermes-agent', local)).toBe(local)
   })
 
   it('rewrites runtime workspace paths in assistant copy for desktop', () => {

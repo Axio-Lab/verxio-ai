@@ -1766,6 +1766,7 @@ export const zhHant = defineLocale({
     files: '檔案系統',
     terminal: '終端機',
     noFolderSelected: '未選擇資料夾',
+    agentHome: 'Verxio Agent',
     changeCwdTitle: '變更工作目錄',
     folderTip: cwd => `${cwd} — 點擊以變更資料夾`,
     openFolder: '開啟資料夾',

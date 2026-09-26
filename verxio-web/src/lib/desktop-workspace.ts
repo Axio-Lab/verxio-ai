@@ -1,3 +1,5 @@
+import { atom } from 'nanostores'
+
 import { isVerxioDesktop } from '@/lib/platform'
 
 export { isVerxioDesktop } from '@/lib/platform'
@@ -11,6 +13,8 @@ export const RUNTIME_HOME_ROOT = '/opt/data'
 const RUNTIME_ROOTS = [RUNTIME_WORKSPACE_ROOT, RUNTIME_HOME_ROOT]
 
 let cachedDesktopWorkspaceRoot: string | null = null
+
+export const $desktopWorkspaceRoot = atom<string | null>(null)
 
 function matchingRuntimeRoot(pathValue: string): string | null {
   const trimmed = pathValue.trim().replace(/\/+$/, '')
@@ -28,8 +32,20 @@ export function isRuntimeWorkspacePath(pathValue: string): boolean {
   return matchingRuntimeRoot(pathValue) !== null
 }
 
+/** The bundled agent checkout is not the user's project folder. */
+export function isBundledAgentCheckout(pathValue: string): boolean {
+  const trimmed = pathValue.trim().replace(/[/\\]+$/, '')
+  const name = trimmed.split(/[/\\]/).filter(Boolean).pop()?.toLowerCase()
+
+  return name === 'hermes-agent'
+}
+
 export function setDesktopWorkspaceRoot(root: string | null) {
   cachedDesktopWorkspaceRoot = root?.trim() || null
+
+  if ($desktopWorkspaceRoot.get() !== cachedDesktopWorkspaceRoot) {
+    $desktopWorkspaceRoot.set(cachedDesktopWorkspaceRoot)
+  }
 }
 
 export function getDesktopWorkspaceRoot(): string | null {
@@ -45,6 +61,11 @@ export function resolveDesktopWorkspaceCwd(currentCwd?: string | null, localRoot
   }
 
   const trimmed = currentCwd?.trim()
+
+  if (trimmed && isBundledAgentCheckout(trimmed)) {
+    return local
+  }
+
   const runtimeRoot = trimmed ? matchingRuntimeRoot(trimmed) : null
 
   if (!trimmed || runtimeRoot) {
