@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 import yaml
+from fastapi import HTTPException
 
 from app import db
 from app.control_plane import ensure_runtime_directories, now_iso
@@ -26,6 +27,7 @@ from app.models import (
     InferenceUsageResponse,
     InferenceUsageSummary,
     RuntimeInstance,
+    new_id,
 )
 
 
@@ -338,6 +340,83 @@ def inference_usage(user_id: str) -> InferenceUsageResponse:
             events=int((row or {}).get("events") or 0),
         ),
     )
+
+
+def assert_inference_budget(user_id: str) -> InferenceSettings:
+    """Reject hosted turns once the monthly credit and spending limit are exhausted."""
+    usage = inference_usage(user_id)
+    settings = usage.settings
+    remaining_credit = usage.usage.remainingUsd
+    if remaining_credit > 0:
+        return settings
+    if settings.overageEnabled:
+        if settings.spendingLimitUsd is None:
+            return settings
+        if usage.usage.usedUsd < settings.spendingLimitUsd:
+            return settings
+        raise HTTPException(status_code=402, detail="Hosted inference spending limit reached.")
+    if settings.monthlyCreditUsd <= 0 and settings.spendingLimitUsd is None:
+        return settings
+    raise HTTPException(status_code=402, detail="Hosted inference credit is exhausted.")
+
+
+def resolve_hosted_model(model_id: str | None) -> HostedModelDefinition:
+    requested = (model_id or DEFAULT_MODEL_ID).strip()
+    for model in MODEL_CATALOG:
+        if model.id == requested:
+            return model
+    for model in MODEL_CATALOG:
+        if requested in _available_model_ids(model):
+            return model
+    return _model_by_id(requested)
+
+
+def record_inference_usage(
+    user_id: str,
+    *,
+    verxio_model_id: str,
+    provider_slug: str,
+    upstream_model_id: str,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    session_id: str | None = None,
+    turn_id: str | None = None,
+    workspace_id: str | None = None,
+    agent_id: str | None = None,
+) -> float:
+    model = resolve_hosted_model(verxio_model_id)
+    billed = (max(0, input_tokens) / 1_000_000) * model.input_per_million + (
+        max(0, output_tokens) / 1_000_000
+    ) * model.output_per_million
+    db.execute(
+        """
+        INSERT INTO usage_events (
+            id, user_id, workspace_id, agent_id, runtime_id, session_id, turn_id,
+            mode, verxio_model_id, provider_slug, upstream_model_id,
+            input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+            reasoning_tokens, estimated_provider_cost_usd, billed_cost_usd,
+            cost_source, metadata_json, created_at
+        )
+        VALUES (?, ?, ?, ?, NULL, ?, ?, 'hosted', ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, 'catalog', '{}', ?)
+        """,
+        (
+            new_id("use"),
+            user_id,
+            workspace_id,
+            agent_id,
+            session_id,
+            turn_id or new_id("turn"),
+            model.id,
+            provider_slug,
+            upstream_model_id,
+            max(0, input_tokens),
+            max(0, output_tokens),
+            billed,
+            billed,
+            now_iso(),
+        ),
+    )
+    return billed
 
 
 def hosted_provider_env() -> dict[str, str]:
