@@ -634,7 +634,11 @@ async def get_profile(request: Request):
     if not user:
         return DEMO_PROFILE
     _workspace, profile, _runtime_instance = await aget_context_for_user(user)
-    return profile
+    storage = list_agent_state(str(user["id"]))
+    payload = profile.model_dump() if hasattr(profile, "model_dump") else dict(profile)
+    payload["cloudStorageUsedBytes"] = storage.usedBytes
+    payload["cloudStorageQuotaBytes"] = storage.quotaBytes
+    return payload
 
 @app.get("/api/hermes")
 async def get_hermes_metadata():

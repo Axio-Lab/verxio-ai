@@ -19,7 +19,8 @@ from fastapi import HTTPException
 
 from app import db
 from app.control_plane import get_runtime_for_user, now_iso
-from app.models import AgentStateEntry, AgentStateManifest, utc_now
+from app.homes import local_home_path
+from app.models import AgentStateEntry, AgentStateManifest, RuntimeInstance, utc_now
 
 OUTPUTS_TTL_DAYS = 7
 DEFAULT_QUOTA_BYTES = 64 * 1024 * 1024
@@ -71,6 +72,52 @@ def expire_outputs(user_id: str) -> int:
     for row in rows:
         db.execute("DELETE FROM agent_state_files WHERE user_id = ? AND path = ?", (user_id, row["path"]))
     return len(rows)
+
+
+def expire_all_outputs() -> int:
+    now = now_iso()
+    rows = db.fetch_all(
+        "SELECT user_id, path FROM agent_state_files WHERE expires_at IS NOT NULL AND expires_at <= ?",
+        (now,),
+    )
+    for row in rows:
+        db.execute(
+            "DELETE FROM agent_state_files WHERE user_id = ? AND path = ?",
+            (row["user_id"], row["path"]),
+        )
+    return len(rows)
+
+
+def hydrate_attached_home(runtime: RuntimeInstance) -> int:
+    """Write allowlisted agent-state files into a pool worker's hermes-home."""
+    member = db.fetch_one(
+        "SELECT user_id FROM workspace_members WHERE workspace_id = ? ORDER BY created_at ASC LIMIT 1",
+        (runtime.workspace_id,),
+    )
+    if not member:
+        return 0
+    user_id = str(member["user_id"])
+    expire_outputs(user_id)
+    home = local_home_path(runtime)
+    rows = db.fetch_all("SELECT path, content FROM agent_state_files WHERE user_id = ?", (user_id,))
+    written = 0
+    for row in rows:
+        rel = str(row["path"])
+        try:
+            classify_path(rel)
+        except HTTPException:
+            continue
+        dest = home / rel
+        try:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            content = row["content"]
+            if isinstance(content, str):
+                content = content.encode("utf-8")
+            dest.write_bytes(content or b"")
+            written += 1
+        except OSError:
+            continue
+    return written
 
 
 def used_bytes(user_id: str) -> int:

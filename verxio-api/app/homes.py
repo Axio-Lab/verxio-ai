@@ -22,6 +22,9 @@ EXCLUDE_DIR_NAMES = {
     "audit-repos",
 }
 EXCLUDE_SUFFIXES = (".bak", ".tmp")
+# Cloud Hermes never carries project files. Only the synced identity paths
+# leave the worker (memory, skills, soul, agent config, TTL outputs).
+SYNC_HOME_NAMES = frozenset({"memory", "skills", "outputs", "SOUL.md", "soul.md", "config.yaml"})
 
 
 def home_quota_bytes() -> int:
@@ -78,6 +81,8 @@ def home_size_bytes(root: Path) -> int:
 def copy_home_filtered(source: Path, dest: Path) -> None:
     dest.mkdir(parents=True, exist_ok=True)
     for item in source.iterdir():
+        if item.name not in SYNC_HOME_NAMES:
+            continue
         if item.name in EXCLUDE_DIR_NAMES:
             continue
         if item.name.endswith(EXCLUDE_SUFFIXES) or ".bak-" in item.name:
@@ -108,13 +113,12 @@ def _restore_part(runtime: RuntimeInstance, part: str, target: Path, *, only_if_
 
 
 def restore_home(runtime: RuntimeInstance, *, only_if_missing: bool = True) -> bool:
-    """Pull the tenant's hermes-home (and workspace) from object storage.
+    """Pull the tenant's allowlisted hermes-home from object storage.
 
-    Returns True when at least one part was restored from a snapshot.
+    Project workspaces stay on the desktop. Returns True when a snapshot
+    was restored.
     """
-    restored_home = _restore_part(runtime, "hermes-home", local_home_path(runtime), only_if_missing=only_if_missing)
-    restored_ws = _restore_part(runtime, "workspace", local_workspace_path(runtime), only_if_missing=only_if_missing)
-    return restored_home or restored_ws
+    return _restore_part(runtime, "hermes-home", local_home_path(runtime), only_if_missing=only_if_missing)
 
 
 def _sync_part(runtime: RuntimeInstance, part: str, source: Path) -> str | None:
@@ -141,10 +145,8 @@ def _sync_part(runtime: RuntimeInstance, part: str, source: Path) -> str | None:
 
 
 def sync_home(runtime: RuntimeInstance) -> str | None:
-    """Push hermes-home + workspace snapshots. Returns the home snapshot ref."""
-    ref = _sync_part(runtime, "hermes-home", local_home_path(runtime))
-    _sync_part(runtime, "workspace", local_workspace_path(runtime))
-    return ref
+    """Push the allowlisted hermes-home snapshot. Returns the snapshot ref."""
+    return _sync_part(runtime, "hermes-home", local_home_path(runtime))
 
 
 def write_home_env(home: Path, env: dict[str, str]) -> Path:

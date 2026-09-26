@@ -213,6 +213,34 @@ def test_agent_state_config_merges_agent_section_only(client):
     assert b"terminal" not in body.content
 
 
+def test_expire_all_outputs_and_bounded_home_copy(tmp_path, monkeypatch):
+    monkeypatch.setenv("VERXIO_DATABASE_MODE", "sqlite")
+    monkeypatch.setenv("VERXIO_DATABASE_PATH", str(tmp_path / "state.sqlite3"))
+    from app import db
+    from app.agent_sync import expire_all_outputs
+    from app.homes import copy_home_filtered
+
+    db.run_migrations()
+
+    source = tmp_path / "home"
+    (source / "memory").mkdir(parents=True)
+    (source / "memory" / "notes.md").write_text("ok")
+    (source / "workspace").mkdir()
+    (source / "workspace" / "secret.txt").write_text("nope")
+    dest = tmp_path / "sync"
+    copy_home_filtered(source, dest)
+    assert (dest / "memory" / "notes.md").exists()
+    assert not (dest / "workspace").exists()
+    assert expire_all_outputs() == 0
+
+
+def test_default_cloud_plane_is_pool(monkeypatch):
+    monkeypatch.delenv("VERXIO_RUNTIME_MANAGER", raising=False)
+    from app.plane import default_plane
+
+    assert default_plane() == "pool"
+
+
 def test_composio_mcp_session_without_config(client):
     headers = _auth(client, "composio@example.com")
     created = client.post("/api/auth/device", json={"name": "Desktop"}, headers=headers)

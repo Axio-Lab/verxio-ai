@@ -18,6 +18,7 @@ from pathlib import Path
 
 from app import db
 from app.control_plane import runtime_from_row
+from app.agent_sync import hydrate_attached_home
 from app.homes import (
     local_home_path,
     local_workspace_path,
@@ -187,6 +188,7 @@ class TenantRegistry:
             try:
                 await asyncio.to_thread(set_phase, workspace_id, agent_id, PHASE_RESTORING_HOME)
                 await asyncio.to_thread(restore_home, runtime, only_if_missing=True)
+                await asyncio.to_thread(hydrate_attached_home, runtime)
                 await asyncio.to_thread(set_phase, workspace_id, agent_id, PHASE_PREPARING_ENV)
                 await self._materialize_env(tenant)
                 local_workspace_path(runtime).mkdir(parents=True, exist_ok=True)

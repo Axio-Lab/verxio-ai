@@ -60,7 +60,7 @@ def normalize_plane(value: str | None) -> str:
 
 
 def default_plane() -> str:
-    raw = os.getenv("VERXIO_RUNTIME_MANAGER", "local-docker") or "local-docker"
+    raw = os.getenv("VERXIO_RUNTIME_MANAGER", "pool") or "pool"
     try:
         return normalize_plane(raw)
     except ValueError:

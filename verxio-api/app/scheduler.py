@@ -102,6 +102,23 @@ async def _cron_loop(stop: asyncio.Event) -> None:
             continue
 
 
+async def _outputs_ttl_loop(stop: asyncio.Event) -> None:
+    from app.agent_sync import expire_all_outputs
+
+    interval = max(300.0, float(os.getenv("VERXIO_OUTPUTS_TTL_SECONDS", "3600")))
+    while not stop.is_set():
+        try:
+            expired = await asyncio.to_thread(expire_all_outputs)
+            if expired:
+                logger.info("Expired %d cloud outputs past the 7-day TTL", expired)
+        except Exception:
+            logger.exception("Outputs TTL tick failed")
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=interval)
+        except asyncio.TimeoutError:
+            continue
+
+
 async def _idle_reaper_loop(stop: asyncio.Event) -> None:
     from app.runtime_orch.lifecycle import reap_idle_runtimes
     from app.runtime_orch.idle import idle_enabled
@@ -149,6 +166,7 @@ async def run_scheduler() -> None:
             asyncio.create_task(_hold_leadership(token, lost), name="leader-heartbeat"),
             asyncio.create_task(_workflow_loop(lost), name="workflow-ticks"),
             asyncio.create_task(_cron_loop(lost), name="cron-ticks"),
+            asyncio.create_task(_outputs_ttl_loop(lost), name="outputs-ttl"),
         ]
         if _env_truthy("VERXIO_IDLE_REAPER_ENABLED", "true"):
             tasks.append(asyncio.create_task(_idle_reaper_loop(lost), name="idle-reaper"))
