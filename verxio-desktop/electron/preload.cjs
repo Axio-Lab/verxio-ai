@@ -247,6 +247,10 @@ function cloudDashboardUrl() {
   return `${verxioApiBaseUrl()}/api/runtime/dashboard`
 }
 
+function isCloudDashboardPath(path) {
+  return path.startsWith('/api/cron') || path.startsWith('/api/messaging') || path.startsWith('/api/pairing')
+}
+
 async function getLocalHermesConnection() {
   const local = await ipcRenderer.invoke('verxio:hermes:connection')
   if (local?.baseUrl && local?.token) {
@@ -499,12 +503,16 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
       return { profile: name }
     }
   },
-  api: async request =>
-    fetchJson(buildApiUrl(request.path), {
+  api: async request => {
+    const scope = request.scope === 'cloud' || isCloudDashboardPath(request.path) ? 'cloud' : 'local'
+    const url = scope === 'cloud' ? `${(await getCloudConnection()).baseUrl}${request.path}` : buildApiUrl(request.path)
+
+    return fetchJson(url, {
       method: request.method ?? 'GET',
       body: request.body !== undefined ? JSON.stringify(request.body) : undefined,
       timeoutMs: request.timeoutMs
-    }),
+    })
+  },
   notify: payload => ipcRenderer.invoke('verxio:notify', payload),
   setTranslucency: payload => ipcRenderer.send('verxio:set-translucency', payload),
   getRemoteDisplayReason: () => ipcRenderer.invoke('verxio:get-remote-display-reason'),
@@ -668,16 +676,8 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
   },
   getVersion: () => ipcRenderer.invoke('verxio:version'),
   updates: {
-    check: async () => ({
-      supported: false,
-      reason: 'Local Verxio Desktop packaging updates are not enabled in this phase.'
-    }),
-    apply: async () => ({
-      ok: false,
-      manual: true,
-      command: 'git pull && npm run desktop:build',
-      message: 'Update this local checkout, then rebuild Verxio Desktop.'
-    }),
+    check: () => ipcRenderer.invoke('verxio:updates:check'),
+    apply: opts => ipcRenderer.invoke('verxio:updates:apply', opts),
     getBranch: async () => ({ branch: 'local' }),
     setBranch: async name => ({ branch: name }),
     onProgress: callback => {
@@ -702,6 +702,12 @@ ipcRenderer.on('verxio:backend-exit', (_event, payload) => {
 
 ipcRenderer.on('verxio:boot-progress', (_event, payload) => {
   emitBoot(payload)
+})
+
+ipcRenderer.on('verxio:update-progress', (_event, payload) => {
+  for (const listener of updateProgressListeners) {
+    listener(payload)
+  }
 })
 
 window.addEventListener('DOMContentLoaded', () => {

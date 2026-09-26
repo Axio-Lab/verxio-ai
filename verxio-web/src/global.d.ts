@@ -347,6 +347,8 @@ export interface HermesApiRequest {
   // (window) backend. Read-only cross-profile data is served by the primary, so
   // this is only needed for profile-scoped live/settings calls.
   profile?: string | null
+  // Desktop: local Hermes for chat/files; cloud dashboard for cron/messaging.
+  scope?: 'local' | 'cloud'
 }
 
 export interface HermesNotification {

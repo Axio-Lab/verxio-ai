@@ -2,9 +2,6 @@ import './styles.css'
 
 import { QueryClientProvider } from '@tanstack/react-query'
 
-import { installWebBridge } from '@/platform/install-web-bridge'
-
-installWebBridge()
 import { lazy, StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
@@ -17,13 +14,18 @@ import { PageLoader } from './components/page-loader'
 import { VerxioAuthGate } from './components/verxio-auth-gate'
 import { I18nProvider } from './i18n'
 import { installClipboardShim } from './lib/clipboard'
+import { isVerxioDesktop } from './lib/platform'
 import { queryClient } from './lib/query-client'
-import { installStaleChunkReload } from './lib/stale-chunk'
 import { ThemeProvider } from './themes/context'
 
+if (!isVerxioDesktop()) {
+  const { installWebBridge } = await import('@/platform/install-web-bridge')
+  const { installStaleChunkReload } = await import('./lib/stale-chunk')
+  installWebBridge()
+  installStaleChunkReload()
+}
+
 installClipboardShim()
-// After a web redeploy, open tabs may 404 old Vite lazy chunks — reload once.
-installStaleChunkReload()
 
 // Defer the chat/shell bundle until after auth so first paint (login) stays small.
 const App = lazy(() => import('./app'))

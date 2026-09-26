@@ -157,6 +157,20 @@ export class HermesGateway extends JsonRpcGatewayClient {
 // change is needed. Null → primary, so single-profile users are unaffected.
 let _apiProfile: null | string = null
 
+export type HermesScope = 'local' | 'cloud'
+
+export async function resolveHermesConnection(scope: HermesScope = 'local') {
+  if (scope === 'cloud' && window.hermesDesktop.getCloudConnection) {
+    return window.hermesDesktop.getCloudConnection()
+  }
+
+  return window.hermesDesktop.getConnection()
+}
+
+function cloudHermesApi<T>(request: Omit<Parameters<Window['hermesDesktop']['api']>[0], 'scope'>): Promise<T> {
+  return window.hermesDesktop.api<T>({ ...request, scope: 'cloud' })
+}
+
 export function setApiRequestProfile(profile: null | string): void {
   _apiProfile = profile || null
 }
@@ -546,7 +560,7 @@ export function selectToolsetProvider(
 }
 
 export function getMessagingPlatforms(): Promise<MessagingPlatformsResponse> {
-  return window.hermesDesktop.api<MessagingPlatformsResponse>({
+  return cloudHermesApi<MessagingPlatformsResponse>({
     path: '/api/messaging/platforms'
   })
 }
@@ -555,7 +569,7 @@ export function updateMessagingPlatform(
   platformId: string,
   body: MessagingPlatformUpdate
 ): Promise<{ ok: boolean; platform: string }> {
-  return window.hermesDesktop.api<{ ok: boolean; platform: string }>({
+  return cloudHermesApi<{ ok: boolean; platform: string }>({
     path: `/api/messaging/platforms/${encodeURIComponent(platformId)}`,
     method: 'PUT',
     body
@@ -566,7 +580,7 @@ export function createMessagingConnection(
   platformId: string,
   body: MessagingConnectionUpdate
 ): Promise<{ connection: MessagingConnectionInfo; ok: boolean; platform: string }> {
-  return window.hermesDesktop.api<{ connection: MessagingConnectionInfo; ok: boolean; platform: string }>({
+  return cloudHermesApi<{ connection: MessagingConnectionInfo; ok: boolean; platform: string }>({
     path: `/api/messaging/platforms/${encodeURIComponent(platformId)}/connections`,
     method: 'POST',
     body
@@ -578,7 +592,7 @@ export function updateMessagingConnection(
   connectionId: string,
   body: MessagingConnectionUpdate
 ): Promise<{ connection: MessagingConnectionInfo; ok: boolean; platform: string }> {
-  return window.hermesDesktop.api<{ connection: MessagingConnectionInfo; ok: boolean; platform: string }>({
+  return cloudHermesApi<{ connection: MessagingConnectionInfo; ok: boolean; platform: string }>({
     path: `/api/messaging/platforms/${encodeURIComponent(platformId)}/connections/${encodeURIComponent(connectionId)}`,
     method: 'PUT',
     body
@@ -589,14 +603,14 @@ export function deleteMessagingConnection(
   platformId: string,
   connectionId: string
 ): Promise<{ connection_id: string; ok: boolean; platform: string }> {
-  return window.hermesDesktop.api<{ connection_id: string; ok: boolean; platform: string }>({
+  return cloudHermesApi<{ connection_id: string; ok: boolean; platform: string }>({
     path: `/api/messaging/platforms/${encodeURIComponent(platformId)}/connections/${encodeURIComponent(connectionId)}`,
     method: 'DELETE'
   })
 }
 
 export function testMessagingPlatform(platformId: string): Promise<MessagingPlatformTestResponse> {
-  return window.hermesDesktop.api<MessagingPlatformTestResponse>({
+  return cloudHermesApi<MessagingPlatformTestResponse>({
     path: `/api/messaging/platforms/${encodeURIComponent(platformId)}/test`,
     method: 'POST'
   })
@@ -621,19 +635,19 @@ export function getSlackManifest(
 
   const query = search.toString()
 
-  return window.hermesDesktop.api<SlackManifestResponse>({
+  return cloudHermesApi<SlackManifestResponse>({
     path: `/api/messaging/slack/manifest${query ? `?${query}` : ''}`
   })
 }
 
 export function getPairing(): Promise<PairingResponse> {
-  return window.hermesDesktop.api<PairingResponse>({
+  return cloudHermesApi<PairingResponse>({
     path: '/api/pairing'
   })
 }
 
 export function approvePairing(platform: string, code: string): Promise<PairingApproveResponse> {
-  return window.hermesDesktop.api<PairingApproveResponse>({
+  return cloudHermesApi<PairingApproveResponse>({
     path: '/api/pairing/approve',
     method: 'POST',
     body: { platform, code }
@@ -641,7 +655,7 @@ export function approvePairing(platform: string, code: string): Promise<PairingA
 }
 
 export function revokePairing(platform: string, userId: string): Promise<{ ok: boolean }> {
-  return window.hermesDesktop.api<{ ok: boolean }>({
+  return cloudHermesApi<{ ok: boolean }>({
     path: '/api/pairing/revoke',
     method: 'POST',
     body: { platform, user_id: userId }
@@ -651,7 +665,7 @@ export function revokePairing(platform: string, userId: string): Promise<{ ok: b
 export function startWhatsAppPairing(
   body: { connection_id?: string; reset?: boolean } = {}
 ): Promise<WhatsAppPairingStartResponse> {
-  return window.hermesDesktop.api<WhatsAppPairingStartResponse>({
+  return cloudHermesApi<WhatsAppPairingStartResponse>({
     path: '/api/messaging/whatsapp/pairing/start',
     method: 'POST',
     body
@@ -659,7 +673,7 @@ export function startWhatsAppPairing(
 }
 
 export function getWhatsAppPairingStatus(pairingId: string): Promise<WhatsAppPairingStatusResponse> {
-  return window.hermesDesktop.api<WhatsAppPairingStatusResponse>({
+  return cloudHermesApi<WhatsAppPairingStatusResponse>({
     path: `/api/messaging/whatsapp/pairing/${encodeURIComponent(pairingId)}`
   })
 }
@@ -668,7 +682,7 @@ export function applyWhatsAppPairing(
   pairingId: string,
   body: { allowed_users?: string; profile?: string }
 ): Promise<WhatsAppPairingApplyResponse> {
-  return window.hermesDesktop.api<WhatsAppPairingApplyResponse>({
+  return cloudHermesApi<WhatsAppPairingApplyResponse>({
     path: `/api/messaging/whatsapp/pairing/${encodeURIComponent(pairingId)}/apply`,
     method: 'POST',
     body
@@ -676,40 +690,40 @@ export function applyWhatsAppPairing(
 }
 
 export function cancelWhatsAppPairing(pairingId: string): Promise<{ ok: boolean }> {
-  return window.hermesDesktop.api<{ ok: boolean }>({
+  return cloudHermesApi<{ ok: boolean }>({
     path: `/api/messaging/whatsapp/pairing/${encodeURIComponent(pairingId)}`,
     method: 'DELETE'
   })
 }
 
 export function disconnectWhatsApp(): Promise<WhatsAppPairingApplyResponse & { disconnected?: boolean }> {
-  return window.hermesDesktop.api<WhatsAppPairingApplyResponse & { disconnected?: boolean }>({
+  return cloudHermesApi<WhatsAppPairingApplyResponse & { disconnected?: boolean }>({
     path: '/api/messaging/whatsapp/disconnect',
     method: 'DELETE'
   })
 }
 
 export function getMessagingWebhooks(): Promise<MessagingWebhooksResponse> {
-  return window.hermesDesktop.api<MessagingWebhooksResponse>({
+  return cloudHermesApi<MessagingWebhooksResponse>({
     path: '/api/messaging/webhooks'
   })
 }
 
 export function getMessagingApiServer(): Promise<MessagingApiServerResponse> {
-  return window.hermesDesktop.api<MessagingApiServerResponse>({
+  return cloudHermesApi<MessagingApiServerResponse>({
     path: '/api/messaging/api-server'
   })
 }
 
 export function enableMessagingWebhooks(): Promise<{ enabled: boolean; ok: boolean }> {
-  return window.hermesDesktop.api<{ enabled: boolean; ok: boolean }>({
+  return cloudHermesApi<{ enabled: boolean; ok: boolean }>({
     path: '/api/messaging/webhooks/enable',
     method: 'POST'
   })
 }
 
 export function createMessagingWebhook(body: MessagingWebhookCreate): Promise<MessagingWebhookRoute> {
-  return window.hermesDesktop.api<MessagingWebhookRoute>({
+  return cloudHermesApi<MessagingWebhookRoute>({
     path: '/api/messaging/webhooks',
     method: 'POST',
     body
@@ -717,14 +731,14 @@ export function createMessagingWebhook(body: MessagingWebhookCreate): Promise<Me
 }
 
 export function deleteMessagingWebhook(name: string): Promise<{ ok: boolean }> {
-  return window.hermesDesktop.api<{ ok: boolean }>({
+  return cloudHermesApi<{ ok: boolean }>({
     path: `/api/messaging/webhooks/${encodeURIComponent(name)}`,
     method: 'DELETE'
   })
 }
 
 export function setMessagingWebhookEnabled(name: string, enabled: boolean): Promise<{ enabled: boolean; ok: boolean }> {
-  return window.hermesDesktop.api<{ enabled: boolean; ok: boolean }>({
+  return cloudHermesApi<{ enabled: boolean; ok: boolean }>({
     path: `/api/messaging/webhooks/${encodeURIComponent(name)}/enabled`,
     method: 'PUT',
     body: { enabled }
@@ -732,19 +746,19 @@ export function setMessagingWebhookEnabled(name: string, enabled: boolean): Prom
 }
 
 export function getCronJobs(): Promise<CronJob[]> {
-  return window.hermesDesktop.api<CronJob[]>({
+  return cloudHermesApi<CronJob[]>({
     path: '/api/cron/jobs'
   })
 }
 
 export function getCronJob(jobId: string): Promise<CronJob> {
-  return window.hermesDesktop.api<CronJob>({
+  return cloudHermesApi<CronJob>({
     path: `/api/cron/jobs/${encodeURIComponent(jobId)}`
   })
 }
 
 export async function getCronJobRuns(jobId: string, limit = 20): Promise<SessionInfo[]> {
-  const { runs } = await window.hermesDesktop.api<{ runs: SessionInfo[] }>({
+  const { runs } = await cloudHermesApi<{ runs: SessionInfo[] }>({
     path: `/api/cron/jobs/${encodeURIComponent(jobId)}/runs?limit=${limit}`
   })
 
@@ -752,7 +766,7 @@ export async function getCronJobRuns(jobId: string, limit = 20): Promise<Session
 }
 
 export function createCronJob(body: CronJobCreatePayload): Promise<CronJob> {
-  return window.hermesDesktop.api<CronJob>({
+  return cloudHermesApi<CronJob>({
     path: '/api/cron/jobs',
     method: 'POST',
     body
@@ -760,7 +774,7 @@ export function createCronJob(body: CronJobCreatePayload): Promise<CronJob> {
 }
 
 export function updateCronJob(jobId: string, updates: CronJobUpdates): Promise<CronJob> {
-  return window.hermesDesktop.api<CronJob>({
+  return cloudHermesApi<CronJob>({
     path: `/api/cron/jobs/${encodeURIComponent(jobId)}`,
     method: 'PUT',
     body: { updates }
@@ -768,28 +782,28 @@ export function updateCronJob(jobId: string, updates: CronJobUpdates): Promise<C
 }
 
 export function pauseCronJob(jobId: string): Promise<CronJob> {
-  return window.hermesDesktop.api<CronJob>({
+  return cloudHermesApi<CronJob>({
     path: `/api/cron/jobs/${encodeURIComponent(jobId)}/pause`,
     method: 'POST'
   })
 }
 
 export function resumeCronJob(jobId: string): Promise<CronJob> {
-  return window.hermesDesktop.api<CronJob>({
+  return cloudHermesApi<CronJob>({
     path: `/api/cron/jobs/${encodeURIComponent(jobId)}/resume`,
     method: 'POST'
   })
 }
 
 export function triggerCronJob(jobId: string): Promise<CronJob> {
-  return window.hermesDesktop.api<CronJob>({
+  return cloudHermesApi<CronJob>({
     path: `/api/cron/jobs/${encodeURIComponent(jobId)}/trigger`,
     method: 'POST'
   })
 }
 
 export function deleteCronJob(jobId: string): Promise<{ ok: boolean }> {
-  return window.hermesDesktop.api<{ ok: boolean }>({
+  return cloudHermesApi<{ ok: boolean }>({
     path: `/api/cron/jobs/${encodeURIComponent(jobId)}`,
     method: 'DELETE'
   })

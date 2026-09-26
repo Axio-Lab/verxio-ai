@@ -9,7 +9,6 @@ import { FolderAccessDialog } from '@/components/folder-access-dialog'
 import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overlay'
 import { Pane, PaneMain } from '@/components/pane-shell'
 import { RemoteDisplayBanner } from '@/components/remote-display-banner'
-import { WebLocalFolderPicker } from '@/components/web-local-folder-picker'
 import { readVerxioAuthScope } from '@/lib/auth-scope'
 import { clearModelOptionsQueries, refreshModelOptionsQueries } from '@/lib/model-options-cache'
 import { warmModelOptions } from '@/lib/model-options-query'
@@ -126,7 +125,6 @@ import { UpdatesOverlay } from './updates-overlay'
 
 const AgentsView = lazy(async () => ({ default: (await import('./agents')).AgentsView }))
 const ActivityView = lazy(async () => ({ default: (await import('./activity')).ActivityView }))
-const ArtifactsView = lazy(async () => ({ default: (await import('./artifacts')).ArtifactsView }))
 const CommandCenterView = lazy(async () => ({ default: (await import('./command-center')).CommandCenterView }))
 const CronView = lazy(async () => ({ default: (await import('./cron')).CronView }))
 const MessagingView = lazy(async () => ({ default: (await import('./messaging')).MessagingView }))
@@ -885,7 +883,6 @@ export function DesktopController() {
       <BootFailureOverlay />
       <CommandPalette />
       <FolderAccessDialog />
-      <WebLocalFolderPicker />
 
       {settingsOpen && (
         <Suspense fallback={null}>
@@ -1075,14 +1072,6 @@ export function DesktopController() {
               </Suspense>
             }
             path="messaging"
-          />
-          <Route
-            element={
-              <Suspense fallback={null}>
-                <ArtifactsView setStatusbarItemGroup={setStatusbarItemGroup} />
-              </Suspense>
-            }
-            path="artifacts"
           />
           <Route
             element={

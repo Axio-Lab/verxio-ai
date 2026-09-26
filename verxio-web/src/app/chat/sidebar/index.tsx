@@ -76,7 +76,7 @@ import {
   sessionPinId
 } from '@/store/session'
 
-import { AGENTS_ROUTE, type AppView, ARTIFACTS_ROUTE, MESSAGING_ROUTE, NOTEPAD_ROUTE, SKILLS_ROUTE } from '../../routes'
+import { AGENTS_ROUTE, type AppView, MESSAGING_ROUTE, NOTEPAD_ROUTE, SKILLS_ROUTE } from '../../routes'
 import { SidebarPanelLabel } from '../../shell/sidebar-label'
 import type { SidebarNavItem } from '../../types'
 
@@ -103,7 +103,6 @@ const SIDEBAR_NAV: SidebarNavItem[] = [
     route: SKILLS_ROUTE
   },
   { id: 'messaging', label: '', icon: props => <Codicon name="comment" {...props} />, route: MESSAGING_ROUTE },
-  { id: 'artifacts', label: '', icon: props => <Codicon name="files" {...props} />, route: ARTIFACTS_ROUTE },
   { id: 'notepad', label: '', icon: props => <Codicon name="notebook" {...props} />, route: NOTEPAD_ROUTE }
 ]
 
@@ -536,7 +535,6 @@ export function ChatSidebar({
                   (item.id === 'skills' && currentView === 'skills') ||
                   (item.id === 'agents' && currentView === 'agents') ||
                   (item.id === 'messaging' && currentView === 'messaging') ||
-                  (item.id === 'artifacts' && currentView === 'artifacts') ||
                   (item.id === 'notepad' && currentView === 'notepad')
 
                 const isNewSession = item.id === 'new-session'

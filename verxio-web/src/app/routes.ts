@@ -9,7 +9,6 @@ export const SKILLS_ROUTE = '/skills'
 export const TOOLSET_ROUTE = '/toolset'
 export const TOOLSETS_ROUTE = '/toolsets'
 export const MESSAGING_ROUTE = '/messaging'
-export const ARTIFACTS_ROUTE = '/artifacts'
 export const NOTEPAD_ROUTE = '/notepad'
 export const CRON_ROUTE = '/cron'
 export const PROFILES_ROUTE = '/profiles'
@@ -20,7 +19,6 @@ export const NOT_FOUND_ROUTE = '/404'
 export type AppView =
   | 'activity'
   | 'agents'
-  | 'artifacts'
   | 'chat'
   | 'command-center'
   | 'cron'
@@ -33,7 +31,6 @@ export type AppView =
 export type AppRouteId =
   | 'activity'
   | 'agents'
-  | 'artifacts'
   | 'command-center'
   | 'cron'
   | 'messaging'
@@ -55,7 +52,6 @@ export const APP_ROUTES = [
   { id: 'command-center', path: COMMAND_CENTER_ROUTE, view: 'command-center' },
   { id: 'skills', path: SKILLS_ROUTE, view: 'skills' },
   { id: 'messaging', path: MESSAGING_ROUTE, view: 'messaging' },
-  { id: 'artifacts', path: ARTIFACTS_ROUTE, view: 'artifacts' },
   { id: 'notepad', path: NOTEPAD_ROUTE, view: 'notepad' },
   { id: 'cron', path: CRON_ROUTE, view: 'cron' },
   { id: 'profiles', path: PROFILES_ROUTE, view: 'profiles' },

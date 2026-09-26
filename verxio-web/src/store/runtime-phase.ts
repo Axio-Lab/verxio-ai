@@ -12,10 +12,9 @@ export interface RuntimePhaseState {
 const IDLE: RuntimePhaseState = { detail: null, phase: null, updatedAt: 0 }
 
 /**
- * Spin-up progress for the hosted runtime while the dashboard is not yet
- * reachable. Populated by the web bridge's dashboard-ready poll from
- * `GET /api/runtime` (phase comes from the pool worker); cleared once the
- * gateway socket is open so a later reconnect starts from a blank state.
+ * Spin-up progress while the local Hermes dashboard is not yet reachable.
+ * Desktop maps `verxio:boot-progress` onto this store; the public/web path
+ * still polls `GET /api/runtime`. Cleared once the gateway socket is open.
  */
 export const $runtimePhase = atom<RuntimePhaseState>(IDLE)
 

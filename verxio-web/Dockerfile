@@ -18,12 +18,13 @@ ARG VITE_BASE=/
 ENV VITE_VERXIO_API_ENABLED=${VITE_VERXIO_API_ENABLED}
 ENV VITE_VERXIO_API_URL=${VITE_VERXIO_API_URL}
 ENV VITE_BASE=${VITE_BASE}
+ENV VITE_PUBLIC_ENTRY=1
 
-RUN npm run build && node scripts/precompress.mjs dist
+RUN npm run build:public && cp dist-public/public.html dist-public/index.html && node scripts/precompress.mjs dist-public
 
 FROM nginx:1.27-alpine
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /app/dist /usr/share/nginx/html
+COPY --from=build /app/dist-public /usr/share/nginx/html
 
 EXPOSE 80

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
+import { isVerxioDesktop } from '@/lib/platform'
 import { getVerxioRuntime, verxioApiEnabled } from '@/lib/verxio-api'
 import { $desktopBoot } from '@/store/boot'
 import { $gatewayLink } from '@/store/gateway-link'
@@ -81,15 +82,27 @@ export function GatewayConnectingOverlay() {
     shownRef.current = true
   }
 
-  // Hosted runtimes: poll GET /api/runtime while the socket is down so the
-  // overlay can say "Restoring your workspace…" instead of a bare CONNECTING.
-  // Same code path on web and desktop (both render this component).
+  // Desktop: local Hermes boot events drive the overlay. Cloud-hosted browser
+  // builds still poll GET /api/runtime for pool spin-up copy.
   useEffect(() => {
-    if (!connecting || previewing || !verxioApiEnabled()) {
+    if (!connecting || previewing) {
       if (!connecting) {
         resetRuntimePhase()
       }
 
+      return
+    }
+
+    if (isVerxioDesktop()) {
+      applyRuntimeStatus({
+        connected: !boot.running && !boot.error && boot.progress >= 94,
+        phase: boot.error ? 'failed' : boot.running ? 'starting' : 'ready',
+        phase_detail: boot.message
+      })
+      return
+    }
+
+    if (!verxioApiEnabled()) {
       return
     }
 
@@ -114,7 +127,7 @@ export function GatewayConnectingOverlay() {
       cancelled = true
       window.clearInterval(id)
     }
-  }, [connecting, previewing])
+  }, [boot, connecting, previewing])
 
   // Decode loop — only while live (freeze the resolved word during the exit).
   useEffect(() => {

@@ -7,7 +7,13 @@ import { BrandMark } from '@/components/brand-mark'
 import { PageLoader } from '@/components/page-loader'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { authScopeFromParts, clearVerxioAuthScope, writeVerxioAuthScope } from '@/lib/auth-scope'
+import {
+  authScopeFromParts,
+  clearVerxioAuthScope,
+  readAuthMeCache,
+  writeAuthMeCache,
+  writeVerxioAuthScope
+} from '@/lib/auth-scope'
 import { Eye, EyeOff, KeyRound, Lock, LogIn, RefreshCw } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import {
@@ -212,6 +218,13 @@ export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
 
     let cancelled = false
 
+    const cached = readAuthMeCache<VerxioAuthResponse>()
+    if (cached) {
+      persistAuthScope(cached)
+      setAuth(cached)
+      setStatus('authenticated')
+    }
+
     authMe()
       .then(result => {
         if (cancelled) {
@@ -219,6 +232,7 @@ export function VerxioAuthGate({ children }: VerxioAuthGateProps) {
         }
 
         persistAuthScope(result)
+        writeAuthMeCache(result)
         setAuth(result)
         setStatus('authenticated')
 

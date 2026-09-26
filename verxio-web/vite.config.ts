@@ -61,6 +61,7 @@ export default defineConfig({
     // force the whole dependency graph onto first paint (bad on mobile).
     chunkSizeWarningLimit: 5000,
     rolldownOptions: {
+      ...(process.env.VITE_PUBLIC_ENTRY === '1' ? { input: { public: path.resolve(__dirname, 'public.html') } } : {}),
       output: {
         // Automatic splitting plus a few stable vendor groups. The main app
         // chunk was ~1.9 MB and every deploy invalidated all of it; pinning

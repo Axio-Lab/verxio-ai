@@ -2,7 +2,7 @@
   "name": "verxio-web",
   "private": true,
   "version": "0.1.0",
-  "description": "Verxio web UI \u2014 browser shell over the Verxio runtime.",
+  "description": "Verxio web UI — browser shell over the Verxio runtime.",
   "type": "module",
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5180",
     "build": "tsc --noEmit && vite build",
+    "build:public": "VITE_PUBLIC_ENTRY=1 vite build --outDir dist-public",
     "preview": "vite preview --host 127.0.0.1 --port 4180",
     "type-check": "tsc --noEmit",
     "lint": "eslint src/",
@@ -18,7 +19,7 @@
     "format": "npm run fmt",
     "format:check": "prettier --check 'src/**/*.{ts,tsx}' 'packages/shared/**/*.{ts,tsx}' 'vite.config.ts'",
     "fix": "npm run lint:fix && npm run fmt",
-    "ci": "npm run lint && npm run type-check && npm run build && npm run test:ui",
+    "ci": "npm run lint && npm run type-check && npm run build && npm run build:public && npm run test:ui",
     "test:ui": "vitest run --environment jsdom"
   },
   "dependencies": {
