@@ -35,10 +35,10 @@ createRoot(document.getElementById('root')!).render(
     <ErrorBoundary label="public">
       <BrowserRouter>
         <Routes>
-          <Route path="/share/notepad/*" element={<PublicNotepadShareView />} />
-          <Route path="/agent/*" element={<PublicAgentShareView />} />
-          <Route path="/download" element={<DownloadPage />} />
-          <Route path="*" element={<Navigate replace to="/download" />} />
+          <Route element={<PublicNotepadShareView />} path="/share/notepad/*" />
+          <Route element={<PublicAgentShareView />} path="/agent/*" />
+          <Route element={<DownloadPage />} path="/download" />
+          <Route element={<Navigate replace to="/download" />} path="*" />
         </Routes>
       </BrowserRouter>
     </ErrorBoundary>

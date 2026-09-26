@@ -44,14 +44,19 @@ export function readAuthMeCache<T>(): T | null {
 
   try {
     const raw = window.localStorage.getItem(VERXIO_AUTH_CACHE_KEY)
+
     if (!raw) {
       return null
     }
+
     const parsed = JSON.parse(raw) as { at?: number; value?: T }
+
     if (!parsed.at || Date.now() - parsed.at > AUTH_CACHE_TTL_MS || !parsed.value) {
       window.localStorage.removeItem(VERXIO_AUTH_CACHE_KEY)
+
       return null
     }
+
     return parsed.value
   } catch {
     return null

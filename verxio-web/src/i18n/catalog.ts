@@ -21,5 +21,6 @@ export async function loadTranslations(locale: Locale): Promise<Translations> {
 
   const loaded = await loaders[locale]()
   TRANSLATIONS[locale] = loaded
+
   return loaded
 }

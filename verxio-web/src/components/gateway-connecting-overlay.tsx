@@ -2,8 +2,8 @@ import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 
 import { useI18n } from '@/i18n'
-import { cn } from '@/lib/utils'
 import { isVerxioDesktop } from '@/lib/platform'
+import { cn } from '@/lib/utils'
 import { getVerxioRuntime, verxioApiEnabled } from '@/lib/verxio-api'
 import { $desktopBoot } from '@/store/boot'
 import { $gatewayLink } from '@/store/gateway-link'
@@ -99,6 +99,7 @@ export function GatewayConnectingOverlay() {
         phase: boot.error ? 'failed' : boot.running ? 'starting' : 'ready',
         phase_detail: boot.message
       })
+
       return
     }
 

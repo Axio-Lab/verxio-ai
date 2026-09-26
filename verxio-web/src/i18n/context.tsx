@@ -99,6 +99,7 @@ export function I18nProvider({ children, configClient = defaultConfigClient, ini
         setMessages(next)
       }
     })
+
     return () => {
       cancelled = true
     }
