@@ -24,6 +24,7 @@ from app.models import (
     ComposioConnectedAccount,
     ComposioConnectionSetupResponse,
     ComposioInitiateResponse,
+    ComposioMcpSessionResponse,
     ComposioToolBridgeStatus,
     ComposioToolPreview,
     ComposioTriggerType,
@@ -993,6 +994,60 @@ def _read_bridge_state(runtime: RuntimeInstance) -> dict[str, Any]:
 def _write_bridge_state(runtime: RuntimeInstance, payload: dict[str, Any]) -> None:
     path = _bridge_state_path(runtime)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def create_composio_mcp_session(user_id: str) -> ComposioMcpSessionResponse:
+    """Return a per-user Tool Router URL without writing Hermes runtime files."""
+    if not is_composio_configured():
+        return ComposioMcpSessionResponse(
+            configured=False,
+            enabled=False,
+            message="Composio is not configured.",
+        )
+
+    accounts = list_composio_accounts(user_id)
+    active = [account for account in accounts if _is_connected_status(account.status)]
+    connected = _connected_accounts_by_app(active)
+    apps = sorted(connected)
+    prompt = _build_composio_context_prompt(apps)
+    if not apps:
+        return ComposioMcpSessionResponse(
+            configured=True,
+            enabled=False,
+            connectedApps=[],
+            prompt=prompt,
+            message="No ACTIVE Composio apps for this Verxio user.",
+        )
+
+    try:
+        session = _create_tool_router_session(user_id, connected)
+        mcp_url = _pick_mcp_url(session)
+    except Exception as exc:
+        return ComposioMcpSessionResponse(
+            configured=True,
+            enabled=False,
+            connectedApps=apps,
+            prompt=prompt,
+            message=f"Could not create a Composio MCP session: {exc}",
+        )
+
+    if not mcp_url:
+        return ComposioMcpSessionResponse(
+            configured=True,
+            enabled=False,
+            connectedApps=apps,
+            prompt=prompt,
+            message="Composio did not return an MCP session URL.",
+        )
+
+    return ComposioMcpSessionResponse(
+        configured=True,
+        enabled=True,
+        connectedApps=apps,
+        mcpUrl=mcp_url,
+        prompt=prompt,
+        message="Connected Composio tools are available to Verxio.",
+    )
 
 
 def _create_tool_router_session(user_id: str, connected_accounts: dict[str, list[str]]) -> dict[str, Any]:

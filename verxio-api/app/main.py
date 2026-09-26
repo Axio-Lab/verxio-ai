@@ -40,10 +40,14 @@ from app.auth import (
     verify_email,
     verify_login_code,
 )
+from app.agent_sync import get_file as get_agent_state_file
+from app.agent_sync import list_state as list_agent_state
+from app.agent_sync import put_file as put_agent_state_file
 from app.composio_catalog import (
     claim_composio_webhook,
     complete_composio_webhook,
     complete_composio_connection,
+    create_composio_mcp_session,
     delete_composio_account,
     get_composio_catalog_error,
     get_composio_connection_setup,
@@ -63,6 +67,13 @@ from app.control_plane import (
     aget_runtime_for_user,
     ensure_runtime_directories,
 )
+from app.device_tokens import (
+    issue_device_token,
+    list_device_tokens,
+    require_user_or_device,
+    revoke_device_token,
+    arequire_user_or_device,
+)
 from app.inference import (
     inference_usage,
     list_inference_catalog,
@@ -71,6 +82,7 @@ from app.inference import (
     update_inference_settings,
     ensure_inference_settings,
 )
+from app.inference_gateway import list_gateway_models, proxy_chat_completions
 from app.knowledge_bases import (
     create_document as create_knowledge_document,
     create_knowledge_base,
@@ -109,11 +121,18 @@ from app.messaging_webhooks import (
 )
 from app.slack_manifest import build_slack_manifest
 from app.models import (
+    AgentStateEntry,
+    AgentStateManifest,
     ArtifactListResponse,
     AuthCodeChallengeResponse,
     AuthCodeVerifyRequest,
     AuthResponse,
     BootstrapResponse,
+    ComposioMcpSessionResponse,
+    DeviceTokenCreateRequest,
+    DeviceTokenCreateResponse,
+    DeviceTokenListResponse,
+    GatewayModelList,
     ComposioAppsResponse,
     ComposioAppToolsResponse,
     ComposioCompleteConnectionRequest,
@@ -591,6 +610,24 @@ async def me_route(request: Request) -> AuthResponse:
     user = await arequire_user(request)
     return me(user)
 
+@app.post("/api/auth/device", response_model=DeviceTokenCreateResponse)
+async def create_device_token_route(
+    payload: DeviceTokenCreateRequest, request: Request
+) -> DeviceTokenCreateResponse:
+    user = await arequire_user(request)
+    return issue_device_token(str(user["id"]), payload)
+
+@app.get("/api/auth/device", response_model=DeviceTokenListResponse)
+async def list_device_tokens_route(request: Request) -> DeviceTokenListResponse:
+    user = await arequire_user(request)
+    return DeviceTokenListResponse(devices=list_device_tokens(str(user["id"])))
+
+@app.delete("/api/auth/device/{token_id}")
+async def revoke_device_token_route(token_id: str, request: Request) -> dict[str, str]:
+    user = await arequire_user(request)
+    device = revoke_device_token(str(user["id"]), token_id)
+    return {"id": device.id, "revokedAt": str(device.revokedAt or "")}
+
 @app.get("/api/profile")
 async def get_profile(request: Request):
     user = await aget_current_user(request)
@@ -950,6 +987,44 @@ async def put_inference_settings_route(
 async def get_inference_usage_route(request: Request) -> InferenceUsageResponse:
     user = await arequire_user(request)
     return inference_usage(str(user["id"]))
+
+@app.get("/api/inference/v1/models", response_model=GatewayModelList)
+async def list_inference_gateway_models(request: Request) -> GatewayModelList:
+    await arequire_user_or_device(request)
+    return list_gateway_models()
+
+@app.post("/api/inference/v1/chat/completions")
+async def inference_chat_completions(request: Request):
+    user = await arequire_user_or_device(request)
+    return await proxy_chat_completions(user, request)
+
+@app.get("/api/agent/state", response_model=AgentStateManifest)
+async def list_agent_state_route(request: Request) -> AgentStateManifest:
+    user = require_user_or_device(request)
+    return list_agent_state(str(user["id"]))
+
+@app.get("/api/agent/state/{path:path}")
+async def get_agent_state_route(path: str, request: Request) -> Response:
+    user = require_user_or_device(request)
+    content, entry = get_agent_state_file(str(user["id"]), path)
+    return Response(
+        content=content,
+        media_type="application/octet-stream",
+        headers={"ETag": entry.etag, "X-Verxio-Updated-By": entry.updatedBy},
+    )
+
+@app.put("/api/agent/state/{path:path}", response_model=AgentStateEntry)
+async def put_agent_state_route(path: str, request: Request) -> AgentStateEntry:
+    user = require_user_or_device(request)
+    actor = request.query_params.get("updated_by") or request.headers.get("x-verxio-state-actor") or "desktop"
+    content = await request.body()
+    return put_agent_state_file(
+        user,
+        path,
+        content,
+        actor=actor,
+        if_match=request.headers.get("if-match"),
+    )
 
 @app.get("/api/transcription/catalog", response_model=TranscriptionCatalogResponse)
 async def get_transcription_catalog_route(request: Request, refresh: bool = False) -> TranscriptionCatalogResponse:
@@ -2059,6 +2134,11 @@ async def delete_composio_connection_route(account_id: str, request: Request) ->
     result = delete_composio_account(account_id)
     await _sync_composio_bridge_for_user(user, apply_live=True)
     return result
+
+@app.post("/api/composio/mcp-session", response_model=ComposioMcpSessionResponse)
+async def composio_mcp_session_route(request: Request) -> ComposioMcpSessionResponse:
+    user = await arequire_user_or_device(request)
+    return create_composio_mcp_session(str(user["id"]))
 
 def _runtime_dashboard_token(runtime_id: str, runtime: RuntimeInstance | None = None, *, prefer_live: bool = False) -> str:
     row = db.fetch_one("SELECT dashboard_token FROM runtime_instances WHERE id = ?", (runtime_id,))
