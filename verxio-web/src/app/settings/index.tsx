@@ -25,9 +25,11 @@ const AboutSettings = lazy(async () => ({ default: (await import('./about-settin
 const ConfigSettings = lazy(async () => ({ default: (await import('./config-settings')).ConfigSettings }))
 const KeysSettings = lazy(async () => ({ default: (await import('./keys-settings')).KeysSettings }))
 const McpSettings = lazy(async () => ({ default: (await import('./mcp-settings')).McpSettings }))
+
 const NotificationsSettings = lazy(async () => ({
   default: (await import('./notifications-settings')).NotificationsSettings
 }))
+
 const ProvidersSettings = lazy(async () => ({ default: (await import('./providers-settings')).ProvidersSettings }))
 const SessionsSettings = lazy(async () => ({ default: (await import('./sessions-settings')).SessionsSettings }))
 

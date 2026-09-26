@@ -47,6 +47,7 @@ export function MessagingConnectionsPanel({
   const primaryKey = PRIMARY_TOKEN_KEY[platform.id] || ''
   const autoGeneratesSecret = platform.id === 'webhook' || platform.id === 'api_server'
   const needsGatewayRestart = platform.id !== 'webhook' && platform.id !== 'api_server'
+
   const tokenLabel = useMemo(() => {
     if (platform.id === 'slack') {
       return 'Bot token (xoxb-…)'
@@ -89,21 +90,26 @@ export function MessagingConnectionsPanel({
 
     try {
       const env = primaryKey && trimmedToken ? { [primaryKey]: trimmedToken } : {}
+
       const result = await createMessagingConnection(platform.id, {
         label: trimmedLabel,
         env
       })
+
       setAdding(false)
       setLabel('')
       setToken('')
       await onChanged()
       onSelectConnection(result.connection.id)
+
       if (result.connection.secret) {
         setCreatedSecret({ label: trimmedLabel, secret: result.connection.secret })
       }
+
       if (needsGatewayRestart) {
         await runGatewayRestart()
       }
+
       notify({
         kind: 'success',
         title: 'Connection added',
@@ -152,6 +158,7 @@ export function MessagingConnectionsPanel({
       if (needsGatewayRestart) {
         await runGatewayRestart()
       }
+
       notify({
         kind: 'success',
         title: 'Connection removed',

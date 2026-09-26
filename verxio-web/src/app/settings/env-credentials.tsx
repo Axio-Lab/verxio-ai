@@ -232,6 +232,7 @@ export function useEnvCredentials(): UseEnvCredentials {
             url: null
           }
         }
+
         envVarsCache = { at: Date.now(), vars: next }
 
         return next

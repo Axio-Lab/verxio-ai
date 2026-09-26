@@ -196,6 +196,7 @@ export function adjustSessionProfileTotal(profile: string | null | undefined, de
     return { ...prev, [key]: Math.max(0, prev[key] + delta) }
   })
 }
+
 export const setSessionsLoading = (next: Updater<boolean>) => updateAtom($sessionsLoading, next)
 export const setWorkingSessionIds = (next: Updater<string[]>) => updateAtom($workingSessionIds, next)
 export const setActiveSessionId = (next: Updater<string | null>) => updateAtom($activeSessionId, next)
@@ -204,6 +205,7 @@ export const setMessages = (next: Updater<ChatMessage[]>) => updateAtom($message
 export const setFreshDraftReady = (next: Updater<boolean>) => updateAtom($freshDraftReady, next)
 export const setBusy = (next: Updater<boolean>) => updateAtom($busy, next)
 export const setAwaitingResponse = (next: Updater<boolean>) => updateAtom($awaitingResponse, next)
+
 export const setCurrentModel = (next: Updater<string>) => {
   updateAtom($currentModel, next)
   persistString(COMPOSER_MODEL_KEY, $currentModel.get() || null)
@@ -225,6 +227,7 @@ export const setCurrentFastMode = (next: Updater<boolean>) => {
   updateAtom($currentFastMode, next)
   persistBoolean(COMPOSER_FAST_KEY, $currentFastMode.get())
 }
+
 export const setYoloActive = (next: Updater<boolean>) => updateAtom($yoloActive, next)
 
 export const setCurrentCwd = (next: Updater<string>) => {

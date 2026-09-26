@@ -334,6 +334,7 @@ async function refreshSessionToken(): Promise<boolean> {
       credentials: 'omit',
       headers: { accept: 'text/html' }
     })
+
     const html = await res.text()
     const match = html.match(SESSION_TOKEN_RE)
 

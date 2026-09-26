@@ -105,6 +105,7 @@ export function waitForGatewayOpen(timeoutMs = RECONNECT_GRACE_MS): Promise<bool
 
   return new Promise(resolve => {
     let done = false
+
     let unsubscribe: () => void = () => {}
 
     const finish = (value: boolean) => {

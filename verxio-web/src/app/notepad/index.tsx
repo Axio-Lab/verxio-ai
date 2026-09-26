@@ -537,6 +537,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
 
       return draftFromNote(selectedNote)
     })
+
     if (adoptedServerRevision) {
       setSummaryEditing(false)
     }
@@ -1631,6 +1632,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                         aria-label="Open public URL"
                         onClick={() => {
                           const url = shareUrlFromToken(selectedNote.share_token)
+
                           if (url) {
                             window.open(url, '_blank', 'noopener,noreferrer')
                           }

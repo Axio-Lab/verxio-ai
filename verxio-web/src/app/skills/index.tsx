@@ -546,6 +546,7 @@ export function SkillsView({ setStatusbarItemGroup: _setStatusbarItemGroup, ...p
                     const tools = toolNames(toolset)
                     const label = toolsetDisplayLabel(toolset)
                     const expanded = expandedToolset === toolset.name
+
                     const mediaActive =
                       isMediaToolset(toolset.name) && mediaToolsetActiveSummary(toolset.name, hermesConfig)
 

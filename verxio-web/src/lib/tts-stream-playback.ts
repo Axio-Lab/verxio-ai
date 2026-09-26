@@ -349,6 +349,7 @@ export class GatewayTtsStreamPlayer {
       this.releaseMedia()
     } else if (this.audio) {
       const audio = this.audio
+
       const settle = () => {
         this.releaseMedia()
         this.notifyEnded()

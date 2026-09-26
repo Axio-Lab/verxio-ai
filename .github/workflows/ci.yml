@@ -10,11 +10,11 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: npm
@@ -34,11 +34,11 @@ jobs:
       run:
         working-directory: verxio-api
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: false
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
       - name: Sync verxio-api (dev)
         run: uv sync --extra dev
       - name: Desktop cloud API tests
@@ -53,12 +53,12 @@ jobs:
       run:
         working-directory: verxio-api
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
 
       - name: Sync verxio-api (dev)
         run: uv sync --extra dev
@@ -75,12 +75,12 @@ jobs:
       run:
         working-directory: hermes-agent
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: recursive
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
 
       - name: Sync Hermes (dev)
         run: uv sync --extra dev
@@ -100,11 +100,11 @@ jobs:
       run:
         working-directory: verxio-api
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: false
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
       - name: Sync verxio-api (dev)
         run: uv sync --extra dev
       - name: Platform scale tests
@@ -116,10 +116,10 @@ jobs:
   helm:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           submodules: false
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
         with:
           version: v3.15.0
       - name: Lint chart

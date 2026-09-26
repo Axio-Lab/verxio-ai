@@ -721,6 +721,7 @@ export function useSessionActions({
           reconcileResumeMessages(toChatMessages(resumed.messages), currentMessages),
           currentMessages
         )
+
         // Prefer the stored snapshot when we successfully loaded it. Never fall
         // back to a leftover previous-session `currentMessages` after a switch.
         const preferredMessages = hydratedFromStore

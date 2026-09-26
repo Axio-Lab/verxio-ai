@@ -74,8 +74,10 @@ const URL_RE = /https?:\/\/[^\s<>"')]+/g
 const PATH_RE = /(^|[\s("'`])((?:\/|~\/|\.\.?\/)[^\s"'`<>]+(?:\.[a-z0-9]{1,8})?)/gi
 const IMAGE_EXT_RE = /\.(?:png|jpe?g|gif|webp|svg|bmp)(?:\?.*)?$/i
 const FILE_EXT_RE = /\.(?:png|jpe?g|gif|webp|svg|bmp|pdf|txt|json|md|csv|zip|tar|gz|mp3|wav|mp4|mov)(?:\?.*)?$/i
+
 const TEXT_PREVIEW_EXT_RE =
   /\.(?:md|markdown|txt|json|csv|ya?ml|toml|xml|html?|css|js|jsx|mjs|ts|tsx|py|rs|sh|sql|log)$/i
+
 const KEY_HINT_RE = /(path|file|url|image|artifact|output|download|result|target)/i
 
 const ARTIFACT_TIME_FMT = new Intl.DateTimeFormat(undefined, {

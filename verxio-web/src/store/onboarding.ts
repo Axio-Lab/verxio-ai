@@ -239,6 +239,7 @@ function apiKeySlugCandidates(envKey: string, label: string): string[] {
     GOOGLE_API_KEY: ['gemini'],
     OPENAI_API_KEY: ['openai-api', 'openai']
   }
+
   const candidates = [...(mapped[envKey] ?? []), envKey.replace(/_API_KEY$/, '').toLowerCase(), label.toLowerCase()]
 
   return [...new Set(candidates.filter(Boolean))]

@@ -285,6 +285,7 @@ export function hermesGatewayModelForHostedSelection(
 
   const targetProvider = provider.trim().toLowerCase()
   const hosted = catalog.models.filter(entry => entry.hostedAvailable && entry.id?.trim())
+
   const match =
     hosted.find(entry => {
       const ids = [entry.id, entry.upstreamModelId, ...(entry.availableModelIds ?? [])]

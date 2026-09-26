@@ -72,6 +72,7 @@ export function hostedModelOptionsFromInference(
   catalog: VerxioInferenceCatalogResponse
 ): ModelOptionsResponse | null {
   const selected = selectedHostedModel(settings, catalog)
+
   const hostedProviders = (catalog.models ?? [])
     .filter(model => model.hostedAvailable && model.upstreamModelId)
     .map(model => {

@@ -472,6 +472,7 @@ function useThreadScrollAnchor({
         }
 
         jumpToBottom()
+
         if (pendingSessionBottomRef.current === key) {
           pendingSessionBottomRef.current = null
         }
