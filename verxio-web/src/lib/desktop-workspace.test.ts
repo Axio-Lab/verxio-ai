@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  cwdForGatewaySubmission,
   isRuntimeWorkspacePath,
   resolveDesktopWorkspaceCwd,
   rewriteRuntimePathsInText,
@@ -51,5 +52,9 @@ describe('desktop-workspace', () => {
     expect(rewriteRuntimePathsInText('Use /workspace/artifacts for output.')).toBe(
       'Use /workspace/artifacts for output.'
     )
+  })
+
+  it('submits the local desktop folder as the session cwd', () => {
+    expect(cwdForGatewaySubmission('/Users/me/Documents/Verxio')).toBe('/Users/me/Documents/Verxio')
   })
 })

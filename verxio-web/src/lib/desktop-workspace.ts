@@ -1,5 +1,4 @@
 import { isVerxioDesktop } from '@/lib/platform'
-import { verxioApiEnabled } from '@/lib/verxio-api'
 
 export { isVerxioDesktop } from '@/lib/platform'
 
@@ -102,17 +101,9 @@ export function resolvePathForDesktopPreview(rawTarget: string, cwd?: string | n
   return trimmed
 }
 
-/** Runtime sessions in Docker still use /workspace even though the UI browses locally. */
+/** Desktop chat submits the user's local folder. Cloud-agent jobs never see this path. */
 export function cwdForGatewaySubmission(localCwd: string): string | undefined {
   const trimmed = localCwd.trim()
-
-  if (!isVerxioDesktop()) {
-    return trimmed || undefined
-  }
-
-  if (verxioApiEnabled()) {
-    return RUNTIME_WORKSPACE_ROOT
-  }
 
   return trimmed || undefined
 }
