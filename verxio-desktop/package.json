@@ -60,6 +60,20 @@
       "electron/**",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "../hermes-agent",
+        "to": "hermes-agent",
+        "filter": [
+          "**/*",
+          "!**/tests/**",
+          "!**/website/**",
+          "!**/docs/**",
+          "!**/.git/**",
+          "!**/node_modules/**"
+        ]
+      }
+    ],
     "asar": true,
     "mac": {
       "category": "public.app-category.productivity",
@@ -104,6 +118,13 @@
         "deb",
         "rpm"
       ]
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Axio-Lab",
+        "repo": "verxio-ai"
+      }
+    ]
   }
 }

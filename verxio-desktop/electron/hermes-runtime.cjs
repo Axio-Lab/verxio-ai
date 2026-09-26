@@ -176,7 +176,9 @@ function createRuntime(options = {}) {
       HERMES_HOME: hermesHome,
       HERMES_DASHBOARD_SESSION_TOKEN: token,
       PYTHONUNBUFFERED: '1',
-      PYTHONPATH: [root, process.env.PYTHONPATH || ''].filter(Boolean).join(path.delimiter)
+      PYTHONPATH: [root, process.env.PYTHONPATH || ''].filter(Boolean).join(path.delimiter),
+      VERXIO_DESKTOP: '1',
+      VERXIO_HOSTED: process.env.VERXIO_HOSTED || '0'
     }
 
     emit('verxio:boot-progress', {

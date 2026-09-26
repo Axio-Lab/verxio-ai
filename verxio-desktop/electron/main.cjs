@@ -23,6 +23,7 @@ const { execFile, spawn } = require('node:child_process')
 const { createRuntime } = require('./hermes-runtime.cjs')
 const { applyCloudConfig } = require('./cloud-config.cjs')
 const agentSync = require('./agent-sync.cjs')
+const { createUpdater } = require('./updates.cjs')
 
 let nodePty = null
 let nodePtyDir = null
@@ -1392,6 +1393,18 @@ ipcMain.handle('verxio:terminal:resize', (_event, id, size = {}) => {
   return true
 })
 ipcMain.handle('verxio:terminal:dispose', (_event, id) => disposeTerminalSession(String(id || '')))
+
+const updater = createUpdater({
+  onProgress: payload => {
+    const win = BrowserWindow.getAllWindows()[0]
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('verxio:update-progress', payload)
+    }
+  }
+})
+
+ipcMain.handle('verxio:updates:check', () => updater.check())
+ipcMain.handle('verxio:updates:apply', () => updater.apply())
 
 ipcMain.handle('verxio:version', () => ({
   appVersion: app.getVersion(),

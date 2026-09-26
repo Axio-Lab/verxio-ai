@@ -270,7 +270,7 @@ export function Pricing() {
                 </ul>
 
                 <a
-                  href={plan.contactSales ? "#" : appPath("/signup")}
+                  href={plan.contactSales ? "#" : appPath("/download")}
                   onClick={(e) => e.stopPropagation()}
                   className={`block w-full text-center py-3 px-4 text-sm font-semibold rounded-lg transition-all ${
                     shouldShowPrimaryStyling
