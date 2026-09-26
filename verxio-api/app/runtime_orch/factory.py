@@ -41,7 +41,7 @@ def normalize_manager_name(name: str | None) -> str:
 
 
 def configured_manager_name() -> str:
-    return (os.getenv("VERXIO_RUNTIME_MANAGER", "local-docker") or "local-docker").strip().lower()
+    return (os.getenv("VERXIO_RUNTIME_MANAGER", "pool") or "pool").strip().lower()
 
 
 class LegacyPlaneDisabled(RuntimeError):
@@ -52,7 +52,7 @@ def legacy_planes_enabled() -> bool:
     """Cutover switch. ``VERXIO_LEGACY_PLANES=0`` makes any attempt to build a
     per-user docker/k8s manager fail fast, so operators can prove nothing still
     depends on them before the modules (and docker.sock) are deleted."""
-    return os.getenv("VERXIO_LEGACY_PLANES", "1").strip().lower() not in {"0", "false", "no", "off"}
+    return os.getenv("VERXIO_LEGACY_PLANES", "0").strip().lower() not in {"0", "false", "no", "off"}
 
 
 def build_runtime_manager(name: str | None = None) -> RuntimeManager:

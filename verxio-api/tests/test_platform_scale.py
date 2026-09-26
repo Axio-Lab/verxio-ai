@@ -188,6 +188,7 @@ def test_legacy_plane_switch_blocks_docker_and_reports_usage(monkeypatch, tmp_pa
     monkeypatch.setenv("VERXIO_DATABASE_MODE", "sqlite")
     monkeypatch.setenv("VERXIO_DATABASE_PATH", str(tmp_path / "legacy.sqlite3"))
     monkeypatch.setenv("VERXIO_RUNTIME_MANAGER", "local-docker")
+    monkeypatch.setenv("VERXIO_LEGACY_PLANES", "1")
     monkeypatch.delenv("VERXIO_REDIS_URL", raising=False)
     import pytest
 

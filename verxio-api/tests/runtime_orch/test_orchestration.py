@@ -97,7 +97,8 @@ def test_cell_assignment_single_and_multi(monkeypatch):
     assert cell_for_tenant("tenant_abc").id == c2.id
 
 
-def test_factory_builds_backends():
+def test_factory_builds_backends(monkeypatch):
+    monkeypatch.setenv("VERXIO_LEGACY_PLANES", "1")
     reset_runtime_manager_for_tests()
     assert build_runtime_manager("local-docker").name == "local-docker"
     assert build_runtime_manager("k8s").name == "k8s"

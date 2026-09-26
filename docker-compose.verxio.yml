@@ -13,7 +13,7 @@ services:
       VERXIO_DATABASE_PATH: /app/.verxio/verxio-control.sqlite3
       TURSO_DATABASE_URL: ${TURSO_DATABASE_URL:-}
       TURSO_AUTH_TOKEN: ${TURSO_AUTH_TOKEN:-}
-      VERXIO_RUNTIME_MANAGER: ${VERXIO_RUNTIME_MANAGER:-local-docker}
+      VERXIO_RUNTIME_MANAGER: ${VERXIO_RUNTIME_MANAGER:-pool}
       # Single-node compose keeps ticks in the API. Pool/Helm set this to 0.
       VERXIO_INLINE_SCHEDULER: ${VERXIO_INLINE_SCHEDULER:-1}
       VERXIO_RUNTIME_RESTART_POLICY: ${VERXIO_RUNTIME_RESTART_POLICY:-no}
@@ -67,18 +67,14 @@ services:
       COMPOSIO_TOOLS_API_BASE_URL: ${COMPOSIO_TOOLS_API_BASE_URL:-https://backend.composio.dev/api/v3.1}
       VERXIO_HERMES_REPO: /opt/hermes-agent
       # Cutover switch: 0 refuses to build docker/k8s managers (pool only).
-      VERXIO_LEGACY_PLANES: ${VERXIO_LEGACY_PLANES:-1}
+      VERXIO_LEGACY_PLANES: ${VERXIO_LEGACY_PLANES:-0}
     volumes:
       - ${VERXIO_STATE_DIR:-./.verxio}:/app/.verxio
       - ./hermes-agent:/opt/hermes-agent:ro
-      # Legacy per-user plane only. On the pool plane set
-      # VERXIO_DOCKER_SOCK=/dev/null so the API has no Docker access at all.
-      - ${VERXIO_DOCKER_SOCK:-/var/run/docker.sock}:/var/run/docker.sock
-      # Desktop-synced workspaces live under the host home (e.g. Documents).
-      # Without this bind, the API container cannot index generated images there.
+      # Pool plane does not need the host Docker socket. Override only if you
+      # are debugging a leftover per-user container.
+      - ${VERXIO_DOCKER_SOCK:-/dev/null}:/var/run/docker.sock
       - ${VERXIO_HOST_HOME_BIND:-${HOME}}:${VERXIO_HOST_HOME_BIND:-${HOME}}
-      # kind/K8s kubeconfig — only used with docker-compose.kind.yml overlay
-      - ${VERXIO_KUBECONFIG_HOST:-./.verxio/kubeconfig-kind}:/kube/config:ro
 
   verxio-web:
     build:
