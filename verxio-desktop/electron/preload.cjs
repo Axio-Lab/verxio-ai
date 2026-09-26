@@ -43,12 +43,19 @@ function runtimeEnv() {
 }
 
 function verxioApiBaseUrl() {
-  const baked = typeof runtimeEnv().apiUrl === 'string' ? runtimeEnv().apiUrl.trim() : ''
-
-  return envValue('VERXIO_API_URL', envValue('VITE_VERXIO_API_URL', baked || 'http://127.0.0.1:8787')).replace(
-    /\/$/,
+  const baked = runtimeEnv()
+  const fromCloud =
+    (typeof baked.cloudUrl === 'string' && baked.cloudUrl.trim()) ||
+    (typeof baked.apiUrl === 'string' && baked.apiUrl.trim()) ||
     ''
-  )
+
+  return envValue(
+    'VERXIO_CLOUD_URL',
+    envValue(
+      'VITE_VERXIO_CLOUD_URL',
+      envValue('VERXIO_API_URL', envValue('VITE_VERXIO_API_URL', fromCloud || 'http://127.0.0.1:8787'))
+    )
+  ).replace(/\/$/, '')
 }
 
 function verxioApiEnabled() {
@@ -236,21 +243,57 @@ async function waitForDashboardReady() {
   throw new Error('Verxio runtime is not reachable. Start Verxio again, then retry.')
 }
 
+function cloudDashboardUrl() {
+  return `${verxioApiBaseUrl()}/api/runtime/dashboard`
+}
+
+async function getLocalHermesConnection() {
+  const local = await ipcRenderer.invoke('verxio:hermes:connection')
+  if (local?.baseUrl && local?.token) {
+    return local
+  }
+  return null
+}
+
 async function getConnection() {
+  const local = await getLocalHermesConnection()
+  if (local) {
+    emitBoot({
+      phase: 'backend.ready',
+      message: 'Local Hermes is ready',
+      progress: 94,
+      running: false,
+      error: null
+    })
+    const token = local.token
+    const parsed = new URL(local.baseUrl)
+    const proto = parsed.protocol === 'https:' ? 'wss:' : 'ws:'
+    return {
+      baseUrl: local.baseUrl,
+      token,
+      wsUrl: `${proto}//${parsed.host}/api/ws?token=${encodeURIComponent(token)}`,
+      mode: 'local',
+      authMode: 'token',
+      source: 'local',
+      logs: [],
+      isFullscreen: false,
+      nativeOverlayWidth: await ipcRenderer.invoke('verxio:window:nativeOverlayWidth'),
+      windowButtonPosition: await ipcRenderer.invoke('verxio:window:buttonPosition')
+    }
+  }
+
   await waitForDashboardReady()
 
   emitBoot({
     phase: 'backend.ready',
-    message: 'Verxio backend is ready',
+    message: 'Verxio cloud agent is ready',
     progress: 94,
     running: true,
     error: null
   })
 
   const token = verxioApiEnabled() ? 'verxio-proxy' : getToken()
-  const baseUrl = verxioApiEnabled()
-    ? verxioApiUrl('/api/runtime/dashboard')
-    : hermesDashboardBaseUrl() || window.location.origin
+  const baseUrl = verxioApiEnabled() ? cloudDashboardUrl() : hermesDashboardBaseUrl() || window.location.origin
 
   return {
     baseUrl,
@@ -263,6 +306,21 @@ async function getConnection() {
     isFullscreen: false,
     nativeOverlayWidth: await ipcRenderer.invoke('verxio:window:nativeOverlayWidth'),
     windowButtonPosition: await ipcRenderer.invoke('verxio:window:buttonPosition')
+  }
+}
+
+async function getCloudConnection() {
+  const token = 'verxio-proxy'
+  const baseUrl = cloudDashboardUrl()
+  const parsed = new URL(verxioApiBaseUrl())
+  const proto = parsed.protocol === 'https:' ? 'wss:' : 'ws:'
+  return {
+    baseUrl,
+    token,
+    wsUrl: `${proto}//${parsed.host}${parsed.pathname.replace(/\/$/, '')}/api/runtime/dashboard/ws/api/ws?token=${encodeURIComponent(token)}`,
+    mode: 'cloud',
+    authMode: 'token',
+    source: 'cloud'
   }
 }
 
@@ -308,12 +366,18 @@ function staticBootstrapState() {
 
 contextBridge.exposeInMainWorld('hermesDesktop', {
   getConnection,
+  getCloudConnection,
   revalidateConnection: getConnection,
   verxioApiBaseUrl,
   // Keepalive for the hosted idle reaper: the shell pings this every minute
   // while a chat is open so a long build never gets its runtime drained.
   // Throttled so several open sessions don't fan out into a request storm.
   touchBackend: async () => {
+    const local = await getLocalHermesConnection()
+    if (local) {
+      return { ok: true }
+    }
+
     if (!verxioApiEnabled()) {
       return { ok: true }
     }

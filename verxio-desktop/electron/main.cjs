@@ -20,6 +20,9 @@ const os = require('node:os')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { execFile, spawn } = require('node:child_process')
+const { createRuntime } = require('./hermes-runtime.cjs')
+const { applyCloudConfig } = require('./cloud-config.cjs')
+const agentSync = require('./agent-sync.cjs')
 
 let nodePty = null
 let nodePtyDir = null
@@ -176,6 +179,24 @@ app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 
 let mainWindow = null
+const runtimeLogs = []
+const hermesRuntimeOptions = {
+  appRoot: APP_ROOT,
+  userData: USER_DATA_OVERRIDE || '',
+  hermesHome: '',
+  rememberLog: line => {
+    runtimeLogs.push(String(line))
+    if (runtimeLogs.length > 200) {
+      runtimeLogs.splice(0, runtimeLogs.length - 200)
+    }
+  },
+  send: (channel, payload) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(channel, payload)
+    }
+  }
+}
+const hermesRuntime = createRuntime(hermesRuntimeOptions)
 let composioOAuthWindow = null
 const terminalSessions = new Map()
 const fileWatches = new Map()
@@ -760,6 +781,14 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null)
   configureDisplayMediaCapture()
   createWindow()
+  hermesRuntimeOptions.userData = USER_DATA_OVERRIDE || app.getPath('userData')
+  hermesRuntimeOptions.hermesHome = path.join(hermesRuntimeOptions.userData, 'hermes-home')
+  hermesRuntime
+    .start()
+    .then(() => hermesRuntime.attachRestart())
+    .catch(error => {
+      runtimeLogs.push(error.message)
+    })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -775,6 +804,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  hermesRuntime.stop()
   for (const id of terminalSessions.keys()) {
     disposeTerminalSession(id)
   }
@@ -1209,7 +1239,16 @@ ipcMain.handle('verxio:logs:reveal', async () => {
   return { ok: true, path: logPath }
 })
 
-ipcMain.handle('verxio:logs:recent', () => ({ path: app.getPath('logs'), lines: [] }))
+ipcMain.handle('verxio:logs:recent', () => ({
+  path: app.getPath('logs'),
+  lines: runtimeLogs.slice(-80)
+}))
+ipcMain.handle('verxio:hermes:connection', () => hermesRuntime.connection())
+ipcMain.handle('verxio:cloud:apply-config', (_event, payload) => {
+  const hermesHome = path.join(app.getPath('userData'), 'hermes-home')
+  return applyCloudConfig(hermesHome, payload || {})
+})
+ipcMain.handle('verxio:agent-sync:allowed', (_event, filePath) => agentSync.isAllowedPath(filePath))
 
 ipcMain.handle('verxio:fs:readDir', (_event, dirPath) => {
   try {
