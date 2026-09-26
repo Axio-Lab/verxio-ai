@@ -24,6 +24,7 @@
     "install:desktop": "npm ci --prefix verxio-desktop",
     "install:web": "npm ci --prefix verxio-web",
     "install:landing": "npm ci --prefix verxio-landing",
+    "preci:desktop": "npm run install:desktop",
     "preci:web": "npm run install:web",
     "preci:landing": "npm run install:landing",
     "ci:api": "npm run api:test",
