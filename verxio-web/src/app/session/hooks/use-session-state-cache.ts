@@ -9,6 +9,13 @@ import { $busy, $messages, noteSessionActivity, setSessionAttention, setSessionW
 
 import type { ClientSessionState } from '../../types'
 
+// One transcript cache per window. A second mounted app (hot reload calling
+// createRoot again) otherwise keeps its own copy: the copy that receives the
+// prompt and the copy that receives the stream overwrite each other, and the
+// question disappears from the thread.
+const sharedSessionStateByRuntimeId = new Map<string, ClientSessionState>()
+const sharedRuntimeIdByStoredSessionId = new Map<string, string>()
+
 interface SessionStateCacheOptions {
   activeSessionId: string | null
   busyRef: MutableRefObject<boolean>
@@ -29,8 +36,8 @@ export function useSessionStateCache({
   const busy = useStore($busy)
   const activeSessionIdRef = useRef<string | null>(null)
   const selectedStoredSessionIdRef = useRef<string | null>(null)
-  const sessionStateByRuntimeIdRef = useRef(new Map<string, ClientSessionState>())
-  const runtimeIdByStoredSessionIdRef = useRef(new Map<string, string>())
+  const sessionStateByRuntimeIdRef = useRef(sharedSessionStateByRuntimeId)
+  const runtimeIdByStoredSessionIdRef = useRef(sharedRuntimeIdByStoredSessionId)
   const pendingViewStateRef = useRef<{ sessionId: string; state: ClientSessionState } | null>(null)
   const viewSyncRafRef = useRef<number | null>(null)
 

@@ -58,7 +58,22 @@ if (import.meta.env.MODE !== 'production') {
   import('./app/chat/perf-probe')
 }
 
-createRoot(document.getElementById('root')!).render(
+const rootElement = document.getElementById('root')
+
+if (!rootElement) {
+  throw new Error('Verxio root element is missing')
+}
+
+// Vite can evaluate this module again on a hot update. A second createRoot()
+// stacks another app in the same document; the two copies share the message
+// store and the copy that never saw the prompt overwrites the thread, so the
+// question disappears and only the answer remains.
+const rootKey = '__verxioReactRoot'
+const existingRoot = (window as Window & { [rootKey]?: ReturnType<typeof createRoot> })[rootKey]
+const root = existingRoot ?? createRoot(rootElement)
+;(window as Window & { [rootKey]?: ReturnType<typeof createRoot> })[rootKey] = root
+
+root.render(
   <StrictMode>
     <ErrorBoundary label="root">
       <QueryClientProvider client={queryClient}>
