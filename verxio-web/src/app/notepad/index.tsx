@@ -2094,7 +2094,7 @@ const VERXIO_WEBSITE_URL = 'https://www.verxio.xyz'
 
 function PoweredByVerxioFooter() {
   return (
-    <footer className="fixed inset-x-0 bottom-0 z-10 border-t border-(--ui-stroke-secondary) bg-background py-3 text-center text-xs text-muted-foreground">
+    <footer className="border-t border-(--ui-stroke-secondary) bg-background py-3 text-center text-xs text-muted-foreground">
       <span className="inline-flex items-center justify-center gap-1.5">
         Powered by
         <a
@@ -2148,31 +2148,34 @@ export function PublicNotepadShareView({
     }
   }, [token])
 
+  const frame = embedded ? 'relative h-full min-h-0 overflow-hidden' : 'contents'
+
   if (error) {
     return (
-      <>
+      <div className={frame}>
         <main
-          className={`grid ${frameClass} place-items-center bg-background px-4 pb-14 text-foreground`}
+          className={`${embedded ? 'h-full' : 'h-dvh'} overflow-y-auto bg-background text-foreground`}
           data-selectable-text="true"
         >
-          <section className="w-full max-w-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-5">
-            <h1 className="text-base font-semibold tracking-normal">Shared note unavailable</h1>
-            <p className="mt-2 text-sm text-muted-foreground">{error}</p>
-          </section>
+          <div className="grid min-h-full place-items-center px-4">
+            <section className="w-full max-w-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-5">
+              <h1 className="text-base font-semibold tracking-normal">Shared note unavailable</h1>
+              <p className="mt-2 text-sm text-muted-foreground">{error}</p>
+            </section>
+          </div>
+          <PoweredByVerxioFooter />
         </main>
-        <PoweredByVerxioFooter />
-      </>
+      </div>
     )
   }
 
   if (!payload) {
     return (
-      <>
-        <div className={`grid ${frameClass} place-items-center bg-background pb-14 text-foreground`}>
+      <div className={frame}>
+        <div className={`grid ${frameClass} place-items-center bg-background text-foreground`}>
           <PageLoader label="Loading shared note" />
         </div>
-        <PoweredByVerxioFooter />
-      </>
+      </div>
     )
   }
 
@@ -2183,9 +2186,9 @@ export function PublicNotepadShareView({
   const body = note.summary.trim() || note.content.trim() || note.transcript.trim()
 
   return (
-    <>
+    <div className={frame}>
       <main
-        className={`${embedded ? 'h-full overflow-y-auto' : 'h-dvh overflow-y-auto'} bg-background pb-14 text-foreground`}
+        className={`${embedded ? 'h-full overflow-y-auto' : 'h-dvh overflow-y-auto'} bg-background text-foreground`}
         data-selectable-text="true"
       >
         <article className="mx-auto max-w-4xl px-5 py-8">
@@ -2210,8 +2213,8 @@ export function PublicNotepadShareView({
             </section>
           )}
         </article>
+        <PoweredByVerxioFooter />
       </main>
-      <PoweredByVerxioFooter />
-    </>
+    </div>
   )
 }
