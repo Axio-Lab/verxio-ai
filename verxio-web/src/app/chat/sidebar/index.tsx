@@ -19,6 +19,7 @@ import { useStore } from '@nanostores/react'
 import type * as React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { DisclosureCaret } from '@/components/ui/disclosure-caret'
@@ -566,7 +567,16 @@ export function ChatSidebar({
                       type="button"
                     >
                       <item.icon className="size-4 shrink-0 text-[color-mix(in_srgb,currentColor_72%,transparent)]" />
-                      {sidebarOpen && <span className="min-w-0 flex-1 truncate">{navLabel}</span>}
+                      {sidebarOpen && (
+                        <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                          <span className="truncate">{navLabel}</span>
+                          {item.id === 'agents' && (
+                            <Badge className="px-1 py-px text-[0.625rem]" variant="outline">
+                              {s.nav.beta ?? 'Beta'}
+                            </Badge>
+                          )}
+                        </span>
+                      )}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 )
