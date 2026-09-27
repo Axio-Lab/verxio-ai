@@ -46,12 +46,12 @@ import {
   selectedCloudTranscriptionProvider
 } from '@/lib/transcription-config'
 import {
-  CLOUD_TRANSCRIPTION_PROVIDERS,
   type CloudTranscriptionProvider,
   cloudTranscriptionProviderById,
   type CloudTranscriptionProviderId,
   cloudTranscriptionProvidersFromCatalog,
-  transcriptionModelOptions
+  transcriptionModelOptions,
+  transcriptionProviderRequiresKey
 } from '@/lib/transcription-providers'
 import { cn } from '@/lib/utils'
 import {
@@ -231,15 +231,15 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   const [transcriptionDialogOpen, setTranscriptionDialogOpen] = useState(false)
   const [transcriptionSetupSaving, setTranscriptionSetupSaving] = useState(false)
   const [transcriptionSetupError, setTranscriptionSetupError] = useState<string | null>(null)
-  const [transcriptionProviders, setTranscriptionProviders] = useState(CLOUD_TRANSCRIPTION_PROVIDERS)
-  const [transcriptionConfigLoading, setTranscriptionConfigLoading] = useState(true)
-  const [transcriptionConfigSaving, setTranscriptionConfigSaving] = useState(false)
 
-  const [transcriptionProviderId, setTranscriptionProviderId] = useState<CloudTranscriptionProviderId>(
-    CLOUD_TRANSCRIPTION_PROVIDERS[0].id
+  const [transcriptionProviders, setTranscriptionProviders] = useState(() =>
+    cloudTranscriptionProvidersFromCatalog(null)
   )
 
-  const [transcriptionModel, setTranscriptionModel] = useState(CLOUD_TRANSCRIPTION_PROVIDERS[0].recommendedModel)
+  const [transcriptionConfigLoading, setTranscriptionConfigLoading] = useState(true)
+  const [transcriptionConfigSaving, setTranscriptionConfigSaving] = useState(false)
+  const [transcriptionProviderId, setTranscriptionProviderId] = useState<CloudTranscriptionProviderId>('local')
+  const [transcriptionModel, setTranscriptionModel] = useState('base')
   const [transcriptionApiKey, setTranscriptionApiKey] = useState('')
   const [pendingRecordingIntent, setPendingRecordingIntent] = useState<RecordingIntent | null>(null)
 
@@ -537,6 +537,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
 
       return draftFromNote(selectedNote)
     })
+
     if (adoptedServerRevision) {
       setSummaryEditing(false)
     }
@@ -800,14 +801,14 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
 
       const model = transcriptionModel.trim() || selectedCloudTranscriptionModel(config, provider)
 
-      const providerAlreadyCloud = configuredCloudTranscriptionProvider(config, providers)?.id === provider.id
+      const providerAlreadySaved = configuredCloudTranscriptionProvider(config, providers)?.id === provider.id
 
       setTranscriptionProviders(providers)
       setTranscriptionProviderId(provider.id)
       setTranscriptionModel(model)
 
-      if (vars[provider.envKey]?.is_set || provider.configured) {
-        if (!providerAlreadyCloud || selectedCloudTranscriptionModel(config, provider) !== model) {
+      if (!transcriptionProviderRequiresKey(provider) || vars[provider.envKey]?.is_set || provider.configured) {
+        if (!providerAlreadySaved || selectedCloudTranscriptionModel(config, provider) !== model) {
           await saveHermesConfig(applyCloudTranscriptionConfig(config, provider, model))
         }
 
@@ -975,14 +976,17 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       return
     }
 
-    if (isVerxioDesktop()) {
+    const listCaptureSources = window.hermesDesktop?.audio?.listCaptureSources
+
+    if (isVerxioDesktop() && typeof listCaptureSources === 'function') {
       setCapturePickerLoading(true)
       setCapturePickerOpen(true)
       setSelectedCaptureSourceId(null)
 
       try {
-        const sources = (await window.hermesDesktop?.audio?.listCaptureSources?.()) ?? []
+        const sources = (await listCaptureSources()) ?? []
         setCaptureSources(sources)
+        setSelectedCaptureSourceId(sources.find(source => source.type === 'screen')?.id ?? sources[0]?.id ?? null)
 
         if (!sources.length) {
           setCapturePickerOpen(false)
@@ -1065,9 +1069,10 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   async function handleSaveTranscriptionSetup(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
+    const needsKey = transcriptionProviderRequiresKey(transcriptionProvider)
     const apiKey = transcriptionApiKey.trim()
 
-    if (!apiKey) {
+    if (needsKey && !apiKey) {
       setTranscriptionSetupError(`Paste your ${transcriptionProvider.label} API key first.`)
 
       return
@@ -1081,9 +1086,16 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       const config = await getHermesConfigRecord()
       const nextConfig = applyCloudTranscriptionConfig(config, transcriptionProvider, transcriptionModel)
 
-      await setEnvVar(transcriptionProvider.envKey, apiKey)
+      if (needsKey) {
+        await setEnvVar(transcriptionProvider.envKey, apiKey)
+      }
+
       await saveHermesConfig(nextConfig)
-      await reloadRuntimeEnv()
+
+      if (needsKey) {
+        await reloadRuntimeEnv()
+      }
+
       setTranscriptionProviderId(transcriptionProvider.id)
       setTranscriptionModel(transcriptionModel || transcriptionProvider.recommendedModel)
       setTranscriptionDialogOpen(false)
@@ -1631,6 +1643,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                         aria-label="Open public URL"
                         onClick={() => {
                           const url = shareUrlFromToken(selectedNote.share_token)
+
                           if (url) {
                             window.open(url, '_blank', 'noopener,noreferrer')
                           }
@@ -1843,8 +1856,9 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
           <DialogHeader>
             <DialogTitle>Set up transcription</DialogTitle>
             <DialogDescription>
-              Choose the cloud provider Verxio should use for this recording. Your key is saved to your runtime
-              credentials.
+              {transcriptionProviderRequiresKey(transcriptionProvider)
+                ? 'Choose the speech provider Verxio should use for this recording. A cloud key is saved to your runtime credentials.'
+                : 'Whisper runs on this machine. The recording stays here, and the first transcription downloads the model.'}
             </DialogDescription>
           </DialogHeader>
 
@@ -1918,41 +1932,47 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
               ) : null}
             </div>
 
-            <div className="grid gap-1.5">
-              <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-transcription-key">
-                {transcriptionProvider.label} API key
-              </label>
-              <Input
-                aria-describedby={transcriptionSetupError ? 'notepad-transcription-error' : undefined}
-                aria-invalid={transcriptionSetupError ? 'true' : undefined}
-                autoComplete="off"
-                autoFocus
-                disabled={transcriptionSetupSaving}
-                id="notepad-transcription-key"
-                onChange={event => {
-                  setTranscriptionApiKey(event.target.value)
-                  setTranscriptionSetupError(null)
-                }}
-                placeholder={`Paste ${transcriptionProvider.envKey}`}
-                spellCheck={false}
-                type="password"
-                value={transcriptionApiKey}
-              />
-              <a
-                className="inline-flex w-fit items-center gap-1 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-                href={transcriptionProvider.docsUrl}
-                rel="noreferrer"
-                target="_blank"
-              >
-                Get a {transcriptionProvider.label} API key
-                <Codicon name="link-external" />
-              </a>
-              {transcriptionSetupError ? (
-                <p className="text-xs text-destructive" id="notepad-transcription-error">
-                  {transcriptionSetupError}
-                </p>
-              ) : null}
-            </div>
+            {transcriptionProviderRequiresKey(transcriptionProvider) ? (
+              <div className="grid gap-1.5">
+                <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-transcription-key">
+                  {transcriptionProvider.label} API key
+                </label>
+                <Input
+                  aria-describedby={transcriptionSetupError ? 'notepad-transcription-error' : undefined}
+                  aria-invalid={transcriptionSetupError ? 'true' : undefined}
+                  autoComplete="off"
+                  autoFocus
+                  disabled={transcriptionSetupSaving}
+                  id="notepad-transcription-key"
+                  onChange={event => {
+                    setTranscriptionApiKey(event.target.value)
+                    setTranscriptionSetupError(null)
+                  }}
+                  placeholder={`Paste ${transcriptionProvider.envKey}`}
+                  spellCheck={false}
+                  type="password"
+                  value={transcriptionApiKey}
+                />
+                <a
+                  className="inline-flex w-fit items-center gap-1 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                  href={transcriptionProvider.docsUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  Get a {transcriptionProvider.label} API key
+                  <Codicon name="link-external" />
+                </a>
+                {transcriptionSetupError ? (
+                  <p className="text-xs text-destructive" id="notepad-transcription-error">
+                    {transcriptionSetupError}
+                  </p>
+                ) : null}
+              </div>
+            ) : transcriptionSetupError ? (
+              <p className="text-xs text-destructive" id="notepad-transcription-error">
+                {transcriptionSetupError}
+              </p>
+            ) : null}
 
             <DialogFooter>
               <Button
@@ -2007,13 +2027,12 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                     role="option"
                     type="button"
                   >
-                    <span
-                      className={cn(
-                        'grid size-8 shrink-0 place-items-center rounded-md',
-                        selected ? 'bg-primary/15 text-primary' : 'bg-(--ui-bg-quaternary) text-(--ui-text-tertiary)'
+                    <span className="grid h-10 w-16 shrink-0 place-items-center overflow-hidden rounded-sm bg-(--ui-bg-quaternary)">
+                      {source.thumbnail ? (
+                        <img alt="" className="h-full w-full object-contain" src={source.thumbnail} />
+                      ) : (
+                        <Codicon name={source.type === 'screen' ? 'device-desktop' : 'window'} />
                       )}
-                    >
-                      <Codicon name={source.type === 'screen' ? 'device-desktop' : 'window'} />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className={cn('block truncate', selected && 'font-medium')}>{source.name}</span>
@@ -2092,7 +2111,7 @@ const VERXIO_WEBSITE_URL = 'https://www.verxio.xyz'
 
 function PoweredByVerxioFooter() {
   return (
-    <footer className="fixed inset-x-0 bottom-0 z-10 border-t border-(--ui-stroke-secondary) bg-background py-3 text-center text-xs text-muted-foreground">
+    <footer className="border-t border-(--ui-stroke-secondary) bg-background py-3 text-center text-xs text-muted-foreground">
       <span className="inline-flex items-center justify-center gap-1.5">
         Powered by
         <a
@@ -2114,10 +2133,17 @@ function PoweredByVerxioFooter() {
   )
 }
 
-export function PublicNotepadShareView() {
+export function PublicNotepadShareView({
+  embedded = false,
+  token: tokenProp
+}: {
+  embedded?: boolean
+  token?: string
+} = {}) {
   const [payload, setPayload] = useState<VerxioPublicNotepadShareResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const token = decodeURIComponent(window.location.pathname.split('/').filter(Boolean).pop() || '')
+  const token = tokenProp || decodeURIComponent(window.location.pathname.split('/').filter(Boolean).pop() || '')
+  const frameClass = embedded ? 'h-full' : 'min-h-dvh'
 
   useEffect(() => {
     let cancelled = false
@@ -2139,31 +2165,34 @@ export function PublicNotepadShareView() {
     }
   }, [token])
 
+  const frame = embedded ? 'relative h-full min-h-0 overflow-hidden' : 'contents'
+
   if (error) {
     return (
-      <>
+      <div className={frame}>
         <main
-          className="grid min-h-dvh place-items-center bg-background px-4 pb-14 text-foreground"
+          className={`${embedded ? 'h-full' : 'h-dvh'} overflow-y-auto bg-background text-foreground`}
           data-selectable-text="true"
         >
-          <section className="w-full max-w-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-5">
-            <h1 className="text-base font-semibold tracking-normal">Shared note unavailable</h1>
-            <p className="mt-2 text-sm text-muted-foreground">{error}</p>
-          </section>
+          <div className="grid min-h-full place-items-center px-4">
+            <section className="w-full max-w-lg border border-(--ui-stroke-secondary) bg-(--ui-bg-elevated) p-5">
+              <h1 className="text-base font-semibold tracking-normal">Shared note unavailable</h1>
+              <p className="mt-2 text-sm text-muted-foreground">{error}</p>
+            </section>
+          </div>
+          <PoweredByVerxioFooter />
         </main>
-        <PoweredByVerxioFooter />
-      </>
+      </div>
     )
   }
 
   if (!payload) {
     return (
-      <>
-        <div className="grid min-h-dvh place-items-center bg-background pb-14 text-foreground">
+      <div className={frame}>
+        <div className={`grid ${frameClass} place-items-center bg-background text-foreground`}>
           <PageLoader label="Loading shared note" />
         </div>
-        <PoweredByVerxioFooter />
-      </>
+      </div>
     )
   }
 
@@ -2174,8 +2203,11 @@ export function PublicNotepadShareView() {
   const body = note.summary.trim() || note.content.trim() || note.transcript.trim()
 
   return (
-    <>
-      <main className="h-dvh overflow-y-auto bg-background pb-14 text-foreground" data-selectable-text="true">
+    <div className={frame}>
+      <main
+        className={`${embedded ? 'h-full overflow-y-auto' : 'h-dvh overflow-y-auto'} bg-background text-foreground`}
+        data-selectable-text="true"
+      >
         <article className="mx-auto max-w-4xl px-5 py-8">
           <div className="border-b border-(--ui-stroke-secondary) pb-5">
             <p className="text-xs font-medium text-muted-foreground">{payload.workspace_name}</p>
@@ -2198,8 +2230,8 @@ export function PublicNotepadShareView() {
             </section>
           )}
         </article>
+        <PoweredByVerxioFooter />
       </main>
-      <PoweredByVerxioFooter />
-    </>
+    </div>
   )
 }

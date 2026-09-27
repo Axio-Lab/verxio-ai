@@ -91,24 +91,11 @@ http://127.0.0.1:8787/docs
 - `POST /api/runtime/start`
 - `POST /api/runtime/stop`
 - `POST /api/runtime/restart`
-- `GET /api/runtime/dashboard/{path}` proxy to Hermes REST
-- `GET /api/runtime/dashboard/ws/{path}` proxy to Hermes WebSocket
-- `GET /api/artifacts`
-- `GET /api/artifacts/{id}`
-- `GET /api/artifacts/{id}/preview`
-- `GET /api/artifacts/{id}/download`
+- `GET /api/runtime/dashboard/{path}` proxy to the cloud Hermes management API
 
-## Docker Runtime Env
+## Cloud agent
 
-When the API runs inside Docker and controls host Docker through `/var/run/docker.sock`, set:
-
-```bash
-VERXIO_RUNTIME_ROOT=/app/.verxio/runtimes
-VERXIO_RUNTIME_DOCKER_ROOT=/absolute/host/path/to/.verxio/runtimes
-VERXIO_HERMES_IMAGE=verxio-hermes-runtime:local
-```
-
-`VERXIO_RUNTIME_DOCKER_ROOT` is the host path used in `docker run -v` for Hermes runtime containers.
+Interactive chat runs in the desktop app. The API's pool workers run cron, messaging, and workflow agents. `VERXIO_HERMES_IMAGE` is that worker image (`Dockerfile.verxio-hosted`).
 
 ## Tests
 

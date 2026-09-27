@@ -15,7 +15,7 @@ export function CTA() {
         </p>
         <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
           <a
-            href={appPath("/signup")}
+            href={appPath("/download")}
             className="inline-flex items-center px-8 py-4 text-sm font-semibold text-white bg-primary rounded-lg hover:brightness-110 transition-all shadow-md shadow-primary/20"
           >
             Start Now

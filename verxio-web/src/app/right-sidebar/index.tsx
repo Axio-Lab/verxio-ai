@@ -8,6 +8,7 @@ import { Codicon } from '@/components/ui/codicon'
 import { Loader } from '@/components/ui/loader'
 import { Tip } from '@/components/ui/tooltip'
 import { useI18n } from '@/i18n'
+import { $desktopWorkspaceRoot, isBundledAgentCheckout } from '@/lib/desktop-workspace'
 import { normalizeOrLocalPreviewTarget } from '@/lib/local-preview'
 import { cn } from '@/lib/utils'
 import { resolveWebLocalWorkspaceCwd } from '@/lib/web-local-fs'
@@ -51,12 +52,19 @@ export function RightSidebarPane({ onActivateFile, onActivateFolder, onChangeCwd
   const currentCwd = resolveWebLocalWorkspaceCwd(storedCwd) ?? getResolvedDesktopWorkspaceCwd(storedCwd) ?? storedCwd
   const hasCwd = currentCwd.length > 0
 
-  const cwdName = hasCwd
-    ? (currentCwd
-        .split(/[\\/]+/)
-        .filter(Boolean)
-        .pop() ?? currentCwd)
-    : r.noFolderSelected
+  const workspaceRoot = useStore($desktopWorkspaceRoot)
+
+  const cwdBase =
+    currentCwd
+      .split(/[\\/]+/)
+      .filter(Boolean)
+      .pop() ?? currentCwd
+
+  const cwdName = !hasCwd
+    ? r.noFolderSelected
+    : isBundledAgentCheckout(currentCwd) || (workspaceRoot && currentCwd === workspaceRoot)
+      ? r.agentHome
+      : cwdBase
 
   const {
     collapseAll,

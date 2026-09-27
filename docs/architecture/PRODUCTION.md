@@ -68,12 +68,6 @@ curl -fsS http://127.0.0.1:8787/api/health
 # GET  /api/runtime/idle/policies
 ```
 
-### Real docker CI locally
-
-```bash
-bash scripts/scale/runtime_docker_test.sh
-```
-
 ## Rollback
 
 Set `VERXIO_IDLE_REAPER_ENABLED=false` and `VERXIO_RUNTIME_RESTART_POLICY=unless-stopped` then redeploy if you need the old always-on behavior temporarily.

@@ -20,6 +20,10 @@ const os = require('node:os')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { execFile, spawn } = require('node:child_process')
+const { createRuntime, resolveHermesSource, resolvePython } = require('./hermes-runtime.cjs')
+const { applyComposioBridge, hasRuntimeToken } = require('./cloud-config.cjs')
+const agentSync = require('./agent-sync.cjs')
+const { createUpdater } = require('./updates.cjs')
 
 let nodePty = null
 let nodePtyDir = null
@@ -176,11 +180,30 @@ app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 
 let mainWindow = null
+const runtimeLogs = []
+const hermesRuntimeOptions = {
+  appRoot: APP_ROOT,
+  userData: USER_DATA_OVERRIDE || '',
+  hermesHome: '',
+  rememberLog: line => {
+    runtimeLogs.push(String(line))
+    if (runtimeLogs.length > 200) {
+      runtimeLogs.splice(0, runtimeLogs.length - 200)
+    }
+  },
+  send: (channel, payload) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(channel, payload)
+    }
+  }
+}
+const hermesRuntime = createRuntime(hermesRuntimeOptions)
 let composioOAuthWindow = null
 const terminalSessions = new Map()
 const fileWatches = new Map()
 
 const RUNTIME_WORKSPACE_ROOT = '/workspace'
+const RUNTIME_HOME_ROOT = '/opt/data'
 const DESKTOP_WORKSPACE_NAME = 'Verxio'
 
 function settingsPath() {
@@ -238,14 +261,16 @@ function resolveLocalFsPath(inputPath) {
     return defaultProjectDir()
   }
 
-  if (trimmed === RUNTIME_WORKSPACE_ROOT || trimmed.startsWith(`${RUNTIME_WORKSPACE_ROOT}/`)) {
-    const workspace = defaultProjectDir()
+  for (const root of [RUNTIME_WORKSPACE_ROOT, RUNTIME_HOME_ROOT]) {
+    if (trimmed === root || trimmed.startsWith(`${root}/`)) {
+      const workspace = defaultProjectDir()
 
-    if (trimmed === RUNTIME_WORKSPACE_ROOT) {
-      return workspace
+      if (trimmed === root) {
+        return workspace
+      }
+
+      return path.join(workspace, trimmed.slice(root.length + 1))
     }
-
-    return path.join(workspace, trimmed.slice(RUNTIME_WORKSPACE_ROOT.length + 1))
   }
 
   return resolvePath(trimmed)
@@ -453,16 +478,31 @@ function supportsSystemAudioLoopback() {
 
 let pendingCaptureSourceId = null
 
+function captureThumbnailDataUrl(image) {
+  if (!image || image.isEmpty()) {
+    return undefined
+  }
+
+  const jpeg = image.toJPEG(72)
+
+  if (!jpeg.length) {
+    return undefined
+  }
+
+  return `data:image/jpeg;base64,${jpeg.toString('base64')}`
+}
+
 async function listDesktopCaptureSources() {
   const sources = await desktopCapturer.getSources({
     fetchWindowIcons: false,
-    thumbnailSize: { height: 1, width: 1 },
+    thumbnailSize: { height: 180, width: 320 },
     types: ['screen', 'window']
   })
 
   return sources.map(source => ({
     id: source.id,
     name: source.name,
+    thumbnail: captureThumbnailDataUrl(source.thumbnail),
     type: source.id.startsWith('screen:') ? 'screen' : 'window'
   }))
 }
@@ -753,10 +793,19 @@ function disposeTerminalSession(id) {
 }
 
 app.whenReady().then(() => {
-  ensureDesktopWorkspace()
+  const workspace = ensureDesktopWorkspace()
   Menu.setApplicationMenu(null)
   configureDisplayMediaCapture()
   createWindow()
+  hermesRuntimeOptions.userData = USER_DATA_OVERRIDE || app.getPath('userData')
+  hermesRuntimeOptions.hermesHome = path.join(hermesRuntimeOptions.userData, 'hermes-home')
+  hermesRuntimeOptions.workspaceCwd = workspace.dir
+  hermesRuntime
+    .start()
+    .then(() => hermesRuntime.attachRestart())
+    .catch(error => {
+      runtimeLogs.push(error.message)
+    })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -772,6 +821,7 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  hermesRuntime.stop()
   for (const id of terminalSessions.keys()) {
     disposeTerminalSession(id)
   }
@@ -1206,7 +1256,27 @@ ipcMain.handle('verxio:logs:reveal', async () => {
   return { ok: true, path: logPath }
 })
 
-ipcMain.handle('verxio:logs:recent', () => ({ path: app.getPath('logs'), lines: [] }))
+ipcMain.handle('verxio:logs:recent', () => ({
+  path: app.getPath('logs'),
+  lines: runtimeLogs.slice(-80)
+}))
+ipcMain.handle('verxio:hermes:connection', () => hermesRuntime.connection())
+ipcMain.handle('verxio:agent:bridge-status', () => {
+  const hermesHome = path.join(app.getPath('userData'), 'hermes-home')
+
+  return { hasRuntimeToken: hasRuntimeToken(hermesHome) }
+})
+ipcMain.handle('verxio:cloud:apply-config', (_event, payload) => {
+  const hermesHome = path.join(app.getPath('userData'), 'hermes-home')
+  const root = resolveHermesSource({
+    appRoot: hermesRuntimeOptions.appRoot,
+    userData: hermesRuntimeOptions.userData
+  })
+  const python = root ? resolvePython(root) : undefined
+
+  return applyComposioBridge(hermesHome, payload || {}, python)
+})
+ipcMain.handle('verxio:agent-sync:allowed', (_event, filePath) => agentSync.isAllowedPath(filePath))
 
 ipcMain.handle('verxio:fs:readDir', (_event, dirPath) => {
   try {
@@ -1350,6 +1420,18 @@ ipcMain.handle('verxio:terminal:resize', (_event, id, size = {}) => {
   return true
 })
 ipcMain.handle('verxio:terminal:dispose', (_event, id) => disposeTerminalSession(String(id || '')))
+
+const updater = createUpdater({
+  onProgress: payload => {
+    const win = BrowserWindow.getAllWindows()[0]
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('verxio:update-progress', payload)
+    }
+  }
+})
+
+ipcMain.handle('verxio:updates:check', () => updater.check())
+ipcMain.handle('verxio:updates:apply', () => updater.apply())
 
 ipcMain.handle('verxio:version', () => ({
   appVersion: app.getVersion(),

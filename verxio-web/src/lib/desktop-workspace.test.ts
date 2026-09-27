@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  cwdForGatewaySubmission,
   isRuntimeWorkspacePath,
   resolveDesktopWorkspaceCwd,
   rewriteRuntimePathsInText,
@@ -20,6 +21,8 @@ describe('desktop-workspace', () => {
   it('detects runtime workspace paths', () => {
     expect(isRuntimeWorkspacePath('/workspace')).toBe(true)
     expect(isRuntimeWorkspacePath('/workspace/src')).toBe(true)
+    expect(isRuntimeWorkspacePath('/opt/data')).toBe(true)
+    expect(isRuntimeWorkspacePath('/opt/data/sessions')).toBe(true)
     expect(isRuntimeWorkspacePath('/Users/me/Verxio')).toBe(false)
   })
 
@@ -28,7 +31,10 @@ describe('desktop-workspace', () => {
 
     expect(resolveDesktopWorkspaceCwd('/workspace', local)).toBe(local)
     expect(resolveDesktopWorkspaceCwd('/workspace/src', local)).toBe(`${local}/src`)
+    expect(resolveDesktopWorkspaceCwd('/opt/data', local)).toBe(local)
+    expect(resolveDesktopWorkspaceCwd('/opt/data/notes', local)).toBe(`${local}/notes`)
     expect(resolveDesktopWorkspaceCwd('/Users/me/projects/app', local)).toBe('/Users/me/projects/app')
+    expect(resolveDesktopWorkspaceCwd('/Users/me/projects/verxio-ai/hermes-agent', local)).toBe(local)
   })
 
   it('rewrites runtime workspace paths in assistant copy for desktop', () => {
@@ -47,5 +53,9 @@ describe('desktop-workspace', () => {
     expect(rewriteRuntimePathsInText('Use /workspace/artifacts for output.')).toBe(
       'Use /workspace/artifacts for output.'
     )
+  })
+
+  it('submits the local desktop folder as the session cwd', () => {
+    expect(cwdForGatewaySubmission('/Users/me/Documents/Verxio')).toBe('/Users/me/Documents/Verxio')
   })
 })

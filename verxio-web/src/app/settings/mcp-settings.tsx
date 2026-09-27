@@ -91,6 +91,7 @@ export function McpSettings({ gateway, onConfigSaved }: McpSettingsProps) {
         if (cleaned) {
           try {
             await saveHermesConfig(cleaned)
+
             if (cancelled) {
               return
             }

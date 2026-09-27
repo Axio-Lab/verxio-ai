@@ -59,6 +59,7 @@ export function WebhookRoutesPanel({
   const selectedTarget = parseMessagingDeliveryId(deliver)
   const selectedPlatform = platforms.find(row => row.id === selectedTarget.platformId)
   const scopedConnectionId = (connectionId || 'default').trim() || 'default'
+
   const visibleRoutes = useMemo(() => {
     if (!routes) {
       return []

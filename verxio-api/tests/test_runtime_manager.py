@@ -345,7 +345,7 @@ def test_k8s_runtime_env_map_skips_docker_inspect(monkeypatch):
         def read_pod_env(self, _runtime):
             return {"COMPOSIO_API_KEY": "k8s-key", "VERXIO_API_URL": "http://verxio-api:8787"}
 
-    monkeypatch.setattr("app.runtime_orch.factory.get_runtime_manager", lambda: _Mgr())
+    monkeypatch.setattr("app.runtime_orch.factory.get_runtime_manager", lambda *_a, **_k: _Mgr())
 
     def boom(_args):
         raise AssertionError("docker inspect must not run for k8s runtimes")
@@ -364,7 +364,7 @@ def test_k8s_runtime_env_matches_avoids_restart_when_pod_unreadable(monkeypatch)
         def read_pod_env(self, _runtime):
             return None
 
-    monkeypatch.setattr("app.runtime_orch.factory.get_runtime_manager", lambda: _Mgr())
+    monkeypatch.setattr("app.runtime_orch.factory.get_runtime_manager", lambda *_a, **_k: _Mgr())
     assert runtime_manager.runtime_container_env_matches(runtime, "COMPOSIO_API_KEY", "k8s-key") is True
 
 

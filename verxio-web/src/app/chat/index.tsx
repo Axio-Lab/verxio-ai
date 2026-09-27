@@ -20,6 +20,7 @@ import { sessionTitle, toRuntimeMessage } from '@/lib/chat-runtime'
 import { useIncrementalExternalStoreRuntime } from '@/lib/incremental-external-store-runtime'
 import { cn } from '@/lib/utils'
 import type { ComposerAttachment } from '@/store/composer'
+import { $gatewayReachable } from '@/store/gateway-link'
 import { $pinnedSessionIds } from '@/store/layout'
 import { $gatewaySwapTarget } from '@/store/profile'
 import {
@@ -29,7 +30,6 @@ import {
   $contextSuggestions,
   $currentCwd,
   $freshDraftReady,
-  $gatewayState,
   $introPersonality,
   $introSeed,
   $messages,
@@ -129,6 +129,7 @@ function ChatHeader({
           align="start"
           onDelete={selectedSessionId ? onDeleteSelectedSession : undefined}
           onPin={selectedSessionId ? onToggleSelectedPin : undefined}
+          pinId={activeStoredSession ? sessionPinId(activeStoredSession) : selectedSessionId || undefined}
           pinned={selectedIsPinned}
           sessionId={selectedSessionId || activeSessionId || ''}
           sideOffset={8}
@@ -181,9 +182,11 @@ export function ChatView({
   const contextSuggestions = useStore($contextSuggestions)
   const currentCwd = useStore($currentCwd)
   const freshDraftReady = useStore($freshDraftReady)
-  const gatewayState = useStore($gatewayState)
   const gatewaySwapTarget = useStore($gatewaySwapTarget)
-  const gatewayOpen = gatewayState === 'open'
+  // Composer availability has hysteresis: a socket blip after a healthy boot
+  // keeps the bar enabled (sends wait for the reconnect) — only a boot-time
+  // connect or an outage past the grace window disables it.
+  const gatewayReachable = useStore($gatewayReachable)
   const introPersonality = useStore($introPersonality)
   const introSeed = useStore($introSeed)
   const messages = useStore($messages)
@@ -338,7 +341,7 @@ export function ChatView({
               <ChatBar
                 busy={busy}
                 cwd={currentCwd}
-                disabled={!gatewayOpen}
+                disabled={!gatewayReachable}
                 focusKey={activeSessionId}
                 gateway={gateway}
                 maxRecordingSeconds={maxVoiceRecordingSeconds}

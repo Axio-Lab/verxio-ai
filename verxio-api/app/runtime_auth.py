@@ -63,9 +63,26 @@ def get_context_for_request(
 
     token = bearer_token(request)
     if token:
-        return get_context_for_runtime_token(token)
+        try:
+            return get_context_for_runtime_token(token)
+        except HTTPException as exc:
+            if exc.status_code != 401:
+                raise
+        from app.device_tokens import user_from_device_token
+
+        device_user = user_from_device_token(token)
+        if device_user:
+            return get_context_for_user(device_user)
 
     raise HTTPException(status_code=401, detail="Authentication required")
+
+
+def require_runtime_token(request: Request) -> RuntimeInstance:
+    token = bearer_token(request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Runtime token required")
+    _workspace, _agent, runtime = get_context_for_runtime_token(token)
+    return runtime
 
 
 def require_user_or_runtime(request: Request) -> dict[str, Any] | None:
@@ -81,3 +98,14 @@ def require_user_or_runtime(request: Request) -> dict[str, Any] | None:
         get_context_for_runtime_token(token)
         return None
     raise HTTPException(status_code=401, detail="Authentication required")
+
+
+async def arequire_runtime_token(request: Request) -> RuntimeInstance:
+    """Event-loop friendly ``require_runtime_token`` (DB lookup off-loop)."""
+    import asyncio
+
+    token = bearer_token(request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Runtime token required")
+    _workspace, _agent, runtime = await asyncio.to_thread(get_context_for_runtime_token, token)
+    return runtime

@@ -1,6 +1,22 @@
 import { atom, computed, type ReadableAtom } from 'nanostores'
 
 import {
+  addSessionToProject,
+  createProject,
+  deleteProject,
+  emptyProjectsState,
+  parseProjectsState,
+  type ProjectPriority,
+  type ProjectSort,
+  removeSessions,
+  renameProject,
+  reorderProjects,
+  reorderProjectSessions,
+  setProjectPriority,
+  setProjectSort,
+  type SidebarProjectsState
+} from '@/app/chat/sidebar/projects'
+import {
   arraysEqual,
   insertUniqueId,
   persistBoolean,
@@ -21,6 +37,8 @@ export const FILE_BROWSER_MAX_WIDTH = '20rem'
 export const SIDEBAR_SESSIONS_PAGE_SIZE = 50
 
 const SIDEBAR_PINNED_STORAGE_KEY = 'hermes.desktop.pinnedSessions'
+const SIDEBAR_PROJECTS_STORAGE_KEY = 'verxio.desktop.sidebarProjects'
+const SIDEBAR_PROJECTS_OPEN_STORAGE_KEY = 'verxio.desktop.sidebarProjectsOpen'
 const SIDEBAR_AGENTS_GROUPED_STORAGE_KEY = 'hermes.desktop.agentsGroupedByWorkspace'
 const SIDEBAR_CRON_OPEN_STORAGE_KEY = 'verxio.web.sidebarCronOpen'
 const PANES_FLIPPED_STORAGE_KEY = 'hermes.desktop.panesFlipped'
@@ -53,6 +71,8 @@ export const $sidebarWidth: ReadableAtom<number> = computed($paneStates, states 
 })
 
 export const $pinnedSessionIds = atom(storedStringArray(SIDEBAR_PINNED_STORAGE_KEY))
+export const $sidebarProjects = atom(storedProjectsState())
+export const $sidebarProjectsOpen = atom(storedBoolean(SIDEBAR_PROJECTS_OPEN_STORAGE_KEY, true))
 export const $sidebarPinsOpen = atom(true)
 export const $sidebarRecentsOpen = atom(true)
 export const $sidebarCronOpen = atom(storedBoolean(SIDEBAR_CRON_OPEN_STORAGE_KEY, false))
@@ -64,6 +84,8 @@ export const $isSidebarResizing = atom(false)
 export const $sessionsLimit = atom(SIDEBAR_SESSIONS_PAGE_SIZE)
 
 $pinnedSessionIds.subscribe(ids => persistStringArray(SIDEBAR_PINNED_STORAGE_KEY, [...ids]))
+$sidebarProjects.subscribe(state => persistProjectsState(state))
+$sidebarProjectsOpen.subscribe(open => persistBoolean(SIDEBAR_PROJECTS_OPEN_STORAGE_KEY, open))
 $sidebarAgentsGrouped.subscribe(grouped => persistBoolean(SIDEBAR_AGENTS_GROUPED_STORAGE_KEY, grouped))
 $sidebarCronOpen.subscribe(open => persistBoolean(SIDEBAR_CRON_OPEN_STORAGE_KEY, open))
 $panesFlipped.subscribe(flipped => persistBoolean(PANES_FLIPPED_STORAGE_KEY, flipped))
@@ -169,5 +191,89 @@ export function bumpSessionsLimit(step: number = SIDEBAR_SESSIONS_PAGE_SIZE) {
 export function resetSessionsLimit() {
   if ($sessionsLimit.get() !== SIDEBAR_SESSIONS_PAGE_SIZE) {
     $sessionsLimit.set(SIDEBAR_SESSIONS_PAGE_SIZE)
+  }
+}
+
+export function setSidebarProjectsOpen(open: boolean) {
+  $sidebarProjectsOpen.set(open)
+}
+
+function updateProjects(recipe: (state: SidebarProjectsState) => SidebarProjectsState) {
+  const prev = $sidebarProjects.get()
+  const next = recipe(prev)
+
+  if (next !== prev) {
+    $sidebarProjects.set(next)
+  }
+}
+
+export function createSidebarProject(name: string): null | string {
+  const prev = $sidebarProjects.get()
+  const next = createProject(prev, name)
+
+  if (next === prev) {
+    return null
+  }
+
+  $sidebarProjects.set(next)
+
+  return next.projects[next.projects.length - 1]?.id ?? null
+}
+
+export function renameSidebarProject(projectId: string, name: string) {
+  updateProjects(state => renameProject(state, projectId, name))
+}
+
+export function deleteSidebarProject(projectId: string) {
+  updateProjects(state => deleteProject(state, projectId))
+}
+
+export function setSidebarProjectPriority(projectId: string, priority: ProjectPriority) {
+  updateProjects(state => setProjectPriority(state, projectId, priority))
+}
+
+export function setSidebarProjectSort(sort: ProjectSort) {
+  updateProjects(state => setProjectSort(state, sort))
+}
+
+export function addSessionToSidebarProject(projectId: string, sessionId: string) {
+  updateProjects(state => addSessionToProject(state, projectId, sessionId))
+}
+
+export function removeSessionsFromSidebarProjects(sessionIds: string[]) {
+  updateProjects(state => removeSessions(state, sessionIds))
+}
+
+export function reorderSidebarProjects(activeId: string, overId: string) {
+  updateProjects(state => reorderProjects(state, activeId, overId))
+}
+
+export function reorderSidebarProjectSessions(projectId: string, activeId: string, overId: string) {
+  updateProjects(state => reorderProjectSessions(state, projectId, activeId, overId))
+}
+
+function storedProjectsState(): SidebarProjectsState {
+  if (typeof window === 'undefined') {
+    return emptyProjectsState()
+  }
+
+  try {
+    const value = window.localStorage.getItem(SIDEBAR_PROJECTS_STORAGE_KEY)
+
+    return value ? parseProjectsState(JSON.parse(value)) : emptyProjectsState()
+  } catch {
+    return emptyProjectsState()
+  }
+}
+
+function persistProjectsState(state: SidebarProjectsState) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  try {
+    window.localStorage.setItem(SIDEBAR_PROJECTS_STORAGE_KEY, JSON.stringify(state))
+  } catch {
+    // Project folders are a local preference.
   }
 }

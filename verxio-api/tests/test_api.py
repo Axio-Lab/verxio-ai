@@ -68,6 +68,9 @@ def client(monkeypatch, tmp_path):
     monkeypatch.delenv("VERXIO_SMTP_HOST", raising=False)
     monkeypatch.delenv("VERXIO_SMTP_FROM", raising=False)
     monkeypatch.setattr(control_plane, "RUNTIME_ROOT", tmp_path / "runtimes")
+    # Production tenants dispatch workflow runs to the pool. These tests
+    # exercise the inline engine the worker runs after it claims a turn.
+    monkeypatch.setattr("app.plane.tenant_uses_pool", lambda *_args, **_kwargs: False)
     emailer.SENT_AUTH_EMAILS.clear()
     from app.runtime_orch.leases import reset_lease_store_for_tests
 
@@ -148,7 +151,7 @@ def test_bootstrap_skips_shared_hermes_on_k8s_control_plane(client, monkeypatch)
     assert payload["hermes"]["errors"] == []
 
 
-def test_create_run_uses_demo_runtime(client):
+def test_legacy_runs_routes_are_gone(client):
     response = client.post(
         "/api/runs",
         json={
@@ -156,24 +159,6 @@ def test_create_run_uses_demo_runtime(client):
             "input": "Help me use Verxio instead of Hermes CLI.",
         },
     )
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["agent_id"] == "verxio-agent"
-    assert payload["provider"] == "demo"
-    assert payload["status"] == "completed"
-    assert "Verxio Agent" in payload["output"]
-
-
-def test_unknown_agent_returns_404(client):
-    response = client.post(
-        "/api/runs",
-        json={
-            "agent_id": "unknown",
-            "input": "Do something useful.",
-        },
-    )
-
     assert response.status_code == 404
 
 
@@ -1822,8 +1807,11 @@ def test_dashboard_env_put_does_not_restart_runtime(client, monkeypatch):
         async def request(self, *args, **kwargs):
             return _FakeUpstream()
 
-    monkeypatch.setattr(main, "get_runtime_manager", lambda: _FakeManager())
-    monkeypatch.setattr(main, "get_runtime_for_user", lambda _user, fresh=False: runtime)
+    monkeypatch.setattr(main, "get_runtime_manager", lambda *_a, **_k: _FakeManager())
+    async def _runtime_for_user(_user, *_a, **_k):
+        return runtime
+
+    monkeypatch.setattr(main, "aget_runtime_for_user", _runtime_for_user)
     monkeypatch.setattr(main, "runtime_env_for_user", lambda _user_id: {"GEMINI_API_KEY": "hosted"})
     monkeypatch.setattr(main, "runtime_dashboard_base_url", lambda _runtime, ensure_network=False: "http://127.0.0.1:19119")
     monkeypatch.setattr(main, "_runtime_dashboard_token_async", fake_token)
@@ -2326,6 +2314,13 @@ def test_signup_creates_user_workspace_agent_and_runtime(client):
     assert runtime_rows[0]["artifact_path"].endswith("/workspace/artifacts")
 
 
+def test_signup_invite_returns_configured_code(client, monkeypatch):
+    monkeypatch.setenv("VERXIO_SIGNUP_INVITE_CODE", "424242")
+    response = client.get("/api/auth/signup-invite")
+    assert response.status_code == 200
+    assert response.json() == {"invite_code": "424242"}
+
+
 def test_signup_requires_valid_invite_code(client):
     missing = client.post(
         "/api/auth/signup",
@@ -2428,6 +2423,35 @@ def test_login_creates_turso_backed_session(client):
     assert len(session_rows) == 1
 
 
+def test_session_expiry_slides_and_cookie_is_reissued(client):
+    from datetime import timedelta
+
+    from app import auth as auth_mod
+    from app.models import utc_now
+
+    payload, token = signup(client, "slide@example.com")
+    token_hash = auth_mod.hash_session_token(token)
+
+    # Fresh session: no renewal, no Set-Cookie on a plain authenticated request.
+    fresh = client.get("/api/auth/me")
+    assert fresh.status_code == 200
+    assert fresh.cookies.get(SESSION_COOKIE) is None
+
+    # Age the session past the renewal threshold (over half of its lifetime used).
+    nearly = (utc_now() + timedelta(hours=6)).isoformat()
+    db.execute("UPDATE sessions SET expires_at = ? WHERE token_hash = ?", (nearly, token_hash))
+    auth_mod._invalidate_session_user(token_hash)
+
+    renewed = client.get("/api/auth/me")
+    assert renewed.status_code == 200
+    assert renewed.cookies.get(SESSION_COOKIE) == token
+
+    row = db.fetch_one("SELECT expires_at FROM sessions WHERE token_hash = ?", (token_hash,))
+    assert row is not None
+    assert str(row["expires_at"]) > nearly
+    assert db.fetch_one("SELECT COUNT(*) AS n FROM sessions WHERE user_id = ?", (payload["user"]["id"],))["n"] == 1
+
+
 def test_password_login_for_unverified_user_resends_verification_code(client):
     response = client.post(
         "/api/auth/signup",
@@ -2502,102 +2526,6 @@ def test_forgot_password_code_resets_password_and_logs_in(client):
     assert new_login.status_code == 200
 
 
-def test_artifacts_are_indexed_from_runtime_workspace_and_isolated(client):
-    user_one, token_one = signup(client, "one@example.com")
-    user_two, token_two = signup(client, "two@example.com")
-
-    runtime_one = db.fetch_one(
-        "SELECT * FROM runtime_instances WHERE workspace_id = ? AND agent_id = ?",
-        (user_one["workspace"]["id"], user_one["profile"]["id"]),
-    )
-    assert runtime_one
-    artifact_path = Path(str(runtime_one["artifact_path"]))
-    artifact_path.mkdir(parents=True, exist_ok=True)
-    older = artifact_path / "daily-sales-dashboard.html"
-    older.write_text("<html><body>Daily sales</body></html>", encoding="utf-8")
-    png_bytes = base64.b64decode(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
-    )
-    newer = artifact_path / "man_in_pool_nano_banana.png"
-    newer.write_bytes(png_bytes)
-    # Distinct mtimes so listing is latest-first and reindex keeps file times.
-    older_mtime = time.time() - 7 * 24 * 3600
-    newer_mtime = time.time() - 3600
-    os.utime(older, (older_mtime, older_mtime))
-    os.utime(newer, (newer_mtime, newer_mtime))
-
-    user_one_response = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
-    user_two_response = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_two}"})
-
-    assert user_one_response.status_code == 200
-    assert user_two_response.status_code == 200
-    user_one_artifacts = user_one_response.json()["artifacts"]
-    assert {artifact["file_name"] for artifact in user_one_artifacts} == {
-        "daily-sales-dashboard.html",
-        "man_in_pool_nano_banana.png",
-    }
-    assert [artifact["file_name"] for artifact in user_one_artifacts] == [
-        "man_in_pool_nano_banana.png",
-        "daily-sales-dashboard.html",
-    ]
-    image_artifact = next(artifact for artifact in user_one_artifacts if artifact["file_name"].endswith(".png"))
-    assert image_artifact["content_type"] == "image/png"
-    first_updated = image_artifact["updated_at"]
-    # Reindex must not stamp every row with "now" (that made last week's files
-    # all show today's date in the Artifacts UI).
-    reindex = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
-    assert reindex.status_code == 200
-    reindexed_image = next(
-        artifact for artifact in reindex.json()["artifacts"] if artifact["file_name"].endswith(".png")
-    )
-    assert reindexed_image["updated_at"] == first_updated
-    assert user_two_response.json()["artifacts"] == []
-
-    # Byte-identical copies (renamed workspace file + runtime-home mirror) must
-    # collapse to a single Artifacts row so the UI is not cluttered.
-    (artifact_path / "man_in_pool_nano_banana-FINAL.png").write_bytes(png_bytes)
-    os.utime(artifact_path / "man_in_pool_nano_banana-FINAL.png", (newer_mtime, newer_mtime))
-    hermes_artifacts = Path(str(runtime_one["hermes_home_path"])) / "artifacts"
-    hermes_artifacts.mkdir(parents=True, exist_ok=True)
-    (hermes_artifacts / "man_in_pool_nano_banana.png").write_bytes(png_bytes)
-    os.utime(hermes_artifacts / "man_in_pool_nano_banana.png", (newer_mtime, newer_mtime))
-
-    deduped = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
-    assert deduped.status_code == 200
-    deduped_artifacts = deduped.json()["artifacts"]
-    png_names = [artifact["file_name"] for artifact in deduped_artifacts if artifact["file_name"].endswith(".png")]
-    assert png_names == ["man_in_pool_nano_banana-FINAL.png"]
-    image_artifact = next(artifact for artifact in deduped_artifacts if artifact["file_name"].endswith(".png"))
-
-    artifact_id = image_artifact["id"]
-    preview = client.get(f"/api/artifacts/{artifact_id}/preview", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
-    download = client.get(f"/api/artifacts/{artifact_id}/download", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
-    blocked = client.get(f"/api/artifacts/{artifact_id}/preview", headers={"Cookie": f"{SESSION_COOKIE}={token_two}"})
-
-    assert preview.status_code == 200
-    assert preview.headers["content-type"] == "image/png"
-    assert "inline" in preview.headers.get("content-disposition", "").lower()
-    assert preview.content == png_bytes
-    assert download.status_code == 200
-    assert "attachment" in download.headers.get("content-disposition", "").lower()
-    assert blocked.status_code == 404
-
-    blocked_delete = client.delete(f"/api/artifacts/{artifact_id}", headers={"Cookie": f"{SESSION_COOKIE}={token_two}"})
-    deleted = client.delete(f"/api/artifacts/{artifact_id}", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
-
-    assert blocked_delete.status_code == 404
-    assert deleted.status_code == 200
-    assert deleted.json() == {"ok": True}
-    assert not (artifact_path / "man_in_pool_nano_banana-FINAL.png").exists()
-
-    after_delete = client.get("/api/artifacts", headers={"Cookie": f"{SESSION_COOKIE}={token_one}"})
-    assert after_delete.status_code == 200
-    # Delete removes only the preferred path; an identical workspace copy remains
-    # and still collapses with the runtime-home mirror to one row.
-    assert [artifact["file_name"] for artifact in after_delete.json()["artifacts"]] == [
-        "man_in_pool_nano_banana.png",
-        "daily-sales-dashboard.html",
-    ]
 
 
 def test_notepad_recording_upload_saves_audio_as_artifact(client):
@@ -2631,9 +2559,52 @@ def test_notepad_recording_upload_saves_audio_as_artifact(client):
     saved = Path(str(runtime_row["artifact_path"])) / artifact["relative_path"]
     assert saved.read_bytes() == audio_bytes
 
-    artifacts = client.get("/api/artifacts", headers=headers)
-    assert artifacts.status_code == 200
-    assert artifact["relative_path"] in {item["relative_path"] for item in artifacts.json()["artifacts"]}
+
+def test_notepad_recording_stores_on_device_when_runtime_path_is_unwritable(client, monkeypatch, tmp_path):
+    payload, token = signup(client, "recording-device@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+    device = tmp_path / "Verxio"
+    device.mkdir()
+    blocked = tmp_path / "blocked"
+    blocked.mkdir()
+    blocked.chmod(0o500)
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ? AND agent_id = ?",
+        (payload["workspace"]["id"], payload["profile"]["id"]),
+    )
+    assert runtime_row
+    db.execute(
+        """
+        UPDATE runtime_instances
+        SET workspace_path = ?, artifact_path = ?
+        WHERE id = ?
+        """,
+        (str(blocked / "workspace"), str(blocked / "artifacts"), runtime_row["id"]),
+    )
+    control_plane._invalidate_context_cache()
+    monkeypatch.setattr("app.control_plane.desktop_workspace_dir", lambda: device)
+
+    audio_bytes = b"verxio-local-recording"
+    data_url = f"data:audio/webm;base64,{base64.b64encode(audio_bytes).decode('ascii')}"
+
+    try:
+        response = client.post(
+            "/api/notepad/recordings",
+            json={
+                "file_name": "Weekly Planning",
+                "data_url": data_url,
+                "mime_type": "audio/webm",
+            },
+            headers=headers,
+        )
+    finally:
+        blocked.chmod(0o700)
+
+    assert response.status_code == 200
+    artifact = response.json()["artifact"]
+    assert artifact["relative_path"] == "recording/Weekly Planning.webm"
+    saved = device / "artifacts" / "recording" / "Weekly Planning.webm"
+    assert saved.read_bytes() == audio_bytes
 
 
 def test_notepad_notes_folders_and_public_shares(client):
@@ -2802,6 +2773,34 @@ def test_notepad_runtime_bearer_token_can_list_and_share(client):
     with TestClient(app) as anon:
         assert anon.get("/api/notepad").status_code == 401
         assert anon.get("/api/notepad", headers={"Authorization": "Bearer wrong"}).status_code == 401
+
+
+def test_notepad_device_token_can_list_and_share(client):
+    """Desktop Hermes uses a device token for the same Notepad and share URL."""
+    _payload, token = signup(client, "desktop-notes@example.com")
+    cookie_headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+    note = client.post(
+        "/api/notepad/notes",
+        json={"title": "Desktop note", "content": "From the desktop agent.", "summary": "Desktop summary."},
+        headers=cookie_headers,
+    )
+    assert note.status_code == 200
+    created = client.post(
+        "/api/auth/device",
+        json={"name": "Verxio Desktop", "platform": "desktop"},
+        headers=cookie_headers,
+    )
+    assert created.status_code == 200
+    device_token = created.json()["token"]
+
+    with TestClient(app) as anon:
+        bearer = {"Authorization": f"Bearer {device_token}"}
+        listing = anon.get("/api/notepad", headers=bearer)
+        assert listing.status_code == 200
+        assert any(item["id"] == note.json()["id"] for item in listing.json()["notes"])
+        share = anon.post(f"/api/notepad/notes/{note.json()['id']}/share", headers=bearer)
+        assert share.status_code == 200
+        assert share.json()["url"].endswith(f"/share/notepad/{share.json()['token']}")
 
 
 def test_notepad_summarize_uses_runtime_dashboard(client, monkeypatch):
@@ -3163,7 +3162,7 @@ def test_composio_connections_restart_stale_runtime_env(client, monkeypatch):
             restarted.append(runtime.id)
             return runtime
 
-    monkeypatch.setattr(main, "get_runtime_manager", lambda: _FakeManager())
+    monkeypatch.setattr(main, "get_runtime_manager", lambda *_a, **_k: _FakeManager())
 
     response = client.get("/api/composio/connections", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
 
@@ -3208,7 +3207,7 @@ def test_composio_bridge_sync_restarts_stale_runtime_env_without_apply_live(clie
             restarted.append(runtime.id)
             return runtime
 
-    monkeypatch.setattr(main, "get_runtime_manager", lambda: _FakeManager())
+    monkeypatch.setattr(main, "get_runtime_manager", lambda *_a, **_k: _FakeManager())
 
     import asyncio
 
@@ -3266,7 +3265,7 @@ def test_composio_connection_change_soft_reloads_mcp_without_docker_restart(clie
         soft_reloads.append(runtime.id)
         return {"ok": True, "message": "Reloaded MCP servers (3 tool(s)).", "toolCount": 3}
 
-    monkeypatch.setattr(main, "get_runtime_manager", lambda: _FakeManager())
+    monkeypatch.setattr(main, "get_runtime_manager", lambda *_a, **_k: _FakeManager())
     monkeypatch.setattr(main, "soft_reload_runtime_mcp", fake_soft_reload)
 
     response = client.get("/api/composio/connections", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
@@ -3461,25 +3460,20 @@ def test_composio_setup_returns_oauth_app_fields(client, monkeypatch):
     assert payload["inputFields"][0]["name"] == "client_id"
 
 
-def test_runtime_start_updates_registry_without_real_docker(client, monkeypatch):
-    monkeypatch.setenv("VERXIO_RUNTIME_DOCKER_ROOT", "/host/verxio/runtimes")
-    monkeypatch.setenv("VERXIO_RUNTIME_CONNECT_HOST", "127.0.0.1")
+def test_runtime_start_attaches_to_the_pool_without_docker(client, monkeypatch):
     payload, token = signup(client, "runtime@example.com")
     calls: list[list[str]] = []
 
     def fake_docker(args: list[str]) -> CompletedProcess[str]:
         calls.append(args)
-        if args[:2] == ["inspect", "-f"]:
-            return CompletedProcess(args, 1, "", "not found")
-        if args[:1] == ["run"]:
-            return CompletedProcess(args, 0, "container_123\n", "")
-        return CompletedProcess(args, 0, "", "")
+        return CompletedProcess(args, 1, "", "docker is not used")
 
     async def fake_health(_runtime):
         return True, "Hermes dashboard is reachable."
 
     monkeypatch.setattr(main, "runtime_health", fake_health)
     monkeypatch.setattr("app.runtime_manager._run_docker", fake_docker)
+    monkeypatch.setattr("app.runtime_orch.pool._attach_timeout_seconds", lambda: 0)
 
     response = client.post("/api/runtime/start", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
 
@@ -3487,21 +3481,17 @@ def test_runtime_start_updates_registry_without_real_docker(client, monkeypatch)
     body = response.json()
     assert body["connected"] is True
     assert body["runtime"]["status"] == "starting"
-    assert body["runtime"]["container_id"] == "container_123"
-    assert body["runtime"]["dashboard_url"].startswith("http://127.0.0.1:")
+    assert body["runtime"]["manager"] == "pool"
+    assert not body["runtime"].get("container_id")
+    assert calls == []
 
     runtime_row = db.fetch_one(
         "SELECT * FROM runtime_instances WHERE workspace_id = ?",
         (payload["workspace"]["id"],),
     )
     assert runtime_row
-    assert runtime_row["container_id"] == "container_123"
+    assert runtime_row["manager"] == "pool"
     assert runtime_row["dashboard_token"]
-    run_call = next(call for call in calls if call[:1] == ["run"])
-    assert "/host/verxio/runtimes" in " ".join(run_call)
-    assert "/workspace" in " ".join(run_call)
-    assert "HERMES_WRITE_SAFE_ROOT=" in run_call
-    assert "HERMES_MEDIA_ALLOW_DIRS=/workspace" in run_call
 
 
 def _runtime_for_health(**overrides) -> RuntimeInstance:
@@ -3705,3 +3695,69 @@ def test_secure_session_cookie_uses_samesite_none(client, monkeypatch):
     assert "samesite=none" in set_cookie.lower()
     assert "secure" in set_cookie.lower()
     assert response.cookies.get(SESSION_COOKIE)
+
+
+def test_workflow_run_on_pool_tenant_is_dispatched_then_executed_by_worker(client, monkeypatch):
+    """Pool tenants: API records a queued run + turn job; the worker finishes it
+    through ``execute_workflow_run`` with local Hermes bindings installed."""
+    monkeypatch.delenv("VERXIO_REDIS_URL", raising=False)
+    from app import plane
+    from app.infra.redis import STREAM_TURNS, read_group
+    from app.runtime_dashboard import local_runtime_bindings
+
+    _payload, token = signup(client, "workflow-pool@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+    bootstrap = client.get("/api/bootstrap", headers=headers).json()
+    workspace_id = bootstrap["workspace"]["id"]
+    profile_id = bootstrap["profile"]["id"]
+    plane.set_plane(workspace_id, profile_id, "pool")
+    monkeypatch.setattr("app.plane.tenant_uses_pool", lambda *_args, **_kwargs: True)
+
+    dashboard_calls = []
+
+    async def never_called(*args, **kwargs):  # the API must not run the turn inline
+        dashboard_calls.append(args)
+        raise AssertionError("inline dashboard run on a pool tenant")
+
+    monkeypatch.setattr(workflow_agents, "run_agent_via_dashboard", never_called)
+
+    agent = client.post("/api/workflow-agents", headers=headers, json={"name": "Pool Agent"}).json()
+    run = client.post(f"/api/workflow-agents/{agent['id']}/runs", headers=headers, json={"input": {"customer": "Ada"}})
+    assert run.status_code == 200
+    assert run.json()["status"] == "queued"
+    assert not dashboard_calls
+    events = client.get(f"/api/workflow-agents/{agent['id']}/runs/{run.json()['id']}/events", headers=headers).json()["events"]
+    assert [event["event_type"] for event in events] == ["queued", "dispatched"]
+
+    messages = read_group(STREAM_TURNS, "test-wf", "c", count=5, block_ms=50)
+    assert messages
+    raw = messages[-1][1]["payload"]
+    body = json.loads(raw) if isinstance(raw, str) else raw
+    assert body["source"] == "workflow:manual" and body["run_id"] == run.json()["id"]
+
+    # Worker side: local bindings route the oneshot to the sidecar.
+    async def sidecar_oneshot(workspace, profile, user_input, instructions, images):
+        return "Pool output ready."
+
+    async def sidecar_send(workspace, profile, platform, connection_id, destination, message):
+        return {"ok": True, "queued": True}
+
+    from app import runtime_dashboard
+
+    monkeypatch.setattr(workflow_agents, "run_agent_via_dashboard", runtime_dashboard.run_agent_via_dashboard)
+    from app.control_plane import agent_from_row, workspace_from_row
+
+    workspace = workspace_from_row(db.fetch_one("SELECT * FROM workspaces WHERE id = ?", (workspace_id,)))
+    profile = agent_from_row(db.fetch_one("SELECT * FROM agents WHERE id = ?", (profile_id,)))
+    wf_agent = workflow_agents.get_agent(workspace, profile, agent["id"])
+    queued = workflow_agents.load_workflow_run(run.json()["id"])
+
+    async def _worker_execute():
+        with local_runtime_bindings(oneshot=sidecar_oneshot, sender=sidecar_send):
+            return await workflow_agents.execute_workflow_run(
+                workspace, profile, wf_agent, queued, body["input"], trigger_type="manual"
+            )
+
+    finished = asyncio.run(_worker_execute())
+    assert finished.status == "completed"
+    assert finished.output_text == "Pool output ready."

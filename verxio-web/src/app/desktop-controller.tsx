@@ -9,9 +9,9 @@ import { FolderAccessDialog } from '@/components/folder-access-dialog'
 import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overlay'
 import { Pane, PaneMain } from '@/components/pane-shell'
 import { RemoteDisplayBanner } from '@/components/remote-display-banner'
-import { WebLocalFolderPicker } from '@/components/web-local-folder-picker'
 import { readVerxioAuthScope } from '@/lib/auth-scope'
 import { clearModelOptionsQueries, refreshModelOptionsQueries } from '@/lib/model-options-cache'
+import { warmModelOptions } from '@/lib/model-options-query'
 import { cn } from '@/lib/utils'
 import { useSkinCommand } from '@/themes/use-skin-command'
 
@@ -24,7 +24,7 @@ import {
   type SessionInfo,
   triggerCronJob
 } from '../hermes'
-import { preserveLocalAssistantErrors, toChatMessages } from '../lib/chat-messages'
+import { chatMessageText, preserveLocalAssistantErrors, toChatMessages } from '../lib/chat-messages'
 import { storedSessionIdForNotification } from '../lib/session-ids'
 import { shouldRefreshSessions, withSessionListRetries } from '../lib/session-list-sync'
 import { setCronFocusJobId, setCronJobs } from '../store/cron'
@@ -125,7 +125,6 @@ import { UpdatesOverlay } from './updates-overlay'
 
 const AgentsView = lazy(async () => ({ default: (await import('./agents')).AgentsView }))
 const ActivityView = lazy(async () => ({ default: (await import('./activity')).ActivityView }))
-const ArtifactsView = lazy(async () => ({ default: (await import('./artifacts')).ArtifactsView }))
 const CommandCenterView = lazy(async () => ({ default: (await import('./command-center')).CommandCenterView }))
 const CronView = lazy(async () => ({ default: (await import('./cron')).CronView }))
 const MessagingView = lazy(async () => ({ default: (await import('./messaging')).MessagingView }))
@@ -523,22 +522,41 @@ export function DesktopController() {
     async (
       attempts = 1,
       storedSessionId = selectedStoredSessionIdRef.current,
-      runtimeSessionId = activeSessionIdRef.current
+      runtimeSessionId = activeSessionIdRef.current,
+      expectedText?: string
     ) => {
       if (!storedSessionId || !runtimeSessionId) {
         return
       }
 
       const storedProfile = $sessions.get().find(session => session.id === storedSessionId)?.profile
+      const needle = expectedText?.replace(/\s+/g, ' ').trim() ?? ''
 
       for (let index = 0; index < Math.max(1, attempts); index += 1) {
         try {
           const latest = await getSessionMessages(storedSessionId, storedProfile)
+          const nextMessages = preserveLocalAssistantErrors(toChatMessages(latest.messages), [])
+
+          const storedText = nextMessages
+            .map(message => chatMessageText(message))
+            .join('\n')
+            .replace(/\s+/g, ' ')
+
+          // Don't replace a live turn with a snapshot that hasn't landed the
+          // answer yet. Retry until the saved transcript includes it.
+          if (needle && !storedText.includes(needle)) {
+            if (index < attempts - 1) {
+              await new Promise(resolve => window.setTimeout(resolve, 250))
+            }
+
+            continue
+          }
+
           updateSessionState(
             runtimeSessionId,
             state => ({
               ...state,
-              messages: preserveLocalAssistantErrors(toChatMessages(latest.messages), state.messages)
+              messages: preserveLocalAssistantErrors(nextMessages, state.messages)
             }),
             storedSessionId
           )
@@ -747,6 +765,12 @@ export function DesktopController() {
         window.setTimeout(() => void refreshHermesConfig().catch(() => undefined), 250),
         window.setTimeout(() => void refreshCurrentModel().catch(() => undefined), 450),
         window.setTimeout(() => void refreshActiveProfile().catch(() => undefined), 650),
+        // Warm the model catalog so the bottom-right menu lists models the
+        // moment the runtime turns green instead of on first open.
+        window.setTimeout(
+          () => void warmModelOptions({ gateway: gatewayRef.current, queryClient, sessionId: null }),
+          900
+        ),
         window.setTimeout(() => void refreshCronJobs().catch(() => undefined), 1_200)
       ]
 
@@ -754,7 +778,15 @@ export function DesktopController() {
         timers.forEach(timer => window.clearTimeout(timer))
       }
     }
-  }, [gatewayState, refreshCronJobs, refreshCurrentModel, refreshHermesConfig, refreshSessions])
+  }, [
+    gatewayRef,
+    gatewayState,
+    queryClient,
+    refreshCronJobs,
+    refreshCurrentModel,
+    refreshHermesConfig,
+    refreshSessions
+  ])
 
   // Cross-device sync: devices share one runtime state DB but have no push channel.
   // Poll the newest session id and re-fetch when another device creates a chat,
@@ -870,7 +902,6 @@ export function DesktopController() {
       <BootFailureOverlay />
       <CommandPalette />
       <FolderAccessDialog />
-      <WebLocalFolderPicker />
 
       {settingsOpen && (
         <Suspense fallback={null}>
@@ -1060,14 +1091,6 @@ export function DesktopController() {
               </Suspense>
             }
             path="messaging"
-          />
-          <Route
-            element={
-              <Suspense fallback={null}>
-                <ArtifactsView setStatusbarItemGroup={setStatusbarItemGroup} />
-              </Suspense>
-            }
-            path="artifacts"
           />
           <Route
             element={

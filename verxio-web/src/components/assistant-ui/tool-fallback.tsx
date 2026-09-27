@@ -21,10 +21,13 @@ import { Tip } from '@/components/ui/tooltip'
 import { useI18n } from '@/i18n'
 import { PrettyLink, LinkifiedText as SharedLinkifiedText, urlSlugTitleLabel } from '@/lib/external-link'
 import { AlertCircle, CheckCircle2 } from '@/lib/icons'
+import { normalizeOrLocalPreviewTarget } from '@/lib/local-preview'
+import { notepadShareToken, rewriteLocalNotepadShareUrl } from '@/lib/notepad-share-preview'
 import { useEnterAnimation } from '@/lib/use-enter-animation'
 import { cn } from '@/lib/utils'
+import { $sessionPreviewRegistry, setSessionPreviewTarget } from '@/store/preview'
 import { recordPreviewArtifact } from '@/store/preview-status'
-import { $activeSessionId, $currentCwd } from '@/store/session'
+import { $activeSessionId, $currentCwd, $selectedStoredSessionId } from '@/store/session'
 import { $toolInlineDiffs } from '@/store/tool-diffs'
 import { $toolRowDismissed, dismissToolRow } from '@/store/tool-dismiss'
 import { $toolDisclosureOpen, $toolViewMode, setToolDisclosureOpen } from '@/store/tool-view'
@@ -230,13 +233,44 @@ function ToolEntry({ part }: ToolEntryProps) {
   const currentCwd = useStore($currentCwd)
   const previewTarget = view.previewTarget
 
+  const sharePreviewUrl =
+    !isPending && previewTarget && notepadShareToken(previewTarget) ? rewriteLocalNotepadShareUrl(previewTarget) : ''
+
   useEffect(() => {
     if (isPending || !activeSessionId || !previewTarget || !isPreviewableTarget(previewTarget)) {
       return
     }
 
     recordPreviewArtifact(activeSessionId, previewTarget, currentCwd || '')
-  }, [activeSessionId, currentCwd, isPending, previewTarget])
+
+    if (!notepadShareToken(previewTarget)) {
+      return
+    }
+
+    const sessionId = $selectedStoredSessionId.get() || activeSessionId
+
+    const dismissed = ($sessionPreviewRegistry.get()[sessionId] ?? []).some(
+      record => record.dismissedAt && (record.target === previewTarget || record.normalized.url === sharePreviewUrl)
+    )
+
+    if (dismissed) {
+      return
+    }
+
+    let cancelled = false
+
+    void normalizeOrLocalPreviewTarget(previewTarget, currentCwd || undefined).then(target => {
+      if (cancelled || !target) {
+        return
+      }
+
+      setSessionPreviewTarget(sessionId, target, 'tool-result', previewTarget)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeSessionId, currentCwd, isPending, previewTarget, sharePreviewUrl])
 
   const detailSections = useMemo(() => {
     if (!view.detail) {
@@ -360,6 +394,24 @@ function ToolEntry({ part }: ToolEntryProps) {
             )}
           </span>
         </DisclosureRow>
+        {sharePreviewUrl && (
+          <a
+            className="mt-1 block max-w-full truncate px-0.5 font-mono text-[0.72rem] leading-5 text-foreground underline decoration-current/25 underline-offset-2"
+            href={sharePreviewUrl}
+            onClick={event => {
+              event.preventDefault()
+              void normalizeOrLocalPreviewTarget(sharePreviewUrl, currentCwd || undefined).then(target => {
+                const sessionId = $selectedStoredSessionId.get() || activeSessionId
+
+                if (target && sessionId) {
+                  setSessionPreviewTarget(sessionId, target, 'tool-result', sharePreviewUrl)
+                }
+              })
+            }}
+          >
+            {sharePreviewUrl}
+          </a>
+        )}
       </div>
       {isPending && <PendingToolApproval part={part} />}
       {open && (

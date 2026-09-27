@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
 
 import httpx
@@ -155,6 +158,28 @@ async def list_skills_via_dashboard(workspace: Workspace, profile: AgentProfile)
     return []
 
 
+OneshotRunner = Callable[[Workspace, AgentProfile, str, str | None, list[str] | None], Awaitable[str]]
+MessageSender = Callable[[Workspace, AgentProfile, str, str, str, str], Awaitable[dict[str, object]]]
+
+# Pool workers run workflow/SDR/micromgr turns against their local Hermes
+# sidecar instead of proxying to a dashboard URL. They install these via
+# ``local_runtime_bindings`` for the duration of a job; every caller of
+# ``run_agent_via_dashboard`` / ``send_message_via_dashboard`` then routes
+# through the sidecar (or the delivery queue) without changing call sites.
+_LOCAL_ONESHOT: ContextVar[OneshotRunner | None] = ContextVar("verxio_local_oneshot", default=None)
+_LOCAL_SENDER: ContextVar[MessageSender | None] = ContextVar("verxio_local_sender", default=None)
+
+
+@contextmanager
+def local_runtime_bindings(*, oneshot: OneshotRunner | None, sender: MessageSender | None) -> Iterator[None]:
+    tokens = (_LOCAL_ONESHOT.set(oneshot), _LOCAL_SENDER.set(sender))
+    try:
+        yield
+    finally:
+        _LOCAL_ONESHOT.reset(tokens[0])
+        _LOCAL_SENDER.reset(tokens[1])
+
+
 async def run_agent_via_dashboard(
     workspace: Workspace,
     profile: AgentProfile,
@@ -163,6 +188,12 @@ async def run_agent_via_dashboard(
     instructions: str | None = None,
     images: list[str] | None = None,
 ) -> str:
+    local = _LOCAL_ONESHOT.get()
+    if local is not None:
+        output = (await local(workspace, profile, user_input, instructions, images)).strip()
+        if not output:
+            raise HTTPException(status_code=502, detail="Hermes returned an empty summary.")
+        return output
     runtime = ensure_runtime_instance(workspace, profile)
     runtime = await start_runtime(runtime)
 
@@ -214,6 +245,9 @@ async def send_message_via_dashboard(
     destination: str,
     message: str,
 ) -> dict[str, object]:
+    local = _LOCAL_SENDER.get()
+    if local is not None:
+        return await local(workspace, profile, platform, connection_id, destination, message)
     runtime = ensure_runtime_instance(workspace, profile)
     runtime = await start_runtime(runtime)
     if not runtime.dashboard_url:

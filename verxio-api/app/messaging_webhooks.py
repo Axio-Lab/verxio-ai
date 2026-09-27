@@ -16,7 +16,7 @@ from app import db
 from app.control_plane import get_runtime_for_user, runtime_from_row
 from app.models import RuntimeInstance
 from app.runtime_manager import (
-    DASHBOARD_UPSTREAM_SLOTS,
+    dashboard_upstream_slot,
     runtime_dashboard_base_url,
     runtime_live_dashboard_token_async,
     runtime_webhook_base_url,
@@ -133,7 +133,7 @@ def _swap_url_port(url: str, port: int) -> str:
 async def resolve_webhook_base(runtime: RuntimeInstance) -> str | None:
     from app.runtime_orch.factory import get_runtime_manager
 
-    manager = get_runtime_manager()
+    manager = get_runtime_manager(runtime)
     address = await manager.webhook_address(runtime)
     if address:
         return address.rstrip("/")
@@ -199,6 +199,38 @@ async def ingest_public_hook(
         ) from exc
 
 
+async def forward_queued_hook(workspace_id: str, payload: dict[str, Any]) -> None:
+    """Replay a queued ``messaging_hook`` job against the tenant's webhook listener.
+
+    Mirrors ``ingest_public_hook`` for bodies captured by the API when
+    ``VERXIO_WEBHOOK_INLINE`` is off: wake the runtime, resolve the listener on
+    the current holder, and POST the original body/headers.
+    """
+    name = str(payload.get("route_name") or "").strip().lower()
+    if not _ROUTE_NAME_RE.match(name):
+        raise ValueError("Invalid webhook route name in queued hook.")
+    conn = str(payload.get("connection_id") or "").strip()
+    if conn and (not _CONN_ID_RE.match(conn) or conn == "default"):
+        conn = ""
+    runtime = get_runtime_for_workspace(workspace_id)
+    runtime = await wake_runtime(runtime, wait_ready=True, reason="messaging.webhook.queued")
+    base = await resolve_webhook_base(runtime)
+    if not base:
+        raise RuntimeError("Runtime webhook listener is not reachable.")
+    target = f"{base}/c/{conn}/webhooks/{name}" if conn else f"{base}/webhooks/{name}"
+    raw_headers = payload.get("headers") if isinstance(payload.get("headers"), dict) else {}
+    headers = {
+        str(key): str(value)
+        for key, value in raw_headers.items()
+        if str(key).lower() not in _HOP_BY_HOP and str(key).lower() != "host"
+    }
+    body = str(payload.get("body") or "").encode("utf-8")
+    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
+        response = await client.post(target, content=body, headers=headers)
+    if response.status_code >= 500:
+        raise RuntimeError(f"Runtime webhook listener returned {response.status_code}")
+
+
 async def _dashboard_token(runtime: RuntimeInstance) -> str:
     row = db.fetch_one("SELECT dashboard_token FROM runtime_instances WHERE id = ?", (runtime.id,))
     fallback = str(row.get("dashboard_token") or "") if row else ""
@@ -232,7 +264,7 @@ async def _dashboard_request(
     token = await _dashboard_token(runtime)
     url = f"{base.rstrip('/')}/{path.lstrip('/')}"
     try:
-        async with DASHBOARD_UPSTREAM_SLOTS:
+        async with dashboard_upstream_slot(runtime):
             async with httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=5.0)) as client:
                 return await client.request(
                     method,

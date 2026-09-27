@@ -1,0 +1,102 @@
+{{- if .Values.monitoring.enabled }}
+# Prometheus Operator wiring. /metrics is served by the API on its normal
+# port and is cluster-internal (the web nginx only forwards /api/).
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: verxio-api
+  labels:
+    {{- range $k, $v := .Values.monitoring.serviceMonitor.labels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      app: verxio-api
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.monitoring.serviceMonitor.interval }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: verxio-slo
+  labels:
+    {{- range $k, $v := .Values.monitoring.prometheusRule.labels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+spec:
+  groups:
+    - name: verxio.slo
+      rules:
+        # Runtime health: share of dashboard healthz probes (control plane +
+        # watchdog) that failed over 5 minutes. This is the leading indicator
+        # for users seeing "Reconnecting".
+        - alert: VerxioRuntimeHealthFailRateHigh
+          expr: |
+            sum(rate(verxio_runtime_health_probes_total{result="fail"}[5m]))
+              /
+            clamp_min(sum(rate(verxio_runtime_health_probes_total[5m])), 0.001)
+              > {{ .Values.monitoring.prometheusRule.healthFailRatio }}
+          for: 5m
+          labels:
+            severity: page
+          annotations:
+            summary: "Runtime dashboards failing health probes"
+            description: "{{ printf "{{ $value | humanizePercentage }}" }} of runtime healthz probes failed over 5m."
+
+        # Watchdog is having to heal runtimes continuously: something upstream
+        # (image, node pressure, sandbox) is wrong even if users are shielded.
+        - alert: VerxioWatchdogHealingFrequently
+          expr: sum(increase(verxio_runtime_watchdog_actions_total[15m])) > 10
+          for: 15m
+          labels:
+            severity: warn
+          annotations:
+            summary: "Runtime watchdog restarted dashboards >10 times in 15m"
+
+        # Proxy latency SLO for the polled lightweight reads (status/sessions).
+        - alert: VerxioDashboardProxyLatencyHigh
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(verxio_dashboard_proxy_duration_seconds_bucket{kind="lightweight"}[5m])))
+              > {{ .Values.monitoring.prometheusRule.proxyP95Seconds }}
+          for: 10m
+          labels:
+            severity: warn
+          annotations:
+            summary: "Dashboard proxy p95 above SLO"
+            description: "p95 upstream latency for lightweight dashboard reads is {{ printf "{{ $value }}" }}s."
+
+        - alert: VerxioDashboardProxyErrorsHigh
+          expr: |
+            sum(rate(verxio_dashboard_proxy_errors_total[5m]))
+              /
+            clamp_min(sum(rate(verxio_dashboard_proxy_duration_seconds_count[5m])), 0.001)
+              > 0.05
+          for: 5m
+          labels:
+            severity: page
+          annotations:
+            summary: "More than 5% of dashboard proxy calls are failing"
+
+        - alert: VerxioApiLatencyHigh
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le) (rate(verxio_http_request_duration_seconds_bucket{route!~"/api/runtime/dashboard/.*"}[5m])))
+              > 1
+          for: 10m
+          labels:
+            severity: warn
+          annotations:
+            summary: "API p95 above 1s (excluding dashboard proxy)"
+
+        - alert: VerxioApiReplicasUnavailable
+          expr: kube_deployment_status_replicas_available{deployment="verxio-api"} < 1
+          for: 2m
+          labels:
+            severity: page
+          annotations:
+            summary: "No verxio-api replicas available"
+{{- end }}

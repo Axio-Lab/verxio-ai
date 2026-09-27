@@ -552,7 +552,7 @@ export function HowItWorks() {
                 style={{ opacity: animate ? 1 : 0, transition: "opacity 0.4s ease 0.6s" }}
               >
                 <a
-                  href={appPath("/signup")}
+                  href={appPath("/download")}
                   className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:text-primary/80 transition-colors group"
                 >
                   Get started with {tab.label}

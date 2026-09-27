@@ -84,15 +84,7 @@ export type CommandDispatchResponse =
   | SendCommandDispatchResponse
   | PrefillCommandDispatchResponse
 
-export type SidebarNavId =
-  | 'agents'
-  | 'artifacts'
-  | 'command-center'
-  | 'messaging'
-  | 'new-session'
-  | 'notepad'
-  | 'settings'
-  | 'skills'
+export type SidebarNavId = 'agents' | 'command-center' | 'messaging' | 'new-session' | 'notepad' | 'settings' | 'skills'
 
 export interface SidebarNavItem {
   id: SidebarNavId

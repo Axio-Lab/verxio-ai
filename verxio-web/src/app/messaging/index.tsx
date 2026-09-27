@@ -428,10 +428,12 @@ function PlatformDetail({
   const { t } = useI18n()
   const m = t.messaging
   const [showAdvanced, setShowAdvanced] = useState(false)
-  const connections = platform.connections || []
+  const connections = useMemo(() => platform.connections || [], [platform.connections])
+
   const [selectedConnectionId, setSelectedConnectionId] = useState<string>(
     () => connections.find(row => row.is_default)?.id || connections[0]?.id || 'default'
   )
+
   const selectedConnection = connections.find(row => row.id === selectedConnectionId) || connections[0] || null
 
   useEffect(() => {
@@ -453,17 +455,22 @@ function PlatformDetail({
   const setupGuideUrl = isVendorSetupUrl(platform.docs_url) ? platform.docs_url : ''
   const multiAccount = Boolean(platform.supports_multiple_connections)
   const hasEdits = Object.keys(trimEdits(edits)).length > 0
+
   const activeEnvVars =
     multiAccount && selectedConnection?.env_vars?.length ? selectedConnection.env_vars : platform.env_vars
+
   const requiredFields = activeEnvVars.filter(
     field => field.required || (isApiServer && field.key === 'API_SERVER_KEY')
   )
+
   const optionalFields = activeEnvVars.filter(
     field => !field.required && !(isApiServer && field.key === 'API_SERVER_KEY') && !fieldCopy(field, m).advanced
   )
+
   const advancedFields = activeEnvVars.filter(
     field => !field.required && !(isApiServer && field.key === 'API_SERVER_KEY') && fieldCopy(field, m).advanced
   )
+
   const hiddenCount = advancedFields.length
   const isSavingEnv = saving === `env:${platform.id}` || saving === `conn:${platform.id}`
 

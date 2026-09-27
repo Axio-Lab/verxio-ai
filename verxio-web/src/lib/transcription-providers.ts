@@ -1,4 +1,4 @@
-export type CloudTranscriptionProviderId = 'elevenlabs' | 'fishaudio' | 'groq' | 'mistral' | 'openai' | 'xai'
+export type CloudTranscriptionProviderId = 'elevenlabs' | 'fishaudio' | 'groq' | 'local' | 'mistral' | 'openai' | 'xai'
 
 export interface CloudTranscriptionProvider {
   catalogError?: string | null
@@ -36,6 +36,21 @@ export interface CloudTranscriptionCatalogProvider {
 export interface CloudTranscriptionCatalogResponse {
   cacheTtlSeconds: number
   providers: CloudTranscriptionCatalogProvider[]
+}
+
+export const LOCAL_WHISPER_PROVIDER: CloudTranscriptionProvider = {
+  id: 'local',
+  label: 'Whisper',
+  envKey: '',
+  recommendedModel: 'base',
+  models: ['tiny', 'base', 'small', 'medium', 'large-v3'],
+  docsUrl: '',
+  description:
+    'On-device Whisper. Recordings stay on this machine and no API key is required. The first transcription downloads the model.'
+}
+
+export function transcriptionProviderRequiresKey(provider: Pick<CloudTranscriptionProvider, 'envKey' | 'id'>): boolean {
+  return provider.id !== 'local' && Boolean(provider.envKey)
 }
 
 export const FALLBACK_CLOUD_TRANSCRIPTION_PROVIDERS: CloudTranscriptionProvider[] = [
@@ -117,10 +132,10 @@ export function cloudTranscriptionProvidersFromCatalog(
   catalog: CloudTranscriptionCatalogResponse | null | undefined
 ): CloudTranscriptionProvider[] {
   if (!catalog?.providers?.length) {
-    return CLOUD_TRANSCRIPTION_PROVIDERS
+    return [LOCAL_WHISPER_PROVIDER, ...CLOUD_TRANSCRIPTION_PROVIDERS]
   }
 
-  return CLOUD_TRANSCRIPTION_PROVIDERS.map(fallback => {
+  const cloud = CLOUD_TRANSCRIPTION_PROVIDERS.map(fallback => {
     const live = catalog.providers.find(provider => provider.id === fallback.id)
 
     if (!live) {
@@ -143,6 +158,8 @@ export function cloudTranscriptionProvidersFromCatalog(
       recommendedModel: live.recommendedModel || models[0] || fallback.recommendedModel
     }
   })
+
+  return [LOCAL_WHISPER_PROVIDER, ...cloud]
 }
 
 export function transcriptionModelOptions(provider: CloudTranscriptionProvider, selectedModel?: string): string[] {

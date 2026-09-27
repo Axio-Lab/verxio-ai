@@ -1,6 +1,6 @@
 'use client'
 
-import { type FC, useCallback, useEffect, useState } from 'react'
+import { type FC, useCallback, useEffect, useMemo, useState } from 'react'
 
 import { DiffusionCanvas } from '@/components/chat/image-generation-placeholder'
 import {
@@ -82,7 +82,7 @@ async function resolveFirstImageSrc(candidates: readonly string[]): Promise<stri
 export const GeneratedImage: FC<{ aspectRatio?: string; result?: unknown }> = ({ aspectRatio, result }) => {
   const { t } = useI18n()
   const copy = t.desktop
-  const candidates = result === undefined ? [] : generatedImageCandidates(result)
+  const candidates = useMemo(() => (result === undefined ? [] : generatedImageCandidates(result)), [result])
   const image = result === undefined ? null : generatedImageFromResult(result)
   const pending = result === undefined
 

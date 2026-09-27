@@ -9,7 +9,7 @@ import { type Translations, useI18n } from '@/i18n'
 import { sessionTitle } from '@/lib/chat-runtime'
 import { triggerHaptic } from '@/lib/haptics'
 import { cn } from '@/lib/utils'
-import { $attentionSessionIds } from '@/store/session'
+import { $attentionSessionIds, sessionPinId } from '@/store/session'
 
 import { SessionActionsMenu, SessionContextMenu } from './session-actions-menu'
 
@@ -77,6 +77,7 @@ export function SidebarSessionRow({
       onArchive={onArchive}
       onDelete={onDelete}
       onPin={onPin}
+      pinId={sessionPinId(session)}
       pinned={isPinned}
       profile={session.profile}
       sessionId={session.id}
@@ -193,6 +194,7 @@ export function SidebarSessionRow({
             onArchive={onArchive}
             onDelete={onDelete}
             onPin={onPin}
+            pinId={sessionPinId(session)}
             pinned={isPinned}
             profile={session.profile}
             sessionId={session.id}

@@ -1,4 +1,5 @@
 import { getGlobalModelOptions, setModelAssignment } from '@/hermes'
+import { hermesGatewayModelForHostedSelection } from '@/lib/hosted-default-model'
 import {
   getInferenceCatalog,
   getInferenceSettings,
@@ -71,6 +72,7 @@ export function hostedModelOptionsFromInference(
   catalog: VerxioInferenceCatalogResponse
 ): ModelOptionsResponse | null {
   const selected = selectedHostedModel(settings, catalog)
+
   const hostedProviders = (catalog.models ?? [])
     .filter(model => model.hostedAvailable && model.upstreamModelId)
     .map(model => {
@@ -325,8 +327,17 @@ function withBudget<T>(promise: Promise<T>, ms: number): Promise<T | null> {
   })
 }
 
+export interface ScopedModelOptionsHooks {
+  /**
+   * Fired when the runtime catalog resolves after the hosted budget expired.
+   * Receives the fully merged catalog so callers can patch their cache.
+   */
+  onLateRuntimeOptions?: (options: ModelOptionsResponse) => void
+}
+
 export async function getScopedModelOptions(
-  loadRuntimeOptions: RuntimeModelOptionsLoader = getGlobalModelOptions
+  loadRuntimeOptions: RuntimeModelOptionsLoader = getGlobalModelOptions,
+  hooks: ScopedModelOptionsHooks = {}
 ): Promise<ModelOptionsResponse> {
   if (!verxioApiEnabled()) {
     return loadRuntimeOptions()
@@ -336,25 +347,88 @@ export async function getScopedModelOptions(
   // Avoid unhandled rejection if we abandon a slow runtime catalog fetch.
   void runtimeOptionsPromise.catch(() => undefined)
 
-  try {
+  const loadHosted = async () => {
     const [settings, catalog] = await Promise.all([getInferenceSettings(), getInferenceCatalog()])
     const hosted = hostedModelOptionsFromInference(settings, catalog)
-    const hostedUsable = hosted && (hosted.providers?.length ?? 0) > 0 ? hosted : null
-    const runtime = await withBudget(runtimeOptionsPromise, HOSTED_RUNTIME_OPTIONS_BUDGET_MS)
 
-    if (hostedUsable && runtime) {
-      return prioritizeLinkedProviders(mergeHostedAndRuntimeModelOptions(hostedUsable, runtime))
+    return hosted && (hosted.providers?.length ?? 0) > 0 ? hosted : null
+  }
+
+  let hostedUsable: ModelOptionsResponse | null = null
+
+  try {
+    hostedUsable = await loadHosted()
+  } catch {
+    // Control plane hiccup. One retry, then fall through to the runtime catalog.
+    try {
+      hostedUsable = await loadHosted()
+    } catch {
+      hostedUsable = null
+    }
+  }
+
+  const paintHosted = (hosted: ModelOptionsResponse, partial: boolean): ModelOptionsResponse => {
+    if (hooks.onLateRuntimeOptions) {
+      const onLate = hooks.onLateRuntimeOptions
+
+      void runtimeOptionsPromise
+        .then(lateRuntime => {
+          if (lateRuntime && (lateRuntime.providers?.length ?? 0) > 0) {
+            onLate(prioritizeLinkedProviders(mergeHostedAndRuntimeModelOptions(hosted, lateRuntime)))
+          }
+        })
+        .catch(() => undefined)
+    }
+
+    return { ...prioritizeLinkedProviders(hosted), partial }
+  }
+
+  try {
+    const runtime = await withBudget(runtimeOptionsPromise, HOSTED_RUNTIME_OPTIONS_BUDGET_MS)
+    const runtimeUsable = runtime && (runtime.providers?.length ?? 0) > 0 ? runtime : null
+
+    if (hostedUsable && runtimeUsable) {
+      return prioritizeLinkedProviders(mergeHostedAndRuntimeModelOptions(hostedUsable, runtimeUsable))
     }
 
     if (hostedUsable) {
-      return prioritizeLinkedProviders(hostedUsable)
+      // Hermes /api/model/options hangs while it enumerates BYOK providers.
+      // Hosted Gemini/Qwen must still show; linked providers merge in later.
+      return paintHosted(hostedUsable, true)
     }
 
-    // Control-plane hosted catalog unavailable — fall back to runtime providers.
-    return ensureByokDefaultModel(prioritizeLinkedProviders(await runtimeOptionsPromise))
-  } catch {
-    // If the Verxio control-plane call hiccups, keep the model picker usable.
+    const resolved = runtime ?? (await runtimeOptionsPromise)
+
+    return ensureByokDefaultModel(prioritizeLinkedProviders(resolved))
+  } catch (error) {
+    if (hostedUsable) {
+      return paintHosted(hostedUsable, true)
+    }
+
+    throw error
+  }
+}
+
+/** Hosted picker rows talk to local Hermes as gateway model ids, not native providers. */
+export async function modelAssignmentForHermes(
+  model: string,
+  provider: string
+): Promise<{ model: string; provider: string }> {
+  const current = { model: model.trim(), provider: provider.trim() }
+
+  if (!verxioApiEnabled() || !current.model) {
+    return current
   }
 
-  return ensureByokDefaultModel(prioritizeLinkedProviders(await runtimeOptionsPromise))
+  try {
+    const [settings, catalog] = await Promise.all([getInferenceSettings(), getInferenceCatalog()])
+
+    if (settings.mode !== 'hosted') {
+      return current
+    }
+
+    return hermesGatewayModelForHostedSelection(current.model, current.provider, catalog) ?? current
+  } catch {
+    return current
+  }
 }

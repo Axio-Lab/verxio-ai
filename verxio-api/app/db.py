@@ -582,6 +582,35 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         completed_at TEXT
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS device_tokens (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        token_hash TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL DEFAULT '',
+        platform TEXT NOT NULL DEFAULT '',
+        last_used_at TEXT,
+        revoked_at TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS agent_state_files (
+        user_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        etag TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL DEFAULT 0,
+        updated_by TEXT NOT NULL DEFAULT 'desktop',
+        updated_at TEXT NOT NULL,
+        expires_at TEXT,
+        content BLOB,
+        PRIMARY KEY (user_id, path),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_device_tokens_user ON device_tokens(user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_agent_state_files_expires ON agent_state_files(expires_at)",
     "CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON sessions(token_hash)",
     "CREATE INDEX IF NOT EXISTS idx_workspace_members_user ON workspace_members(user_id)",
     "CREATE INDEX IF NOT EXISTS idx_agents_workspace ON agents(workspace_id)",
@@ -844,6 +873,22 @@ def _get_persistent_connection(settings: DatabaseSettings) -> Any:
     return conn
 
 
+def _drop_persistent_connection() -> None:
+    """Forget this thread's cached connection so the next call reconnects.
+
+    Called after any error on a persistent (Turso) connection: a dropped TLS
+    session or a server-side timeout otherwise poisons the thread for good.
+    """
+    existing = getattr(_THREAD_LOCAL, "connection", None)
+    _THREAD_LOCAL.connection = None
+    _THREAD_LOCAL.connection_key = None
+    if existing is not None:
+        try:
+            _close_connection(existing)
+        except Exception:
+            pass
+
+
 @contextmanager
 def connection() -> Iterator[Any]:
     settings = get_database_settings()
@@ -859,9 +904,59 @@ def connection() -> Iterator[Any]:
         yield conn
         if hasattr(conn, "commit"):
             conn.commit()
+    except Exception:
+        if persistent:
+            _drop_persistent_connection()
+        raise
     finally:
         if not persistent and hasattr(conn, "close"):
             conn.close()
+
+
+# ── Bounded DB executor ──────────────────────────────────────────────────────
+# The async helpers below used to hop onto ``asyncio.to_thread``'s default
+# executor, which is shared with every other blocking call in the process and
+# sized min(32, cpu+4). Under a reconnect storm hundreds of requests queued
+# there behind docker/k8s calls, and each new thread minted its own Turso
+# connection. A dedicated executor gives the persistent per-thread connections
+# a fixed ceiling (a real pool of VERXIO_DB_POOL_SIZE connections) and keeps
+# DB latency independent of unrelated blocking work.
+_DB_EXECUTOR: Any = None
+_DB_EXECUTOR_LOCK = threading.Lock()
+
+
+def db_pool_size() -> int:
+    raw = os.getenv("VERXIO_DB_POOL_SIZE", "").strip()
+    try:
+        return max(1, int(raw)) if raw else 16
+    except ValueError:
+        return 16
+
+
+def _db_executor():
+    global _DB_EXECUTOR
+    if _DB_EXECUTOR is None:
+        from concurrent.futures import ThreadPoolExecutor
+
+        with _DB_EXECUTOR_LOCK:
+            if _DB_EXECUTOR is None:
+                _DB_EXECUTOR = ThreadPoolExecutor(max_workers=db_pool_size(), thread_name_prefix="verxio-db")
+    return _DB_EXECUTOR
+
+
+async def _run_db(fn, /, *args):
+    import asyncio
+
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_db_executor(), fn, *args)
+
+
+def reset_db_executor_for_tests() -> None:
+    global _DB_EXECUTOR
+    with _DB_EXECUTOR_LOCK:
+        if _DB_EXECUTOR is not None:
+            _DB_EXECUTOR.shutdown(wait=False, cancel_futures=True)
+        _DB_EXECUTOR = None
 
 
 def _cursor_to_dicts(cursor: Any) -> list[dict[str, Any]]:
@@ -940,6 +1035,10 @@ def _ensure_legacy_columns(conn: Any) -> None:
     for column, definition in workflow_trigger_additions.items():
         if column not in workflow_trigger_columns:
             conn.execute(f"ALTER TABLE workflow_triggers ADD COLUMN {column} {definition}")
+
+    agent_state_columns = _table_columns(conn, "agent_state_files")
+    if agent_state_columns and "content" not in agent_state_columns:
+        conn.execute("ALTER TABLE agent_state_files ADD COLUMN content BLOB")
 
     runtime_columns = _table_columns(conn, "runtime_instances")
     runtime_additions = {
@@ -1258,3 +1357,35 @@ def transaction() -> Iterator[Any]:
             if hasattr(conn, "rollback"):
                 conn.rollback()
             raise
+
+
+async def aexecute(sql: str, params: Iterable[Any] = ()) -> None:
+    """Run ``execute`` off the event loop so Turso/SQLite never blocks uvicorn."""
+    await _run_db(execute, sql, params)
+
+
+async def afetch_one(sql: str, params: Iterable[Any] = ()) -> dict[str, Any] | None:
+    return await _run_db(fetch_one, sql, params)
+
+
+async def afetch_all(sql: str, params: Iterable[Any] = ()) -> list[dict[str, Any]]:
+    return await _run_db(fetch_all, sql, params)
+
+
+async def atransaction(work):
+    """Run a sync transactional callable off the event loop.
+
+    ``work`` receives the open connection and may execute multiple statements.
+    """
+
+    def _run():
+        with transaction() as conn:
+            return work(conn)
+
+    return await _run_db(_run)
+
+
+def ping() -> dict[str, Any]:
+    """Cheap connectivity probe for /api/health."""
+    row = fetch_one("SELECT 1 AS ok")
+    return {"ok": bool(row and row.get("ok") == 1), "mode": get_database_settings().mode}

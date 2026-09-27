@@ -87,7 +87,7 @@ async def wake_runtime(
     reason: str = "api",
 ) -> RuntimeInstance:
     """Idempotent wake: acquire lease, restore snapshot if needed, start, touch activity."""
-    manager = get_runtime_manager()
+    manager = get_runtime_manager(runtime)
     store = get_lease_store()
     lease = store.try_acquire(f"runtime-start:{runtime.id}", ttl_seconds=120)
     if lease is None:
@@ -130,7 +130,7 @@ async def wake_runtime(
 
 
 async def drain_runtime(runtime: RuntimeInstance) -> RuntimeInstance:
-    manager = get_runtime_manager()
+    manager = get_runtime_manager(runtime)
     # Always checkpoint at the lifecycle layer so every backend gets a snapshot.
     checkpoint_hermes_home(runtime)
     return await manager.drain(runtime)
@@ -189,7 +189,6 @@ async def reconcile_missing_runtimes(
     """
     from app.runtime_manager import invalidate_runtime_caches
 
-    manager = get_runtime_manager()
     rows = db.fetch_all(
         """
         SELECT * FROM runtime_instances
@@ -200,7 +199,7 @@ async def reconcile_missing_runtimes(
     woken: list[str] = []
     for row in rows:
         runtime = runtime_from_row(row)
-        ok, _ = await manager.health(runtime)
+        ok, _ = await get_runtime_manager(runtime).health(runtime)
         if ok:
             continue
         invalidate_runtime_caches(runtime)

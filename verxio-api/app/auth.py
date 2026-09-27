@@ -7,7 +7,7 @@ import os
 import secrets
 import time
 from collections import OrderedDict
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import HTTPException, Request, Response
@@ -22,15 +22,19 @@ from app.models import (
     EmailRequest,
     LoginRequest,
     PasswordResetRequest,
+    SignupInviteResponse,
     SignupRequest,
     UserPublic,
     new_id,
     utc_now,
 )
 
-
 SESSION_COOKIE = os.getenv("VERXIO_SESSION_COOKIE", "verxio_session")
 SESSION_DAYS = int(os.getenv("VERXIO_SESSION_DAYS", "7"))
+# Sliding sessions: once a session has used this fraction of its lifetime, the
+# next authenticated request extends it by SESSION_DAYS and re-issues the cookie.
+SESSION_RENEW_FRACTION = min(0.95, max(0.05, float(os.getenv("VERXIO_SESSION_RENEW_FRACTION", "0.5"))))
+_SESSION_RENEW_STATE = "verxio_session_renew"
 DEFAULT_SIGNUP_INVITE_CODE = "97685"
 PBKDF2_ITERATIONS = 210_000
 AUTH_CODE_MAX_ATTEMPTS = int(os.getenv("VERXIO_AUTH_CODE_MAX_ATTEMPTS", "5"))
@@ -95,6 +99,34 @@ def _cache_session_user(token_hash: str, user: dict[str, Any], expires_at: str) 
 
     while len(_SESSION_USER_CACHE) > SESSION_CACHE_MAX_ENTRIES:
         _SESSION_USER_CACHE.popitem(last=False)
+
+
+def _session_needs_renewal(expires_at: str) -> bool:
+    try:
+        expires = datetime.fromisoformat(expires_at)
+    except ValueError:
+        return False
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=UTC)
+    remaining = expires - utc_now()
+    lifetime = timedelta(days=SESSION_DAYS)
+    return remaining < lifetime * (1.0 - SESSION_RENEW_FRACTION)
+
+
+def _renewed_expiry() -> str:
+    return (utc_now() + timedelta(days=SESSION_DAYS)).isoformat()
+
+
+def _mark_session_renewed(request: Request, token: str, token_hash: str, user: dict[str, Any], expires_at: str) -> None:
+    _cache_session_user(token_hash, user, expires_at)
+    setattr(request.state, _SESSION_RENEW_STATE, token)
+
+
+def renew_session_cookie_if_needed(request: Request, response: Response) -> None:
+    """Re-issue the session cookie when the request extended the session (see middleware)."""
+    token = getattr(request.state, _SESSION_RENEW_STATE, None)
+    if token:
+        set_session_cookie(response, token)
 
 
 def _cached_session_user(token_hash: str) -> dict[str, Any] | None:
@@ -312,13 +344,62 @@ def get_current_user(request: Request) -> dict[str, Any] | None:
     )
     if row:
         expires_at = str(row.pop("session_expires_at", "") or "")
-        _cache_session_user(token_hash, row, expires_at)
+        if _session_needs_renewal(expires_at):
+            expires_at = _renewed_expiry()
+            db.execute(
+                "UPDATE sessions SET expires_at = ?, updated_at = ? WHERE token_hash = ?",
+                (expires_at, now_iso(), token_hash),
+            )
+            _mark_session_renewed(request, token, token_hash, row, expires_at)
+        else:
+            _cache_session_user(token_hash, row, expires_at)
+
+    return row
+
+
+async def aget_current_user(request: Request) -> dict[str, Any] | None:
+    token = request.cookies.get(SESSION_COOKIE)
+    if not token:
+        return None
+
+    token_hash = hash_session_token(token)
+    cached = _cached_session_user(token_hash)
+    if cached:
+        return cached
+
+    row = await db.afetch_one(
+        """
+        SELECT u.*, s.expires_at AS session_expires_at FROM sessions s
+        JOIN users u ON u.id = s.user_id
+        WHERE s.token_hash = ? AND s.expires_at > ?
+        LIMIT 1
+        """,
+        (token_hash, now_iso()),
+    )
+    if row:
+        expires_at = str(row.pop("session_expires_at", "") or "")
+        if _session_needs_renewal(expires_at):
+            expires_at = _renewed_expiry()
+            await db.aexecute(
+                "UPDATE sessions SET expires_at = ?, updated_at = ? WHERE token_hash = ?",
+                (expires_at, now_iso(), token_hash),
+            )
+            _mark_session_renewed(request, token, token_hash, row, expires_at)
+        else:
+            _cache_session_user(token_hash, row, expires_at)
 
     return row
 
 
 def require_user(request: Request) -> dict[str, Any]:
     user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    return user
+
+
+async def arequire_user(request: Request) -> dict[str, Any]:
+    user = await aget_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Authentication required")
     return user
@@ -344,6 +425,10 @@ def authenticated_response(
         status="success",
     )
     return AuthResponse(user=user_public(user), workspace=workspace, profile=agent)
+
+
+def signup_invite() -> SignupInviteResponse:
+    return SignupInviteResponse(invite_code=configured_signup_invite_code())
 
 
 def signup(payload: SignupRequest) -> AuthCodeChallengeResponse:

@@ -1,17 +1,11 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 
 import { useI18n } from '@/i18n'
-import {
-  consumeModelOptionsForceRefresh,
-  readCachedModelOptions,
-  writeCachedModelOptions
-} from '@/lib/model-options-cache'
-import { getScopedModelOptions } from '@/lib/verxio-model-options'
-import type { ModelOptionProvider, ModelOptionsResponse, ModelPricing } from '@/types/hermes'
+import { modelOptionsQueryOptions } from '@/lib/model-options-query'
+import type { ModelOptionProvider, ModelPricing } from '@/types/hermes'
 
 import type { HermesGateway } from '../hermes'
-import { getGlobalModelOptions } from '../hermes'
 import { cn } from '../lib/utils'
 import { startManualOnboarding } from '../store/onboarding'
 
@@ -58,31 +52,14 @@ export function ModelPickerDialog({
   // it and do a plain substring filter that preserves array order — matching
   // the runtime model picker, which shows the curated list verbatim.
   const [search, setSearch] = useState('')
-  const modelOptionsScope = sessionId || 'global'
+  const queryClient = useQueryClient()
 
+  // Same query as the statusbar menu and the visibility dialog: one cache
+  // entry per scope, hosted rows first, runtime catalog merged in when Hermes
+  // answers, polled while the list is still empty/partial.
   const modelOptions = useQuery({
-    queryKey: ['model-options', modelOptionsScope],
-    queryFn: async () => {
-      const refresh = consumeModelOptionsForceRefresh()
-      let next: ModelOptionsResponse
-
-      next = await getScopedModelOptions(() =>
-        gw && sessionId
-          ? gw.request<ModelOptionsResponse>('model.options', {
-              session_id: sessionId,
-              refresh
-            })
-          : getGlobalModelOptions({ refresh })
-      )
-
-      writeCachedModelOptions(modelOptionsScope, next)
-
-      return next
-    },
-    enabled: open,
-    initialData: () => readCachedModelOptions(modelOptionsScope),
-    initialDataUpdatedAt: 0,
-    staleTime: 0
+    ...modelOptionsQueryOptions({ gateway: gw, queryClient, sessionId }),
+    enabled: open
   })
 
   const providers = modelOptions.data?.providers ?? []

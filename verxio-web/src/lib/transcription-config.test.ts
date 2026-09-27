@@ -13,8 +13,25 @@ describe('transcription config', () => {
     const providers = cloudTranscriptionProvidersFromCatalog(null)
     const config = { stt: { provider: 'local' } }
 
-    expect(selectedCloudTranscriptionProvider(config, providers).id).toBe('groq')
-    expect(configuredCloudTranscriptionProvider(config, providers)).toBeUndefined()
+    expect(selectedCloudTranscriptionProvider(config, providers).id).toBe('local')
+    expect(configuredCloudTranscriptionProvider(config, providers)?.id).toBe('local')
+  })
+
+  it('writes the on-device Whisper model without a cloud provider', () => {
+    const providers = cloudTranscriptionProvidersFromCatalog(null)
+    const local = cloudTranscriptionProviderById('local', providers)
+    expect(local).toBeTruthy()
+
+    const config = applyCloudTranscriptionConfig({}, local!, 'small')
+
+    expect(config).toEqual({
+      stt: {
+        enabled: true,
+        local: { model: 'small' },
+        provider: 'local'
+      }
+    })
+    expect(selectedCloudTranscriptionModel(config, local!)).toBe('small')
   })
 
   it('writes Fish Audio provider and model settings for Hermes', () => {

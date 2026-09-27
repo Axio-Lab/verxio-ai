@@ -381,6 +381,7 @@ function MediaModelFields({
 
       if (toolset === 'image_gen' && path === 'image_gen.model') {
         const providerId = imageGenProviderId(providerName)
+
         if (providerId) {
           next = setConfigValue(next, 'image_gen.provider', providerId)
         }
@@ -388,6 +389,7 @@ function MediaModelFields({
 
       if (toolset === 'video_gen' && path === 'video_gen.model') {
         const providerId = videoGenProviderId(providerName)
+
         if (providerId) {
           next = setConfigValue(next, 'video_gen.provider', providerId)
         }
@@ -459,9 +461,11 @@ export function ToolsetConfigPanel({ toolset, onConfiguredChange }: ToolsetConfi
       try {
         const [next, hermes] = await Promise.all([getToolsetConfig(toolset), getHermesConfigRecord().catch(() => null)])
         setCfg(next)
+
         if (hermes) {
           setHermesConfig(hermes)
         }
+
         const seeded: Record<string, boolean> = {}
 
         for (const provider of next.providers) {
@@ -474,6 +478,7 @@ export function ToolsetConfigPanel({ toolset, onConfiguredChange }: ToolsetConfi
 
         const serverActive =
           next.providers.find(p => p.is_active && !isNousSubscriptionProvider(p))?.name ?? next.active_provider ?? null
+
         if (serverActive) {
           setExpandedProvider(current => current ?? serverActive)
         }
@@ -515,6 +520,7 @@ export function ToolsetConfigPanel({ toolset, onConfiguredChange }: ToolsetConfi
   const activeSummary = useMemo(() => {
     if (!isMediaToolset(toolset)) {
       const name = cfg?.active_provider ?? providers.find(p => p.is_active)?.name
+
       return name ? { provider: name, model: null as string | null } : null
     }
 
@@ -540,8 +546,10 @@ export function ToolsetConfigPanel({ toolset, onConfiguredChange }: ToolsetConfi
           if (toolset === 'image_gen') {
             const providerId = imageGenProviderId(provider.name)
             const savedProvider = String(configValue(current, 'image_gen.provider') ?? '')
+
             const modelOptions =
               mediaOptionFields(toolset, provider.name).find(field => field.path === 'image_gen.model')?.options ?? []
+
             const currentModel = String(configValue(current, 'image_gen.model') ?? '')
 
             if (providerId && savedProvider === providerId) {
@@ -633,9 +641,11 @@ export function ToolsetConfigPanel({ toolset, onConfiguredChange }: ToolsetConfi
       )}
       {providers.map(provider => {
         const isExpanded = expandedProvider === provider.name
+
         const isActive = selecting
           ? selecting === provider.name
           : Boolean(provider.is_active) || cfg?.active_provider === provider.name
+
         const configured = providerConfigured(provider, envState)
 
         return (

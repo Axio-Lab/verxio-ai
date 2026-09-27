@@ -429,6 +429,8 @@ export interface ModelCapabilities {
 
 export interface ModelOptionsResponse {
   model?: string
+  /** True when hosted rows were returned before the runtime catalog answered. */
+  partial?: boolean
   provider?: string
   providers?: ModelOptionProvider[]
 }

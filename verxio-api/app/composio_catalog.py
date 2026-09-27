@@ -17,6 +17,7 @@ from fastapi import HTTPException
 
 from app import db
 from app.control_plane import now_iso
+from app.verxio_agent_defaults import VERXIO_SOUL_MD, VERXIO_SYSTEM_PROMPT
 from app.models import (
     ComposioApp,
     ComposioAuthInputField,
@@ -24,6 +25,7 @@ from app.models import (
     ComposioConnectedAccount,
     ComposioConnectionSetupResponse,
     ComposioInitiateResponse,
+    ComposioMcpSessionResponse,
     ComposioToolBridgeStatus,
     ComposioToolPreview,
     ComposioTriggerType,
@@ -995,6 +997,76 @@ def _write_bridge_state(runtime: RuntimeInstance, payload: dict[str, Any]) -> No
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
+def _desktop_agent_prompt_fields() -> dict[str, Any]:
+    public_web = os.getenv("VERXIO_PUBLIC_WEB_URL", "").strip()
+    return {
+        "agentPrompt": VERXIO_SYSTEM_PROMPT,
+        "soulPrompt": VERXIO_SOUL_MD,
+        "publicWebUrl": public_web or None,
+    }
+
+
+def create_composio_mcp_session(user_id: str) -> ComposioMcpSessionResponse:
+    """Return a per-user Tool Router URL without writing Hermes runtime files."""
+    shared = _desktop_agent_prompt_fields()
+    if not is_composio_configured():
+        return ComposioMcpSessionResponse(
+            configured=False,
+            enabled=False,
+            message="Composio is not configured.",
+            **shared,
+        )
+
+    accounts = list_composio_accounts(user_id)
+    active = [account for account in accounts if _is_connected_status(account.status)]
+    connected = _connected_accounts_by_app(active)
+    apps = sorted(connected)
+    prompt = _build_composio_context_prompt(apps)
+    if not apps:
+        return ComposioMcpSessionResponse(
+            configured=True,
+            enabled=False,
+            connectedApps=[],
+            prompt=prompt,
+            message="No ACTIVE Composio apps for this Verxio user.",
+            **shared,
+        )
+
+    try:
+        session = _create_tool_router_session(user_id, connected)
+        mcp_url = _pick_mcp_url(session)
+    except Exception as exc:
+        return ComposioMcpSessionResponse(
+            configured=True,
+            enabled=False,
+            connectedApps=apps,
+            prompt=prompt,
+            message=f"Could not create a Composio MCP session: {exc}",
+            **shared,
+        )
+
+    if not mcp_url:
+        return ComposioMcpSessionResponse(
+            configured=True,
+            enabled=False,
+            connectedApps=apps,
+            prompt=prompt,
+            message="Composio did not return an MCP session URL.",
+            **shared,
+        )
+
+    return ComposioMcpSessionResponse(
+        configured=True,
+        enabled=True,
+        connectedApps=apps,
+        mcpUrl=mcp_url,
+        mcpApiKey=_api_key() or None,
+        prompt=prompt,
+        message="Connected Composio tools are available to Verxio.",
+        **shared,
+    )
+
+
 def _create_tool_router_session(user_id: str, connected_accounts: dict[str, list[str]]) -> dict[str, Any]:
     toolkits = sorted(connected_accounts)
     preload_tools = _composio_preload_tools()
@@ -1199,7 +1271,7 @@ def _build_composio_context_prompt(connected_apps: list[str]) -> str:
                 "Connected apps:",
                 "- None",
                 "",
-                "Before saying an app is unavailable, still call `mcp_composio_COMPOSIO_SEARCH_TOOLS` for that app once. Only then tell the user to open **Skills → Connections** and reconnect.",
+                "When the user asks for something, check that integration first. Call `mcp_composio_COMPOSIO_SEARCH_TOOLS` for that app once before any other tool, web search, or saying it cannot be done. Only then tell the user to open **Skills → Connections** and reconnect.",
                 "Do NOT treat `COMPOSIO_API_KEY` as proof that Gmail/Slack/GitHub/etc. are connected.",
                 "Do NOT call Composio REST/v1/v3 endpoints, install the Composio SDK, or dig through env files for OAuth tokens.",
                 "Local desktop connections do not automatically appear in hosted production — each environment uses its own Verxio user id.",
@@ -1223,6 +1295,8 @@ def _build_composio_context_prompt(connected_apps: list[str]) -> str:
             "- App action slugs from search (for example `GOOGLESHEETS_CREATE_GOOGLE_SHEET1`, `GMAIL_SEND_EMAIL`, `GOOGLEDRIVE_CREATE_FILE_FROM_TEXT`) are NOT Hermes tools.",
             "- Never call those slugs via Hermes `tool_call`, `tool_search`, or `tool_describe`.",
             "- Never invent `mcp_composio_GOOGLESHEETS_*` / `mcp_composio_GMAIL_*` tool names unless that exact name already appears in your current tools list.",
+            "",
+            "When the user asks for something, check that integration first. If a connected app can do it, call `mcp_composio_COMPOSIO_SEARCH_TOOLS` before any other tool, web search, or saying it cannot be done.",
             "",
             "Mandatory sequence when the user asks to use a connected app (Gmail, Google Sheets, Calendar, Drive, Docs, Slack, Notion, etc.):",
             "1. Confirm the app is listed above.",

@@ -9,6 +9,7 @@ import { formatModelStatusLabel } from '@/lib/model-status-label'
 import { contextBarLabel, LiveDuration, usageContextLabel } from '@/lib/statusbar'
 import { cn } from '@/lib/utils'
 import { $desktopActionTasks } from '@/store/activity'
+import { $gatewayReachable } from '@/store/gateway-link'
 import { $previewServerRestartStatus } from '@/store/preview'
 import {
   $busy,
@@ -52,6 +53,7 @@ export function useStatusbarItems({
   const copy = t.shell.statusbar
   const busy = useStore($busy)
   const gatewayState = useStore($gatewayState)
+  const gatewayReachable = useStore($gatewayReachable)
   const currentFastMode = useStore($currentFastMode)
   const currentModel = useStore($currentModel)
   const currentProvider = useStore($currentProvider)
@@ -86,8 +88,10 @@ export function useStatusbarItems({
     }
   }, [desktopActionTasks, previewServerRestartStatus, subagentsBySession, workingSessionIds])
 
-  const serverConnected = gatewayState === 'open'
-  const serverConnecting = gatewayState === 'connecting'
+  // Blips inside the reconnect grace window keep the green dot; the indicator
+  // only turns amber once the link is genuinely degraded (or still booting).
+  const serverConnected = gatewayState === 'open' || gatewayReachable
+  const serverConnecting = !serverConnected && gatewayState === 'connecting'
 
   const coreLeftStatusbarItems = useMemo<readonly StatusbarItem[]>(
     () => [

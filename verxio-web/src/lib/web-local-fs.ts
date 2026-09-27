@@ -276,6 +276,7 @@ export async function pickWebLocalDirectoryPaths(options: PickWebLocalDirectoryO
   }
 
   const storedRoot = getStoredWebLocalRoot()
+
   const defaultPath =
     (options.defaultPath?.trim() &&
       isWebLocalPath(options.defaultPath.trim()) &&
@@ -287,6 +288,7 @@ export async function pickWebLocalDirectoryPaths(options: PickWebLocalDirectoryO
 
   if (handle) {
     const startPath = defaultPath || webLocalRootPath(handle.name)
+
     const picked = await requestWebLocalFolderPicker({
       defaultPath: startPath,
       title: options.title || 'Choose folder'

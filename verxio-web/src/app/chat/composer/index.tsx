@@ -1040,7 +1040,6 @@ export function ChatBar({
     if (candidates.length === 0) {
       return
     }
-
     void (async () => {
       const enriched = await enrichDroppedFilesForWeb(transfer, candidates)
       const { inAppRefs, osDrops } = partitionDroppedFiles(enriched)

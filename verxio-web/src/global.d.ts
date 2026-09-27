@@ -7,6 +7,7 @@ declare global {
       // the window's backend; pass a named profile to lazily spawn/reuse that
       // profile's backend from the pool.
       getConnection: (profile?: string | null) => Promise<HermesConnection>
+      getCloudConnection?: () => Promise<HermesConnection>
       // Keepalive: mark a pool profile backend as recently used so the idle
       // reaper spares it while its chat is active.
       touchBackend: (profile?: string | null) => Promise<{ ok: boolean }>
@@ -53,6 +54,18 @@ declare global {
       setTitleBarTheme?: (payload: HermesTitleBarTheme) => void
       setPreviewShortcutActive?: (active: boolean) => void
       openExternal: (url: string) => Promise<void>
+      agentBridgeStatus?: () => Promise<{ hasRuntimeToken?: boolean }>
+      applyCloudConfig?: (payload: {
+        agentPrompt?: string
+        apiKey?: string
+        apiUrl?: string
+        enabled?: boolean
+        mcpUrl?: string
+        prompt?: string
+        publicWebUrl?: string
+        runtimeToken?: string
+        soulPrompt?: string
+      }) => Promise<{ enabled?: boolean; ok?: boolean }>
       openComposioOAuth?: (authUrl: string, callbackUrl: string) => Promise<{ error?: string; ok: boolean }>
       onComposioOAuthComplete?: (callback: (href: string) => void) => () => void
       fetchLinkTitle: (url: string) => Promise<string>
@@ -346,6 +359,8 @@ export interface HermesApiRequest {
   // (window) backend. Read-only cross-profile data is served by the primary, so
   // this is only needed for profile-scoped live/settings calls.
   profile?: string | null
+  // Desktop: local Hermes for chat/files; cloud dashboard for cron/messaging.
+  scope?: 'local' | 'cloud'
 }
 
 export interface HermesNotification {
@@ -367,6 +382,7 @@ export interface DesktopAudioCaptureSupport {
 export interface DesktopCaptureSource {
   id: string
   name: string
+  thumbnail?: string
   type: 'screen' | 'window'
 }
 

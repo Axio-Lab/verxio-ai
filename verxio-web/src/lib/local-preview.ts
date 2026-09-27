@@ -6,6 +6,7 @@ import {
   isVerxioDesktop,
   resolveDesktopWorkspaceCwd
 } from './desktop-workspace'
+import { rewriteLocalNotepadShareUrl } from './notepad-share-preview'
 import { workspaceArtifactRelativePath } from './verxio-artifact-paths'
 import { verxioArtifactPreviewTarget } from './verxio-artifact-preview'
 
@@ -91,7 +92,9 @@ export function localPreviewTarget(rawTarget: string, cwd?: string | null): Prev
   }
 
   if (/^https?:\/\//i.test(raw)) {
-    return { kind: 'url', label: basename(raw), source: raw, url: raw }
+    const url = rewriteLocalNotepadShareUrl(raw)
+
+    return { kind: 'url', label: basename(url), source: raw, url }
   }
 
   // Tool rows often record bare "localhost:5173" / "localhost:8080".
@@ -145,6 +148,20 @@ export function localPreviewTarget(rawTarget: string, cwd?: string | null): Prev
  * 3. Hosted Verxio `/api/artifacts/.../preview` for workspace artifacts
  * 4. Generic local/http classification
  */
+function withReachableShareUrl(target: PreviewTarget | null): PreviewTarget | null {
+  if (!target || target.kind !== 'url') {
+    return target
+  }
+
+  const url = rewriteLocalNotepadShareUrl(target.url)
+
+  if (url === target.url) {
+    return target
+  }
+
+  return { ...target, label: basename(url), url }
+}
+
 export async function normalizeOrLocalPreviewTarget(
   rawTarget: string,
   cwd?: string | null
@@ -153,7 +170,7 @@ export async function normalizeOrLocalPreviewTarget(
     const normalized = await window.hermesDesktop?.normalizePreviewTarget?.(rawTarget, cwd || undefined)
 
     if (normalized) {
-      return normalized
+      return withReachableShareUrl(normalized)
     }
   } catch {
     // Running Electron may still have the old HTML-only preview IPC. Fall
@@ -170,7 +187,7 @@ export async function normalizeOrLocalPreviewTarget(
 
       // Mapped off `/workspace` onto a real host path, or already a local/http URL.
       if (desktopLocal.kind === 'url' || (mappedPath && !isRuntimeWorkspacePath(mappedPath))) {
-        return desktopLocal
+        return withReachableShareUrl(desktopLocal)
       }
     }
   }
@@ -180,7 +197,7 @@ export async function normalizeOrLocalPreviewTarget(
     const verxioTarget = await verxioArtifactPreviewTarget(rawTarget)
 
     if (verxioTarget) {
-      return verxioTarget
+      return withReachableShareUrl(verxioTarget)
     }
   } catch {
     // Artifacts API may be briefly unavailable; fall through to local target.
@@ -194,5 +211,5 @@ export async function normalizeOrLocalPreviewTarget(
     return null
   }
 
-  return local
+  return withReachableShareUrl(local)
 }

@@ -3,7 +3,12 @@ import { atom } from 'nanostores'
 import type { ContextSuggestion } from '@/app/types'
 import type { HermesConnection } from '@/global'
 import type { ChatMessage } from '@/lib/chat-messages'
-import { getDesktopWorkspaceRoot, isRuntimeWorkspacePath, resolveDesktopWorkspaceCwd } from '@/lib/desktop-workspace'
+import {
+  getDesktopWorkspaceRoot,
+  isBundledAgentCheckout,
+  isRuntimeWorkspacePath,
+  resolveDesktopWorkspaceCwd
+} from '@/lib/desktop-workspace'
 import { isVerxioWeb } from '@/lib/platform'
 import { persistString, storedString } from '@/lib/storage'
 import { isWebLocalPath } from '@/lib/web-local-fs'
@@ -191,6 +196,7 @@ export function adjustSessionProfileTotal(profile: string | null | undefined, de
     return { ...prev, [key]: Math.max(0, prev[key] + delta) }
   })
 }
+
 export const setSessionsLoading = (next: Updater<boolean>) => updateAtom($sessionsLoading, next)
 export const setWorkingSessionIds = (next: Updater<string[]>) => updateAtom($workingSessionIds, next)
 export const setActiveSessionId = (next: Updater<string | null>) => updateAtom($activeSessionId, next)
@@ -199,6 +205,7 @@ export const setMessages = (next: Updater<ChatMessage[]>) => updateAtom($message
 export const setFreshDraftReady = (next: Updater<boolean>) => updateAtom($freshDraftReady, next)
 export const setBusy = (next: Updater<boolean>) => updateAtom($busy, next)
 export const setAwaitingResponse = (next: Updater<boolean>) => updateAtom($awaitingResponse, next)
+
 export const setCurrentModel = (next: Updater<string>) => {
   updateAtom($currentModel, next)
   persistString(COMPOSER_MODEL_KEY, $currentModel.get() || null)
@@ -220,6 +227,7 @@ export const setCurrentFastMode = (next: Updater<boolean>) => {
   updateAtom($currentFastMode, next)
   persistBoolean(COMPOSER_FAST_KEY, $currentFastMode.get())
 }
+
 export const setYoloActive = (next: Updater<boolean>) => updateAtom($yoloActive, next)
 
 export const setCurrentCwd = (next: Updater<string>) => {
@@ -242,10 +250,10 @@ export const setCurrentCwd = (next: Updater<string>) => {
       const nextTrimmed = resolved.trim()
       const localRoot = getDesktopWorkspaceRoot()
 
-      if (localRoot && nextTrimmed && isRuntimeWorkspacePath(nextTrimmed)) {
+      if (localRoot && nextTrimmed && (isRuntimeWorkspacePath(nextTrimmed) || isBundledAgentCheckout(nextTrimmed))) {
         const mapped = resolveDesktopWorkspaceCwd(nextTrimmed, localRoot) || localRoot
 
-        if (currentTrimmed && !isRuntimeWorkspacePath(currentTrimmed)) {
+        if (currentTrimmed && !isRuntimeWorkspacePath(currentTrimmed) && !isBundledAgentCheckout(currentTrimmed)) {
           return currentTrimmed
         }
 

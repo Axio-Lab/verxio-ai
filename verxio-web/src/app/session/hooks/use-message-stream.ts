@@ -72,7 +72,8 @@ interface MessageStreamOptions {
   hydrateFromStoredSession: (
     attempts?: number,
     storedSessionId?: string | null,
-    runtimeSessionId?: string | null
+    runtimeSessionId?: string | null,
+    expectedText?: string
   ) => Promise<void>
   queryClient: QueryClient
   refreshHermesConfig: () => Promise<void>
@@ -235,6 +236,10 @@ export function useMessageStream({
       seed: () => ChatMessagePart[],
       opts: {
         pending?: (message: ChatMessage) => boolean
+        // After a tool row, start a new assistant bubble for the written
+        // answer so tokens paint as they arrive instead of waiting for the
+        // turn to finish.
+        splitTextFromTools?: boolean
       } = {}
     ) => {
       const apply = () => {
@@ -247,12 +252,31 @@ export function useMessageStream({
             return state
           }
 
-          const streamId = state.streamId ?? `assistant-stream-${Date.now()}`
+          let streamId = state.streamId ?? `assistant-stream-${Date.now()}`
           const groupId = state.pendingBranchGroup ?? undefined
           const prev = state.messages
           let nextMessages: ChatMessage[]
+          const current = prev.find(message => message.id === streamId)
 
-          if (!prev.some(m => m.id === streamId)) {
+          const splitAnswer =
+            opts.splitTextFromTools === true &&
+            current !== undefined &&
+            current.parts.some(part => part.type === 'tool-call') &&
+            !current.parts.some(part => part.type === 'text' && part.text.trim())
+
+          if (splitAnswer) {
+            streamId = `assistant-stream-${Date.now()}`
+            nextMessages = [
+              ...prev.map(message => (message.id === current.id ? { ...message, pending: false } : message)),
+              {
+                id: streamId,
+                role: 'assistant' as const,
+                parts: seed(),
+                pending: true,
+                branchGroupId: groupId
+              }
+            ]
+          } else if (!prev.some(m => m.id === streamId)) {
             nextMessages = [
               ...prev,
               {
@@ -314,7 +338,8 @@ export function useMessageStream({
           mutateStream(
             id,
             parts => dedupeGeneratedImageEchoesInParts(appendAssistantTextPart(parts, queued.assistant)),
-            () => [assistantTextPart(queued.assistant)]
+            () => [assistantTextPart(queued.assistant)],
+            { splitTextFromTools: true }
           )
         }
 
@@ -488,6 +513,7 @@ export function useMessageStream({
   const completeAssistantMessage = useCallback(
     (sessionId: string, text: string) => {
       let shouldHydrate = false
+      const finalText = renderMediaTags(text).trim()
 
       const completedState = updateSessionState(sessionId, state => {
         // Late completion from an already-cancelled turn: cancelRun has
@@ -506,7 +532,6 @@ export function useMessageStream({
         }
 
         const streamId = state.streamId
-        const finalText = renderMediaTags(text).trim()
         const completionError = completionErrorText(finalText)
         const normalize = (value: string) => value.replace(/\s+/g, ' ').trim()
         const dedupeReference = normalize(finalText)
@@ -555,7 +580,22 @@ export function useMessageStream({
         let nextMessages = prev
 
         if (streamId && prev.some(m => m.id === streamId)) {
-          nextMessages = prev.map(m => (m.id === streamId ? completeMessage(m) : m))
+          nextMessages = prev.map(m => {
+            if (m.id !== streamId) {
+              return m
+            }
+
+            const completed = completeMessage(m)
+            // Tokens after a tool already live on their own bubble. This id
+            // still belongs to the tool row only when the model sent the
+            // answer in one piece at the end — mount that so it still appears.
+            const hadStreamedText = chatMessageText(m).trim().length > 0
+            const hasTool = completed.parts.some(part => part.type === 'tool-call')
+
+            return hasTool && finalText && !hadStreamedText
+              ? { ...completed, id: `assistant-final-${Date.now()}` }
+              : completed
+          })
         } else {
           const fallbackIndex = [...prev]
             .reverse()
@@ -581,8 +621,21 @@ export function useMessageStream({
         const hasInlineError = nextMessages.some(m => m.role === 'assistant' && m.error && !m.hidden)
         const lastVisible = [...nextMessages].reverse().find(m => !m.hidden)
         const unresolvedUserTail = lastVisible?.role === 'user'
+
+        const liveText = nextMessages
+          .filter(message => message.role === 'assistant' && !message.hidden)
+          .map(message => chatMessageText(message))
+          .join('\n')
+          .replace(/\s+/g, ' ')
+
+        const finalNeedle = finalText.replace(/\s+/g, ' ').trim()
+        // Reload the saved transcript only when the live bubble never got the
+        // answer. A reply that already streamed stays on screen.
         shouldHydrate =
-          !completionError && !hasInlineError && !unresolvedUserTail && (!state.sawAssistantPayload || !finalText)
+          !completionError &&
+          !hasInlineError &&
+          !unresolvedUserTail &&
+          (!state.sawAssistantPayload || !finalNeedle || !liveText.includes(finalNeedle))
 
         return {
           ...state,
@@ -603,7 +656,7 @@ export function useMessageStream({
       }
 
       if (shouldHydrate) {
-        void hydrateFromStoredSession(3, completedState.storedSessionId, sessionId)
+        void hydrateFromStoredSession(8, completedState.storedSessionId, sessionId, finalText)
       }
 
       dispatchNativeNotification({

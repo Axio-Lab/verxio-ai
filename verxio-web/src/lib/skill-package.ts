@@ -174,6 +174,7 @@ async function extractFromZip(file: File): Promise<ExtractedSkillPackage> {
   }
 
   const folderHint = found.skillRoot.split('/').filter(Boolean).pop() || ''
+
   const name =
     parseFrontmatterName(content) || folderHint.replace(/[^a-z0-9._-]+/gi, '-').toLowerCase() || 'imported-skill'
 
@@ -197,6 +198,7 @@ async function extractFromSkillMd(file: File): Promise<ExtractedSkillPackage> {
     .replace(/\.md$/i, '')
     .replace(/[^a-z0-9._-]+/gi, '-')
     .toLowerCase()
+
   const name = parseFrontmatterName(content) || stem || 'imported-skill'
 
   return {

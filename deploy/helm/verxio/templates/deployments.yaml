@@ -1,0 +1,363 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: verxio-api
+  labels:
+    app: verxio-api
+spec:
+  ports:
+    - name: http
+      port: 8787
+      targetPort: 8787
+  selector:
+    app: verxio-api
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: verxio-api
+spec:
+  replicas: {{ .Values.replicaCount.api }}
+  selector:
+    matchLabels:
+      app: verxio-api
+  template:
+    metadata:
+      labels:
+        app: verxio-api
+    spec:
+      {{- include "verxio.topologySpread" (dict "root" . "app" "verxio-api") | nindent 6 }}
+      # Let in-flight dashboard WebSockets drain before the pod goes away.
+      terminationGracePeriodSeconds: 45
+      containers:
+        - name: api
+          image: {{ .Values.images.api }}
+          ports:
+            - containerPort: 8787
+          resources: {{- toYaml .Values.resources.api | nindent 12 }}
+          env:
+            - name: VERXIO_RUNTIME_MANAGER
+              value: {{ .Values.env.VERXIO_RUNTIME_MANAGER | quote }}
+            - name: VERXIO_REDIS_URL
+              value: {{ .Values.redis.url | quote }}
+            - name: VERXIO_AUTO_MIGRATE
+              value: {{ .Values.env.VERXIO_AUTO_MIGRATE | quote }}
+            - name: VERXIO_INLINE_SCHEDULER
+              value: {{ .Values.env.VERXIO_INLINE_SCHEDULER | quote }}
+            - name: VERXIO_WEBHOOK_INLINE
+              value: {{ .Values.env.VERXIO_WEBHOOK_INLINE | quote }}
+            - name: VERXIO_CHANNEL_SHARDS
+              value: {{ .Values.channelGateway.shards | quote }}
+            # StatefulSet pod DNS via the headless service.
+            - name: VERXIO_CHANNEL_SHARD_URL
+              value: "http://verxio-channel-gateway-{i}.verxio-channel-gateway:9119"
+            - name: VERXIO_DASHBOARD_PROXY_CONCURRENCY
+              value: {{ .Values.env.VERXIO_DASHBOARD_PROXY_CONCURRENCY | quote }}
+            - name: VERXIO_DASHBOARD_READ_CACHE_TTL_SECONDS
+              value: {{ .Values.env.VERXIO_DASHBOARD_READ_CACHE_TTL_SECONDS | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secrets.name }}
+                optional: true
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8787
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8787
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 6
+---
+{{- if .Values.autoscaling.api.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: verxio-api
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: verxio-api
+  minReplicas: {{ .Values.autoscaling.api.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.api.maxReplicas }}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: {{ .Values.autoscaling.api.scaleUpStabilizationSeconds }}
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+    scaleDown:
+      stabilizationWindowSeconds: {{ .Values.autoscaling.api.scaleDownStabilizationSeconds }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.api.cpuUtilization }}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: verxio-scheduler
+spec:
+  replicas: {{ .Values.replicaCount.scheduler }}
+  selector:
+    matchLabels:
+      app: verxio-scheduler
+  template:
+    metadata:
+      labels:
+        app: verxio-scheduler
+    spec:
+      containers:
+        - name: scheduler
+          image: {{ .Values.images.api }}
+          command: ["python", "-m", "app.scheduler"]
+          resources: {{- toYaml .Values.resources.scheduler | nindent 12 }}
+          env:
+            - name: VERXIO_REDIS_URL
+              value: {{ .Values.redis.url | quote }}
+            - name: VERXIO_RUNTIME_MANAGER
+              value: {{ .Values.env.VERXIO_RUNTIME_MANAGER | quote }}
+            - name: VERXIO_RUNTIME_WATCHDOG_INTERVAL_SECONDS
+              value: {{ .Values.env.VERXIO_RUNTIME_WATCHDOG_INTERVAL_SECONDS | quote }}
+            - name: VERXIO_RUNTIME_WATCHDOG_FAILURES
+              value: {{ .Values.env.VERXIO_RUNTIME_WATCHDOG_FAILURES | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secrets.name }}
+                optional: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: verxio-agent-worker
+spec:
+  replicas: {{ .Values.replicaCount.worker }}
+  selector:
+    matchLabels:
+      app: verxio-agent-worker
+  template:
+    metadata:
+      labels:
+        app: verxio-agent-worker
+    spec:
+      {{- include "verxio.topologySpread" (dict "root" . "app" "verxio-agent-worker") | nindent 6 }}
+      # Turns in flight checkpoint their home before exit; give them time.
+      terminationGracePeriodSeconds: 120
+      containers:
+        - name: worker
+          image: {{ .Values.images.api }}
+          command: ["python", "-m", "app.worker.runner"]
+          resources: {{- toYaml .Values.resources.worker | nindent 12 }}
+          env:
+            - name: VERXIO_REDIS_URL
+              value: {{ .Values.redis.url | quote }}
+            - name: VERXIO_LOCAL_HERMES_URL
+              value: "http://127.0.0.1:9119"
+            - name: VERXIO_WORKER_MAX_TENANTS
+              value: {{ .Values.worker.maxTenants | quote }}
+            - name: VERXIO_WORKER_HOMES_ROOT
+              value: /var/lib/verxio/homes
+            - name: VERXIO_WORKER_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: VERXIO_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: verxio-internal
+                  key: token
+                  optional: true
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secrets.name }}
+                optional: true
+          volumeMounts:
+            - name: homes
+              mountPath: /var/lib/verxio/homes
+        - name: hermes
+          image: {{ .Values.images.hermes }}
+          ports:
+            - containerPort: 9119
+          resources: {{- toYaml .Values.resources.hermes | nindent 12 }}
+          {{- include "verxio.hermesProbes" . | nindent 10 }}
+          env:
+            - name: VERXIO_HOSTED
+              value: "1"
+            - name: DOCKER_HOST
+              value: {{ .Values.sandbox.dockerHost | quote }}
+            {{- if .Values.sandbox.tlsSecret }}
+            - name: DOCKER_TLS_VERIFY
+              value: "1"
+            - name: DOCKER_CERT_PATH
+              value: /etc/verxio/sandbox-certs
+            {{- else }}
+            - name: VERXIO_SANDBOX_ALLOW_INSECURE
+              value: {{ .Values.sandbox.allowInsecure | quote }}
+            {{- end }}
+            - name: VERXIO_SANDBOX_IMAGE
+              value: {{ .Values.sandbox.image | quote }}
+            - name: VERXIO_SANDBOX_MEMORY_MB
+              value: {{ .Values.sandbox.limits.memoryMb | quote }}
+            - name: VERXIO_SANDBOX_CPUS
+              value: {{ .Values.sandbox.limits.cpus | quote }}
+            - name: VERXIO_SANDBOX_PIDS
+              value: {{ .Values.sandbox.limits.pids | quote }}
+            - name: VERXIO_SANDBOX_NETWORK
+              value: {{ .Values.sandbox.network | quote }}
+            - name: VERXIO_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: verxio-internal
+                  key: token
+                  optional: true
+          volumeMounts:
+            - name: homes
+              mountPath: /var/lib/verxio/homes
+            {{- if .Values.sandbox.tlsSecret }}
+            - name: sandbox-certs
+              mountPath: /etc/verxio/sandbox-certs
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: homes
+          emptyDir:
+            sizeLimit: {{ .Values.worker.homesSizeLimit | quote }}
+        {{- if .Values.sandbox.tlsSecret }}
+        - name: sandbox-certs
+          secret:
+            secretName: {{ .Values.sandbox.tlsSecret }}
+        {{- end }}
+---
+# Channel shards: a StatefulSet so each pod owns a stable shard index
+# (VERXIO_CHANNEL_SHARD = ordinal) and a persistent volume for WhatsApp
+# session files between restarts. Replicas must equal VERXIO_CHANNEL_SHARDS
+# on the API, which is what shard_for() hashes tenants against.
+apiVersion: v1
+kind: Service
+metadata:
+  name: verxio-channel-gateway
+spec:
+  clusterIP: None
+  selector:
+    app: verxio-channel-gateway
+  ports:
+    - port: 9119
+      targetPort: 9119
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: verxio-channel-gateway
+spec:
+  serviceName: verxio-channel-gateway
+  replicas: {{ .Values.channelGateway.shards }}
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: verxio-channel-gateway
+  template:
+    metadata:
+      labels:
+        app: verxio-channel-gateway
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: gateway
+          image: {{ .Values.images.hermes }}
+          # Image ENTRYPOINT is s6 /init with CMD ["gateway", "run"]; the shard
+          # derives its ordinal from VERXIO_POD_NAME (see shard_index()).
+          ports:
+            - containerPort: 9119
+          resources: {{- toYaml .Values.resources.channelGateway | nindent 12 }}
+          {{- include "verxio.hermesProbes" . | nindent 10 }}
+          env:
+            - name: VERXIO_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: VERXIO_REMOTE_EXEC
+              value: "1"
+            - name: VERXIO_HOSTED
+              value: "1"
+            - name: VERXIO_API_URL
+              value: "http://verxio-api:8787"
+            - name: VERXIO_CHANNEL_SHARDS
+              value: {{ .Values.channelGateway.shards | quote }}
+            - name: VERXIO_REDIS_URL
+              value: {{ .Values.redis.url | quote }}
+            - name: VERXIO_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: verxio-internal
+                  key: token
+                  optional: true
+          envFrom:
+            - secretRef:
+                name: {{ .Values.secrets.name }}
+                optional: true
+          volumeMounts:
+            - name: shard-data
+              mountPath: /opt/data
+  volumeClaimTemplates:
+    - metadata:
+        name: shard-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: {{ .Values.channelGateway.storageSize }}
+---
+{{- if .Values.autoscaling.worker.enabled }}
+{{- if .Values.autoscaling.worker.keda.enabled }}
+# Queue-depth autoscaling: pending entries on the shared turn stream.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: verxio-agent-worker
+spec:
+  scaleTargetRef:
+    name: verxio-agent-worker
+  minReplicaCount: {{ .Values.autoscaling.worker.minReplicas }}
+  maxReplicaCount: {{ .Values.autoscaling.worker.maxReplicas }}
+  pollingInterval: {{ .Values.autoscaling.worker.keda.pollingInterval }}
+  cooldownPeriod: {{ .Values.autoscaling.worker.keda.cooldownPeriod }}
+  triggers:
+    - type: redis-streams
+      metadata:
+        address: {{ .Values.autoscaling.worker.keda.address | quote }}
+        stream: {{ .Values.autoscaling.worker.keda.stream | quote }}
+        consumerGroup: {{ .Values.autoscaling.worker.keda.consumerGroup | quote }}
+        pendingEntriesCount: {{ .Values.autoscaling.worker.keda.pendingEntriesPerWorker | quote }}
+        activationLagCount: "1"
+        enableTLS: {{ .Values.autoscaling.worker.keda.enableTLS | quote }}
+{{- else }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: verxio-agent-worker
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: verxio-agent-worker
+  minReplicas: {{ .Values.autoscaling.worker.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.worker.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.worker.cpuUtilization }}
+{{- end }}
+{{- end }}

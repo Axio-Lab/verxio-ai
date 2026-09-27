@@ -27,7 +27,6 @@ import { useTheme } from '@/themes/context'
 import { requestComposerFocus } from '../chat/composer/focus'
 import {
   AGENTS_ROUTE,
-  ARTIFACTS_ROUTE,
   CRON_ROUTE,
   MESSAGING_ROUTE,
   PROFILES_ROUTE,
@@ -112,7 +111,6 @@ export function useKeybinds(deps: KeybindRuntimeDeps): void {
     'nav.profiles': () => navigate(PROFILES_ROUTE),
     'nav.skills': () => navigate(SKILLS_ROUTE),
     'nav.messaging': () => navigate(MESSAGING_ROUTE),
-    'nav.artifacts': () => navigate(ARTIFACTS_ROUTE),
     'nav.cron': () => navigate(CRON_ROUTE),
     'nav.agents': () => navigate(AGENTS_ROUTE),
 

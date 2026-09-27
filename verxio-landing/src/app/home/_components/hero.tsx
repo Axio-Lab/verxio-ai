@@ -146,7 +146,7 @@ export function Hero() {
 
             <div className="flex flex-wrap gap-4">
               <a
-                href={appPath("/signup")}
+                href={appPath("/download")}
                 className="inline-flex items-center px-7 py-3.5 text-sm font-semibold text-white bg-primary rounded-lg hover:brightness-110 transition-all shadow-md shadow-primary/20"
               >
                 Start Now

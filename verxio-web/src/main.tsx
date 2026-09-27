@@ -1,10 +1,6 @@
 import './styles.css'
 
 import { QueryClientProvider } from '@tanstack/react-query'
-
-import { installWebBridge } from '@/platform/install-web-bridge'
-
-installWebBridge()
 import { lazy, StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
@@ -17,13 +13,18 @@ import { PageLoader } from './components/page-loader'
 import { VerxioAuthGate } from './components/verxio-auth-gate'
 import { I18nProvider } from './i18n'
 import { installClipboardShim } from './lib/clipboard'
+import { isVerxioDesktop } from './lib/platform'
 import { queryClient } from './lib/query-client'
-import { installStaleChunkReload } from './lib/stale-chunk'
 import { ThemeProvider } from './themes/context'
 
+if (!isVerxioDesktop()) {
+  const { installWebBridge } = await import('@/platform/install-web-bridge')
+  const { installStaleChunkReload } = await import('./lib/stale-chunk')
+  installWebBridge()
+  installStaleChunkReload()
+}
+
 installClipboardShim()
-// After a web redeploy, open tabs may 404 old Vite lazy chunks — reload once.
-installStaleChunkReload()
 
 // Defer the chat/shell bundle until after auth so first paint (login) stays small.
 const App = lazy(() => import('./app'))
@@ -57,7 +58,22 @@ if (import.meta.env.MODE !== 'production') {
   import('./app/chat/perf-probe')
 }
 
-createRoot(document.getElementById('root')!).render(
+const rootElement = document.getElementById('root')
+
+if (!rootElement) {
+  throw new Error('Verxio root element is missing')
+}
+
+// Vite can evaluate this module again on a hot update. A second createRoot()
+// stacks another app in the same document; the two copies share the message
+// store and the copy that never saw the prompt overwrites the thread, so the
+// question disappears and only the answer remains.
+const rootKey = '__verxioReactRoot'
+const existingRoot = (window as Window & { [rootKey]?: ReturnType<typeof createRoot> })[rootKey]
+const root = existingRoot ?? createRoot(rootElement)
+;(window as Window & { [rootKey]?: ReturnType<typeof createRoot> })[rootKey] = root
+
+root.render(
   <StrictMode>
     <ErrorBoundary label="root">
       <QueryClientProvider client={queryClient}>

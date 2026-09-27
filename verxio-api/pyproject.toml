@@ -5,6 +5,7 @@ description = "Verxio web/API skin for the Hermes Agent runtime."
 requires-python = ">=3.11,<3.14"
 dependencies = [
   "croniter>=6.0.0,<7",
+  "cryptography>=42.0.0,<46",
   "fastapi>=0.104.0,<1",
   "httpx>=0.28.0,<1",
   "pydantic>=2.7.0,<3",
@@ -26,13 +27,9 @@ redis = [
 s3 = [
   "boto3>=1.34.0,<2",
 ]
-k8s = [
-  "kubernetes>=29.0.0,<32",
-]
 scale = [
   "redis>=5.0.0,<6",
   "boto3>=1.34.0,<2",
-  "kubernetes>=29.0.0,<32",
 ]
 dev = [
   "pytest>=8.0.0,<10",

@@ -19,6 +19,7 @@ import { useStore } from '@nanostores/react'
 import type * as React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
 import { DisclosureCaret } from '@/components/ui/disclosure-caret'
@@ -47,8 +48,10 @@ import {
   $sidebarCronOpen,
   $sidebarOpen,
   $sidebarPinsOpen,
+  $sidebarProjects,
   $sidebarRecentsOpen,
   pinSession,
+  removeSessionsFromSidebarProjects,
   reorderPinnedSession,
   SESSION_SEARCH_FOCUS_EVENT,
   setSidebarAgentsGrouped,
@@ -76,12 +79,14 @@ import {
   sessionPinId
 } from '@/store/session'
 
-import { AGENTS_ROUTE, type AppView, ARTIFACTS_ROUTE, MESSAGING_ROUTE, NOTEPAD_ROUTE, SKILLS_ROUTE } from '../../routes'
+import { AGENTS_ROUTE, type AppView, MESSAGING_ROUTE, NOTEPAD_ROUTE, SKILLS_ROUTE } from '../../routes'
 import { SidebarPanelLabel } from '../../shell/sidebar-label'
 import type { SidebarNavItem } from '../../types'
 
 import { SidebarCronJobsSection } from './cron-jobs-section'
 import { ProfileRail } from './profile-switcher'
+import { projectSessionIdSet } from './projects'
+import { SidebarProjectsSection } from './projects-section'
 import { SidebarSessionRow } from './session-row'
 import { VirtualSessionList } from './virtual-session-list'
 import { type SidebarSessionGroup, workspaceTreeFor } from './workspace-groups'
@@ -103,7 +108,6 @@ const SIDEBAR_NAV: SidebarNavItem[] = [
     route: SKILLS_ROUTE
   },
   { id: 'messaging', label: '', icon: props => <Codicon name="comment" {...props} />, route: MESSAGING_ROUTE },
-  { id: 'artifacts', label: '', icon: props => <Codicon name="files" {...props} />, route: ARTIFACTS_ROUTE },
   { id: 'notepad', label: '', icon: props => <Codicon name="notebook" {...props} />, route: NOTEPAD_ROUTE }
 ]
 
@@ -213,6 +217,7 @@ export function ChatSidebar({
   const cronOpen = useStore($sidebarCronOpen)
   const cronJobs = useStore($cronJobs)
   const pinnedSessionIds = useStore($pinnedSessionIds)
+  const sidebarProjects = useStore($sidebarProjects)
   const pinsOpen = useStore($sidebarPinsOpen)
   const agentsOpen = useStore($sidebarRecentsOpen)
   const selectedSessionId = useStore($selectedStoredSessionId)
@@ -357,9 +362,58 @@ export function ChatSidebar({
     return [...out.values()]
   }, [trimmedQuery, sortedSessions, serverMatches, sessionByAnyId])
 
+  const projectSessionIds = useMemo(() => projectSessionIdSet(sidebarProjects), [sidebarProjects])
+
+  const forgetProjectSession = useCallback(
+    (sessionId: string) => {
+      const session = sessionByAnyId.get(sessionId)
+
+      removeSessionsFromSidebarProjects(session ? [session.id, sessionPinId(session)] : [sessionId])
+    },
+    [sessionByAnyId]
+  )
+
+  const deleteSidebarSession = useCallback(
+    (sessionId: string) => {
+      forgetProjectSession(sessionId)
+      onDeleteSession(sessionId)
+    },
+    [forgetProjectSession, onDeleteSession]
+  )
+
+  const archiveSidebarSession = useCallback(
+    (sessionId: string) => {
+      forgetProjectSession(sessionId)
+      onArchiveSession(sessionId)
+    },
+    [forgetProjectSession, onArchiveSession]
+  )
+
+  const toggleProjectPin = useCallback(
+    (pinId: string) => {
+      if (pinnedSessionIds.includes(pinId)) {
+        unpinSession(pinId)
+
+        return
+      }
+
+      pinSession(pinId)
+    },
+    [pinnedSessionIds]
+  )
+
   const unpinnedAgentSessions = useMemo(
-    () => sortedSessions.filter(s => !pinnedRealIdSet.has(s.id)),
-    [sortedSessions, pinnedRealIdSet]
+    () =>
+      sortedSessions.filter(session => {
+        if (pinnedRealIdSet.has(session.id)) {
+          return false
+        }
+
+        const pinId = sessionPinId(session)
+
+        return !projectSessionIds.has(session.id) && !projectSessionIds.has(pinId)
+      }),
+    [sortedSessions, pinnedRealIdSet, projectSessionIds]
   )
 
   const agentSessions = useMemo(
@@ -536,7 +590,6 @@ export function ChatSidebar({
                   (item.id === 'skills' && currentView === 'skills') ||
                   (item.id === 'agents' && currentView === 'agents') ||
                   (item.id === 'messaging' && currentView === 'messaging') ||
-                  (item.id === 'artifacts' && currentView === 'artifacts') ||
                   (item.id === 'notepad' && currentView === 'notepad')
 
                 const isNewSession = item.id === 'new-session'
@@ -568,7 +621,16 @@ export function ChatSidebar({
                       type="button"
                     >
                       <item.icon className="size-4 shrink-0 text-[color-mix(in_srgb,currentColor_72%,transparent)]" />
-                      {sidebarOpen && <span className="min-w-0 flex-1 truncate">{navLabel}</span>}
+                      {sidebarOpen && (
+                        <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                          <span className="truncate">{navLabel}</span>
+                          {item.id === 'agents' && (
+                            <Badge className="px-1 py-px text-[0.625rem]" variant="outline">
+                              {s.nav.beta ?? 'Beta'}
+                            </Badge>
+                          )}
+                        </span>
+                      )}
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 )
@@ -600,8 +662,8 @@ export function ChatSidebar({
             }
             label={s.results}
             labelMeta={String(searchResults.length)}
-            onArchiveSession={onArchiveSession}
-            onDeleteSession={onDeleteSession}
+            onArchiveSession={archiveSidebarSession}
+            onDeleteSession={deleteSidebarSession}
             onResumeSession={onResumeSession}
             onToggle={() => undefined}
             onTogglePin={pinSession}
@@ -620,8 +682,8 @@ export function ChatSidebar({
             dndSensors={dndSensors}
             emptyState={<SidebarPinnedEmptyState />}
             label={s.pinned}
-            onArchiveSession={onArchiveSession}
-            onDeleteSession={onDeleteSession}
+            onArchiveSession={archiveSidebarSession}
+            onDeleteSession={deleteSidebarSession}
             onReorder={handlePinnedDragEnd}
             onResumeSession={onResumeSession}
             onToggle={() => setSidebarPinsOpen(!pinsOpen)}
@@ -631,6 +693,19 @@ export function ChatSidebar({
             rootClassName="shrink-0 p-0 pb-1"
             sessions={pinnedSessions}
             sortable={pinnedSessions.length > 1}
+            workingSessionIdSet={workingSessionIdSet}
+          />
+        )}
+
+        {sidebarOpen && showSessionSections && !trimmedQuery && (
+          <SidebarProjectsSection
+            activeSessionId={activeSidebarSessionId}
+            onArchiveSession={archiveSidebarSession}
+            onDeleteSession={deleteSidebarSession}
+            onResumeSession={onResumeSession}
+            onTogglePin={toggleProjectPin}
+            pinnedSessionIds={pinnedSessionIds}
+            sessionById={sessionByAnyId}
             workingSessionIdSet={workingSessionIdSet}
           />
         )}
@@ -700,8 +775,8 @@ export function ChatSidebar({
             }
             label={s.sessions}
             labelMeta={recentsMeta}
-            onArchiveSession={onArchiveSession}
-            onDeleteSession={onDeleteSession}
+            onArchiveSession={archiveSidebarSession}
+            onDeleteSession={deleteSidebarSession}
             onNewSessionInWorkspace={showAllProfiles ? undefined : onNewSessionInWorkspace}
             onReorder={showAllProfiles ? undefined : handleAgentDragEnd}
             onResumeSession={onResumeSession}

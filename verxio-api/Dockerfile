@@ -1,5 +1,3 @@
-FROM docker:27-cli AS docker_cli
-
 FROM python:3.11-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -40,9 +38,6 @@ ENV PATH="/app/.venv/bin:${PATH}"
 ENV VERXIO_HERMES_REPO=/opt/hermes-agent
 
 WORKDIR /app
-
-# Runtime manager shells out to `docker` while using the mounted host socket.
-COPY --from=docker_cli /usr/local/bin/docker /usr/local/bin/docker
 
 COPY --from=builder /app/.venv /app/.venv
 

@@ -66,6 +66,7 @@ export function BootFailureOverlay() {
     const reloadWhenReady = async () => {
       try {
         const healthz = await fetch('/api/runtime/dashboard/api/healthz', { credentials: 'include' })
+
         const status = healthz.ok
           ? healthz
           : await fetch('/api/runtime/dashboard/api/status', { credentials: 'include' })

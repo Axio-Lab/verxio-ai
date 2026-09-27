@@ -1,21 +1,51 @@
+import { atom } from 'nanostores'
+
 import { isVerxioDesktop } from '@/lib/platform'
-import { verxioApiEnabled } from '@/lib/verxio-api'
 
 export { isVerxioDesktop } from '@/lib/platform'
 
 /** Verxio runtime cwd inside Docker, not a real path on the user's machine. */
 export const RUNTIME_WORKSPACE_ROOT = '/workspace'
 
+/** Hermes home inside the hosted runtime. Same idea as `/workspace`: not a folder on the Mac. */
+export const RUNTIME_HOME_ROOT = '/opt/data'
+
+const RUNTIME_ROOTS = [RUNTIME_WORKSPACE_ROOT, RUNTIME_HOME_ROOT]
+
 let cachedDesktopWorkspaceRoot: string | null = null
 
-export function isRuntimeWorkspacePath(pathValue: string): boolean {
-  const trimmed = pathValue.trim()
+export const $desktopWorkspaceRoot = atom<string | null>(null)
 
-  return trimmed === RUNTIME_WORKSPACE_ROOT || trimmed.startsWith(`${RUNTIME_WORKSPACE_ROOT}/`)
+function matchingRuntimeRoot(pathValue: string): string | null {
+  const trimmed = pathValue.trim().replace(/\/+$/, '')
+
+  for (const root of RUNTIME_ROOTS) {
+    if (trimmed === root || trimmed.startsWith(`${root}/`)) {
+      return root
+    }
+  }
+
+  return null
+}
+
+export function isRuntimeWorkspacePath(pathValue: string): boolean {
+  return matchingRuntimeRoot(pathValue) !== null
+}
+
+/** The bundled agent checkout is not the user's project folder. */
+export function isBundledAgentCheckout(pathValue: string): boolean {
+  const trimmed = pathValue.trim().replace(/[/\\]+$/, '')
+  const name = trimmed.split(/[/\\]/).filter(Boolean).pop()?.toLowerCase()
+
+  return name === 'hermes-agent'
 }
 
 export function setDesktopWorkspaceRoot(root: string | null) {
   cachedDesktopWorkspaceRoot = root?.trim() || null
+
+  if ($desktopWorkspaceRoot.get() !== cachedDesktopWorkspaceRoot) {
+    $desktopWorkspaceRoot.set(cachedDesktopWorkspaceRoot)
+  }
 }
 
 export function getDesktopWorkspaceRoot(): string | null {
@@ -32,12 +62,18 @@ export function resolveDesktopWorkspaceCwd(currentCwd?: string | null, localRoot
 
   const trimmed = currentCwd?.trim()
 
-  if (!trimmed || isRuntimeWorkspacePath(trimmed)) {
-    if (!trimmed || trimmed === RUNTIME_WORKSPACE_ROOT) {
+  if (trimmed && isBundledAgentCheckout(trimmed)) {
+    return local
+  }
+
+  const runtimeRoot = trimmed ? matchingRuntimeRoot(trimmed) : null
+
+  if (!trimmed || runtimeRoot) {
+    if (!trimmed || trimmed === runtimeRoot) {
       return local
     }
 
-    const relative = trimmed.slice(RUNTIME_WORKSPACE_ROOT.length + 1)
+    const relative = trimmed.slice(runtimeRoot!.length + 1)
 
     return relative ? `${local.replace(/\/+$/, '')}/${relative}` : local
   }
@@ -45,11 +81,11 @@ export function resolveDesktopWorkspaceCwd(currentCwd?: string | null, localRoot
   return trimmed
 }
 
-const RUNTIME_PATH_IN_TEXT_RE = /\/workspace(?:\/[\w./-]+)*/g
+const RUNTIME_PATH_IN_TEXT_RE = /\/(?:workspace|opt\/data)(?:\/[\w./-]+)*/g
 
 /** Replace Docker `/workspace` paths with the user's local project folder in UI copy. */
 export function rewriteRuntimePathsInText(text: string): string {
-  if (!isVerxioDesktop() || !text.includes('/workspace')) {
+  if (!isVerxioDesktop() || (!text.includes('/workspace') && !text.includes('/opt/data'))) {
     return text
   }
 
@@ -86,17 +122,9 @@ export function resolvePathForDesktopPreview(rawTarget: string, cwd?: string | n
   return trimmed
 }
 
-/** Runtime sessions in Docker still use /workspace even though the UI browses locally. */
+/** Desktop chat submits the user's local folder. Cloud-agent jobs never see this path. */
 export function cwdForGatewaySubmission(localCwd: string): string | undefined {
   const trimmed = localCwd.trim()
-
-  if (!isVerxioDesktop()) {
-    return trimmed || undefined
-  }
-
-  if (verxioApiEnabled()) {
-    return RUNTIME_WORKSPACE_ROOT
-  }
 
   return trimmed || undefined
 }

@@ -2529,16 +2529,72 @@ async def run_agent(
     trigger_id: str | None = None,
     trigger_type: str = "manual",
 ) -> WorkflowRunRecord:
-    agent = get_agent(workspace, profile, agent_id)
+    agent = await asyncio.to_thread(get_agent, workspace, profile, agent_id)
     if not agent.enabled:
         raise HTTPException(status_code=409, detail="Workflow agent is disabled.")
-    run = _create_run_row(workspace, profile, agent, trigger_type, payload.input, trigger_id)
-    if agent.model_id:
-        _record_run_event(run, "model_selected", "Selected workflow agent brain model.", {"model_id": agent.model_id})
-    _set_run_status(run.id, "running")
+    run = await asyncio.to_thread(_create_run_row, workspace, profile, agent, trigger_type, payload.input, trigger_id)
+    from app.plane import tenant_uses_pool
+
+    if await asyncio.to_thread(tenant_uses_pool, workspace.id, profile.id) and not _executing_locally():
+        # Pool tenants execute on an agent worker holding the tenant lease;
+        # the API only records the queued run and hands the job over.
+        from app.jobs import aenqueue_turn
+
+        job_id = await aenqueue_turn(
+            tenant_id=workspace.tenant_id,
+            workspace_id=workspace.id,
+            agent_id=profile.id,
+            source=f"workflow:{trigger_type}",
+            payload={
+                "workflow_agent_id": agent_id,
+                "run_id": run.id,
+                "input": payload.input,
+                "trigger_id": trigger_id or "",
+            },
+        )
+        await asyncio.to_thread(
+            _record_run_event, run, "dispatched", "Workflow run handed to the agent worker pool.", {"job_id": job_id}
+        )
+        return await asyncio.to_thread(load_workflow_run, run.id) or run
+    return await execute_workflow_run(
+        workspace, profile, agent, run, payload.input, trigger_type=trigger_type, trigger_id=trigger_id
+    )
+
+
+def _executing_locally() -> bool:
+    """True inside a pool worker job (local Hermes bindings installed)."""
+    from app.runtime_dashboard import _LOCAL_ONESHOT
+
+    return _LOCAL_ONESHOT.get() is not None
+
+
+def load_workflow_run(run_id: str) -> WorkflowRunRecord | None:
+    row = db.fetch_one("SELECT * FROM workflow_runs WHERE id = ?", (run_id,))
+    return _run_from_row(row) if row else None
+
+
+async def execute_workflow_run(
+    workspace: Workspace,
+    profile: AgentProfile,
+    agent: WorkflowAgentRecord,
+    run: WorkflowRunRecord,
+    run_input: dict[str, Any],
+    *,
+    trigger_type: str,
+    trigger_id: str | None = None,
+) -> WorkflowRunRecord:
+    """Run an already-recorded workflow run to completion (API inline or pool worker)."""
+    payload = WorkflowRunCreateRequest(input=run_input)
+
+    def _start() -> str | None:
+        if agent.model_id:
+            _record_run_event(run, "model_selected", "Selected workflow agent brain model.", {"model_id": agent.model_id})
+        _set_run_status(run.id, "running")
+        return _maybe_handle_rating(workspace, agent.id, _conversation_id_from_input(payload.input, trigger_type), _message_from_run_input(payload.input))
+
     conversation_id = _conversation_id_from_input(payload.input, trigger_type)
     message = _message_from_run_input(payload.input)
-    rating_reply = _maybe_handle_rating(workspace, agent.id, conversation_id, message)
+    rating_reply = await asyncio.to_thread(_start)
     if rating_reply is not None:
         return await _complete_run_output(
             workspace,
@@ -2593,9 +2649,10 @@ async def run_agent(
                 event_type="micromgr",
                 message="Micro-manager handled this worker message.",
             )
-    knowledge_context = retrieve_context(workspace, agent.knowledge, payload.input)
+    knowledge_context = await asyncio.to_thread(retrieve_context, workspace, agent.knowledge, payload.input)
     if knowledge_context:
-        _record_run_event(
+        await asyncio.to_thread(
+            _record_run_event,
             run,
             "knowledge_retrieved",
             "Retrieved knowledge context for the workflow run.",
@@ -2611,7 +2668,7 @@ async def run_agent(
                 ]
             },
         )
-    custom_tools = _selected_custom_tools(workspace, agent)
+    custom_tools = await asyncio.to_thread(_selected_custom_tools, workspace, agent)
     instructions = _build_instructions(agent, knowledge_context, custom_tools)
     if _agent_has_tag(agent, "micromgr"):
         from app.micromgr import manager_context_block
@@ -2652,13 +2709,17 @@ async def run_agent(
                 ),
             )
     except Exception as exc:
-        _set_run_status(run.id, "failed", error=str(exc), completed=True)
-        return _run_from_row(db.fetch_one("SELECT * FROM workflow_runs WHERE id = ?", (run.id,)) or {})
-    output = _capture_rating_suggestion(workspace, agent.id, conversation_id, output)
-    _set_run_status(run.id, "completed", output=output, completed=True)
-    completed_run = _run_from_row(db.fetch_one("SELECT * FROM workflow_runs WHERE id = ?", (run.id,)) or {})
+        await asyncio.to_thread(_set_run_status, run.id, "failed", error=str(exc), completed=True)
+        return await asyncio.to_thread(load_workflow_run, run.id) or run
+
+    def _finish() -> tuple[str, WorkflowRunRecord]:
+        final_output = _capture_rating_suggestion(workspace, agent.id, conversation_id, output)
+        _set_run_status(run.id, "completed", output=final_output, completed=True)
+        return final_output, (load_workflow_run(run.id) or run)
+
+    output, completed_run = await asyncio.to_thread(_finish)
     await _record_delivery_events(workspace, profile, completed_run, output, payload.input)
-    return _run_from_row(db.fetch_one("SELECT * FROM workflow_runs WHERE id = ?", (run.id,)) or {})
+    return await asyncio.to_thread(load_workflow_run, run.id) or completed_run
 
 
 async def run_webhook_trigger(trigger_id: str, secret: str, payload: dict[str, Any]) -> WorkflowRunRecord:

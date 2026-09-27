@@ -18,6 +18,9 @@ import httpx
 
 from app import db
 from app.control_plane import ensure_runtime_directories, now_iso, runtime_from_row, safe_path_part, save_runtime
+from app.dashboard_proxy import READ_CACHE
+from app.dashboard_proxy import UPSTREAM_LIMITER as DASHBOARD_UPSTREAM_LIMITER
+from app.metrics import HEALTH_PROBES
 from app.models import ArtifactRecord, RuntimeInstance, new_id
 
 logger = logging.getLogger(__name__)
@@ -33,10 +36,13 @@ _LIVE_TOKEN_CACHE: dict[str, tuple[float, str]] = {}
 _CONTAINER_ENV_CACHE: dict[str, tuple[float, dict[str, str]]] = {}
 _HEALTHY_UNTIL: dict[str, float] = {}
 _START_LOCKS: dict[str, asyncio.Lock] = {}
-# One Hermes dashboard loop: boot floods of config/sessions freeze healthz.
-DASHBOARD_UPSTREAM_SLOTS = asyncio.Semaphore(
-    max(1, int(os.getenv("VERXIO_DASHBOARD_PROXY_CONCURRENCY", "1") or "1"))
-)
+# One Hermes dashboard loop per runtime: boot floods of config/sessions
+# freeze healthz. Back-pressure is per runtime (see app.dashboard_proxy), so
+# one slow tenant never queues another tenant's reads on this replica.
+def dashboard_upstream_slot(runtime: RuntimeInstance | str):
+    """Async context manager bounding concurrent proxy calls to one runtime."""
+    runtime_id = runtime if isinstance(runtime, str) else runtime.id
+    return DASHBOARD_UPSTREAM_LIMITER.slot(runtime_id)
 _CACHE_TTL_SECONDS = 60.0
 _HEALTHY_TTL_SECONDS = 45.0
 _OPTIONAL_UNPAIRED_PLATFORM_ERRORS = {
@@ -148,6 +154,8 @@ def _verxio_api_internal_url() -> str:
 def _runtime_container_env(runtime: RuntimeInstance, extra_env: dict[str, str] | None = None) -> dict[str, str]:
     env: dict[str, str] = {
         "VERXIO_HOSTED": "1",
+        "HERMES_TOOL_NICE": os.getenv("VERXIO_TOOL_NICE", "10"),
+        "HERMES_TOOL_SCHED_BATCH": "1",
         "WHATSAPP_BROWSER_NAME": "Verxio Agent",
         "WHATSAPP_REPLY_PREFIX": "",
         # Lets Hermes tools reach the Verxio control plane (Notepad, shares).
@@ -159,6 +167,10 @@ def _runtime_container_env(runtime: RuntimeInstance, extra_env: dict[str, str] |
 
     if not _runtime_whatsapp_paired(runtime):
         env["WHATSAPP_ENABLED"] = "false"
+    # Pool workers fail closed without a sandbox daemon. Legacy single-tenant
+    # planes have no daemon and may run tools in-process.
+    if not _is_pool_runtime(runtime):
+        env["VERXIO_SANDBOX_FALLBACK_LOCAL"] = "1"
 
     # Hosted Gemini/Qwen keys live on the control plane, not in the runtime
     # ``.env``. Reconcile / image rolls used to recreate pods without extra_env,
@@ -425,21 +437,21 @@ def invalidate_runtime_caches(runtime: RuntimeInstance) -> None:
     _LIVE_TOKEN_CACHE.pop(name, None)
     _CONTAINER_ENV_CACHE.pop(name, None)
     _HEALTHY_UNTIL.pop(name, None)
+    READ_CACHE.invalidate_runtime(runtime.id)
 
 
 def _runtime_manager_name(runtime: RuntimeInstance) -> str:
-    return (
-        runtime.manager
-        or os.getenv("VERXIO_RUNTIME_MANAGER", "local-docker")
-        or "local-docker"
-    ).strip().lower()
+    """Backend for this tenant, honouring the per-tenant plane flag."""
+    from app.runtime_orch.factory import manager_name_for_runtime
+
+    return manager_name_for_runtime(runtime)
 
 
 def _k8s_pod_env_map(runtime: RuntimeInstance) -> dict[str, str] | None:
     try:
         from app.runtime_orch.factory import get_runtime_manager
 
-        manager = get_runtime_manager()
+        manager = get_runtime_manager(runtime)
         read_pod_env = getattr(manager, "read_pod_env", None)
         if not callable(read_pod_env):
             return None
@@ -464,6 +476,17 @@ def _runtime_container_env_map(runtime: RuntimeInstance) -> dict[str, str] | Non
         env_map = _k8s_pod_env_map(runtime)
         if env_map is not None:
             _CONTAINER_ENV_CACHE[name] = (time.monotonic() + _CACHE_TTL_SECONDS, env_map)
+        return env_map
+    if _is_pool_runtime(runtime):
+        # No container: the sealed tenant env is what the worker materialises.
+        try:
+            from app.tenant_env import load_tenant_env
+
+            env_map = load_tenant_env(runtime.workspace_id, runtime.agent_id)
+        except Exception:
+            logger.debug("Tenant env load failed for %s", runtime.id, exc_info=True)
+            return None
+        _CONTAINER_ENV_CACHE[name] = (time.monotonic() + _CACHE_TTL_SECONDS, env_map)
         return env_map
 
     result = _run_docker(
@@ -513,8 +536,33 @@ def runtime_container_env_matches(runtime: RuntimeInstance, key: str, expected_v
     return env_map.get(key) == expected_value
 
 
+_POOL_MANAGERS = frozenset({"pool", "worker-pool", "workers"})
+
+
+def _is_pool_runtime(runtime: RuntimeInstance) -> bool:
+    return _runtime_manager_name(runtime) in _POOL_MANAGERS
+
+
+def pool_dashboard_base_url(runtime: RuntimeInstance) -> str | None:
+    """Live holder's dashboard for a pool tenant (``/p/{ws}:{agent}/``), else the DB copy."""
+    from app.infra.redis import lookup_tenant_holder
+    from app.runtime_orch.pool import _tenant_dashboard_url
+
+    holder = lookup_tenant_holder(runtime.workspace_id, runtime.agent_id)
+    if holder and holder.get("dashboard_url"):
+        return _tenant_dashboard_url(str(holder["dashboard_url"]), runtime)
+    return runtime.dashboard_url
+
+
 def runtime_live_dashboard_token(runtime: RuntimeInstance, fallback: str = "") -> str:
     """Prefer the token Hermes was actually started with over the DB copy."""
+
+    if _is_pool_runtime(runtime):
+        # Shared dashboard on pool workers: one process-wide session token;
+        # tenant identity comes from the /p/{tenant}/ prefix, never the token.
+        from app.runtime_orch.pool import pool_dashboard_token
+
+        return pool_dashboard_token() or fallback
 
     name = _container_name(runtime)
     cached = _cache_get(_LIVE_TOKEN_CACHE, name)
@@ -805,6 +853,8 @@ def runtime_dashboard_base_url(runtime: RuntimeInstance, *, ensure_network: bool
     ``ensure_network`` is for start/WS paths only — never on status polling.
     """
     manager = (runtime.manager or os.getenv("VERXIO_RUNTIME_MANAGER", "local-docker") or "local-docker").strip().lower()
+    if manager in _POOL_MANAGERS:
+        return pool_dashboard_base_url(runtime)
     if manager in {"k8s", "kubernetes"}:
         return runtime.dashboard_url
 
@@ -827,6 +877,9 @@ def runtime_dashboard_ws_candidates(runtime: RuntimeInstance) -> list[str]:
     right when the browser opened the gateway socket.
     """
     manager = (runtime.manager or os.getenv("VERXIO_RUNTIME_MANAGER", "local-docker") or "local-docker").strip().lower()
+    if manager in _POOL_MANAGERS:
+        live = pool_dashboard_base_url(runtime)
+        return [live] if live else []
     if manager in {"k8s", "kubernetes"}:
         return [runtime.dashboard_url] if runtime.dashboard_url else []
 
@@ -887,8 +940,10 @@ async def runtime_health(runtime: RuntimeInstance) -> tuple[bool, str]:
                 # dashboard event loop and a kubelet/API stampede after
                 # rebuild is what wedges the UI on "Reconnecting to Verxio".
                 mark_runtime_healthy(runtime)
+                HEALTH_PROBES.inc(result="ok")
                 return True, "Verxio runtime is reachable."
             except Exception as exc:
+                HEALTH_PROBES.inc(result="fail")
                 errors.append(f"{root}/api/healthz: {exc}")
 
             try:
@@ -1522,14 +1577,17 @@ def artifact_file(runtime: RuntimeInstance, artifact_id: str) -> tuple[ArtifactR
     if not row:
         raise KeyError("Artifact not found.")
 
+    from app.control_plane import device_recording_dir
+
     artifact_root = Path(runtime.artifact_path).resolve()
     workspace_root = Path(runtime.workspace_path).resolve()
     runtime_home_artifact_root = (Path(runtime.hermes_home_path) / "artifacts").resolve()
+    allowed_roots = [artifact_root, workspace_root, runtime_home_artifact_root]
+    local_recording_dir = device_recording_dir(runtime)
+    if local_recording_dir is not None:
+        allowed_roots.append(local_recording_dir.parent)
     file_path = Path(str(row["absolute_path"])).resolve()
-    if not any(
-        _is_path_within(file_path, root)
-        for root in (artifact_root, workspace_root, runtime_home_artifact_root)
-    ):
+    if not any(_is_path_within(file_path, root) for root in allowed_roots):
         raise KeyError("Artifact path is outside the runtime workspace.")
     if not file_path.exists() or not file_path.is_file():
         raise FileNotFoundError(str(file_path))

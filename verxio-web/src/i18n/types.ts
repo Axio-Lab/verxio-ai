@@ -67,6 +67,15 @@ export interface Translations {
       startingDesktopConnection: string
       startingHermesDesktop: string
     }
+    runtimePhase: {
+      attaching_profile: string
+      failed: string
+      preparing_env: string
+      queued: string
+      ready: string
+      restoring_home: string
+      starting: string
+    }
     errors: {
       backgroundExited: string
       backgroundExitedDuringStartup: string
@@ -1035,6 +1044,23 @@ export interface Translations {
     noMatch: (query: string) => string
     results: string
     pinned: string
+    projects: string
+    projectsSort: string
+    sortBy: string
+    sortPriority: string
+    sortUpdated: string
+    sortManual: string
+    newProject: string
+    projectNamePlaceholder: string
+    renameProject: string
+    projectOptions: (name: string) => string
+    deleteProject: string
+    projectPriority: string
+    priorityHigh: string
+    priorityNormal: string
+    priorityLow: string
+    projectEmpty: string
+    reorderProject: (name: string) => string
     sessions: string
     cronJobs: string
     groupAriaGrouped: string
@@ -1054,6 +1080,12 @@ export interface Translations {
     row: {
       pin: string
       unpin: string
+      moveToFolder: string
+      moveToFolderTitle: string
+      moveToFolderDesc: string
+      moveToFolderEmpty: string
+      newFolderPlaceholder: string
+      removeFromProject: string
       copyId: string
       export: string
       rename: string
@@ -1409,6 +1441,7 @@ export interface Translations {
     files: string
     terminal: string
     noFolderSelected: string
+    agentHome: string
     changeCwdTitle: string
     folderTip: (cwd: string) => string
     openFolder: string

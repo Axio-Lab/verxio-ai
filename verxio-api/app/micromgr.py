@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import hashlib
 import json
 import logging
@@ -961,6 +963,27 @@ async def maybe_handle_micromgr_message(
 ) -> str | None:
     if trigger_type != "chat":
         return None
+    # All lookups/updates below are synchronous DB work; keep them off the
+    # event loop so one chatty tenant cannot stall the API replica.
+    outcome = await asyncio.to_thread(
+        _micromgr_message_prelude, agent, message=message, conversation_id=conversation_id, run_input=run_input
+    )
+    if outcome is None:
+        return None
+    kind, value = outcome
+    if kind == "reply":
+        return str(value)
+    worker, text, image_url = value
+    return await _handle_submission(workspace, profile, worker, text, image_url)
+
+
+def _micromgr_message_prelude(
+    agent: WorkflowAgentRecord,
+    *,
+    message: str,
+    conversation_id: str,
+    run_input: dict[str, Any],
+) -> tuple[str, Any] | None:
     reply = _reply_from_input(run_input)
     platform = reply.get("channel") or ""
     sender_id = reply.get("sender_id") or conversation_id
@@ -996,10 +1019,11 @@ async def maybe_handle_micromgr_message(
                         f"Great, {worker['name']}! You're now active on \"{task_name}\". "
                         "You'll receive task prompts at the scheduled times."
                     )
-            return "\n\n".join(replies)
+            return ("reply", "\n\n".join(replies))
         return (
+            "reply",
             f"Hi {help_worker['name']}, you're already onboarded. "
-            "I'll message you when a task is due. Send help for task details."
+            "I'll message you when a task is due. Send help for task details.",
         )
 
     if lowered == "help":
@@ -1016,16 +1040,18 @@ async def maybe_handle_micromgr_message(
         if pending:
             pending_info = f"You have a pending submission due at {pending['due_at']}."
         return (
+            "reply",
             f"Hi {help_worker['name']}, here are your task details for \"{task.get('name')}\":\n\n"
             f"{_task_brief(task)}\n\n"
-            f"Current status: {pending_info}"
+            f"Current status: {pending_info}",
         )
 
     onboard = [row for row in workers if str(row.get("status")) == "onboarding"]
     if onboard:
         return (
+            "reply",
             f"Hi {onboard[0]['name']}, please reply with Ready to confirm you're set up and start receiving tasks. "
-            "Send help for task details."
+            "Send help for task details.",
         )
 
     supervisors = [row for row in workers if str(row.get("role")) in {"supervisor", "admin"} and str(row.get("status")) == "active"]
@@ -1047,13 +1073,42 @@ async def maybe_handle_micromgr_message(
                 (now_iso(), str(supervisors[0]["id"]), text, now_iso(), flag["id"]),
             )
             _refresh_worker_risk(str(flag["worker_id"]))
-            return f"Thanks {supervisors[0]['name']}. I marked that flag resolved."
-        return f"Hi {supervisors[0]['name']}, there are no open flags on this task right now."
+            return ("reply", f"Thanks {supervisors[0]['name']}. I marked that flag resolved.")
+        return ("reply", f"Hi {supervisors[0]['name']}, there are no open flags on this task right now.")
 
     active_workers = [row for row in workers if str(row.get("role")) == "worker" and str(row.get("status")) == "active"]
     if not active_workers:
         return None
-    return await _handle_submission(workspace, profile, active_workers[0], text, image_url)
+    return ("submit", (active_workers[0], text, image_url))
+
+
+_PENDING_SUBMISSION_SQL = """
+    SELECT * FROM micromgr_submissions
+    WHERE worker_id = ? AND status IN ('pending', 'collecting', 'rejected')
+    ORDER BY due_at ASC
+"""
+
+
+def _submission_task_and_pending(worker: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any] | None, bool]:
+    """Sync phase A: load task + pending submission, marking a missed one.
+
+    Returns ``(task, pending, missed)``; when ``missed`` the caller flags it
+    (async, may message supervisors) and re-reads the pending row.
+    """
+    task = db.fetch_one("SELECT * FROM micromgr_tasks WHERE id = ?", (worker["task_id"],)) or {}
+    if str(task.get("status") or "ACTIVE") in {"ARCHIVED", "PAUSED"}:
+        return task, None, False
+    pending = db.fetch_one(_PENDING_SUBMISSION_SQL, (worker["id"],))
+    if pending:
+        due = _parse_dt(str(pending.get("due_at") or ""))
+        grace = int(task.get("grace_minutes") or 15)
+        if due and datetime.now(timezone.utc) > due + timedelta(minutes=grace):
+            db.execute(
+                "UPDATE micromgr_submissions SET status = 'missed', updated_at = ? WHERE id = ? AND status IN ('pending', 'collecting', 'rejected')",
+                (now_iso(), pending["id"]),
+            )
+            return task, pending, True
+    return task, pending, False
 
 
 async def _handle_submission(
@@ -1063,38 +1118,15 @@ async def _handle_submission(
     text: str,
     image_url: str,
 ) -> str:
-    task = db.fetch_one("SELECT * FROM micromgr_tasks WHERE id = ?", (worker["task_id"],)) or {}
+    task, pending, missed = await asyncio.to_thread(_submission_task_and_pending, worker)
     status = str(task.get("status") or "ACTIVE")
     if status == "ARCHIVED":
         return f"Hi {worker['name']}, \"{task.get('name')}\" is archived. You cannot submit evidence right now."
     if status == "PAUSED":
         return f"Hi {worker['name']}, \"{task.get('name')}\" is paused. You cannot submit evidence until it resumes."
-
-    pending = db.fetch_one(
-        """
-        SELECT * FROM micromgr_submissions
-        WHERE worker_id = ? AND status IN ('pending', 'collecting', 'rejected')
-        ORDER BY due_at ASC
-        """,
-        (worker["id"],),
-    )
-    if pending:
-        due = _parse_dt(str(pending.get("due_at") or ""))
-        grace = int(task.get("grace_minutes") or 15)
-        if due and datetime.now(timezone.utc) > due + timedelta(minutes=grace):
-            db.execute(
-                "UPDATE micromgr_submissions SET status = 'missed', updated_at = ? WHERE id = ? AND status IN ('pending', 'collecting', 'rejected')",
-                (now_iso(), pending["id"]),
-            )
-            await _flag_missed(workspace, profile, task, worker, pending)
-            pending = db.fetch_one(
-                """
-                SELECT * FROM micromgr_submissions
-                WHERE worker_id = ? AND status IN ('pending', 'collecting', 'rejected')
-                ORDER BY due_at ASC
-                """,
-                (worker["id"],),
-            )
+    if missed and pending is not None:
+        await _flag_missed(workspace, profile, task, worker, pending)
+        pending = await asyncio.to_thread(db.fetch_one, _PENDING_SUBMISSION_SQL, (worker["id"],))
 
     if not pending:
         times = _string_list(_json_loads(task.get("scheduled_times_json"), []))
@@ -1112,6 +1144,17 @@ async def _handle_submission(
             f"Please send your {kind} in this chat and I'll review it."
         )
 
+    outcome = await asyncio.to_thread(_record_submission_evidence, worker, pending, text, image_url)
+    kind, value = outcome
+    if kind == "reply":
+        return str(value)
+    return await _vet_submission(workspace, profile, str(value))
+
+
+def _record_submission_evidence(
+    worker: dict[str, Any], pending: dict[str, Any], text: str, image_url: str
+) -> tuple[str, str]:
+    """Sync phase B: persist the evidence; ``("vet", submission_id)`` or ``("reply", text)``."""
     items = db.fetch_all(
         "SELECT * FROM micromgr_submission_items WHERE submission_id = ? ORDER BY sort_order ASC",
         (pending["id"],),
@@ -1139,11 +1182,11 @@ async def _handle_submission(
             """,
             (now, image_url, text, now, pending["id"]),
         )
-        return await _vet_submission(workspace, profile, str(pending["id"]))
+        return ("vet", str(pending["id"]))
 
     next_item = next((item for item in items if not item.get("received_at")), None)
     if not next_item:
-        return f"Thanks {worker['name']}, your submission has been received!"
+        return ("reply", f"Thanks {worker['name']}, your submission has been received!")
     db.execute(
         "UPDATE micromgr_submission_items SET image_url = ?, raw_message = ?, received_at = ? WHERE id = ?",
         (image_url, text, now, next_item["id"]),
@@ -1155,9 +1198,9 @@ async def _handle_submission(
         ("collecting" if remaining else "submitted", image_url or str(pending.get("image_url") or ""), text, now, pending["id"]),
     )
     if remaining:
-        return f"{next_item['label']} received ({received}/{len(items)}). Now send your {remaining[0]['label']}."
+        return ("reply", f"{next_item['label']} received ({received}/{len(items)}). Now send your {remaining[0]['label']}.")
     db.execute("UPDATE micromgr_submissions SET submitted_at = ?, updated_at = ? WHERE id = ?", (now, now, pending["id"]))
-    return await _vet_submission(workspace, profile, str(pending["id"]))
+    return ("vet", str(pending["id"]))
 
 
 def _parse_vetting(text: str, passing_score: int) -> dict[str, Any]:

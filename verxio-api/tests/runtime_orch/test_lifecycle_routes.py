@@ -29,8 +29,14 @@ def test_wake_drain_routes_exist_authenticated(monkeypatch):
         artifact_path="/tmp/a",
     )
 
-    monkeypatch.setattr("app.main.require_user", lambda request: user)
-    monkeypatch.setattr("app.main.get_runtime_for_user", lambda user, **kw: runtime)
+    async def _user(request):
+        return user
+
+    async def _runtime(user, *a, **kw):
+        return runtime
+
+    monkeypatch.setattr("app.main.arequire_user", _user)
+    monkeypatch.setattr("app.main.aget_runtime_for_user", _runtime)
 
     async def _noop(*_a, **_k):
         return None

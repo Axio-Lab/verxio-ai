@@ -1,9 +1,14 @@
 import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 
+import { useI18n } from '@/i18n'
+import { isVerxioDesktop } from '@/lib/platform'
 import { cn } from '@/lib/utils'
+import { getVerxioRuntime, verxioApiEnabled } from '@/lib/verxio-api'
 import { $desktopBoot } from '@/store/boot'
+import { $gatewayLink } from '@/store/gateway-link'
 import { $desktopOnboarding } from '@/store/onboarding'
+import { $runtimePhase, applyRuntimeStatus, resetRuntimePhase, runtimePhaseProgress } from '@/store/runtime-phase'
 import { $gatewayState } from '@/store/session'
 
 // Static, always-legible prefix; only TAIL ever scrambles. Splitting them at
@@ -23,6 +28,8 @@ const OVERLAY_OUT_MS = 520
 // Preview-only: how long to "connect" for, and the pause before replaying.
 const PREVIEW_CONNECT_MS = 2600
 const PREVIEW_REPLAY_MS = 1100
+// Hosted spin-up: how often to ask the control plane which step the worker is on.
+const RUNTIME_PHASE_POLL_MS = 2500
 
 type Phase = 'live' | 'text-out' | 'overlay-out' | 'gone'
 
@@ -47,14 +54,21 @@ function scrambledTail(resolvedCount: number): string {
 }
 
 export function GatewayConnectingOverlay() {
+  const { t } = useI18n()
   const gatewayState = useStore($gatewayState)
+  const link = useStore($gatewayLink)
   const boot = useStore($desktopBoot)
   const onboarding = useStore($desktopOnboarding)
+  const runtimePhase = useStore($runtimePhase)
   const [previewing] = useState(forcedPreview)
   const [tail, setTail] = useState(TAIL)
   const [phase, setPhase] = useState<Phase>('live')
 
-  const connecting = gatewayState !== 'open' && !boot.error
+  // First connect: overlay owns the screen until the socket opens. After that a
+  // drop is a silent blip for RECONNECT_GRACE_MS (composer stays live, the
+  // reconnect loop runs in the background) and only a sustained outage brings
+  // the overlay back — no full-screen flash for a 2s proxy hiccup.
+  const connecting = gatewayState !== 'open' && !boot.error && (!link.everOpen || link.degraded)
   // Settings → Providers launches manual OAuth on top of the app. Don't
   // flash the full-screen gateway reconnect overlay over that flow — it reads
   // like the sign-in failed and the user lands back on the provider page.
@@ -67,6 +81,54 @@ export function GatewayConnectingOverlay() {
   if (previewing || connecting) {
     shownRef.current = true
   }
+
+  // Desktop: local Hermes boot events drive the overlay. Cloud-hosted browser
+  // builds still poll GET /api/runtime for pool spin-up copy.
+  useEffect(() => {
+    if (!connecting || previewing) {
+      if (!connecting) {
+        resetRuntimePhase()
+      }
+
+      return
+    }
+
+    if (isVerxioDesktop()) {
+      applyRuntimeStatus({
+        connected: !boot.running && !boot.error && boot.progress >= 94,
+        phase: boot.error ? 'failed' : boot.running ? 'starting' : 'ready',
+        phase_detail: boot.error ? boot.message : null
+      })
+
+      return
+    }
+
+    if (!verxioApiEnabled()) {
+      return
+    }
+
+    let cancelled = false
+
+    const probe = () => {
+      getVerxioRuntime()
+        .then(status => {
+          if (!cancelled) {
+            applyRuntimeStatus(status)
+          }
+        })
+        .catch(() => {
+          // Not signed in yet or API briefly unreachable — keep the last phase.
+        })
+    }
+
+    probe()
+    const id = window.setInterval(probe, RUNTIME_PHASE_POLL_MS)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [boot, connecting, previewing])
 
   // Decode loop — only while live (freeze the resolved word during the exit).
   useEffect(() => {
@@ -96,6 +158,15 @@ export function GatewayConnectingOverlay() {
     }, TICK_MS)
 
     return () => window.clearInterval(id)
+  }, [phase, previewing, connecting])
+
+  // Sustained outage after a healthy boot (link degraded past the grace window):
+  // bring the overlay back so the hosted spin-up progress is visible again.
+  useEffect(() => {
+    if (!previewing && phase === 'gone' && connecting) {
+      setTail(TAIL)
+      setPhase('live')
+    }
   }, [phase, previewing, connecting])
 
   // Kick off the exit when connected: real connect, or a faked timer in preview.
@@ -165,6 +236,11 @@ export function GatewayConnectingOverlay() {
 
   const leaving = phase !== 'live'
   const overlayHidden = phase === 'overlay-out' || phase === 'gone'
+  // Hosted spin-up: the pool worker reports which step it is on. Hidden for
+  // plain socket reconnects (phase null) so a warm reload stays minimal.
+  const spinUp = runtimePhase.phase && runtimePhase.phase !== 'stopped' ? runtimePhase.phase : null
+  const spinUpLabel = spinUp ? t.boot.runtimePhase[spinUp] : null
+  const spinUpProgress = runtimePhaseProgress(spinUp)
 
   return (
     <div
@@ -174,20 +250,45 @@ export function GatewayConnectingOverlay() {
       )}
     >
       <style>{'@keyframes gco-cursor { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }'}</style>
-      <span
+      <div
         className={cn(
-          'inline-flex items-center pl-[0.4em] font-mono text-[0.64rem] font-semibold uppercase tracking-[0.4em] tabular-nums text-(--theme-primary) transition duration-300 ease-out',
+          'flex flex-col items-center gap-3 transition duration-300 ease-out',
           leaving ? 'translate-y-2 opacity-0 saturate-0' : 'translate-y-0 opacity-100 saturate-100'
         )}
       >
-        {PREFIX}
-        {tail}
-        <span
-          aria-hidden="true"
-          className="dither ml-0.5 inline-block size-2 shrink-0 -translate-y-px rounded-[1px]"
-          style={{ animation: 'gco-cursor 1s step-end infinite' }}
-        />
-      </span>
+        <span className="inline-flex items-center pl-[0.4em] font-mono text-[0.64rem] font-semibold uppercase tracking-[0.4em] tabular-nums text-(--theme-primary)">
+          {PREFIX}
+          {tail}
+          <span
+            aria-hidden="true"
+            className="dither ml-0.5 inline-block size-2 shrink-0 -translate-y-px rounded-[1px]"
+            style={{ animation: 'gco-cursor 1s step-end infinite' }}
+          />
+        </span>
+        {spinUpLabel ? (
+          <div className="flex w-56 flex-col items-center gap-1.5" data-phase={spinUp} data-testid="runtime-spin-up">
+            <div className="h-px w-full overflow-hidden bg-(--theme-primary)/15">
+              <div
+                className="h-full bg-(--theme-primary) transition-[width] duration-500 ease-out"
+                style={{ width: `${spinUpProgress}%` }}
+              />
+            </div>
+            <span
+              className={cn(
+                'font-mono text-[0.6rem] tracking-[0.12em] text-(--theme-primary)/70',
+                spinUp === 'failed' && 'text-(--theme-danger,--theme-primary)'
+              )}
+            >
+              {spinUpLabel}
+            </span>
+            {runtimePhase.detail ? (
+              <span className="max-w-full truncate font-mono text-[0.55rem] tracking-[0.08em] text-(--theme-primary)/45">
+                {runtimePhase.detail}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }

@@ -16,13 +16,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 1.0
     },
     {
-      url: `${APP_URL}/signup`,
+      url: `${APP_URL}/download`,
       lastModified: now,
       changeFrequency: 'monthly',
       priority: 0.9
     },
     {
-      url: `${APP_URL}/login`,
+      url: `${APP_URL}/download`,
       lastModified: now,
       changeFrequency: 'monthly',
       priority: 0.7

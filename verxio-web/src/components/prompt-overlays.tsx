@@ -254,6 +254,7 @@ export function FishAudioConfirmationDialog() {
       if (!approved) {
         if (gateway && typeof request.confirmation !== 'string') {
           setSubmitting(true)
+
           try {
             await gateway.request(
               'fishaudio.confirmation.respond',
@@ -271,6 +272,7 @@ export function FishAudioConfirmationDialog() {
 
         triggerHaptic('selection')
         clearFishAudioConfirmationRequest(request.sessionId, request.requestId)
+
         return
       }
 

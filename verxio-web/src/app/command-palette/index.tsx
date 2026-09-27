@@ -23,7 +23,6 @@ import {
   MessageCircle,
   Monitor,
   Moon,
-  Package,
   Palette,
   Plus,
   RefreshCw,
@@ -46,7 +45,6 @@ import { type ThemeMode, useTheme } from '@/themes/context'
 
 import {
   AGENTS_ROUTE,
-  ARTIFACTS_ROUTE,
   COMMAND_CENTER_ROUTE,
   CRON_ROUTE,
   MESSAGING_ROUTE,
@@ -238,7 +236,6 @@ export function CommandPalette() {
             run: go(SKILLS_ROUTE)
           },
           { icon: MessageCircle, id: 'nav-messaging', label: cc.nav.messaging.title, run: go(MESSAGING_ROUTE) },
-          { icon: Package, id: 'nav-artifacts', label: cc.nav.artifacts.title, run: go(ARTIFACTS_ROUTE) },
           {
             icon: Clock,
             id: 'nav-cron',

@@ -376,43 +376,21 @@ npm run dist:win --prefix verxio-desktop
 npm run dist:linux --prefix verxio-desktop
 ```
 
-## Local Docker Parity
+## Desktop + slim cloud
 
-Local Docker uses the same routes, auth flow, database schema, runtime registry,
-and container shape as production. The main difference is where containers run.
-
-```bash
-cp .env.verxio.example .env
-# Fill TURSO_DATABASE_URL and TURSO_AUTH_TOKEN.
-
-docker compose -f docker-compose.verxio.yml --profile image build hermes-runtime-image verxio-api verxio-web
-docker compose -f docker-compose.verxio.yml up verxio-api verxio-web
-```
-
-For first local testing without Turso, set these in `.env` before `up`:
+Verxio Desktop runs Hermes on the user's machine for chat, project files, the
+terminal, and local Whisper. The cloud keeps one always-on agent per account
+for cron, messaging, and workflow agents, plus sign-in, hosted model keys, and
+Composio. Shared notepad links stay on `app.verxio.xyz/share/notepad/…`.
 
 ```bash
-VERXIO_DATABASE_MODE=sqlite
-VERXIO_RUNTIME_DOCKER_ROOT=/Users/donatusprince/Desktop/projects/verxio-ai/.verxio/runtimes
-VERXIO_RUNTIME_CONNECT_HOST=host.docker.internal
-VERXIO_RUNTIME_PUBLISH_HOST=127.0.0.1
+npm run desktop:dev
+# API (accounts, inference gateway, sync):
+cd verxio-api && VERXIO_DATABASE_MODE=sqlite uv run uvicorn app.main:app --reload --port 8787
 ```
 
-Open:
-
-```text
-http://127.0.0.1:8080
-```
-
-Deployment test login:
-
-```text
-Email: donatusprince@gmail.com
-Password: 123456789
-```
-
-Signup creates a user, personal workspace, default Verxio agent, runtime
-registry row, isolated runtime home, workspace, and artifact directory.
+Public web (share pages + download) builds with `VITE_PUBLIC_ENTRY=1`.
+The pool plane is the default cloud runtime (`VERXIO_RUNTIME_MANAGER=pool`).
 
 ## Challenges Solved
 

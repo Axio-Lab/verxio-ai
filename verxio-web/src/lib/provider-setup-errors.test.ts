@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { isProviderSetupErrorMessage } from './provider-setup-errors'
+import { isProviderSetupErrorMessage, rewriteDesktopAuthMessage } from './provider-setup-errors'
 
 describe('isProviderSetupErrorMessage', () => {
   it('matches generic missing-provider copy', () => {
@@ -27,6 +27,18 @@ describe('isProviderSetupErrorMessage', () => {
     expect(
       isProviderSetupErrorMessage('Selected runtime is not available. setup.status reports configured credentials.')
     ).toBe(false)
+  })
+
+  it('rewrites Hermes CLI hints to the in-app connect flow', () => {
+    expect(rewriteDesktopAuthMessage('No Codex credentials stored. Run `hermes auth` to authenticate.')).toBe(
+      'No Codex credentials stored. Connect the account in Settings.'
+    )
+    expect(rewriteDesktopAuthMessage('Codex auth is missing access_token. Run `hermes auth` to re-authenticate.')).toBe(
+      'Codex auth is missing access_token. Reconnect the account in Settings.'
+    )
+    expect(rewriteDesktopAuthMessage('Run `hermes model` to re-authenticate.')).toBe(
+      'Reconnect the account in Settings.'
+    )
   })
 
   it('returns false for empty input', () => {

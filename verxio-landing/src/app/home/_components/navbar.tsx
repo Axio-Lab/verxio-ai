@@ -45,13 +45,13 @@ export function Navbar() {
 
         <div className="hidden md:flex items-center gap-3">
           <a
-            href={appPath("/login")}
+            href={appPath("/download")}
             className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors"
           >
             Log in
           </a>
           <a
-            href={appPath("/signup")}
+            href={appPath("/download")}
             className="px-5 py-2.5 text-sm font-semibold text-white bg-primary rounded-lg hover:brightness-110 transition-all shadow-sm"
           >
             Get started
@@ -112,11 +112,11 @@ export function Navbar() {
             Blog
           </a>
           <div className="pt-3 border-t border-gray-100 flex flex-col gap-2">
-            <a href={appPath("/login")} className="text-sm font-medium text-gray-700 hover:text-gray-900">
+            <a href={appPath("/download")} className="text-sm font-medium text-gray-700 hover:text-gray-900">
               Log in
             </a>
             <a
-              href={appPath("/signup")}
+              href={appPath("/download")}
               className="px-5 py-2.5 text-sm font-semibold text-white bg-primary rounded-lg hover:brightness-110 transition-all text-center"
             >
               Get started

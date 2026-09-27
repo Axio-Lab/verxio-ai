@@ -58,4 +58,12 @@ describe('transcription provider catalog', () => {
       recommendedModel: 'fish-audio-asr-beta'
     })
   })
+
+  it('offers on-device Whisper ahead of the cloud providers', () => {
+    const providers = cloudTranscriptionProvidersFromCatalog(null)
+
+    expect(providers[0]?.id).toBe('local')
+    expect(providers[0]?.recommendedModel).toBe('base')
+    expect(providers[0]?.envKey).toBe('')
+  })
 })
