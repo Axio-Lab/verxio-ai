@@ -1044,6 +1044,22 @@ export interface Translations {
     noMatch: (query: string) => string
     results: string
     pinned: string
+    projects: string
+    projectsSort: string
+    sortBy: string
+    sortPriority: string
+    sortUpdated: string
+    sortManual: string
+    newProject: string
+    projectNamePlaceholder: string
+    renameProject: string
+    projectOptions: (name: string) => string
+    deleteProject: string
+    projectPriority: string
+    priorityHigh: string
+    priorityNormal: string
+    priorityLow: string
+    projectEmpty: string
     sessions: string
     cronJobs: string
     groupAriaGrouped: string
@@ -1063,6 +1079,8 @@ export interface Translations {
     row: {
       pin: string
       unpin: string
+      addToProject: string
+      removeFromProject: string
       copyId: string
       export: string
       rename: string
