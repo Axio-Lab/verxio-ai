@@ -83,6 +83,7 @@ import type { SidebarNavItem } from '../../types'
 
 import { SidebarCronJobsSection } from './cron-jobs-section'
 import { ProfileRail } from './profile-switcher'
+import { SidebarProjectsSection } from './projects-section'
 import { SidebarSessionRow } from './session-row'
 import { VirtualSessionList } from './virtual-session-list'
 import { type SidebarSessionGroup, workspaceTreeFor } from './workspace-groups'
@@ -642,6 +643,8 @@ export function ChatSidebar({
             workingSessionIdSet={workingSessionIdSet}
           />
         )}
+
+        {sidebarOpen && showSessionSections && !trimmedQuery && <SidebarProjectsSection />}
 
         {sidebarOpen && showSessionSections && !trimmedQuery && (
           <SidebarSessionsSection
