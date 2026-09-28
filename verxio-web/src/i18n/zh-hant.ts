@@ -1334,6 +1334,7 @@ export const zhHant = defineLocale({
     priorityNormal: '普通',
     priorityLow: '低',
     projectEmpty: '此專案還沒有對話。',
+    reorderProject: name => `重新排序 ${name}`,
     sessions: '工作階段',
     cronJobs: 'Cron 工作',
     groupAriaGrouped: '以單一清單顯示工作階段',

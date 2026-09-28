@@ -1470,6 +1470,7 @@ export const en: Translations = {
     priorityNormal: 'Normal',
     priorityLow: 'Low',
     projectEmpty: 'No chats in this project yet.',
+    reorderProject: name => `Reorder ${name}`,
     sessions: 'Sessions',
     cronJobs: 'Cron jobs',
     groupAriaGrouped: 'Show sessions as a single list',

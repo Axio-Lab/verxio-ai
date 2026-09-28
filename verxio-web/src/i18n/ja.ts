@@ -1378,6 +1378,7 @@ export const ja = defineLocale({
     priorityNormal: '通常',
     priorityLow: '低',
     projectEmpty: 'このプロジェクトにはまだチャットがありません。',
+    reorderProject: name => `${name} を並べ替え`,
     sessions: 'セッション',
     cronJobs: 'Cron ジョブ',
     groupAriaGrouped: 'セッションを単一リストとして表示',

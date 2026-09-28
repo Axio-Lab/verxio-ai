@@ -1541,6 +1541,7 @@ export const zh: Translations = {
     priorityNormal: '普通',
     priorityLow: '低',
     projectEmpty: '此项目还没有对话。',
+    reorderProject: name => `重新排序 ${name}`,
     sessions: '会话',
     cronJobs: '定时任务',
     groupAriaGrouped: '以单一列表显示会话',

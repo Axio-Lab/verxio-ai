@@ -1060,6 +1060,7 @@ export interface Translations {
     priorityNormal: string
     priorityLow: string
     projectEmpty: string
+    reorderProject: (name: string) => string
     sessions: string
     cronJobs: string
     groupAriaGrouped: string
