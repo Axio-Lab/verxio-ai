@@ -261,7 +261,7 @@ export function SidebarProjectsSection({
       {open && (
         <DndContext collisionDetection={closestCenter} onDragEnd={onDragEnd} sensors={sensors}>
           <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
-            <div className="grid max-h-72 gap-px overflow-y-auto overscroll-contain pb-1">
+            <div className="grid max-h-[calc(4*1.75rem+0.25rem)] gap-px overflow-y-auto overscroll-contain pb-1">
               {creating && (
                 <input
                   aria-label={s.newProject}
@@ -339,7 +339,7 @@ function ProjectFolder({
 }) {
   const { t } = useI18n()
   const s = t.sidebar
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [draft, setDraft] = useState(project.name)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -395,6 +395,7 @@ function ProjectFolder({
           onClick={() => setExpanded(value => !value)}
           type="button"
         >
+          <DisclosureCaret className="shrink-0 text-(--ui-text-tertiary)" open={expanded} />
           <Codicon className="shrink-0 text-(--ui-text-tertiary)" name="folder" size="0.875rem" />
           {renaming ? (
             <input
@@ -493,22 +494,25 @@ function ProjectFolder({
       {expanded && project.sessionIds.length === 0 && (
         <p className="px-7 pb-1 text-[0.6875rem] text-(--ui-text-quaternary)">{s.projectEmpty}</p>
       )}
-      {expanded &&
-        sessions.map(session => (
-          <ProjectSessionRow
-            activeSessionId={activeSessionId}
-            key={session.id}
-            manual={manual}
-            onArchiveSession={onArchiveSession}
-            onDeleteSession={onDeleteSession}
-            onResumeSession={onResumeSession}
-            onTogglePin={onTogglePin}
-            pinnedSessionIds={pinnedSessionIds}
-            projectId={project.id}
-            session={session}
-            workingSessionIdSet={workingSessionIdSet}
-          />
-        ))}
+      {expanded && sessions.length > 0 && (
+        <div className="max-h-[calc(4*1.625rem)] overflow-y-auto overscroll-contain">
+          {sessions.map(session => (
+            <ProjectSessionRow
+              activeSessionId={activeSessionId}
+              key={session.id}
+              manual={manual}
+              onArchiveSession={onArchiveSession}
+              onDeleteSession={onDeleteSession}
+              onResumeSession={onResumeSession}
+              onTogglePin={onTogglePin}
+              pinnedSessionIds={pinnedSessionIds}
+              projectId={project.id}
+              session={session}
+              workingSessionIdSet={workingSessionIdSet}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
