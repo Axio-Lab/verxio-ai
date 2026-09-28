@@ -207,8 +207,17 @@ function updateProjects(recipe: (state: SidebarProjectsState) => SidebarProjects
   }
 }
 
-export function createSidebarProject(name: string) {
-  updateProjects(state => createProject(state, name))
+export function createSidebarProject(name: string): null | string {
+  const prev = $sidebarProjects.get()
+  const next = createProject(prev, name)
+
+  if (next === prev) {
+    return null
+  }
+
+  $sidebarProjects.set(next)
+
+  return next.projects[next.projects.length - 1]?.id ?? null
 }
 
 export function renameSidebarProject(projectId: string, name: string) {

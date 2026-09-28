@@ -1080,7 +1080,11 @@ export interface Translations {
     row: {
       pin: string
       unpin: string
-      addToProject: string
+      moveToFolder: string
+      moveToFolderTitle: string
+      moveToFolderDesc: string
+      moveToFolderEmpty: string
+      newFolderPlaceholder: string
       removeFromProject: string
       copyId: string
       export: string

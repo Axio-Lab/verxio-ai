@@ -4,15 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSub,
-  ContextMenuSubContent,
-  ContextMenuSubTrigger,
-  ContextMenuTrigger
-} from '@/components/ui/context-menu'
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { writeClipboardText } from '@/components/ui/copy-button'
 import {
   Dialog,
@@ -22,21 +14,19 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger
-} from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { renameSession } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
 import { exportSession } from '@/lib/session-export'
-import { $sidebarProjects, addSessionToSidebarProject, removeSessionsFromSidebarProjects } from '@/store/layout'
+import { cn } from '@/lib/utils'
+import {
+  $sidebarProjects,
+  addSessionToSidebarProject,
+  createSidebarProject,
+  removeSessionsFromSidebarProjects
+} from '@/store/layout'
 import { notify, notifyError } from '@/store/notifications'
 import { setSessions } from '@/store/session'
 
@@ -62,10 +52,21 @@ interface ItemSpec {
   variant?: 'destructive'
 }
 
-function useSessionActions({ sessionId, title, pinned = false, profile, onPin, onArchive, onDelete }: SessionActions) {
+function useSessionActions({
+  sessionId,
+  title,
+  pinId,
+  pinned = false,
+  profile,
+  onPin,
+  onArchive,
+  onDelete
+}: SessionActions) {
   const { t } = useI18n()
   const r = t.sidebar.row
   const [renameOpen, setRenameOpen] = useState(false)
+  const [moveOpen, setMoveOpen] = useState(false)
+  const folderId = pinId || sessionId
 
   const items: ItemSpec[] = [
     {
@@ -75,6 +76,15 @@ function useSessionActions({ sessionId, title, pinned = false, profile, onPin, o
       onSelect: () => {
         triggerHaptic('selection')
         onPin?.()
+      }
+    },
+    {
+      disabled: !sessionId,
+      icon: 'folder',
+      label: r.moveToFolder,
+      onSelect: () => {
+        triggerHaptic('selection')
+        setMoveOpen(true)
       }
     },
     {
@@ -145,72 +155,9 @@ function useSessionActions({ sessionId, title, pinned = false, profile, onPin, o
     />
   )
 
-  return { renameDialog, renderItems }
-}
+  const moveDialog = <MoveToFolderDialog onOpenChange={setMoveOpen} open={moveOpen} pinId={folderId} />
 
-function ProjectMoveMenu({ kind, pinId }: { kind: 'context' | 'dropdown'; pinId: string }) {
-  const { t } = useI18n()
-  const r = t.sidebar.row
-  const projects = useStore($sidebarProjects).projects
-  const memberOf = projects.find(project => project.sessionIds.includes(pinId))
-
-  if (!pinId || projects.length === 0) {
-    return null
-  }
-
-  const move = (projectId: string) => {
-    triggerHaptic('selection')
-    addSessionToSidebarProject(projectId, pinId)
-  }
-
-  const remove = () => {
-    triggerHaptic('selection')
-    removeSessionsFromSidebarProjects([pinId])
-  }
-
-  if (kind === 'context') {
-    return (
-      <ContextMenuSub>
-        <ContextMenuSubTrigger>
-          <Codicon name="folder" size="0.875rem" />
-          <span>{r.addToProject}</span>
-        </ContextMenuSubTrigger>
-        <ContextMenuSubContent className="w-44">
-          {projects.map(project => (
-            <ContextMenuItem key={project.id} onSelect={() => move(project.id)}>
-              <span className="truncate">{project.name}</span>
-            </ContextMenuItem>
-          ))}
-          {memberOf && (
-            <ContextMenuItem onSelect={remove}>
-              <span>{r.removeFromProject}</span>
-            </ContextMenuItem>
-          )}
-        </ContextMenuSubContent>
-      </ContextMenuSub>
-    )
-  }
-
-  return (
-    <DropdownMenuSub>
-      <DropdownMenuSubTrigger>
-        <Codicon name="folder" size="0.875rem" />
-        <span>{r.addToProject}</span>
-      </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent className="w-44">
-        {projects.map(project => (
-          <DropdownMenuItem key={project.id} onSelect={() => move(project.id)}>
-            <span className="truncate">{project.name}</span>
-          </DropdownMenuItem>
-        ))}
-        {memberOf && (
-          <DropdownMenuItem onSelect={remove}>
-            <span>{r.removeFromProject}</span>
-          </DropdownMenuItem>
-        )}
-      </DropdownMenuSubContent>
-    </DropdownMenuSub>
-  )
+  return { moveDialog, renameDialog, renderItems }
 }
 
 interface SessionActionsMenuProps
@@ -220,7 +167,7 @@ interface SessionActionsMenuProps
 
 export function SessionActionsMenu({ children, align = 'end', sideOffset = 6, ...actions }: SessionActionsMenuProps) {
   const { t } = useI18n()
-  const { renameDialog, renderItems } = useSessionActions(actions)
+  const { moveDialog, renameDialog, renderItems } = useSessionActions(actions)
 
   return (
     <>
@@ -232,10 +179,10 @@ export function SessionActionsMenu({ children, align = 'end', sideOffset = 6, ..
           className="w-44"
           sideOffset={sideOffset}
         >
-          <ProjectMoveMenu kind="dropdown" pinId={actions.pinId || actions.sessionId} />
           {renderItems(DropdownMenuItem)}
         </DropdownMenuContent>
       </DropdownMenu>
+      {moveDialog}
       {renameDialog}
     </>
   )
@@ -247,19 +194,125 @@ interface SessionContextMenuProps extends SessionActions {
 
 export function SessionContextMenu({ children, ...actions }: SessionContextMenuProps) {
   const { t } = useI18n()
-  const { renameDialog, renderItems } = useSessionActions(actions)
+  const { moveDialog, renameDialog, renderItems } = useSessionActions(actions)
 
   return (
     <>
       <ContextMenu>
         <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
         <ContextMenuContent aria-label={t.sidebar.row.actionsFor(actions.title)} className="w-44">
-          <ProjectMoveMenu kind="context" pinId={actions.pinId || actions.sessionId} />
           {renderItems(ContextMenuItem)}
         </ContextMenuContent>
       </ContextMenu>
+      {moveDialog}
       {renameDialog}
     </>
+  )
+}
+
+function MoveToFolderDialog({
+  open,
+  onOpenChange,
+  pinId
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  pinId: string
+}) {
+  const { t } = useI18n()
+  const r = t.sidebar.row
+  const projects = useStore($sidebarProjects).projects
+  const current = projects.find(project => project.sessionIds.includes(pinId))
+  const [draft, setDraft] = useState('')
+
+  useEffect(() => {
+    if (open) {
+      setDraft('')
+    }
+  }, [open])
+
+  const choose = (projectId: string) => {
+    triggerHaptic('selection')
+    addSessionToSidebarProject(projectId, pinId)
+    onOpenChange(false)
+  }
+
+  const createAndMove = () => {
+    const projectId = createSidebarProject(draft)
+
+    if (!projectId) {
+      return
+    }
+
+    triggerHaptic('selection')
+    addSessionToSidebarProject(projectId, pinId)
+    onOpenChange(false)
+  }
+
+  return (
+    <Dialog onOpenChange={onOpenChange} open={open}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>{r.moveToFolderTitle}</DialogTitle>
+          <DialogDescription>{r.moveToFolderDesc}</DialogDescription>
+        </DialogHeader>
+        {projects.length === 0 ? (
+          <p className="text-sm text-(--ui-text-tertiary)">{r.moveToFolderEmpty}</p>
+        ) : (
+          <div className="grid max-h-64 gap-0.5 overflow-y-auto">
+            {projects.map(project => {
+              const selected = project.id === current?.id
+
+              return (
+                <button
+                  className={cn(
+                    'flex min-h-8 items-center gap-2 rounded-md px-2 text-left text-sm text-foreground hover:bg-(--ui-control-hover-background)',
+                    selected && 'bg-(--ui-control-active-background)'
+                  )}
+                  key={project.id}
+                  onClick={() => choose(project.id)}
+                  type="button"
+                >
+                  <Codicon className="text-(--ui-text-tertiary)" name="folder" size="0.875rem" />
+                  <span className="min-w-0 flex-1 truncate">{project.name}</span>
+                  {selected && <Codicon name="check" size="0.75rem" />}
+                </button>
+              )
+            })}
+            {current && (
+              <button
+                className="flex min-h-8 items-center gap-2 rounded-md px-2 text-left text-sm text-(--ui-text-secondary) hover:bg-(--ui-control-hover-background)"
+                onClick={() => {
+                  triggerHaptic('selection')
+                  removeSessionsFromSidebarProjects([pinId])
+                  onOpenChange(false)
+                }}
+                type="button"
+              >
+                <Codicon className="text-(--ui-text-tertiary)" name="close" size="0.875rem" />
+                <span>{r.removeFromProject}</span>
+              </button>
+            )}
+          </div>
+        )}
+        <div className="flex gap-2">
+          <Input
+            onChange={event => setDraft(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                createAndMove()
+              }
+            }}
+            placeholder={r.newFolderPlaceholder}
+            value={draft}
+          />
+          <Button disabled={!draft.trim()} onClick={createAndMove} type="button">
+            {t.sidebar.newProject}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
