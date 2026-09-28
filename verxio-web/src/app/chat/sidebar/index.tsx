@@ -48,8 +48,10 @@ import {
   $sidebarCronOpen,
   $sidebarOpen,
   $sidebarPinsOpen,
+  $sidebarProjects,
   $sidebarRecentsOpen,
   pinSession,
+  removeSessionsFromSidebarProjects,
   reorderPinnedSession,
   SESSION_SEARCH_FOCUS_EVENT,
   setSidebarAgentsGrouped,
@@ -83,6 +85,7 @@ import type { SidebarNavItem } from '../../types'
 
 import { SidebarCronJobsSection } from './cron-jobs-section'
 import { ProfileRail } from './profile-switcher'
+import { projectSessionIdSet } from './projects'
 import { SidebarProjectsSection } from './projects-section'
 import { SidebarSessionRow } from './session-row'
 import { VirtualSessionList } from './virtual-session-list'
@@ -214,6 +217,7 @@ export function ChatSidebar({
   const cronOpen = useStore($sidebarCronOpen)
   const cronJobs = useStore($cronJobs)
   const pinnedSessionIds = useStore($pinnedSessionIds)
+  const sidebarProjects = useStore($sidebarProjects)
   const pinsOpen = useStore($sidebarPinsOpen)
   const agentsOpen = useStore($sidebarRecentsOpen)
   const selectedSessionId = useStore($selectedStoredSessionId)
@@ -358,9 +362,58 @@ export function ChatSidebar({
     return [...out.values()]
   }, [trimmedQuery, sortedSessions, serverMatches, sessionByAnyId])
 
+  const projectSessionIds = useMemo(() => projectSessionIdSet(sidebarProjects), [sidebarProjects])
+
+  const forgetProjectSession = useCallback(
+    (sessionId: string) => {
+      const session = sessionByAnyId.get(sessionId)
+
+      removeSessionsFromSidebarProjects(session ? [session.id, sessionPinId(session)] : [sessionId])
+    },
+    [sessionByAnyId]
+  )
+
+  const deleteSidebarSession = useCallback(
+    (sessionId: string) => {
+      forgetProjectSession(sessionId)
+      onDeleteSession(sessionId)
+    },
+    [forgetProjectSession, onDeleteSession]
+  )
+
+  const archiveSidebarSession = useCallback(
+    (sessionId: string) => {
+      forgetProjectSession(sessionId)
+      onArchiveSession(sessionId)
+    },
+    [forgetProjectSession, onArchiveSession]
+  )
+
+  const toggleProjectPin = useCallback(
+    (pinId: string) => {
+      if (pinnedSessionIds.includes(pinId)) {
+        unpinSession(pinId)
+
+        return
+      }
+
+      pinSession(pinId)
+    },
+    [pinnedSessionIds]
+  )
+
   const unpinnedAgentSessions = useMemo(
-    () => sortedSessions.filter(s => !pinnedRealIdSet.has(s.id)),
-    [sortedSessions, pinnedRealIdSet]
+    () =>
+      sortedSessions.filter(session => {
+        if (pinnedRealIdSet.has(session.id)) {
+          return false
+        }
+
+        const pinId = sessionPinId(session)
+
+        return !projectSessionIds.has(session.id) && !projectSessionIds.has(pinId)
+      }),
+    [sortedSessions, pinnedRealIdSet, projectSessionIds]
   )
 
   const agentSessions = useMemo(
@@ -609,8 +662,8 @@ export function ChatSidebar({
             }
             label={s.results}
             labelMeta={String(searchResults.length)}
-            onArchiveSession={onArchiveSession}
-            onDeleteSession={onDeleteSession}
+            onArchiveSession={archiveSidebarSession}
+            onDeleteSession={deleteSidebarSession}
             onResumeSession={onResumeSession}
             onToggle={() => undefined}
             onTogglePin={pinSession}
@@ -629,8 +682,8 @@ export function ChatSidebar({
             dndSensors={dndSensors}
             emptyState={<SidebarPinnedEmptyState />}
             label={s.pinned}
-            onArchiveSession={onArchiveSession}
-            onDeleteSession={onDeleteSession}
+            onArchiveSession={archiveSidebarSession}
+            onDeleteSession={deleteSidebarSession}
             onReorder={handlePinnedDragEnd}
             onResumeSession={onResumeSession}
             onToggle={() => setSidebarPinsOpen(!pinsOpen)}
@@ -644,7 +697,18 @@ export function ChatSidebar({
           />
         )}
 
-        {sidebarOpen && showSessionSections && !trimmedQuery && <SidebarProjectsSection />}
+        {sidebarOpen && showSessionSections && !trimmedQuery && (
+          <SidebarProjectsSection
+            activeSessionId={activeSidebarSessionId}
+            onArchiveSession={archiveSidebarSession}
+            onDeleteSession={deleteSidebarSession}
+            onResumeSession={onResumeSession}
+            onTogglePin={toggleProjectPin}
+            pinnedSessionIds={pinnedSessionIds}
+            sessionById={sessionByAnyId}
+            workingSessionIdSet={workingSessionIdSet}
+          />
+        )}
 
         {sidebarOpen && showSessionSections && !trimmedQuery && (
           <SidebarSessionsSection
@@ -711,8 +775,8 @@ export function ChatSidebar({
             }
             label={s.sessions}
             labelMeta={recentsMeta}
-            onArchiveSession={onArchiveSession}
-            onDeleteSession={onDeleteSession}
+            onArchiveSession={archiveSidebarSession}
+            onDeleteSession={deleteSidebarSession}
             onNewSessionInWorkspace={showAllProfiles ? undefined : onNewSessionInWorkspace}
             onReorder={showAllProfiles ? undefined : handleAgentDragEnd}
             onResumeSession={onResumeSession}

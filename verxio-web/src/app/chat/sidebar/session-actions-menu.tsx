@@ -1,9 +1,18 @@
+import { useStore } from '@nanostores/react'
 import type * as React from 'react'
 import { useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Codicon } from '@/components/ui/codicon'
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu'
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger
+} from '@/components/ui/context-menu'
 import { writeClipboardText } from '@/components/ui/copy-button'
 import {
   Dialog,
@@ -13,18 +22,28 @@ import {
   DialogHeader,
   DialogTitle
 } from '@/components/ui/dialog'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { renameSession } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
 import { exportSession } from '@/lib/session-export'
+import { $sidebarProjects, addSessionToSidebarProject, removeSessionsFromSidebarProjects } from '@/store/layout'
 import { notify, notifyError } from '@/store/notifications'
 import { setSessions } from '@/store/session'
 
 interface SessionActions {
   sessionId: string
   title: string
+  pinId?: string
   pinned?: boolean
   profile?: string
   onPin?: () => void
@@ -129,6 +148,71 @@ function useSessionActions({ sessionId, title, pinned = false, profile, onPin, o
   return { renameDialog, renderItems }
 }
 
+function ProjectMoveMenu({ kind, pinId }: { kind: 'context' | 'dropdown'; pinId: string }) {
+  const { t } = useI18n()
+  const r = t.sidebar.row
+  const projects = useStore($sidebarProjects).projects
+  const memberOf = projects.find(project => project.sessionIds.includes(pinId))
+
+  if (!pinId || projects.length === 0) {
+    return null
+  }
+
+  const move = (projectId: string) => {
+    triggerHaptic('selection')
+    addSessionToSidebarProject(projectId, pinId)
+  }
+
+  const remove = () => {
+    triggerHaptic('selection')
+    removeSessionsFromSidebarProjects([pinId])
+  }
+
+  if (kind === 'context') {
+    return (
+      <ContextMenuSub>
+        <ContextMenuSubTrigger>
+          <Codicon name="folder" size="0.875rem" />
+          <span>{r.addToProject}</span>
+        </ContextMenuSubTrigger>
+        <ContextMenuSubContent className="w-44">
+          {projects.map(project => (
+            <ContextMenuItem key={project.id} onSelect={() => move(project.id)}>
+              <span className="truncate">{project.name}</span>
+            </ContextMenuItem>
+          ))}
+          {memberOf && (
+            <ContextMenuItem onSelect={remove}>
+              <span>{r.removeFromProject}</span>
+            </ContextMenuItem>
+          )}
+        </ContextMenuSubContent>
+      </ContextMenuSub>
+    )
+  }
+
+  return (
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>
+        <Codicon name="folder" size="0.875rem" />
+        <span>{r.addToProject}</span>
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent className="w-44">
+        {projects.map(project => (
+          <DropdownMenuItem key={project.id} onSelect={() => move(project.id)}>
+            <span className="truncate">{project.name}</span>
+          </DropdownMenuItem>
+        ))}
+        {memberOf && (
+          <DropdownMenuItem onSelect={remove}>
+            <span>{r.removeFromProject}</span>
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
+  )
+}
+
 interface SessionActionsMenuProps
   extends SessionActions, Pick<React.ComponentProps<typeof DropdownMenuContent>, 'align' | 'sideOffset'> {
   children: React.ReactNode
@@ -145,9 +229,10 @@ export function SessionActionsMenu({ children, align = 'end', sideOffset = 6, ..
         <DropdownMenuContent
           align={align}
           aria-label={t.sidebar.row.actionsFor(actions.title)}
-          className="w-40"
+          className="w-44"
           sideOffset={sideOffset}
         >
+          <ProjectMoveMenu kind="dropdown" pinId={actions.pinId || actions.sessionId} />
           {renderItems(DropdownMenuItem)}
         </DropdownMenuContent>
       </DropdownMenu>
@@ -168,7 +253,8 @@ export function SessionContextMenu({ children, ...actions }: SessionContextMenuP
     <>
       <ContextMenu>
         <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-        <ContextMenuContent aria-label={t.sidebar.row.actionsFor(actions.title)} className="w-40">
+        <ContextMenuContent aria-label={t.sidebar.row.actionsFor(actions.title)} className="w-44">
+          <ProjectMoveMenu kind="context" pinId={actions.pinId || actions.sessionId} />
           {renderItems(ContextMenuItem)}
         </ContextMenuContent>
       </ContextMenu>

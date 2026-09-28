@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import {
   orderedProjects,
+  orderedSessionIds,
   type ProjectPriority,
   type ProjectSort,
   type SidebarProject
@@ -21,6 +22,7 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { Tip } from '@/components/ui/tooltip'
+import type { SessionInfo } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { triggerHaptic } from '@/lib/haptics'
 import {
@@ -33,8 +35,30 @@ import {
   setSidebarProjectsOpen,
   setSidebarProjectSort
 } from '@/store/layout'
+import { sessionPinId } from '@/store/session'
 
 import { SidebarPanelLabel } from '../../shell/sidebar-label'
+
+import { SidebarSessionRow } from './session-row'
+
+interface SidebarProjectsSectionProps {
+  activeSessionId: null | string
+  pinnedSessionIds: string[]
+  sessionById: Map<string, SessionInfo>
+  workingSessionIdSet: Set<string>
+  onArchiveSession: (sessionId: string) => void
+  onDeleteSession: (sessionId: string) => void
+  onResumeSession: (sessionId: string) => void
+  onTogglePin: (sessionId: string) => void
+}
+
+function sessionActivity(session: SessionInfo | undefined): number {
+  if (!session) {
+    return 0
+  }
+
+  return (session.last_active || session.started_at || 0) * 1000
+}
 
 const PRIORITY_LABEL: Record<ProjectPriority, 'priorityHigh' | 'priorityNormal' | 'priorityLow'> = {
   high: 'priorityHigh',
@@ -42,12 +66,22 @@ const PRIORITY_LABEL: Record<ProjectPriority, 'priorityHigh' | 'priorityNormal' 
   low: 'priorityLow'
 }
 
-export function SidebarProjectsSection() {
+export function SidebarProjectsSection({
+  activeSessionId,
+  pinnedSessionIds,
+  sessionById,
+  workingSessionIdSet,
+  onArchiveSession,
+  onDeleteSession,
+  onResumeSession,
+  onTogglePin
+}: SidebarProjectsSectionProps) {
   const { t } = useI18n()
   const s = t.sidebar
   const open = useStore($sidebarProjectsOpen)
   const state = useStore($sidebarProjects)
-  const projects = orderedProjects(state, () => 0)
+  const activityOf = (sessionId: string) => sessionActivity(sessionById.get(sessionId))
+  const projects = orderedProjects(state, activityOf)
   const [creating, setCreating] = useState(false)
   const [draft, setDraft] = useState('')
   const draftRef = useRef<HTMLInputElement>(null)
@@ -158,7 +192,20 @@ export function SidebarProjectsSection() {
             />
           )}
           {projects.map(project => (
-            <ProjectFolder key={project.id} project={project} />
+            <ProjectFolder
+              activeSessionId={activeSessionId}
+              activityOf={activityOf}
+              key={project.id}
+              onArchiveSession={onArchiveSession}
+              onDeleteSession={onDeleteSession}
+              onResumeSession={onResumeSession}
+              onTogglePin={onTogglePin}
+              pinnedSessionIds={pinnedSessionIds}
+              project={project}
+              sessionById={sessionById}
+              sort={state.sort}
+              workingSessionIdSet={workingSessionIdSet}
+            />
           ))}
         </div>
       )}
@@ -166,7 +213,31 @@ export function SidebarProjectsSection() {
   )
 }
 
-function ProjectFolder({ project }: { project: SidebarProject }) {
+function ProjectFolder({
+  project,
+  sort,
+  activityOf,
+  sessionById,
+  activeSessionId,
+  pinnedSessionIds,
+  workingSessionIdSet,
+  onArchiveSession,
+  onDeleteSession,
+  onResumeSession,
+  onTogglePin
+}: {
+  project: SidebarProject
+  sort: ProjectSort
+  activityOf: (sessionId: string) => number
+  sessionById: Map<string, SessionInfo>
+  activeSessionId: null | string
+  pinnedSessionIds: string[]
+  workingSessionIdSet: Set<string>
+  onArchiveSession: (sessionId: string) => void
+  onDeleteSession: (sessionId: string) => void
+  onResumeSession: (sessionId: string) => void
+  onTogglePin: (sessionId: string) => void
+}) {
   const { t } = useI18n()
   const s = t.sidebar
   const [expanded, setExpanded] = useState(true)
@@ -190,6 +261,10 @@ function ProjectFolder({ project }: { project: SidebarProject }) {
     renameSidebarProject(project.id, draft)
     setRenaming(false)
   }
+
+  const sessions = orderedSessionIds(project, sort, activityOf)
+    .map(id => sessionById.get(id))
+    .filter((session): session is SessionInfo => Boolean(session))
 
   return (
     <div className="grid gap-px">
@@ -223,9 +298,16 @@ function ProjectFolder({ project }: { project: SidebarProject }) {
               value={draft}
             />
           ) : (
-            <span className="truncate text-[0.8125rem] text-(--ui-text-secondary) group-hover/project:text-foreground">
-              {project.name}
-            </span>
+            <>
+              <span className="min-w-0 truncate text-[0.8125rem] text-(--ui-text-secondary) group-hover/project:text-foreground">
+                {project.name}
+              </span>
+              {project.sessionIds.length > 0 && (
+                <span className="shrink-0 text-[0.6875rem] font-medium text-(--ui-text-quaternary)">
+                  {project.sessionIds.length}
+                </span>
+              )}
+            </>
           )}
         </button>
         {!renaming && (
@@ -287,7 +369,28 @@ function ProjectFolder({ project }: { project: SidebarProject }) {
           </div>
         )}
       </div>
-      {expanded && <p className="px-7 pb-1 text-[0.6875rem] text-(--ui-text-quaternary)">{s.projectEmpty}</p>}
+      {expanded && project.sessionIds.length === 0 && (
+        <p className="px-7 pb-1 text-[0.6875rem] text-(--ui-text-quaternary)">{s.projectEmpty}</p>
+      )}
+      {expanded &&
+        sessions.map(session => {
+          const pinId = sessionPinId(session)
+
+          return (
+            <div className="pl-3" key={session.id}>
+              <SidebarSessionRow
+                isPinned={pinnedSessionIds.includes(pinId)}
+                isSelected={session.id === activeSessionId}
+                isWorking={workingSessionIdSet.has(session.id)}
+                onArchive={() => onArchiveSession(session.id)}
+                onDelete={() => onDeleteSession(session.id)}
+                onPin={() => onTogglePin(pinId)}
+                onResume={() => onResumeSession(session.id)}
+                session={session}
+              />
+            </div>
+          )
+        })}
     </div>
   )
 }

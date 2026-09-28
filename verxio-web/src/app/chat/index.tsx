@@ -129,6 +129,7 @@ function ChatHeader({
           align="start"
           onDelete={selectedSessionId ? onDeleteSelectedSession : undefined}
           onPin={selectedSessionId ? onToggleSelectedPin : undefined}
+          pinId={activeStoredSession ? sessionPinId(activeStoredSession) : selectedSessionId || undefined}
           pinned={selectedIsPinned}
           sessionId={selectedSessionId || activeSessionId || ''}
           sideOffset={8}
