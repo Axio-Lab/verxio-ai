@@ -11,7 +11,6 @@ import { useI18n } from '@/i18n'
 import { $desktopWorkspaceRoot, isBundledAgentCheckout } from '@/lib/desktop-workspace'
 import { normalizeOrLocalPreviewTarget } from '@/lib/local-preview'
 import { cn } from '@/lib/utils'
-import { resolveWebLocalWorkspaceCwd } from '@/lib/web-local-fs'
 import { $panesFlipped } from '@/store/layout'
 import { notifyError } from '@/store/notifications'
 import { setCurrentSessionPreviewTarget } from '@/store/preview'
@@ -49,7 +48,7 @@ export function RightSidebarPane({ onActivateFile, onActivateFolder, onChangeCwd
   const panesFlipped = useStore($panesFlipped)
   const currentBranch = useStore($currentBranch).trim()
   const storedCwd = useStore($currentCwd).trim()
-  const currentCwd = resolveWebLocalWorkspaceCwd(storedCwd) ?? getResolvedDesktopWorkspaceCwd(storedCwd) ?? storedCwd
+  const currentCwd = getResolvedDesktopWorkspaceCwd(storedCwd) ?? storedCwd
   const hasCwd = currentCwd.length > 0
 
   const workspaceRoot = useStore($desktopWorkspaceRoot)

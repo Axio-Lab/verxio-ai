@@ -2,15 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { PreviewTarget } from '@/store/preview'
 
-const { isVerxioDesktop, isVerxioWeb, verxioArtifactPreviewTarget } = vi.hoisted(() => ({
+const { isVerxioDesktop, verxioArtifactPreviewTarget } = vi.hoisted(() => ({
   isVerxioDesktop: vi.fn(() => false),
-  isVerxioWeb: vi.fn(() => true),
   verxioArtifactPreviewTarget: vi.fn(async (): Promise<PreviewTarget | null> => null)
 }))
 
 vi.mock('./platform', () => ({
-  isVerxioDesktop,
-  isVerxioWeb
+  isVerxioDesktop
 }))
 
 vi.mock('./verxio-artifact-preview', () => ({
@@ -22,7 +20,6 @@ import { resolveMediaPlaybackSrc } from './media-playback'
 describe('resolveMediaPlaybackSrc', () => {
   beforeEach(() => {
     isVerxioDesktop.mockReturnValue(false)
-    isVerxioWeb.mockReturnValue(true)
     verxioArtifactPreviewTarget.mockReset()
     verxioArtifactPreviewTarget.mockResolvedValue(null)
     // @ts-expect-error test stub
@@ -70,7 +67,6 @@ describe('resolveMediaPlaybackSrc', () => {
 
   it('streams audio/video through hermes-media on desktop only', async () => {
     isVerxioDesktop.mockReturnValue(true)
-    isVerxioWeb.mockReturnValue(false)
 
     await expect(resolveMediaPlaybackSrc('/tmp/voice.mp3')).resolves.toBe(
       `hermes-media://stream/${encodeURIComponent('/tmp/voice.mp3')}`

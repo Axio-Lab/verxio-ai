@@ -4,15 +4,8 @@ import { requestComposerFocus, requestComposerInsert } from '@/app/chat/composer
 import { formatRefValue } from '@/components/assistant-ui/directive-text'
 import { useI18n } from '@/i18n'
 import { attachmentId, contextPath, pathLabel } from '@/lib/chat-runtime'
-import {
-  isAbsoluteFilesystemPath,
-  isReadableAttachmentPath,
-  pickBrowserFiles,
-  readBlobAsDataUrl
-} from '@/lib/composer-attach'
+import { isReadableAttachmentPath, readBlobAsDataUrl } from '@/lib/composer-attach'
 import { fishAudioAttachmentRef, uploadFishAudioAttachment } from '@/lib/fishaudio-session'
-import { isVerxioWeb } from '@/lib/platform'
-import { resolveWebLocalWorkspaceCwd } from '@/lib/web-local-fs'
 import {
   addComposerAttachment,
   type ComposerAttachment,
@@ -27,9 +20,7 @@ const IMAGE_EXTENSION_PATTERN = /\.(png|jpe?g|gif|webp|bmp|tiff?|svg|ico)$/i
 const AUDIO_EXTENSION_PATTERN = /\.(aac|flac|m4a|mp3|mp4|ogg|opus|wav|webm)$/i
 
 function attachmentContextPath(path: string, cwd: string): string {
-  const webCwd = resolveWebLocalWorkspaceCwd(cwd) ?? cwd
-
-  return contextPath(path, webCwd)
+  return contextPath(path, cwd)
 }
 
 const BLOB_MIME_EXTENSION: Record<string, string> = {
@@ -228,96 +219,6 @@ export function partitionDroppedFiles(candidates: DroppedFile[]): {
   return { osDrops, inAppRefs }
 }
 
-/**
- * Start File System Access handle reads during the drop gesture, then resolve
- * directories to `verxio-local:` paths so OS folder drops match the + menu.
- */
-export async function enrichDroppedFilesForWeb(transfer: DataTransfer, base: DroppedFile[]): Promise<DroppedFile[]> {
-  if (!isVerxioWeb()) {
-    return base
-  }
-
-  const items = transfer.items
-
-  if (!items?.length) {
-    return base
-  }
-
-  type FileSystemHandleLike = { kind: string; name: string }
-  type ItemWithHandle = DataTransferItem & {
-    getAsFileSystemHandle?: () => Promise<FileSystemHandleLike>
-  }
-
-  // Kick off handle promises synchronously — DataTransfer detaches after the handler returns.
-  const handleJobs: Array<Promise<{ file: File | null; handle: FileSystemHandleLike | null }>> = []
-
-  for (let i = 0; i < items.length; i += 1) {
-    const item = items[i] as ItemWithHandle | undefined
-
-    if (!item || item.kind !== 'file') {
-      continue
-    }
-
-    const file = item.getAsFile()
-    const getter = item.getAsFileSystemHandle
-
-    if (!getter) {
-      continue
-    }
-
-    handleJobs.push(
-      getter()
-        .then(handle => ({ file, handle }))
-        .catch(() => ({ file, handle: null }))
-    )
-  }
-
-  if (!handleJobs.length) {
-    return base
-  }
-
-  const { pathForDroppedDirectoryHandle } = await import('@/lib/web-local-fs')
-  const resolved = await Promise.all(handleJobs)
-  const folders: DroppedFile[] = []
-
-  for (const { handle } of resolved) {
-    if (!handle || handle.kind !== 'directory') {
-      continue
-    }
-
-    try {
-      const path = await pathForDroppedDirectoryHandle(handle as FileSystemDirectoryHandle)
-      folders.push({ path, isDirectory: true })
-    } catch {
-      // Permission denied / unsupported — keep the size-0 File fallback below.
-    }
-  }
-
-  if (!folders.length) {
-    return base
-  }
-
-  const merged: DroppedFile[] = [...folders]
-  const folderNames = new Set(folders.map(folder => folder.path.split('/').pop()?.toLowerCase()).filter(Boolean))
-
-  for (const candidate of base) {
-    if (candidate.isDirectory) {
-      merged.push(candidate)
-
-      continue
-    }
-
-    if (candidate.file && folderNames.has(candidate.file.name.toLowerCase()) && candidate.file.size === 0) {
-      // Dropped directory often also appears as a size-0 File — skip the duplicate.
-      continue
-    }
-
-    merged.push(candidate)
-  }
-
-  return merged
-}
-
 interface ComposerActionsOptions {
   activeSessionId: string | null
   currentCwd: string
@@ -468,17 +369,8 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
         return false
       }
 
-      // Web (and remote) can't write a temp file the gateway can see. Stage the
-      // blob as a File and upload bytes on submit.
-      if (isVerxioWeb() || blob instanceof File) {
-        const file =
-          blob instanceof File
-            ? blob
-            : new File([blob], `paste${blobExtension(blob)}`, {
-                type: blob.type || 'image/png'
-              })
-
-        return attachImageFile(file)
+      if (blob instanceof File) {
+        return attachImageFile(blob)
       }
 
       try {
@@ -582,18 +474,6 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
 
   const pickContextPaths = useCallback(
     async (kind: 'file' | 'folder') => {
-      // Web file pickers only give File blobs (no gateway-visible path). Keep
-      // the File so submit can upload via file.attach / image.attach_bytes.
-      if (kind === 'file' && isVerxioWeb()) {
-        const files = await pickBrowserFiles({ multiple: true })
-
-        for (const file of files) {
-          await attachBrowserFile(file)
-        }
-
-        return
-      }
-
       const paths = await window.hermesDesktop?.selectPaths({
         title: kind === 'file' ? 'Add files as context' : 'Add folders as context',
         defaultPath: currentCwd || undefined,
@@ -605,10 +485,6 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
       }
 
       for (const path of paths) {
-        if (kind === 'file' && !isAbsoluteFilesystemPath(path) && isVerxioWeb()) {
-          continue
-        }
-
         const rel = attachmentContextPath(path, currentCwd)
 
         attachToMain({
@@ -621,7 +497,7 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
         })
       }
     },
-    [attachBrowserFile, currentCwd]
+    [currentCwd]
   )
 
   const pickAudio = useCallback(() => {
@@ -642,19 +518,6 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
   }, [attachAudioFile])
 
   const pickImages = useCallback(async () => {
-    if (isVerxioWeb()) {
-      const files = await pickBrowserFiles({
-        accept: 'image/*,.png,.jpg,.jpeg,.gif,.webp,.bmp,.tiff',
-        multiple: true
-      })
-
-      for (const file of files) {
-        await attachImageFile(file)
-      }
-
-      return
-    }
-
     const paths = await window.hermesDesktop?.selectPaths({
       title: copy.attachImages,
       defaultPath: currentCwd || undefined,
@@ -673,7 +536,7 @@ export function useComposerActions({ activeSessionId, currentCwd, requestGateway
     for (const path of paths) {
       await attachImagePath(path)
     }
-  }, [attachImageFile, attachImagePath, copy.attachImages, currentCwd, t.composer.images])
+  }, [attachImagePath, copy.attachImages, currentCwd, t.composer.images])
 
   const pasteClipboardImage = useCallback(async () => {
     try {

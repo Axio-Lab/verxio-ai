@@ -3,7 +3,6 @@ import { atom } from 'nanostores'
 import { useCallback, useEffect, useMemo } from 'react'
 
 import { resolveDesktopWorkspaceCwd } from '@/lib/desktop-workspace'
-import { resolveWebLocalWorkspaceCwd } from '@/lib/web-local-fs'
 
 import { clearProjectDirCache, readProjectDir } from './ipc'
 
@@ -122,12 +121,10 @@ function clearProjectTree() {
   $projectTree.set({ ...initialState, requestId: nextRootRequestId })
 }
 
-/** Sessions record their launch cwd; stale server paths or revoked browser
- *  folder access arrive here as directories that can't be read. Rather than
- *  bricking the tree, display the sanitized browser-granted fallback when one
- *  exists. */
+/** Sessions record their launch cwd; stale server paths arrive here as
+ *  directories that can't be read. Display the local workspace instead. */
 function fallbackRootFor(cwd: string): string | null {
-  const fallback = resolveWebLocalWorkspaceCwd(cwd) ?? resolveDesktopWorkspaceCwd(cwd)
+  const fallback = resolveDesktopWorkspaceCwd(cwd)
 
   return fallback && fallback !== cwd ? fallback : null
 }

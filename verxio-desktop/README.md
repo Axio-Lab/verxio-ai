@@ -2,11 +2,9 @@
 
 Native desktop shell for the existing Verxio Web UI.
 
-The desktop app loads the same renderer as `verxio-web`, but provides a native
-`window.hermesDesktop` bridge before the renderer starts. Because the browser
-fallback bridge only marks `window.__VERXIO_WEB__` when no desktop bridge exists,
-the desktop build keeps the same UI while enabling the right sidebar, local file
-browser, and terminal.
+The desktop app loads the `verxio-web` renderer and provides a native
+`window.hermesDesktop` bridge before that renderer starts. The bridge enables
+the right sidebar, local file browser, and terminal.
 
 ## Local Development
 

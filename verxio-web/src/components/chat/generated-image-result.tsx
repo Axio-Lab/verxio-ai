@@ -12,7 +12,7 @@ import {
 import { useI18n } from '@/i18n'
 import { generatedImageCandidates, generatedImageFromResult } from '@/lib/generated-images'
 import { filePathFromMediaPath, mediaExternalUrl, mediaName } from '@/lib/media'
-import { isVerxioDesktop, isVerxioWeb } from '@/lib/platform'
+import { isVerxioDesktop } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import { verxioArtifactPreviewTarget } from '@/lib/verxio-artifact-preview'
 import { notifyError } from '@/store/notifications'
@@ -55,10 +55,6 @@ async function resolveImageSrc(path: string): Promise<string> {
   }
 
   if (isVerxioDesktop() && window.hermesDesktop?.readFileDataUrl) {
-    return window.hermesDesktop.readFileDataUrl(filePathFromMediaPath(path))
-  }
-
-  if (!isVerxioWeb() && window.hermesDesktop?.readFileDataUrl) {
     return window.hermesDesktop.readFileDataUrl(filePathFromMediaPath(path))
   }
 

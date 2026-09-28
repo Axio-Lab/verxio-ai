@@ -317,23 +317,36 @@ export function ConnectionsPanel({
     setLoading(true)
 
     try {
-      const [appsResponse, accountsResponse] = await Promise.all([listComposioApps(), listComposioConnections()])
-      const nextApps = appsResponse.apps.length > 0 ? appsResponse.apps : FALLBACK_COMPOSIO_APPS
-      const apiConfigured = Boolean(appsResponse.configured && accountsResponse.configured)
-      const catalogReady = appsResponse.catalogReady ?? apiConfigured
+      const [appsResult, accountsResult] = await Promise.allSettled([listComposioApps(), listComposioConnections()])
 
-      setApps(nextApps)
-      setAccounts(accountsResponse.accounts)
-      setToolBridge(accountsResponse.toolBridge ?? null)
-      setConfigured(apiConfigured)
-      setMessage(
-        !apiConfigured
-          ? 'Add COMPOSIO_API_KEY in the root .env file, then restart verxio-api (docker compose up -d verxio-api).'
-          : !catalogReady
-            ? appsResponse.catalogError ||
-              'Composio rejected the API key. Generate a fresh key in the Composio dashboard and update root .env.'
-            : null
-      )
+      if (appsResult.status === 'fulfilled') {
+        const appsResponse = appsResult.value
+        const nextApps = appsResponse.apps.length > 0 ? appsResponse.apps : FALLBACK_COMPOSIO_APPS
+        const accountsResponse = accountsResult.status === 'fulfilled' ? accountsResult.value : null
+        const apiConfigured = Boolean(
+          appsResponse.configured && (accountsResponse?.configured ?? appsResponse.configured)
+        )
+        const catalogReady = appsResponse.catalogReady ?? apiConfigured
+
+        setApps(nextApps)
+        setAccounts(accountsResponse?.accounts ?? [])
+        setToolBridge(accountsResponse?.toolBridge ?? null)
+        setConfigured(apiConfigured)
+        setMessage(
+          accountsResult.status === 'rejected'
+            ? 'Connected apps could not be loaded. Available connections are still listed below.'
+            : !apiConfigured
+              ? 'Add COMPOSIO_API_KEY in the root .env file, then restart verxio-api (docker compose up -d verxio-api).'
+              : !catalogReady
+                ? appsResponse.catalogError ||
+                  'Composio rejected the API key. Generate a fresh key in the Composio dashboard and update root .env.'
+                : null
+        )
+
+        return
+      }
+
+      throw appsResult.reason
     } catch {
       setApps(FALLBACK_COMPOSIO_APPS)
       setAccounts([])

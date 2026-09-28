@@ -13,16 +13,8 @@ import { PageLoader } from './components/page-loader'
 import { VerxioAuthGate } from './components/verxio-auth-gate'
 import { I18nProvider } from './i18n'
 import { installClipboardShim } from './lib/clipboard'
-import { isVerxioDesktop } from './lib/platform'
 import { queryClient } from './lib/query-client'
 import { ThemeProvider } from './themes/context'
-
-if (!isVerxioDesktop()) {
-  const { installWebBridge } = await import('@/platform/install-web-bridge')
-  const { installStaleChunkReload } = await import('./lib/stale-chunk')
-  installWebBridge()
-  installStaleChunkReload()
-}
 
 installClipboardShim()
 

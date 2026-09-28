@@ -53,12 +53,7 @@ import { $statusItemsBySession } from '@/store/composer-status'
 import { $gatewayState, $messages } from '@/store/session'
 import { $threadScrolledUp } from '@/store/thread-scroll'
 
-import {
-  enrichDroppedFilesForWeb,
-  extractDroppedFiles,
-  HERMES_PATHS_MIME,
-  partitionDroppedFiles
-} from '../hooks/use-composer-actions'
+import { extractDroppedFiles, HERMES_PATHS_MIME, partitionDroppedFiles } from '../hooks/use-composer-actions'
 
 import { AttachmentList } from './attachments'
 import { ContextMenu } from './context-menu'
@@ -1041,8 +1036,7 @@ export function ChatBar({
       return
     }
     void (async () => {
-      const enriched = await enrichDroppedFilesForWeb(transfer, candidates)
-      const { inAppRefs, osDrops } = partitionDroppedFiles(enriched)
+      const { inAppRefs, osDrops } = partitionDroppedFiles(candidates)
       const refs = droppedFileInlineRefs(inAppRefs, cwd)
 
       if (refs.length && insertInlineRefs(refs)) {
@@ -1087,10 +1081,9 @@ export function ChatBar({
     resetDragState()
 
     void (async () => {
-      const enriched = await enrichDroppedFilesForWeb(transfer, candidates)
       const attach = onAttachDroppedItems
-      const { inAppRefs, osDrops } = partitionDroppedFiles(enriched)
-      const refs = droppedFileInlineRefs(attach ? inAppRefs : enriched, cwd)
+      const { inAppRefs, osDrops } = partitionDroppedFiles(candidates)
+      const refs = droppedFileInlineRefs(attach ? inAppRefs : candidates, cwd)
 
       if (refs.length && insertInlineRefs(refs)) {
         triggerHaptic('selection')
