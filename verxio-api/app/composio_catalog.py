@@ -484,11 +484,11 @@ def sync_composio_runtime_bridge(
 
     preload_tools = _composio_preload_tools()
     signature = _bridge_signature(user_id, connected_accounts, preload_tools)
-    state = _read_bridge_state(runtime)
-    mcp_url = str(state.get("mcp_url") or "").strip() if state.get("signature") == signature else ""
 
     try:
         created_session = False
+        state = _read_bridge_state(runtime)
+        mcp_url = str(state.get("mcp_url") or "").strip() if state.get("signature") == signature else ""
         if not mcp_url:
             session = _create_tool_router_session(user_id, connected_accounts)
             mcp_url = _pick_mcp_url(session)
@@ -974,7 +974,9 @@ def _bridge_signature(
 
 
 def _bridge_state_path(runtime: RuntimeInstance) -> Path:
-    state_dir = Path(runtime.hermes_home_path) / ".verxio"
+    from app.control_plane import writable_hermes_home
+
+    state_dir = writable_hermes_home(runtime) / ".verxio"
     state_dir.mkdir(parents=True, exist_ok=True)
     return state_dir / COMPOSIO_BRIDGE_STATE_FILE
 
@@ -1121,7 +1123,9 @@ def _pick_mcp_url(payload: dict[str, Any]) -> str:
 
 
 def _runtime_config_path(runtime: RuntimeInstance) -> Path:
-    path = Path(runtime.hermes_home_path)
+    from app.control_plane import writable_hermes_home
+
+    path = writable_hermes_home(runtime)
     path.mkdir(parents=True, exist_ok=True)
     return path / "config.yaml"
 

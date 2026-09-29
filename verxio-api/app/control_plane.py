@@ -226,6 +226,35 @@ def ensure_hosted_workspace_paths(runtime: RuntimeInstance) -> RuntimeInstance:
     )
 
 
+def desktop_hermes_home() -> Path:
+    """Hermes data directory for the Verxio desktop app on this machine."""
+    if sys.platform == "darwin":
+        home = Path.home() / "Library" / "Application Support" / "Verxio" / "hermes-home"
+    elif sys.platform == "win32":
+        base = Path(os.environ.get("APPDATA") or (Path.home() / "AppData" / "Roaming"))
+        home = base / "Verxio" / "hermes-home"
+    else:
+        home = Path.home() / ".config" / "Verxio" / "hermes-home"
+    home.mkdir(parents=True, exist_ok=True)
+    return home.resolve()
+
+
+def writable_hermes_home(runtime: RuntimeInstance) -> Path:
+    """Runtime Hermes home, or the desktop home when that path cannot be created.
+
+    Hosted runtimes keep their managed directory. A desktop row that still
+    points at the Docker ``/app`` path uses the local Hermes home instead.
+    """
+    candidate = Path(runtime.hermes_home_path).expanduser()
+    try:
+        candidate.mkdir(parents=True, exist_ok=True)
+        if os.access(candidate, os.W_OK):
+            return candidate.resolve()
+    except OSError:
+        pass
+    return desktop_hermes_home()
+
+
 def desktop_workspace_dir() -> Path:
     """The folder Verxio Desktop uses on this machine (Documents/Verxio by default)."""
     settings_path = Path.home() / "Library" / "Application Support" / "Verxio" / "settings.json"

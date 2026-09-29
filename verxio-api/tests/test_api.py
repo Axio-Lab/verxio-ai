@@ -2897,6 +2897,38 @@ def test_composio_catalog_uses_authenticated_workspace_contract(client, monkeypa
     assert initiate.json()["detail"] == "Composio is not configured."
 
 
+def test_composio_connections_load_when_runtime_home_is_unwritable(client, monkeypatch, tmp_path):
+    monkeypatch.delenv("COMPOSIO_API_KEY", raising=False)
+    payload, token = signup(client, "composio-desktop@example.com")
+    blocked = tmp_path / "blocked"
+    blocked.mkdir()
+    blocked.chmod(0o500)
+    desktop = tmp_path / "hermes-home"
+    monkeypatch.setattr("app.control_plane.desktop_hermes_home", lambda: desktop)
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ? AND agent_id = ?",
+        (payload["workspace"]["id"], payload["profile"]["id"]),
+    )
+    assert runtime_row
+    db.execute(
+        "UPDATE runtime_instances SET hermes_home_path = ? WHERE id = ?",
+        (str(blocked / "hermes-home"), runtime_row["id"]),
+    )
+    control_plane._invalidate_context_cache()
+
+    try:
+        apps = client.get("/api/composio/connections/apps", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+        accounts = client.get("/api/composio/connections", headers={"Cookie": f"{SESSION_COOKIE}={token}"})
+    finally:
+        blocked.chmod(0o700)
+
+    assert apps.status_code == 200
+    assert accounts.status_code == 200
+    assert len(apps.json()["apps"]) == 15
+    assert accounts.json()["accounts"] == []
+    assert desktop.is_dir()
+
+
 def test_composio_bridge_writes_runtime_mcp_server(client, monkeypatch):
     monkeypatch.setenv("COMPOSIO_API_KEY", "test-key")
     payload, _token = signup(client, "composio-bridge@example.com")
