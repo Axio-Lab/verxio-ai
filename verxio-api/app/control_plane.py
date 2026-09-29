@@ -226,6 +226,42 @@ def ensure_hosted_workspace_paths(runtime: RuntimeInstance) -> RuntimeInstance:
     )
 
 
+def desktop_workspace_dir() -> Path:
+    """The folder Verxio Desktop uses on this machine (Documents/Verxio by default)."""
+    settings_path = Path.home() / "Library" / "Application Support" / "Verxio" / "settings.json"
+    try:
+        payload = json.loads(settings_path.read_text(encoding="utf-8"))
+        chosen = Path(str(payload.get("defaultProjectDir") or "")).expanduser()
+        if chosen.is_absolute() and chosen.is_dir() and os.access(chosen, os.W_OK):
+            return chosen.resolve()
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        pass
+
+    fallback = Path.home() / "Documents" / "Verxio"
+    fallback.mkdir(parents=True, exist_ok=True)
+    return fallback.resolve()
+
+
+def device_recording_dir(runtime: RuntimeInstance) -> Path | None:
+    """Local notepad audio folder when the runtime artifact path cannot be created.
+
+    Hosted runtimes keep recordings under their managed artifacts directory.
+    A desktop row that still points at the Docker ``/app`` path stores the file
+    in the user's workspace at ``artifacts/recording``.
+    """
+    artifact_root = Path(runtime.artifact_path).expanduser()
+    try:
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        if os.access(artifact_root, os.W_OK):
+            return None
+    except OSError:
+        pass
+
+    recording_dir = (desktop_workspace_dir() / "artifacts" / "recording").resolve()
+    recording_dir.mkdir(parents=True, exist_ok=True)
+    return recording_dir
+
+
 def ensure_runtime_directories(runtime: RuntimeInstance) -> RuntimeInstance:
     runtime = ensure_hosted_workspace_paths(runtime)
     hermes_home = Path(runtime.hermes_home_path)

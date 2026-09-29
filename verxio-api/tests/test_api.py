@@ -2560,6 +2560,53 @@ def test_notepad_recording_upload_saves_audio_as_artifact(client):
     assert saved.read_bytes() == audio_bytes
 
 
+def test_notepad_recording_stores_on_device_when_runtime_path_is_unwritable(client, monkeypatch, tmp_path):
+    payload, token = signup(client, "recording-device@example.com")
+    headers = {"Cookie": f"{SESSION_COOKIE}={token}"}
+    device = tmp_path / "Verxio"
+    device.mkdir()
+    blocked = tmp_path / "blocked"
+    blocked.mkdir()
+    blocked.chmod(0o500)
+    runtime_row = db.fetch_one(
+        "SELECT * FROM runtime_instances WHERE workspace_id = ? AND agent_id = ?",
+        (payload["workspace"]["id"], payload["profile"]["id"]),
+    )
+    assert runtime_row
+    db.execute(
+        """
+        UPDATE runtime_instances
+        SET workspace_path = ?, artifact_path = ?
+        WHERE id = ?
+        """,
+        (str(blocked / "workspace"), str(blocked / "artifacts"), runtime_row["id"]),
+    )
+    control_plane._invalidate_context_cache()
+    monkeypatch.setattr("app.control_plane.desktop_workspace_dir", lambda: device)
+
+    audio_bytes = b"verxio-local-recording"
+    data_url = f"data:audio/webm;base64,{base64.b64encode(audio_bytes).decode('ascii')}"
+
+    try:
+        response = client.post(
+            "/api/notepad/recordings",
+            json={
+                "file_name": "Weekly Planning",
+                "data_url": data_url,
+                "mime_type": "audio/webm",
+            },
+            headers=headers,
+        )
+    finally:
+        blocked.chmod(0o700)
+
+    assert response.status_code == 200
+    artifact = response.json()["artifact"]
+    assert artifact["relative_path"] == "recording/Weekly Planning.webm"
+    saved = device / "artifacts" / "recording" / "Weekly Planning.webm"
+    assert saved.read_bytes() == audio_bytes
+
+
 def test_notepad_notes_folders_and_public_shares(client):
     _payload, token = signup(client, "notes@example.com")
     headers = {"Cookie": f"{SESSION_COOKIE}={token}"}

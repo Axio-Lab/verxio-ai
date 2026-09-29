@@ -1577,14 +1577,17 @@ def artifact_file(runtime: RuntimeInstance, artifact_id: str) -> tuple[ArtifactR
     if not row:
         raise KeyError("Artifact not found.")
 
+    from app.control_plane import device_recording_dir
+
     artifact_root = Path(runtime.artifact_path).resolve()
     workspace_root = Path(runtime.workspace_path).resolve()
     runtime_home_artifact_root = (Path(runtime.hermes_home_path) / "artifacts").resolve()
+    allowed_roots = [artifact_root, workspace_root, runtime_home_artifact_root]
+    local_recording_dir = device_recording_dir(runtime)
+    if local_recording_dir is not None:
+        allowed_roots.append(local_recording_dir.parent)
     file_path = Path(str(row["absolute_path"])).resolve()
-    if not any(
-        _is_path_within(file_path, root)
-        for root in (artifact_root, workspace_root, runtime_home_artifact_root)
-    ):
+    if not any(_is_path_within(file_path, root) for root in allowed_roots):
         raise KeyError("Artifact path is outside the runtime workspace.")
     if not file_path.exists() or not file_path.is_file():
         raise FileNotFoundError(str(file_path))

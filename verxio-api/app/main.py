@@ -63,6 +63,7 @@ from app.composio_catalog import (
 from app.control_plane import (
     aget_context_for_user,
     aget_runtime_for_user,
+    device_recording_dir,
     ensure_runtime_directories,
 )
 from app.device_tokens import (
@@ -1044,12 +1045,19 @@ async def upload_notepad_recording(
 ) -> NotepadRecordingUploadResponse:
     user = await arequire_user(request)
     runtime = await aget_runtime_for_user(user)
-    ensure_runtime_directories(runtime)
-
     audio_bytes, mime_type = _decode_recording_payload(payload)
-    artifact_root = Path(runtime.artifact_path).resolve()
-    recording_dir = (artifact_root / "notepad-recordings").resolve()
-    recording_dir.mkdir(parents=True, exist_ok=True)
+
+    local_recording_dir = device_recording_dir(runtime)
+    if local_recording_dir is None:
+        runtime = ensure_runtime_directories(runtime)
+        artifact_root = Path(runtime.artifact_path).resolve()
+        recording_dir = (artifact_root / "notepad-recordings").resolve()
+        recording_dir.mkdir(parents=True, exist_ok=True)
+        index_runtime = runtime
+    else:
+        recording_dir = local_recording_dir
+        artifact_root = recording_dir.parent
+        index_runtime = runtime.model_copy(update={"artifact_path": str(artifact_root)})
 
     file_name = _safe_recording_filename(payload.file_name, mime_type)
     target = (recording_dir / file_name).resolve()
@@ -1069,7 +1077,7 @@ async def upload_notepad_recording(
     temp_path.replace(target)
 
     relative_path = target.relative_to(artifact_root).as_posix()
-    artifacts = await asyncio.to_thread(index_artifacts, runtime)
+    artifacts = await asyncio.to_thread(index_artifacts, index_runtime)
     artifact = next((record for record in artifacts if record.relative_path == relative_path), None)
     if artifact is None:
         raise HTTPException(status_code=500, detail="Recording was saved but could not be indexed.")
