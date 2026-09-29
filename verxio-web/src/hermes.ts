@@ -1,6 +1,6 @@
 import { JsonRpcGatewayClient } from '@hermes/shared'
 
-import { verxioApiEnabled, verxioFetch } from '@/lib/verxio-api'
+import { verxioApiEnabled } from '@/lib/verxio-api'
 import type {
   ActionResponse,
   ActionStatusResponse,
@@ -1007,17 +1007,8 @@ export function getActionStatus(name: string, lines = 200): Promise<ActionStatus
 }
 
 export function transcribeAudio(dataUrl: string, mimeType?: string): Promise<AudioTranscriptionResponse> {
-  if (verxioApiEnabled()) {
-    return verxioFetch<AudioTranscriptionResponse>('/api/runtime/dashboard/api/audio/transcribe', {
-      method: 'POST',
-      body: JSON.stringify({
-        data_url: dataUrl,
-        mime_type: mimeType
-      }),
-      timeoutMs: 300_000
-    })
-  }
-
+  // Desktop Hermes owns speech-to-text. hermesDesktop.api stays on that local
+  // agent; the hosted app still reaches its runtime through the same helper.
   return window.hermesDesktop.api<AudioTranscriptionResponse>({
     path: '/api/audio/transcribe',
     method: 'POST',

@@ -46,12 +46,12 @@ import {
   selectedCloudTranscriptionProvider
 } from '@/lib/transcription-config'
 import {
-  CLOUD_TRANSCRIPTION_PROVIDERS,
   type CloudTranscriptionProvider,
   cloudTranscriptionProviderById,
   type CloudTranscriptionProviderId,
   cloudTranscriptionProvidersFromCatalog,
-  transcriptionModelOptions
+  transcriptionModelOptions,
+  transcriptionProviderRequiresKey
 } from '@/lib/transcription-providers'
 import { cn } from '@/lib/utils'
 import {
@@ -231,15 +231,15 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   const [transcriptionDialogOpen, setTranscriptionDialogOpen] = useState(false)
   const [transcriptionSetupSaving, setTranscriptionSetupSaving] = useState(false)
   const [transcriptionSetupError, setTranscriptionSetupError] = useState<string | null>(null)
-  const [transcriptionProviders, setTranscriptionProviders] = useState(CLOUD_TRANSCRIPTION_PROVIDERS)
-  const [transcriptionConfigLoading, setTranscriptionConfigLoading] = useState(true)
-  const [transcriptionConfigSaving, setTranscriptionConfigSaving] = useState(false)
 
-  const [transcriptionProviderId, setTranscriptionProviderId] = useState<CloudTranscriptionProviderId>(
-    CLOUD_TRANSCRIPTION_PROVIDERS[0].id
+  const [transcriptionProviders, setTranscriptionProviders] = useState(() =>
+    cloudTranscriptionProvidersFromCatalog(null)
   )
 
-  const [transcriptionModel, setTranscriptionModel] = useState(CLOUD_TRANSCRIPTION_PROVIDERS[0].recommendedModel)
+  const [transcriptionConfigLoading, setTranscriptionConfigLoading] = useState(true)
+  const [transcriptionConfigSaving, setTranscriptionConfigSaving] = useState(false)
+  const [transcriptionProviderId, setTranscriptionProviderId] = useState<CloudTranscriptionProviderId>('local')
+  const [transcriptionModel, setTranscriptionModel] = useState('base')
   const [transcriptionApiKey, setTranscriptionApiKey] = useState('')
   const [pendingRecordingIntent, setPendingRecordingIntent] = useState<RecordingIntent | null>(null)
 
@@ -801,14 +801,14 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
 
       const model = transcriptionModel.trim() || selectedCloudTranscriptionModel(config, provider)
 
-      const providerAlreadyCloud = configuredCloudTranscriptionProvider(config, providers)?.id === provider.id
+      const providerAlreadySaved = configuredCloudTranscriptionProvider(config, providers)?.id === provider.id
 
       setTranscriptionProviders(providers)
       setTranscriptionProviderId(provider.id)
       setTranscriptionModel(model)
 
-      if (vars[provider.envKey]?.is_set || provider.configured) {
-        if (!providerAlreadyCloud || selectedCloudTranscriptionModel(config, provider) !== model) {
+      if (!transcriptionProviderRequiresKey(provider) || vars[provider.envKey]?.is_set || provider.configured) {
+        if (!providerAlreadySaved || selectedCloudTranscriptionModel(config, provider) !== model) {
           await saveHermesConfig(applyCloudTranscriptionConfig(config, provider, model))
         }
 
@@ -976,13 +976,15 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       return
     }
 
-    if (isVerxioDesktop()) {
+    const listCaptureSources = window.hermesDesktop?.audio?.listCaptureSources
+
+    if (isVerxioDesktop() && typeof listCaptureSources === 'function') {
       setCapturePickerLoading(true)
       setCapturePickerOpen(true)
       setSelectedCaptureSourceId(null)
 
       try {
-        const sources = (await window.hermesDesktop?.audio?.listCaptureSources?.()) ?? []
+        const sources = (await listCaptureSources()) ?? []
         setCaptureSources(sources)
 
         if (!sources.length) {
@@ -1066,9 +1068,10 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
   async function handleSaveTranscriptionSetup(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
+    const needsKey = transcriptionProviderRequiresKey(transcriptionProvider)
     const apiKey = transcriptionApiKey.trim()
 
-    if (!apiKey) {
+    if (needsKey && !apiKey) {
       setTranscriptionSetupError(`Paste your ${transcriptionProvider.label} API key first.`)
 
       return
@@ -1082,9 +1085,16 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       const config = await getHermesConfigRecord()
       const nextConfig = applyCloudTranscriptionConfig(config, transcriptionProvider, transcriptionModel)
 
-      await setEnvVar(transcriptionProvider.envKey, apiKey)
+      if (needsKey) {
+        await setEnvVar(transcriptionProvider.envKey, apiKey)
+      }
+
       await saveHermesConfig(nextConfig)
-      await reloadRuntimeEnv()
+
+      if (needsKey) {
+        await reloadRuntimeEnv()
+      }
+
       setTranscriptionProviderId(transcriptionProvider.id)
       setTranscriptionModel(transcriptionModel || transcriptionProvider.recommendedModel)
       setTranscriptionDialogOpen(false)
@@ -1845,8 +1855,9 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
           <DialogHeader>
             <DialogTitle>Set up transcription</DialogTitle>
             <DialogDescription>
-              Choose the cloud provider Verxio should use for this recording. Your key is saved to your runtime
-              credentials.
+              {transcriptionProviderRequiresKey(transcriptionProvider)
+                ? 'Choose the speech provider Verxio should use for this recording. A cloud key is saved to your runtime credentials.'
+                : 'Whisper runs on this machine. The recording stays here, and the first transcription downloads the model.'}
             </DialogDescription>
           </DialogHeader>
 
@@ -1920,41 +1931,47 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
               ) : null}
             </div>
 
-            <div className="grid gap-1.5">
-              <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-transcription-key">
-                {transcriptionProvider.label} API key
-              </label>
-              <Input
-                aria-describedby={transcriptionSetupError ? 'notepad-transcription-error' : undefined}
-                aria-invalid={transcriptionSetupError ? 'true' : undefined}
-                autoComplete="off"
-                autoFocus
-                disabled={transcriptionSetupSaving}
-                id="notepad-transcription-key"
-                onChange={event => {
-                  setTranscriptionApiKey(event.target.value)
-                  setTranscriptionSetupError(null)
-                }}
-                placeholder={`Paste ${transcriptionProvider.envKey}`}
-                spellCheck={false}
-                type="password"
-                value={transcriptionApiKey}
-              />
-              <a
-                className="inline-flex w-fit items-center gap-1 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-                href={transcriptionProvider.docsUrl}
-                rel="noreferrer"
-                target="_blank"
-              >
-                Get a {transcriptionProvider.label} API key
-                <Codicon name="link-external" />
-              </a>
-              {transcriptionSetupError ? (
-                <p className="text-xs text-destructive" id="notepad-transcription-error">
-                  {transcriptionSetupError}
-                </p>
-              ) : null}
-            </div>
+            {transcriptionProviderRequiresKey(transcriptionProvider) ? (
+              <div className="grid gap-1.5">
+                <label className="text-xs font-medium text-muted-foreground" htmlFor="notepad-transcription-key">
+                  {transcriptionProvider.label} API key
+                </label>
+                <Input
+                  aria-describedby={transcriptionSetupError ? 'notepad-transcription-error' : undefined}
+                  aria-invalid={transcriptionSetupError ? 'true' : undefined}
+                  autoComplete="off"
+                  autoFocus
+                  disabled={transcriptionSetupSaving}
+                  id="notepad-transcription-key"
+                  onChange={event => {
+                    setTranscriptionApiKey(event.target.value)
+                    setTranscriptionSetupError(null)
+                  }}
+                  placeholder={`Paste ${transcriptionProvider.envKey}`}
+                  spellCheck={false}
+                  type="password"
+                  value={transcriptionApiKey}
+                />
+                <a
+                  className="inline-flex w-fit items-center gap-1 text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                  href={transcriptionProvider.docsUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  Get a {transcriptionProvider.label} API key
+                  <Codicon name="link-external" />
+                </a>
+                {transcriptionSetupError ? (
+                  <p className="text-xs text-destructive" id="notepad-transcription-error">
+                    {transcriptionSetupError}
+                  </p>
+                ) : null}
+              </div>
+            ) : transcriptionSetupError ? (
+              <p className="text-xs text-destructive" id="notepad-transcription-error">
+                {transcriptionSetupError}
+              </p>
+            ) : null}
 
             <DialogFooter>
               <Button

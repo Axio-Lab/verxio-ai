@@ -11,12 +11,12 @@ import {
   selectedCloudTranscriptionProvider
 } from '@/lib/transcription-config'
 import {
-  CLOUD_TRANSCRIPTION_PROVIDERS,
   type CloudTranscriptionProvider,
   cloudTranscriptionProviderById,
   type CloudTranscriptionProviderId,
   cloudTranscriptionProvidersFromCatalog,
-  transcriptionModelOptions
+  transcriptionModelOptions,
+  transcriptionProviderRequiresKey
 } from '@/lib/transcription-providers'
 import { listVerxioTranscriptionCatalog } from '@/lib/verxio-api'
 import { notify, notifyError } from '@/store/notifications'
@@ -50,13 +50,9 @@ export function TranscriptionKeySettings({
   vars: Record<string, EnvVarInfo>
 }) {
   const [config, setConfig] = useState<HermesConfigRecord | null>(null)
-  const [providers, setProviders] = useState(CLOUD_TRANSCRIPTION_PROVIDERS)
-
-  const [selectedProviderId, setSelectedProviderId] = useState<CloudTranscriptionProviderId>(
-    CLOUD_TRANSCRIPTION_PROVIDERS[0].id
-  )
-
-  const [selectedModel, setSelectedModel] = useState(CLOUD_TRANSCRIPTION_PROVIDERS[0].recommendedModel)
+  const [providers, setProviders] = useState(() => cloudTranscriptionProvidersFromCatalog(null))
+  const [selectedProviderId, setSelectedProviderId] = useState<CloudTranscriptionProviderId>('local')
+  const [selectedModel, setSelectedModel] = useState('base')
   const [openKey, setOpenKey] = useState<null | string>(null)
   const [savingConfig, setSavingConfig] = useState(false)
   const [catalogLoading, setCatalogLoading] = useState(true)
@@ -193,7 +189,8 @@ export function TranscriptionKeySettings({
           title="Transcription"
         />
         <p className="mb-2 text-[length:var(--conversation-caption-font-size)] leading-(--conversation-caption-line-height) text-(--ui-text-tertiary)">
-          Choose the cloud speech provider Verxio uses for Notepad recordings. Keys stay in your runtime credentials.
+          Choose how Verxio transcribes Notepad recordings. Whisper runs on this machine. Cloud providers keep their
+          keys in your runtime credentials.
         </p>
 
         <div className="divide-y divide-(--ui-stroke-secondary)">
@@ -241,11 +238,13 @@ export function TranscriptionKeySettings({
               </div>
             }
             description={
-              selectedProvider.catalogError
-                ? selectedProvider.catalogError
-                : selectedProvider.catalogSource === 'provider'
-                  ? 'Loaded from the provider model catalog. You can still type a custom model ID.'
-                  : 'Using safe fallback suggestions until an API key is set or the provider catalog responds.'
+              selectedProvider.id === 'local'
+                ? 'Runs on this machine. tiny is fastest, base is the default, and large-v3 is the most accurate.'
+                : selectedProvider.catalogError
+                  ? selectedProvider.catalogError
+                  : selectedProvider.catalogSource === 'provider'
+                    ? 'Loaded from the provider model catalog. You can still type a custom model ID.'
+                    : 'Using safe fallback suggestions until an API key is set or the provider catalog responds.'
             }
             title="Model"
           />
@@ -307,29 +306,33 @@ export function TranscriptionKeySettings({
       <section>
         <SectionHeading icon={Mic} title="Cloud API keys" />
         <div className="grid gap-2">
-          {transcriptionRows.map(({ provider, info }) => (
-            <CredentialKeyCard
-              expanded={openKey === provider.envKey}
-              info={info}
-              key={provider.envKey}
-              label={`${provider.label} transcription`}
-              onExpand={() => setOpenKey(provider.envKey)}
-              onToggle={() => setOpenKey(current => (current === provider.envKey ? null : provider.envKey))}
-              placeholder={`Paste ${provider.label} API key`}
-              rowProps={rowProps}
-              varKey={provider.envKey}
-            />
-          ))}
+          {transcriptionRows
+            .filter(({ provider }) => transcriptionProviderRequiresKey(provider))
+            .map(({ provider, info }) => (
+              <CredentialKeyCard
+                expanded={openKey === provider.envKey}
+                info={info}
+                key={provider.envKey}
+                label={`${provider.label} transcription`}
+                onExpand={() => setOpenKey(provider.envKey)}
+                onToggle={() => setOpenKey(current => (current === provider.envKey ? null : provider.envKey))}
+                placeholder={`Paste ${provider.label} API key`}
+                rowProps={rowProps}
+                varKey={provider.envKey}
+              />
+            ))}
         </div>
-        <a
-          className="mt-3 inline-flex items-center gap-1 text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary) underline-offset-4 hover:text-foreground hover:underline"
-          href={selectedProvider.docsUrl}
-          rel="noreferrer"
-          target="_blank"
-        >
-          Get a {selectedProvider.label} API key
-          <ExternalLink className="size-3" />
-        </a>
+        {transcriptionProviderRequiresKey(selectedProvider) ? (
+          <a
+            className="mt-3 inline-flex items-center gap-1 text-[length:var(--conversation-caption-font-size)] text-(--ui-text-tertiary) underline-offset-4 hover:text-foreground hover:underline"
+            href={selectedProvider.docsUrl}
+            rel="noreferrer"
+            target="_blank"
+          >
+            Get a {selectedProvider.label} API key
+            <ExternalLink className="size-3" />
+          </a>
+        ) : null}
       </section>
     </div>
   )

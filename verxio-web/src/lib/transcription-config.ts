@@ -5,6 +5,7 @@ export const STT_MODEL_CONFIG_PATHS: Partial<Record<CloudTranscriptionProviderId
   elevenlabs: 'stt.elevenlabs.model_id',
   fishaudio: 'stt.fishaudio.model',
   groq: 'stt.groq.model',
+  local: 'stt.local.model',
   mistral: 'stt.mistral.model',
   openai: 'stt.openai.model'
 }
