@@ -1,5 +1,6 @@
 import { JsonRpcGatewayClient } from '@hermes/shared'
 
+import { messagingApiServerFromPlatforms } from '@/lib/messaging-api-server'
 import { verxioApiEnabled } from '@/lib/verxio-api'
 import type {
   ActionResponse,
@@ -709,10 +710,10 @@ export function getMessagingWebhooks(): Promise<MessagingWebhooksResponse> {
   })
 }
 
-export function getMessagingApiServer(): Promise<MessagingApiServerResponse> {
-  return cloudHermesApi<MessagingApiServerResponse>({
-    path: '/api/messaging/api-server'
-  })
+export async function getMessagingApiServer(): Promise<MessagingApiServerResponse> {
+  const result = await getMessagingPlatforms()
+
+  return messagingApiServerFromPlatforms(result.platforms)
 }
 
 export function enableMessagingWebhooks(): Promise<{ enabled: boolean; ok: boolean }> {
