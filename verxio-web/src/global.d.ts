@@ -382,6 +382,7 @@ export interface DesktopAudioCaptureSupport {
 export interface DesktopCaptureSource {
   id: string
   name: string
+  thumbnail?: string
   type: 'screen' | 'window'
 }
 

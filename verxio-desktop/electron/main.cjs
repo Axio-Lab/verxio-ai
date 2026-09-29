@@ -478,16 +478,31 @@ function supportsSystemAudioLoopback() {
 
 let pendingCaptureSourceId = null
 
+function captureThumbnailDataUrl(image) {
+  if (!image || image.isEmpty()) {
+    return undefined
+  }
+
+  const jpeg = image.toJPEG(72)
+
+  if (!jpeg.length) {
+    return undefined
+  }
+
+  return `data:image/jpeg;base64,${jpeg.toString('base64')}`
+}
+
 async function listDesktopCaptureSources() {
   const sources = await desktopCapturer.getSources({
     fetchWindowIcons: false,
-    thumbnailSize: { height: 1, width: 1 },
+    thumbnailSize: { height: 180, width: 320 },
     types: ['screen', 'window']
   })
 
   return sources.map(source => ({
     id: source.id,
     name: source.name,
+    thumbnail: captureThumbnailDataUrl(source.thumbnail),
     type: source.id.startsWith('screen:') ? 'screen' : 'window'
   }))
 }

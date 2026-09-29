@@ -986,6 +986,7 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
       try {
         const sources = (await listCaptureSources()) ?? []
         setCaptureSources(sources)
+        setSelectedCaptureSourceId(sources.find(source => source.type === 'screen')?.id ?? sources[0]?.id ?? null)
 
         if (!sources.length) {
           setCapturePickerOpen(false)
@@ -2026,13 +2027,12 @@ export function NotepadView({ setStatusbarItemGroup }: NotepadViewProps) {
                     role="option"
                     type="button"
                   >
-                    <span
-                      className={cn(
-                        'grid size-8 shrink-0 place-items-center rounded-md',
-                        selected ? 'bg-primary/15 text-primary' : 'bg-(--ui-bg-quaternary) text-(--ui-text-tertiary)'
+                    <span className="grid h-10 w-16 shrink-0 place-items-center overflow-hidden rounded-sm bg-(--ui-bg-quaternary)">
+                      {source.thumbnail ? (
+                        <img alt="" className="h-full w-full object-contain" src={source.thumbnail} />
+                      ) : (
+                        <Codicon name={source.type === 'screen' ? 'device-desktop' : 'window'} />
                       )}
-                    >
-                      <Codicon name={source.type === 'screen' ? 'device-desktop' : 'window'} />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className={cn('block truncate', selected && 'font-medium')}>{source.name}</span>
