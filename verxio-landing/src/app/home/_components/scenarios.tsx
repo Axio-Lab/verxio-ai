@@ -6,117 +6,75 @@ interface SimulationScenario {
 
 export const SCENARIOS: SimulationScenario[] = [
   {
-    prompt:
-      '"Set up a facility compliance system: toilet cleaning every 60 minutes with photo verification"',
+    prompt: '"Send the calendar invite I have open"',
     steps: [
-      { label: "Creating task", detail: "Restroom Cleaning (every 60 min)" },
-      { label: "Setting rule", detail: "Photo evidence required per cycle" },
-      { label: "Adding worker", detail: "Janitorial Team via WhatsApp" },
-      { label: "Configuring AI", detail: "Vision scoring against reference image" },
-      { label: "Scheduling", detail: "Daily compliance report to Slack" },
+      { label: "Looking", detail: "Calendar on your screen" },
+      { label: "Moving", detail: "Cursor to the invite" },
+      { label: "Typing", detail: "Guest and time filled in" },
+      { label: "Clicking", detail: "Send" },
     ],
     completion: {
-      name: "Compliance system live",
-      summary: "Recurring task, AI vetting, auto-reports",
+      name: "Invite sent",
+      summary: "The agent used the app on your screen",
     },
   },
   {
-    prompt:
-      '"Create a Q3 product launch goal with sub-agent research, design review, and GTM execution"',
+    prompt: '"Summarize the notes in this project and draft a reply"',
     steps: [
-      { label: "Creating goal", detail: "Q3 Product Launch" },
-      { label: "Decomposing", detail: "3 sub-tasks identified" },
-      { label: "Assigning agent", detail: "Market Research Sub-Agent" },
-      { label: "Assigning agent", detail: "Design Review Sub-Agent" },
-      { label: "Assigning agent", detail: "GTM Execution Sub-Agent" },
-      { label: "Setting watch", detail: "Progress alerts every 24h" },
+      { label: "Opening", detail: "Documents/Verxio" },
+      { label: "Reading", detail: "Three notes in the project" },
+      { label: "Drafting", detail: "Reply in the workspace" },
     ],
     completion: {
-      name: "Goal orchestration active",
-      summary: "3 sub-agents, daily progress alerts",
+      name: "Draft ready",
+      summary: "Files and chat, in one workspace",
     },
   },
   {
-    prompt:
-      '"Deploy a support agent on Telegram and WhatsApp with knowledge base for our SaaS product"',
+    prompt: '"Transcribe the screen recording in Notepad"',
     steps: [
-      { label: "Creating agent", detail: "Product Support Agent" },
-      { label: "Loading KB", detail: "12 docs indexed" },
-      { label: "Connecting", detail: "Telegram channel" },
-      { label: "Connecting", detail: "WhatsApp channel" },
-      { label: "Setting persona", detail: "Friendly, technical tone" },
-    ],
-    completion: { name: "Support agent live", summary: "2 channels, 12 docs, AI responses" },
-  },
-  {
-    prompt:
-      '"Set up daily sign-in/sign-out tracking for the warehouse team with late arrival alerts"',
-    steps: [
-      { label: "Creating task", detail: "Daily Attendance Check-in" },
-      { label: "Setting rule", detail: "Sign-in by 8:00 AM, sign-out by 5:00 PM" },
-      { label: "Adding workers", detail: "15 team members via Telegram" },
-      { label: "Configuring AI", detail: "Timestamp + location verification" },
-      { label: "Scheduling", detail: "End-of-day attendance report" },
-    ],
-    completion: { name: "Attendance tracker live", summary: "15 workers, alerts, daily reports" },
-  },
-  {
-    prompt:
-      '"Build a workflow that monitors GitHub PRs, runs code review, and posts results to Slack"',
-    steps: [
-      { label: "Creating workflow", detail: "PR Review Pipeline" },
-      { label: "Adding trigger", detail: "GitHub Pull Request Event" },
-      { label: "Adding node", detail: "AI Code Review (Claude)" },
-      { label: "Adding node", detail: "Post Summary to Slack" },
-      { label: "Connecting", detail: "GitHub + Slack via Composio" },
+      { label: "Playing", detail: "Notepad recording" },
+      { label: "Transcribing", detail: "Whisper on this machine" },
+      { label: "Writing", detail: "Transcript saved to the note" },
     ],
     completion: {
-      name: "Review pipeline active",
-      summary: "GitHub trigger, AI review, Slack output",
+      name: "Transcript ready",
+      summary: "On-device Whisper",
     },
   },
   {
-    prompt:
-      '"Set up a content operations goal: weekly blog posts with SEO, social distribution, and analytics"',
+    prompt: '"File this chat under Tech Team"',
     steps: [
-      { label: "Creating goal", detail: "Content Operations Pipeline" },
-      { label: "Decomposing", detail: "Research, Draft, SEO, Distribute" },
-      { label: "Assigning agent", detail: "Content Writer Sub-Agent" },
-      { label: "Assigning agent", detail: "SEO Optimizer Sub-Agent" },
-      { label: "Connecting", detail: "Google Docs + Notion via Composio" },
-      { label: "Scheduling", detail: "Weekly progress report to Gmail" },
-    ],
-    completion: { name: "Content ops running", summary: "4 phases, 2 agents, weekly reports" },
-  },
-  {
-    prompt:
-      '"Create a safety inspection system: equipment checks every shift with document uploads"',
-    steps: [
-      { label: "Creating task", detail: "Equipment Safety Inspection" },
-      { label: "Setting rule", detail: "Checklist + photo per equipment unit" },
-      { label: "Evidence type", detail: "Document (inspection form PDF)" },
-      { label: "Adding reference", detail: "Sample inspection report uploaded" },
-      { label: "Adding workers", detail: "Safety team via Discord" },
-      { label: "Configuring AI", detail: "Compare submissions to reference" },
+      { label: "Finding", detail: "Tech Team project" },
+      { label: "Moving", detail: "Chat filed into the folder" },
     ],
     completion: {
-      name: "Safety system active",
-      summary: "Document vetting, reference comparison, Discord alerts",
+      name: "Chat filed",
+      summary: "Projects stay in the sidebar",
     },
   },
   {
-    prompt: '"Launch a loyalty program for my e-commerce store with Bronze, Silver, Gold tiers"',
+    prompt: '"Check the unread threads in Gmail and Slack"',
     steps: [
-      { label: "Creating program", detail: "Store Rewards — 3 tiers" },
-      { label: "Setting tier", detail: "Bronze: 0–999 pts" },
-      { label: "Setting tier", detail: "Silver: 1,000–2,999 pts" },
-      { label: "Setting tier", detail: "Gold: 3,000+ pts" },
-      { label: "Generating", detail: "500 bulk invite links" },
-      { label: "Configuring AI", detail: "Auto-gift 50 pts per purchase" },
+      { label: "Opening", detail: "Gmail" },
+      { label: "Opening", detail: "Slack" },
+      { label: "Summarizing", detail: "Three threads need a reply" },
     ],
     completion: {
-      name: "Loyalty program live",
-      summary: "3 tiers, digital passes, AI-automated gifting",
+      name: "Inbox brief ready",
+      summary: "Connected apps, one agent",
+    },
+  },
+  {
+    prompt: '"Reply on Telegram that the proposal is ready"',
+    steps: [
+      { label: "Opening", detail: "Telegram" },
+      { label: "Writing", detail: "The proposal is ready" },
+      { label: "Sending", detail: "Message delivered" },
+    ],
+    completion: {
+      name: "Message sent",
+      summary: "Same agent, your channels",
     },
   },
 ];

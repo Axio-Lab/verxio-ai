@@ -21,7 +21,7 @@ export function Footer() {
               <span className="text-xl font-bold text-gray-900 tracking-tight">Verxio</span>
             </Link>
             <p className="text-sm text-gray-500 leading-relaxed">
-              Agentic operations platform that automates, supervises, and scales your business.
+              An AI work OS. The agent lives on your machine.
             </p>
           </div>
 
@@ -35,14 +35,6 @@ export function Footer() {
                   className="text-sm text-gray-500 hover:text-gray-900 transition-colors"
                 >
                   Features
-                </a>
-              </li>
-              <li>
-                <a
-                  href="#pricing"
-                  className="text-sm text-gray-500 hover:text-gray-900 transition-colors"
-                >
-                  Pricing
                 </a>
               </li>
               <li>

@@ -131,17 +131,17 @@ export function Hero() {
           {/* Left: Copy */}
           <div className="space-y-8">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-semibold tracking-wide">
-              Agentic Operations Platform
+              AI work OS
             </div>
 
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-900 leading-[1.1] tracking-tight">
-              AI agents that
-              <span className="text-primary"> run every business operations</span>
+              A workspace where
+              <span className="text-primary"> your agent does the work</span>
             </h1>
 
             <p className="text-lg text-gray-600 leading-relaxed max-w-lg">
-              Orchestrate AI goals, automate workflows, run customer support, and manage loyalty
-              programs.
+              Chat, files, the terminal, the apps on your screen, and the channels you already use.
+              The agent lives on your machine.
             </p>
 
             <div className="flex flex-wrap gap-4">
@@ -149,7 +149,7 @@ export function Hero() {
                 href={appPath("/download")}
                 className="inline-flex items-center px-7 py-3.5 text-sm font-semibold text-white bg-primary rounded-lg hover:brightness-110 transition-all shadow-md shadow-primary/20"
               >
-                Start Now
+                Download Verxio
                 <svg
                   className="ml-2 w-4 h-4"
                   fill="none"
@@ -179,7 +179,7 @@ export function Hero() {
                   <div className="w-3 h-3 rounded-full bg-yellow-400" />
                   <div className="w-3 h-3 rounded-full bg-green-400" />
                 </div>
-                <span className="text-xs text-gray-400 font-mono ml-2">verxio operations</span>
+                <span className="text-xs text-gray-400 font-mono ml-2">verxio</span>
               </div>
 
               {/* Terminal body */}
@@ -198,11 +198,6 @@ export function Hero() {
                   </div>
                 )}
               </div>
-            </div>
-
-            {/* Floating badge */}
-            <div className="absolute -bottom-4 -left-4 px-4 py-2 rounded-xl bg-white border border-gray-200 shadow-lg text-xs font-medium text-gray-700 animate-float">
-              AI-managed operations, 24/7
             </div>
           </div>
         </div>

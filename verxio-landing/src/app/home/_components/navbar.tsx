@@ -30,9 +30,6 @@ export function Navbar() {
           <a href="#how-it-works" className="hover:text-gray-900 transition-colors">
             How it works
           </a>
-          <a href="#pricing" className="hover:text-gray-900 transition-colors">
-            Pricing
-          </a>
           <a
             href="https://blog.verxio.xyz"
             target="_blank"
@@ -46,15 +43,9 @@ export function Navbar() {
         <div className="hidden md:flex items-center gap-3">
           <a
             href={appPath("/download")}
-            className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors"
-          >
-            Log in
-          </a>
-          <a
-            href={appPath("/download")}
             className="px-5 py-2.5 text-sm font-semibold text-white bg-primary rounded-lg hover:brightness-110 transition-all shadow-sm"
           >
-            Get started
+            Download Verxio
           </a>
         </div>
 
@@ -96,13 +87,6 @@ export function Navbar() {
             How it works
           </a>
           <a
-            href="#pricing"
-            className="block text-sm font-medium text-gray-600 hover:text-gray-900"
-            onClick={() => setMobileOpen(false)}
-          >
-            Pricing
-          </a>
-          <a
             href="https://blog.verxio.xyz"
             target="_blank"
             rel="noopener noreferrer"
@@ -111,15 +95,12 @@ export function Navbar() {
           >
             Blog
           </a>
-          <div className="pt-3 border-t border-gray-100 flex flex-col gap-2">
-            <a href={appPath("/download")} className="text-sm font-medium text-gray-700 hover:text-gray-900">
-              Log in
-            </a>
+          <div className="pt-3 border-t border-gray-100">
             <a
               href={appPath("/download")}
-              className="px-5 py-2.5 text-sm font-semibold text-white bg-primary rounded-lg hover:brightness-110 transition-all text-center"
+              className="block px-5 py-2.5 text-sm font-semibold text-white bg-primary rounded-lg hover:brightness-110 transition-all text-center"
             >
-              Get started
+              Download Verxio
             </a>
           </div>
         </div>
