@@ -2,6 +2,17 @@ import { translateNow } from '@/i18n'
 import { normalizeExternalUrl } from '@/lib/external-link'
 import { extractToolErrorMessage, formatToolResultSummary } from '@/lib/tool-result-summary'
 
+/** The desktop agent runs the Hermes CLI. Chat shows that command as Verxio. */
+const HERMES_CLI = /(^|[\s;&|`(])(?:[^\s'"|&;]*\/)?hermes(?=$|[\s])/gi
+
+export function displayVerxioCommand(command: string): string {
+  return command.replace(HERMES_CLI, '$1verxio')
+}
+
+export function displayVerxioTerminalOutput(text: string): string {
+  return text.replaceAll('Hermes Agent Status', 'Verxio Agent Status')
+}
+
 export type ToolTone = 'agent' | 'browser' | 'default' | 'file' | 'image' | 'terminal' | 'web'
 export type ToolStatus = 'error' | 'running' | 'success' | 'warning'
 
@@ -971,7 +982,7 @@ function toolSubtitle(
 
     const command = firstStringField(argsRecord, ['command', 'code']) || contextValue(argsRecord)
 
-    return command ? compactPreview(command, 120) : 'Executed command'
+    return command ? compactPreview(displayVerxioCommand(command), 120) : 'Executed command'
   }
 
   if (toolName === 'read_file' || toolName === 'write_file' || toolName === 'edit_file') {
@@ -1041,7 +1052,7 @@ function toolDetailText(
       : ''
 
     if (output || lines) {
-      return [output, lines].filter(Boolean).join('\n')
+      return displayVerxioTerminalOutput([output, lines].filter(Boolean).join('\n'))
     }
   }
 
@@ -1123,7 +1134,7 @@ export function toolCopyPayload(part: ToolPart, view: ToolView): { label: string
     const command = firstStringField(args, ['command', 'code']) || contextValue(args)
 
     if (command) {
-      return { label: copy.command, text: command }
+      return { label: copy.command, text: displayVerxioCommand(command) }
     }
   }
 
@@ -1220,7 +1231,7 @@ function dynamicTitle(
     if (command) {
       const verbText = part.toolName === 'execute_code' ? verb('Running code', 'Ran code') : verb('Running', 'Ran')
 
-      return `${verbText} · ${compactPreview(command, 160)}`
+      return `${verbText} · ${compactPreview(displayVerxioCommand(command), 160)}`
     }
   }
 
@@ -1278,8 +1289,8 @@ export function buildToolView(part: ToolPart, inlineDiff: string): ToolView {
     rawResult: prettyJson(part.result),
     rendersAnsi: rendersAnsi || undefined,
     searchHits: searchHits?.length ? searchHits : undefined,
-    stderr: hasSplitStreams ? stderrRaw || undefined : undefined,
-    stdout: hasSplitStreams ? stdout || undefined : undefined,
+    stderr: hasSplitStreams ? displayVerxioTerminalOutput(stderrRaw) || undefined : undefined,
+    stdout: hasSplitStreams ? displayVerxioTerminalOutput(stdout) || undefined : undefined,
     status,
     subtitle,
     title,
