@@ -9,9 +9,7 @@ import {
   isRuntimeWorkspacePath,
   resolveDesktopWorkspaceCwd
 } from '@/lib/desktop-workspace'
-import { isVerxioWeb } from '@/lib/platform'
 import { persistString, storedString } from '@/lib/storage'
-import { isWebLocalPath } from '@/lib/web-local-fs'
 import type { SessionInfo, UsageStats } from '@/types/hermes'
 
 type Updater<T> = T | ((current: T) => T)
@@ -234,18 +232,7 @@ export const setCurrentCwd = (next: Updater<string>) => {
   updateAtom($currentCwd, current => {
     const resolved = typeof next === 'function' ? next(current) : next
 
-    if (isVerxioWeb()) {
-      const currentTrimmed = current.trim()
-      const nextTrimmed = resolved.trim()
-
-      // The gateway reports the agent's server-side cwd (e.g. verxio-web/).
-      // Keep the browser-granted folder as the UI workspace for browsing and @ refs.
-      if (isWebLocalPath(currentTrimmed) && nextTrimmed && !isWebLocalPath(nextTrimmed)) {
-        return currentTrimmed
-      }
-    }
-
-    if (!isVerxioWeb() && typeof window !== 'undefined' && window.hermesDesktop) {
+    if (typeof window !== 'undefined' && window.hermesDesktop) {
       const currentTrimmed = current.trim()
       const nextTrimmed = resolved.trim()
       const localRoot = getDesktopWorkspaceRoot()

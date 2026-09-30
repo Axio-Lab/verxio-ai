@@ -1,5 +1,5 @@
 import { filePathFromMediaPath, mediaExternalUrl, mediaKind, mediaStreamUrl } from '@/lib/media'
-import { isVerxioDesktop, isVerxioWeb } from '@/lib/platform'
+import { isVerxioDesktop } from '@/lib/platform'
 import { verxioArtifactPreviewTarget } from '@/lib/verxio-artifact-preview'
 
 function isInlineSrc(path: string): boolean {
@@ -32,15 +32,6 @@ export async function resolveMediaPlaybackSrc(path: string): Promise<string> {
     }
   } catch {
     // Fall through to desktop / bridge readers.
-  }
-
-  if (isVerxioDesktop() && window.hermesDesktop?.readFileDataUrl) {
-    return window.hermesDesktop.readFileDataUrl(filePathFromMediaPath(path))
-  }
-
-  // Web bridge can still materialize small artifact files as data URLs.
-  if (isVerxioWeb() && window.hermesDesktop?.readFileDataUrl) {
-    return window.hermesDesktop.readFileDataUrl(filePathFromMediaPath(path))
   }
 
   if (window.hermesDesktop?.readFileDataUrl) {

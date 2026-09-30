@@ -2,8 +2,6 @@ import type { Unstable_TriggerAdapter, Unstable_TriggerItem } from '@assistant-u
 import { useCallback } from 'react'
 
 import type { HermesGateway } from '@/hermes'
-import { completeWebLocalPath } from '@/lib/web-local-completions'
-import { resolveWebLocalWorkspaceCwd } from '@/lib/web-local-fs'
 
 import type { CompletionEntry, CompletionPayload } from './use-live-completion-adapter'
 import { useLiveCompletionAdapter } from './use-live-completion-adapter'
@@ -98,21 +96,11 @@ export function useAtCompletions(options: {
         params.session_id = sessionId
       }
 
-      const webLocalCwd = resolveWebLocalWorkspaceCwd(cwd)
-
-      if (webLocalCwd) {
-        params.cwd = webLocalCwd
-      } else if (cwd) {
+      if (cwd) {
         params.cwd = cwd
       }
 
       try {
-        if (webLocalCwd) {
-          const items = await completeWebLocalPath(word, webLocalCwd)
-
-          return { items: items.length > 0 ? items : starters, query }
-        }
-
         const result = await gateway.request<{ items?: CompletionEntry[] }>('complete.path', params)
         const items = result.items ?? []
 

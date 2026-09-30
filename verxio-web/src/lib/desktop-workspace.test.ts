@@ -11,7 +11,6 @@ import {
 describe('desktop-workspace', () => {
   beforeEach(() => {
     vi.stubGlobal('hermesDesktop', {})
-    vi.stubGlobal('__VERXIO_WEB__', undefined)
   })
 
   afterEach(() => {

@@ -6,7 +6,6 @@ import { NotificationStack } from '@/components/notifications'
 import { PaneShell } from '@/components/pane-shell'
 import { SidebarProvider } from '@/components/ui/sidebar'
 import { useResponsivePanes } from '@/hooks/use-responsive-panes'
-import { isVerxioWeb } from '@/lib/platform'
 import { verxioApiEnabled } from '@/lib/verxio-api'
 import {
   $fileBrowserOpen,
@@ -92,9 +91,9 @@ export function AppShell({
   // between the pane-tool cluster and the system cluster so they don't sit
   // flush against each other. Modeled as N gaps (N - 1 inner + 1 trailing)
   // to keep the formula generic for any pane-tool count.
-  // Static system tools — haptics, keybinds, settings, plus logout (web/hosted)
-  // and/or right-sidebar (desktop local runtime).
-  const SYSTEM_TOOL_COUNT = isVerxioWeb() ? 4 : verxioApiEnabled() ? 5 : 4
+  // Static system tools — haptics, keybinds, settings, plus logout when the
+  // account API is on, and the right sidebar.
+  const SYSTEM_TOOL_COUNT = verxioApiEnabled() ? 5 : 4
   const paneToolCount = titlebarTools?.filter(tool => !tool.hidden).length ?? 0
   const systemToolsWidth = `calc(${SYSTEM_TOOL_COUNT} * (var(--titlebar-control-size) + 0.25rem))`
 

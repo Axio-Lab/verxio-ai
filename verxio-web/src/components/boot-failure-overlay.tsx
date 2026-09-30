@@ -41,7 +41,6 @@ export function BootFailureOverlay() {
   // progress; the recovery overlay is for hard failures, which it covers via a
   // higher z-index regardless of onboarding state.
   const suppressed = onboarding.flow.status !== 'idle' && onboarding.flow.status !== 'error'
-  const hostedWeb = Boolean(window.__VERXIO_WEB__)
 
   useEffect(() => {
     if (!visible) {
@@ -53,44 +52,6 @@ export function BootFailureOverlay() {
       .then(res => setLogs(res.lines ?? []))
       .catch(() => undefined)
   }, [visible])
-
-  // Hosted Verxio: a slow agent start must not stick on a dead-end overlay.
-  // Reload as soon as the runtime dashboard answers again.
-  useEffect(() => {
-    if (!visible || suppressed || remoteReauth || !hostedWeb) {
-      return
-    }
-
-    let cancelled = false
-
-    const reloadWhenReady = async () => {
-      try {
-        const healthz = await fetch('/api/runtime/dashboard/api/healthz', { credentials: 'include' })
-
-        const status = healthz.ok
-          ? healthz
-          : await fetch('/api/runtime/dashboard/api/status', { credentials: 'include' })
-
-        if (!cancelled && status.ok) {
-          await window.hermesDesktop?.resetBootstrap().catch(() => undefined)
-          window.location.reload()
-        }
-      } catch {
-        // keep polling
-      }
-    }
-
-    const timer = window.setInterval(() => {
-      void reloadWhenReady()
-    }, 3_000)
-
-    void reloadWhenReady()
-
-    return () => {
-      cancelled = true
-      window.clearInterval(timer)
-    }
-  }, [hostedWeb, remoteReauth, suppressed, visible])
 
   // Resolve whether this boot failure is a remote-gateway reauth so we can
   // offer the actionable "Sign in" path instead of the local-only recovery
@@ -218,10 +179,10 @@ export function BootFailureOverlay() {
           <ErrorIcon className="mt-0.5" size="1.25rem" />
           <div>
             <h2 className="text-[0.9375rem] font-semibold tracking-tight">
-              {remoteReauth ? copy.remoteTitle : hostedWeb ? copy.hostedTitle : copy.title}
+              {remoteReauth ? copy.remoteTitle : copy.title}
             </h2>
             <p className="mt-1 text-[0.8125rem] leading-5 text-(--ui-text-tertiary)">
-              {remoteReauth ? copy.remoteDescription : hostedWeb ? copy.hostedDescription : copy.description}
+              {remoteReauth ? copy.remoteDescription : copy.description}
             </p>
           </div>
         </div>
@@ -244,26 +205,22 @@ export function BootFailureOverlay() {
                   {copy.retry}
                 </Button>
               )}
-              {!remoteReauth && !hostedWeb ? (
+              {!remoteReauth ? (
                 <Button disabled={Boolean(busy)} onClick={() => void repair()} variant="secondary">
                   {busy === 'repair' ? <Loader2 className="animate-spin" /> : <Wrench />}
                   {copy.repairInstall}
                 </Button>
               ) : null}
-              {!hostedWeb ? (
-                <Button disabled={Boolean(busy)} onClick={() => void switchToLocalGateway()} variant="secondary">
-                  {busy === 'local' ? <Loader2 className="animate-spin" /> : null}
-                  {copy.useLocalGateway}
-                </Button>
-              ) : null}
+              <Button disabled={Boolean(busy)} onClick={() => void switchToLocalGateway()} variant="secondary">
+                {busy === 'local' ? <Loader2 className="animate-spin" /> : null}
+                {copy.useLocalGateway}
+              </Button>
               <Button onClick={openLogs} variant="ghost">
                 <FileText />
                 {copy.openLogs}
               </Button>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {remoteReauth ? copy.remoteSignInHint : hostedWeb ? copy.hostedHint : copy.repairHint}
-            </p>
+            <p className="text-xs text-muted-foreground">{remoteReauth ? copy.remoteSignInHint : copy.repairHint}</p>
           </div>
 
           {logs.length > 0 ? (

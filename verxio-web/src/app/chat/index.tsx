@@ -48,7 +48,7 @@ import { requestComposerInsert, requestComposerInsertRefs } from './composer/foc
 import { droppedFileInlineRefs, type SessionDragPayload, sessionInlineRef } from './composer/inline-refs'
 import type { ChatBarState } from './composer/types'
 import type { DroppedFile } from './hooks/use-composer-actions'
-import { enrichDroppedFilesForWeb, partitionDroppedFiles } from './hooks/use-composer-actions'
+import { partitionDroppedFiles } from './hooks/use-composer-actions'
 import { useFileDropZone } from './hooks/use-file-drop-zone'
 import { ScrollToBottomButton } from './scroll-to-bottom-button'
 import { SessionActionsMenu } from './sidebar/session-actions-menu'
@@ -274,10 +274,9 @@ export function ChatView({
   // Drop files anywhere in the conversation area. In-app drags stay inline
   // @file:/@folder: refs; OS drops go through the attachment/upload pipeline.
   const onDropFiles = useCallback(
-    (candidates: DroppedFile[], transfer?: DataTransfer) => {
+    (candidates: DroppedFile[]) => {
       void (async () => {
-        const enriched = transfer ? await enrichDroppedFilesForWeb(transfer, candidates) : candidates
-        const { inAppRefs, osDrops } = partitionDroppedFiles(enriched)
+        const { inAppRefs, osDrops } = partitionDroppedFiles(candidates)
         const refs = droppedFileInlineRefs(inAppRefs, currentCwd)
 
         if (refs.length) {
