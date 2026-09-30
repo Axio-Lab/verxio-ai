@@ -3,14 +3,14 @@ import { normalizeExternalUrl } from '@/lib/external-link'
 import { extractToolErrorMessage, formatToolResultSummary } from '@/lib/tool-result-summary'
 
 /** The desktop agent runs the Hermes CLI. Chat shows that command as Verxio. */
-const HERMES_CLI = /(^|[\s;&|`(])(?:[^\s'"|&;]*\/)?hermes(?=$|[\s])/gi
+const HERMES_CLI = /(^|[\s;&|`(])(?:[^\s'"|&;]*\/)?hermes(?=$|[\s])/gim
 
 export function displayVerxioCommand(command: string): string {
   return command.replace(HERMES_CLI, '$1verxio')
 }
 
 export function displayVerxioTerminalOutput(text: string): string {
-  return text.replaceAll('Hermes Agent Status', 'Verxio Agent Status')
+  return displayVerxioCommand(text.replaceAll('Hermes Agent Status', 'Verxio Agent Status'))
 }
 
 export type ToolTone = 'agent' | 'browser' | 'default' | 'file' | 'image' | 'terminal' | 'web'
@@ -1054,6 +1054,8 @@ function toolDetailText(
     if (output || lines) {
       return displayVerxioTerminalOutput([output, lines].filter(Boolean).join('\n'))
     }
+
+    return displayVerxioCommand(fallbackDetailText(argsRecord, resultRecord))
   }
 
   if (part.toolName === 'web_extract') {

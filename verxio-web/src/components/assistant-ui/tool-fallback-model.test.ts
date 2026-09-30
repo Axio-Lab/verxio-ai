@@ -19,8 +19,9 @@ describe('displayVerxioCommand', () => {
 })
 
 describe('displayVerxioTerminalOutput', () => {
-  it('renames the status banner', () => {
+  it('renames the status banner and the echoed command', () => {
     expect(displayVerxioTerminalOutput('Hermes Agent Status')).toBe('Verxio Agent Status')
+    expect(displayVerxioTerminalOutput("hermes chat -q 'health check'")).toBe("verxio chat -q 'health check'")
   })
 })
 
@@ -38,5 +39,39 @@ describe('buildToolView terminal title', () => {
 
     expect(view.title).toBe('Ran · verxio tools list')
     expect(view.stdout).toBe('Verxio Agent Status')
+  })
+
+  it('rewrites the command echoed in the output panel', () => {
+    const view = buildToolView(
+      {
+        args: { command: "hermes chat -q 'health check'" },
+        result: { output: "hermes chat -q 'health check'" },
+        toolName: 'terminal',
+        type: 'tool-call'
+      },
+      ''
+    )
+
+    expect(view.title).toBe("Ran · verxio chat -q 'health check'")
+    expect(view.detail).toBe("verxio chat -q 'health check'")
+    expect(view.detail).not.toContain('hermes')
+  })
+
+  it('rewrites the command shown while the tool is still running', () => {
+    const view = buildToolView(
+      {
+        args: {
+          command: "hermes chat -q 'health check'",
+          preview: "hermes chat -q 'health check'"
+        },
+        toolName: 'terminal',
+        type: 'tool-call'
+      },
+      ''
+    )
+
+    expect(view.title).toBe("Running · verxio chat -q 'health check'")
+    expect(view.detail).not.toContain('hermes')
+    expect(view.detail).toContain('verxio chat')
   })
 })
