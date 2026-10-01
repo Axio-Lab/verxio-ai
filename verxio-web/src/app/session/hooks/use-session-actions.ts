@@ -563,7 +563,11 @@ export function useSessionActions({
       // Profile wake and WS reconnect can take seconds; the session DB read
       // does not need a live gateway, so the correct chat can show under the
       // waking overlay instead of an empty spinner.
-      if (cachedRuntimeId && cachedState) {
+      // An empty cache is not a transcript. Compression and a socket drop can
+      // leave the in-memory copy blank while the session DB still has the
+      // conversation. Trusting that blank copy is what opens a chat with no
+      // messages.
+      if (cachedRuntimeId && cachedState && cachedState.messages.length > 0) {
         localSnapshot = preserveLocalAssistantErrors(cachedState.messages, [])
         paintedFromMemoryCache = true
         setMessages(localSnapshot)

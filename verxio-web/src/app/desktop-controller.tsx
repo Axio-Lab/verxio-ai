@@ -54,6 +54,7 @@ import {
   $currentCwd,
   $freshDraftReady,
   $gatewayState,
+  $messages,
   $selectedStoredSessionId,
   $sessions,
   $workingSessionIds,
@@ -870,7 +871,15 @@ export function DesktopController() {
       }}
       onNavigate={selectSidebarItem}
       onNewSessionInWorkspace={startSessionInWorkspace}
-      onResumeSession={sessionId => navigate(sessionRoute(sessionId))}
+      onResumeSession={sessionId => {
+        navigate(sessionRoute(sessionId))
+
+        // Already on this chat and the thread is blank. Navigation will not
+        // fire again, so reload the saved transcript directly.
+        if (sessionId === selectedStoredSessionId && $messages.get().length === 0) {
+          void resumeSession(sessionId, true)
+        }
+      }}
       onTriggerCronJob={jobId => {
         void triggerCronJob(jobId)
           .then(() => refreshCronJobs())
