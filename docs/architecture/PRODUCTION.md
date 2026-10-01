@@ -39,23 +39,27 @@ injected automatically.
 7. Persist hermes-home via PVC / snapshot restore
 8. Private registry + `imagePullSecrets` (not `:local` images)
 
-## Interim: Alibaba ECS + local-docker
+## ECS: pool plane
 
-Until the managed K8s cutover ships, ECS can keep using Docker:
+`scripts/deploy-ecs.sh` builds the control plane and the hosted Hermes image, then starts the pool profile. Compose does not pass per-user Docker or Kubernetes settings. `VERXIO_LEGACY_PLANES` is fixed at `0`.
+
+Always on: `verxio-api`, `verxio-web`, `verxio-landing`.
+
+Pool profile: `redis`, `verxio-scheduler`, `verxio-sandbox`, `verxio-hermes-worker`, `verxio-agent-worker`, `verxio-channel-gateway`.
 
 ```bash
-export DEPLOY_REF=verxio/architecture
+export DEPLOY_REF=verxio/desktop
 bash scripts/deploy-ecs.sh
 ```
 
 ```bash
-VERXIO_RUNTIME_MANAGER=local-docker
+VERXIO_RUNTIME_MANAGER=pool
+VERXIO_INLINE_SCHEDULER=0
+VERXIO_REDIS_URL=redis://redis:6379/0
 VERXIO_RUNTIME_IDLE_ENABLED=true
 VERXIO_RUNTIME_IDLE_POLICY=default
 VERXIO_IDLE_REAPER_ENABLED=true
 VERXIO_IDLE_REAPER_INTERVAL_SECONDS=60
-VERXIO_RUNTIME_RESTART_POLICY=no
-VERXIO_RUNTIME_DOCKER_NETWORK=verxio-ai_default
 ```
 
 ### Smoke after deploy
@@ -70,4 +74,4 @@ curl -fsS http://127.0.0.1:8787/api/health
 
 ## Rollback
 
-Set `VERXIO_IDLE_REAPER_ENABLED=false` and `VERXIO_RUNTIME_RESTART_POLICY=unless-stopped` then redeploy if you need the old always-on behavior temporarily.
+Set `VERXIO_IDLE_REAPER_ENABLED=false` and redeploy to stop draining idle runtimes.
