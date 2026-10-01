@@ -205,7 +205,7 @@ export function SidebarProjectsSection({
   }
 
   return (
-    <div className="shrink-0 pb-1">
+    <div className={cn('flex min-h-0 flex-col overflow-hidden pb-1', open ? 'flex-1' : 'shrink-0')}>
       <div className="group/section flex shrink-0 items-center justify-between pb-1 pt-1.5">
         <button
           className="group/section-label flex w-fit items-center gap-1 bg-transparent text-left leading-none"
@@ -264,7 +264,7 @@ export function SidebarProjectsSection({
         <DndContext collisionDetection={closestCenter} onDragEnd={onDragEnd} sensors={sensors}>
           <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
             <div
-              className="grid max-h-[min(22rem,45vh)] gap-px overflow-y-auto overscroll-contain pb-1"
+              className="grid min-h-0 flex-1 content-start gap-px overflow-y-auto overscroll-contain pb-1"
               data-project-list=""
             >
               {creating && (

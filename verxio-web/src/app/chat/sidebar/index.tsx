@@ -797,7 +797,7 @@ export function ChatSidebar({
             onTogglePin={pinSession}
             open={agentsOpen}
             pinned={false}
-            rootClassName="min-h-0 flex-1 p-0"
+            rootClassName="min-h-0 flex-1 overflow-hidden p-0"
             sessions={agentSessions}
             sortable={!showAllProfiles && agentSessions.length > 1}
             workingSessionIdSet={workingSessionIdSet}
