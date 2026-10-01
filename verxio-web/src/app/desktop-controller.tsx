@@ -31,11 +31,13 @@ import {
   $panesFlipped,
   $pinnedSessionIds,
   $sessionsLimit,
+  armNewSessionInProject,
   bumpSessionsLimit,
   FILE_BROWSER_DEFAULT_WIDTH,
   FILE_BROWSER_MAX_WIDTH,
   FILE_BROWSER_MIN_WIDTH,
   pinSession,
+  setSidebarProjectsOpen,
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_SESSIONS_PAGE_SIZE,
@@ -680,6 +682,15 @@ export function DesktopController() {
     [branchCurrentSession, refreshSessions]
   )
 
+  const startSessionInProject = useCallback(
+    (projectId: string) => {
+      startFreshSessionDraft()
+      setSidebarProjectsOpen(true)
+      armNewSessionInProject(projectId)
+    },
+    [startFreshSessionDraft]
+  )
+
   const startSessionInWorkspace = useCallback(
     (path: null | string) => {
       startFreshSessionDraft()
@@ -870,6 +881,7 @@ export function DesktopController() {
         navigate(CRON_ROUTE)
       }}
       onNavigate={selectSidebarItem}
+      onNewSessionInProject={startSessionInProject}
       onNewSessionInWorkspace={startSessionInWorkspace}
       onResumeSession={sessionId => {
         navigate(sessionRoute(sessionId))

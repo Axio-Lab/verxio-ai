@@ -72,6 +72,8 @@ export const $sidebarWidth: ReadableAtom<number> = computed($paneStates, states 
 
 export const $pinnedSessionIds = atom(storedStringArray(SIDEBAR_PINNED_STORAGE_KEY))
 export const $sidebarProjects = atom(storedProjectsState())
+/** Folder that should receive the next chat created from a fresh draft. */
+const $newSessionProjectId = atom<null | string>(null)
 export const $sidebarProjectsOpen = atom(storedBoolean(SIDEBAR_PROJECTS_OPEN_STORAGE_KEY, true))
 export const $sidebarPinsOpen = atom(true)
 export const $sidebarRecentsOpen = atom(true)
@@ -217,7 +219,34 @@ export function createSidebarProject(name: string): null | string {
 
   $sidebarProjects.set(next)
 
-  return next.projects[next.projects.length - 1]?.id ?? null
+  const previousIds = new Set(prev.projects.map(project => project.id))
+
+  return next.projects.find(project => !previousIds.has(project.id))?.id ?? null
+}
+
+export function armNewSessionInProject(projectId: string) {
+  $newSessionProjectId.set(projectId)
+}
+
+export function armedNewSessionProject(): null | string {
+  return $newSessionProjectId.get()
+}
+
+export function clearNewSessionProject() {
+  if ($newSessionProjectId.get() !== null) {
+    $newSessionProjectId.set(null)
+  }
+}
+
+/** The folder still waiting for this draft, or null if the user left that draft. */
+export function projectForNewSession(armedProjectId: null | string): null | string {
+  if (!armedProjectId || $newSessionProjectId.get() !== armedProjectId) {
+    return null
+  }
+
+  $newSessionProjectId.set(null)
+
+  return armedProjectId
 }
 
 export function renameSidebarProject(projectId: string, name: string) {

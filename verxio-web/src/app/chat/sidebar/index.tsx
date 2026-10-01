@@ -194,6 +194,7 @@ interface ChatSidebarProps extends React.ComponentProps<typeof Sidebar> {
   onResumeSession: (sessionId: string) => void
   onDeleteSession: (sessionId: string) => void
   onArchiveSession: (sessionId: string) => void
+  onNewSessionInProject: (projectId: string) => void
   onNewSessionInWorkspace: (path: null | string) => void
   onManageCronJob: (jobId: string) => void
   onTriggerCronJob: (jobId: string) => void
@@ -207,6 +208,7 @@ export function ChatSidebar({
   onResumeSession,
   onDeleteSession,
   onArchiveSession,
+  onNewSessionInProject,
   onNewSessionInWorkspace,
   onManageCronJob,
   onTriggerCronJob
@@ -704,6 +706,7 @@ export function ChatSidebar({
             activeSessionId={activeSidebarSessionId}
             onArchiveSession={archiveSidebarSession}
             onDeleteSession={deleteSidebarSession}
+            onNewSessionInProject={onNewSessionInProject}
             onResumeSession={onResumeSession}
             onTogglePin={toggleProjectPin}
             pinnedSessionIds={pinnedSessionIds}

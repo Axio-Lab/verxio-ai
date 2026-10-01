@@ -12,7 +12,13 @@ import { modelAssignmentForHermes } from '@/lib/verxio-model-options'
 import { ensureSessionYoloEnabled } from '@/lib/yolo-session'
 import { clearComposerAttachments, clearComposerDraft } from '@/store/composer'
 import { clearQueuedPrompts } from '@/store/composer-queue'
-import { $pinnedSessionIds } from '@/store/layout'
+import {
+  $pinnedSessionIds,
+  addSessionToSidebarProject,
+  armedNewSessionProject,
+  clearNewSessionProject,
+  projectForNewSession
+} from '@/store/layout'
 import { clearNotifications, notify, notifyError } from '@/store/notifications'
 import { requestDesktopOnboarding } from '@/store/onboarding'
 import { $activeGatewayProfile, $newChatProfile, ensureGatewayProfile, normalizeProfileKey } from '@/store/profile'
@@ -361,6 +367,7 @@ export function useSessionActions({
 
   const startFreshSessionDraft = useCallback(
     (replaceRoute = false) => {
+      clearNewSessionProject()
       busyRef.current = false
       setBusy(false)
       setAwaitingResponse(false)
@@ -396,6 +403,7 @@ export function useSessionActions({
       const startingActiveSessionId = activeSessionIdRef.current
       const startingStoredSessionId = selectedStoredSessionIdRef.current
       const startingRouteToken = getRouteToken()
+      const armedProjectId = armedNewSessionProject()
 
       creatingSessionRef.current = true
 
@@ -441,6 +449,12 @@ export function useSessionActions({
         ensureSessionState(created.session_id, stored)
 
         if (stored) {
+          const projectId = projectForNewSession(armedProjectId)
+
+          if (projectId) {
+            addSessionToSidebarProject(projectId, stored)
+          }
+
           // Seed the sidebar preview with the user's first message so the row
           // reads meaningfully while the turn is in flight, instead of flashing
           // "Untitled session" until the turn persists and auto-title runs. The
@@ -512,6 +526,7 @@ export function useSessionActions({
 
   const resumeSession = useCallback(
     async (storedSessionId: string, replaceRoute = false) => {
+      clearNewSessionProject()
       const requestId = resumeRequestRef.current + 1
       resumeRequestRef.current = requestId
 

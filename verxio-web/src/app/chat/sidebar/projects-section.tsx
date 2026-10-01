@@ -68,6 +68,7 @@ interface SidebarProjectsSectionProps {
   workingSessionIdSet: Set<string>
   onArchiveSession: (sessionId: string) => void
   onDeleteSession: (sessionId: string) => void
+  onNewSessionInProject: (projectId: string) => void
   onResumeSession: (sessionId: string) => void
   onTogglePin: (sessionId: string) => void
 }
@@ -126,6 +127,7 @@ export function SidebarProjectsSection({
   workingSessionIdSet,
   onArchiveSession,
   onDeleteSession,
+  onNewSessionInProject,
   onResumeSession,
   onTogglePin
 }: SidebarProjectsSectionProps) {
@@ -296,6 +298,7 @@ export function SidebarProjectsSection({
                   manual={manual}
                   onArchiveSession={onArchiveSession}
                   onDeleteSession={onDeleteSession}
+                  onNewSessionInProject={onNewSessionInProject}
                   onResumeSession={onResumeSession}
                   onTogglePin={onTogglePin}
                   pinnedSessionIds={pinnedSessionIds}
@@ -324,6 +327,7 @@ function ProjectFolder({
   workingSessionIdSet,
   onArchiveSession,
   onDeleteSession,
+  onNewSessionInProject,
   onResumeSession,
   onTogglePin
 }: {
@@ -337,6 +341,7 @@ function ProjectFolder({
   workingSessionIdSet: Set<string>
   onArchiveSession: (sessionId: string) => void
   onDeleteSession: (sessionId: string) => void
+  onNewSessionInProject: (projectId: string) => void
   onResumeSession: (sessionId: string) => void
   onTogglePin: (sessionId: string) => void
 }) {
@@ -462,7 +467,18 @@ function ProjectFolder({
                   <Codicon name="ellipsis" size="0.75rem" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem
+                  onSelect={() => {
+                    setExpanded(true)
+                    triggerHaptic('selection')
+                    onNewSessionInProject(project.id)
+                  }}
+                >
+                  <Codicon name="add" size="0.875rem" />
+                  <span className="truncate">{s.newSessionIn(project.name)}</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuLabel>{s.projectPriority}</DropdownMenuLabel>
                 <DropdownMenuRadioGroup
                   onValueChange={value => {
