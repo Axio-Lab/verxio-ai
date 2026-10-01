@@ -150,6 +150,16 @@ describe('workspaceTreeFor', () => {
     expect(tree[0].label).toBe('No workspace')
     expect(tree[0].path).toBeNull()
   })
+
+  it('puts the folder and session with the latest activity first', () => {
+    const older = makeSession('/www/older', { started_at: 500, last_active: 500, id: 'old' })
+    const newer = makeSession('/www/newer', { started_at: 100, last_active: 900, id: 'new' })
+    const quiet = makeSession('/www/newer', { started_at: 800, last_active: 200, id: 'quiet' })
+    const tree = workspaceTreeFor([older, quiet, newer], 'No workspace')
+
+    expect(tree.map(parent => parent.label)).toEqual(['newer', 'older'])
+    expect(tree[0].groups[0].sessions.map(session => session.id)).toEqual(['new', 'quiet'])
+  })
 })
 
 describe('uniqueCwds', () => {

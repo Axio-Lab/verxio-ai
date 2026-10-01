@@ -262,7 +262,7 @@ export function SidebarProjectsSection({
         <DndContext collisionDetection={closestCenter} onDragEnd={onDragEnd} sensors={sensors}>
           <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
             <div
-              className="grid max-h-[calc(8*1.75rem+0.25rem)] gap-px overflow-y-auto overscroll-contain pb-1"
+              className="grid max-h-[min(22rem,45vh)] gap-px overflow-y-auto overscroll-contain pb-1"
               data-project-list=""
             >
               {creating && (
@@ -342,7 +342,7 @@ function ProjectFolder({
 }) {
   const { t } = useI18n()
   const s = t.sidebar
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(true)
   const [renaming, setRenaming] = useState(false)
   const [draft, setDraft] = useState(project.name)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -498,28 +498,7 @@ function ProjectFolder({
         <p className="px-7 pb-1 text-[0.6875rem] text-(--ui-text-quaternary)">{s.projectEmpty}</p>
       )}
       {expanded && sessions.length > 0 && (
-        <div
-          className="max-h-[calc(4*1.625rem)] overflow-y-auto overscroll-contain"
-          onWheel={event => {
-            const list = event.currentTarget
-            const projects = list.closest('[data-project-list]')
-
-            if (!(projects instanceof HTMLElement)) {
-              return
-            }
-
-            const fits = list.scrollHeight <= list.clientHeight + 1
-            const atStart = list.scrollTop <= 0
-            const atEnd = list.scrollTop + list.clientHeight >= list.scrollHeight - 1
-            const leaveList = fits || (event.deltaY > 0 && atEnd) || (event.deltaY < 0 && atStart)
-
-            if (!leaveList) {
-              return
-            }
-
-            projects.scrollTop += event.deltaY
-          }}
-        >
+        <div>
           {sessions.map(session => (
             <ProjectSessionRow
               activeSessionId={activeSessionId}

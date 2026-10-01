@@ -140,13 +140,15 @@ function orderByIds<T>(items: T[], getId: (item: T) => string, orderIds: string[
     }
   }
 
+  const fresh: T[] = []
+
   for (const item of items) {
     if (!seen.has(getId(item))) {
-      out.push(item)
+      fresh.push(item)
     }
   }
 
-  return out
+  return [...fresh, ...out]
 }
 
 function searchResultToSession(result: SessionSearchResult): SessionInfo {

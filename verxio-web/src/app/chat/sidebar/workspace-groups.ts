@@ -23,6 +23,28 @@ export interface SidebarSessionGroup {
 
 const NO_WORKSPACE_ID = '__no_workspace__'
 
+function sessionActivity(session: SessionInfo): number {
+  return session.last_active || session.started_at || 0
+}
+
+function latestActivity(sessions: SessionInfo[]): number {
+  let latest = 0
+
+  for (const session of sessions) {
+    const activity = sessionActivity(session)
+
+    if (activity > latest) {
+      latest = activity
+    }
+  }
+
+  return latest
+}
+
+function byLatestActivity(a: SessionInfo, b: SessionInfo): number {
+  return sessionActivity(b) - sessionActivity(a) || b.started_at - a.started_at
+}
+
 /** Path split into segments, ignoring trailing slashes and mixed separators. */
 const segments = (path: string): string[] =>
   path
@@ -118,16 +140,17 @@ export function workspaceGroupsFor(
   }
 
   if (!options.preserveSessionOrder) {
-    // Groups keep recency order (Map insertion = first-seen in the recency-sorted
-    // input, so an active project floats up), but rows *within* a group sort by
-    // creation time so they don't reshuffle every time a message lands — keeps
-    // muscle memory intact.
     for (const group of groups.values()) {
-      group.sessions.sort((a, b) => b.started_at - a.started_at)
+      group.sessions.sort(byLatestActivity)
     }
   }
 
   const result = [...groups.values()]
+
+  if (!options.preserveSessionOrder) {
+    result.sort((a, b) => latestActivity(b.sessions) - latestActivity(a.sessions))
+  }
+
   disambiguateLabels(result)
 
   return result
@@ -238,10 +261,8 @@ export function uniqueCwds(sessions: SessionInfo[]): string[] {
 }
 
 /**
- * Build the `parent → worktree → sessions` tree. Parents keep recency order
- * (first-seen in the recency-sorted input); worktree groups within a parent do
- * too, while rows inside a worktree sort by creation time (stable muscle memory,
- * matching `workspaceGroupsFor`).
+ * Build the `parent → worktree → sessions` tree. The folder with the latest
+ * session is first, and the sessions inside it are newest-activity first.
  */
 export function workspaceTreeFor(
   sessions: SessionInfo[],
@@ -297,8 +318,10 @@ export function workspaceTreeFor(
   }
 
   if (!options.preserveSessionOrder) {
+    noWorkspace.sort(byLatestActivity)
+
     for (const entry of worktrees.values()) {
-      entry.group.sessions.sort((a, b) => b.started_at - a.started_at)
+      entry.group.sessions.sort(byLatestActivity)
     }
   }
 
@@ -325,6 +348,19 @@ export function workspaceTreeFor(
       path: null,
       groups: [{ id: NO_WORKSPACE_ID, label: noWorkspaceLabel, path: null, sessions: noWorkspace }],
       sessionCount: noWorkspace.length
+    })
+  }
+
+  if (!options.preserveSessionOrder) {
+    for (const parent of result) {
+      parent.groups.sort((a, b) => latestActivity(b.sessions) - latestActivity(a.sessions))
+    }
+
+    result.sort((a, b) => {
+      const aTime = a.groups.reduce((latest, group) => Math.max(latest, latestActivity(group.sessions)), 0)
+      const bTime = b.groups.reduce((latest, group) => Math.max(latest, latestActivity(group.sessions)), 0)
+
+      return bTime - aTime
     })
   }
 
