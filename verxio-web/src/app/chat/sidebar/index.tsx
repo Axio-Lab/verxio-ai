@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/sidebar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tip } from '@/components/ui/tooltip'
-import { searchSessions, type SessionInfo, type SessionSearchResult } from '@/hermes'
+import { listSessions, searchSessions, type SessionInfo, type SessionSearchResult } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { profileColor } from '@/lib/profile-color'
 import { sessionMatchesSearch } from '@/lib/session-search'
@@ -367,14 +367,81 @@ export function ChatSidebar({
   }, [trimmedQuery, sortedSessions, serverMatches, sessionByAnyId])
 
   const projectSessionIds = useMemo(() => projectSessionIdSet(sidebarProjects), [sidebarProjects])
+  const [folderSessions, setFolderSessions] = useState<SessionInfo[]>([])
+  const missingFolderIds = useMemo(() => {
+    const missing: string[] = []
+
+    for (const id of projectSessionIds) {
+      if (!sessionByAnyId.has(id)) {
+        missing.push(id)
+      }
+    }
+
+    missing.sort()
+
+    return missing
+  }, [projectSessionIds, sessionByAnyId])
+  const missingFolderKey = missingFolderIds.join('\n')
+
+  useEffect(() => {
+    if (!missingFolderKey) {
+      setFolderSessions([])
+
+      return
+    }
+
+    let cancelled = false
+    const wanted = new Set(missingFolderKey.split('\n'))
+
+    void listSessions(500, 1, 'exclude', 'recent')
+      .then(result => {
+        if (cancelled) {
+          return
+        }
+
+        setFolderSessions(
+          result.sessions.filter(
+            session =>
+              wanted.has(session.id) || (session._lineage_root_id != null && wanted.has(session._lineage_root_id))
+          )
+        )
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFolderSessions([])
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [missingFolderKey])
+
+  const projectSessionById = useMemo(() => {
+    if (folderSessions.length === 0) {
+      return sessionByAnyId
+    }
+
+    const map = new Map(sessionByAnyId)
+
+    for (const session of folderSessions) {
+      map.set(session.id, session)
+
+      if (session._lineage_root_id) {
+        map.set(session._lineage_root_id, session)
+      }
+    }
+
+    return map
+  }, [sessionByAnyId, folderSessions])
 
   const forgetProjectSession = useCallback(
     (sessionId: string) => {
-      const session = sessionByAnyId.get(sessionId)
+      const session = projectSessionById.get(sessionId)
 
       removeSessionsFromSidebarProjects(session ? [session.id, sessionPinId(session)] : [sessionId])
     },
-    [sessionByAnyId]
+    [projectSessionById]
   )
 
   const deleteSidebarSession = useCallback(
@@ -718,7 +785,7 @@ export function ChatSidebar({
             onResumeSession={onResumeSession}
             onTogglePin={toggleProjectPin}
             pinnedSessionIds={pinnedSessionIds}
-            sessionById={sessionByAnyId}
+            sessionById={projectSessionById}
             workingSessionIdSet={workingSessionIdSet}
           />
         )}
