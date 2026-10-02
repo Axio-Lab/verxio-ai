@@ -1334,8 +1334,47 @@ def _composio_app_label(slug: str) -> str:
     return slug.replace("_", " ").replace("-", " ").title()
 
 
+def _env_file_value(path: Path, name: str) -> str:
+    if not path.is_file():
+        return ""
+
+    prefix = f"{name}="
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ""
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("export "):
+            stripped = stripped[7:].strip()
+        if not stripped.startswith(prefix):
+            continue
+        value = stripped[len(prefix) :].strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        return value.strip()
+
+    return ""
+
+
 def _api_key() -> str:
-    return os.getenv("COMPOSIO_API_KEY", "").strip()
+    """Composio key for this API process.
+
+    Hosted workers receive it in the environment. A local sqlite API often
+    does not, while the desktop agent already stores the same key in its
+    Hermes home. Reading that file keeps Skills → Connections and the Tool
+    Router session working after a local API restart.
+    """
+    key = os.getenv("COMPOSIO_API_KEY", "").strip()
+    if key or os.getenv("PYTEST_CURRENT_TEST"):
+        return key
+    if os.getenv("VERXIO_DATABASE_MODE", "").strip().lower() != "sqlite":
+        return ""
+
+    from app.control_plane import desktop_hermes_home
+
+    return _env_file_value(desktop_hermes_home() / ".env", "COMPOSIO_API_KEY")
 
 
 def _api_base() -> str:

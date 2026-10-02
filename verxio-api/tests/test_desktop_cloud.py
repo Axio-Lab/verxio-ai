@@ -256,6 +256,17 @@ def test_default_cloud_plane_is_pool(monkeypatch):
     assert default_plane() == "pool"
 
 
+def test_local_api_reads_composio_key_from_desktop_hermes_env(monkeypatch, tmp_path):
+    from app import composio_catalog
+
+    monkeypatch.delenv("COMPOSIO_API_KEY", raising=False)
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setenv("VERXIO_DATABASE_MODE", "sqlite")
+    (tmp_path / ".env").write_text('COMPOSIO_API_KEY="desktop-test-key"\n', encoding="utf-8")
+    monkeypatch.setattr("app.control_plane.desktop_hermes_home", lambda: tmp_path)
+    assert composio_catalog._api_key() == "desktop-test-key"
+
+
 def test_composio_mcp_session_without_config(client, monkeypatch):
     monkeypatch.delenv("COMPOSIO_API_KEY", raising=False)
     headers = _auth(client, "composio@example.com")
