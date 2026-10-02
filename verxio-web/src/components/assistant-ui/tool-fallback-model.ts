@@ -6,7 +6,7 @@ import { extractToolErrorMessage, formatToolResultSummary } from '@/lib/tool-res
 const HERMES_CLI = /(^|[\s;&|`(])(?:[^\s'"|&;]*\/)?hermes(?=$|[\s])/gim
 
 export function displayVerxioCommand(command: string): string {
-  return command.replace(HERMES_CLI, '$1verxio')
+  return command.replaceAll('hermes_tools', 'verxio_tools').replace(HERMES_CLI, '$1verxio')
 }
 
 export function displayVerxioTerminalOutput(text: string): string {

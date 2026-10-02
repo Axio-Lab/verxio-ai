@@ -4,6 +4,7 @@ import { buildToolView, displayVerxioCommand, displayVerxioTerminalOutput } from
 
 describe('displayVerxioCommand', () => {
   it('shows the desktop CLI as Verxio', () => {
+    expect(displayVerxioCommand('from hermes_tools import terminal')).toBe('from verxio_tools import terminal')
     expect(displayVerxioCommand('hermes tools list')).toBe('verxio tools list')
     expect(displayVerxioCommand('hermes mcp list')).toBe('verxio mcp list')
     expect(displayVerxioCommand('hermes status --all')).toBe('verxio status --all')
