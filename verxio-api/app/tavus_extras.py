@@ -17,14 +17,19 @@ from app.tavus_profile import profile_row
 router = APIRouter()
 
 
-def create_video(user_id: str, script: str) -> dict[str, Any]:
-    profile = profile_row(user_id)
-    if not profile or not profile.get("face_id"):
-        raise HTTPException(status_code=400, detail="A trained or stock face is required before recording a video.")
+def create_video(user_id: str, script: str, face_id: str = "") -> dict[str, Any]:
+    profile = profile_row(user_id) or {}
+    replica_id = face_id.strip() or str(profile.get("face_id") or "")
+    if not replica_id:
+        raise HTTPException(status_code=400, detail="Choose a face before recording a video.")
     text = script.strip()
     if not text:
         raise HTTPException(status_code=400, detail="The video needs a script.")
-    body: dict[str, Any] = {"face_id": profile["face_id"], "script": text[:4000], "video_name": "Verxio message"}
+    body: dict[str, Any] = {
+        "replica_id": replica_id,
+        "script": text[:4000],
+        "video_name": "Verxio message",
+    }
     base = public_api_base()
     if base.startswith("https://"):
         body["callback_url"] = f"{base}/api/tavus/webhooks/videos"
@@ -107,7 +112,8 @@ async def video_route(request: Request) -> dict[str, Any]:
     user = await arequire_user_or_device(request)
     payload = await request.json()
     script = str((payload or {}).get("script") or "") if isinstance(payload, dict) else ""
-    return create_video(str(user["id"]), script)
+    face_id = str((payload or {}).get("faceId") or "") if isinstance(payload, dict) else ""
+    return create_video(str(user["id"]), script, face_id)
 
 
 @router.put("/api/tavus/pronunciation")

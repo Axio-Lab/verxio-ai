@@ -5,6 +5,7 @@ import hmac
 import json
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from app import db, emailer
@@ -48,8 +49,16 @@ def _fake_tavus(calls: list[tuple[str, str]]):
         assert "tavus-tool-secret" not in blob or path == "/v2/tools"
         if path == "/v2/tools":
             return {"tool_id": "tool_1"}
+        if path.startswith("/v2/guardrails") and method == "GET":
+            return {
+                "data": [
+                    {"uuid": "g_no_secrets", "guardrail_name": "no_secrets"},
+                    {"uuid": "g_identity", "guardrail_name": "identity"},
+                    {"uuid": "g_rules", "guardrail_name": "rules"},
+                ]
+            }
         if path == "/v2/guardrails":
-            return {"guardrail_id": "guard_1"}
+            return {"uuid": "guard_1"}
         if path.startswith("/v2/faces") and method == "GET":
             return {"data": [{"face_id": "face_1", "face_name": "Anna", "face_type": "system"}]}
         if path.startswith("/v2/voices") and method == "GET":
@@ -57,6 +66,7 @@ def _fake_tavus(calls: list[tuple[str, str]]):
         if path == "/v2/pals" and method == "POST":
             assert "verxio_start_task" in blob
             assert "hermes_tools" not in blob
+            assert json_body["guardrail_ids"] == ["g_no_secrets", "g_identity", "g_rules"]
             return {"pal_id": "pal_user"}
         if path == "/v2/memory-stores" and method == "POST":
             return {"memory_store_id": "store_1"}
@@ -90,6 +100,46 @@ def test_profile_creates_then_patches_the_same_pal(client, monkeypatch):
     assert second.json()["palId"] == "pal_user"
     assert sum(1 for method, path in calls if method == "POST" and path == "/v2/pals") == 1
     assert any(method == "PATCH" and path == "/v2/pals/pal_user" for method, path in calls)
+
+
+def test_profile_reuses_a_tool_that_already_exists(client, monkeypatch):
+    headers, _user_id = _headers(client)
+    calls: list[tuple[str, str]] = []
+
+    def request(method: str, path: str, *, json_body=None, timeout: float = 30):
+        calls.append((method, path))
+        if path == "/v2/tools" and method == "POST":
+            raise HTTPException(status_code=502, detail="Bad Request. A tool with this name already exists")
+        if path == "/v2/tools" and method == "GET":
+            return {"data": [{"tool_id": "tool_existing", "name": "verxio_start_task"}]}
+        if path.startswith("/v2/guardrails") and method == "GET":
+            return {
+                "data": [
+                    {"uuid": "g_no_secrets", "guardrail_name": "no_secrets"},
+                    {"uuid": "g_identity", "guardrail_name": "identity"},
+                    {"uuid": "g_rules", "guardrail_name": "rules"},
+                ]
+            }
+        if path.startswith("/v2/faces") and method == "GET":
+            return {"data": [{"face_id": "face_1", "face_name": "Anna", "face_type": "system"}]}
+        if path.startswith("/v2/voices") and method == "GET":
+            return {"data": [{"voice_id": "voice_1", "voice_name": "Anna", "voice_type": "system"}]}
+        if path == "/v2/pals" and method == "POST":
+            assert json_body["tool_ids"] == ["tool_existing"]
+            assert json_body["guardrail_ids"] == ["g_no_secrets", "g_identity", "g_rules"]
+            return {"pal_id": "pal_user"}
+        if path == "/v2/memory-stores" and method == "POST":
+            return {"memory_store_id": "store_1"}
+        if path.endswith("/pinned") and method == "POST":
+            return {"pinned_memory_id": "pin_1"}
+        return {}
+
+    monkeypatch.setattr("app.tavus_profile.request", request)
+    monkeypatch.setattr("app.tavus_knowledge.tavus_request", request)
+    saved = client.put("/api/tavus/profile", headers=headers, json={"displayName": "Ada"})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["taskToolReady"] is True
+    assert ("GET", "/v2/tools") in calls
 
 
 def test_task_signature_and_duplicate_tool_call(client):

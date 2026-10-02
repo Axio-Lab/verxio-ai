@@ -902,8 +902,11 @@ export function publishTavusShare(input: { password?: string; requireAuth?: bool
   return verxioFetch('/api/tavus/share', { body: JSON.stringify(input), method: 'POST' })
 }
 
-export function createTavusVideo(script: string): Promise<{ hostedUrl: string; status: string; videoId: string }> {
-  return verxioFetch('/api/tavus/videos', { body: JSON.stringify({ script }), method: 'POST' })
+export function createTavusVideo(
+  script: string,
+  faceId: string
+): Promise<{ hostedUrl: string; status: string; videoId: string }> {
+  return verxioFetch('/api/tavus/videos', { body: JSON.stringify({ faceId, script }), method: 'POST' })
 }
 
 export function saveTavusPronunciation(

@@ -5,6 +5,7 @@ import { sessionRoute } from '@/app/routes'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { syncDesktopComposio } from '@/lib/desktop-composio'
+import { ExternalLink } from '@/lib/external-link'
 import { Sparkles } from '@/lib/icons'
 import { cn } from '@/lib/utils'
 import {
@@ -94,6 +95,8 @@ export function PersonalitySettings() {
   const [pronunciation, setPronunciation] = useState('VERK-see-oh')
   const [consent, setConsent] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [videoMessage, setVideoMessage] = useState('')
+  const [videoUrl, setVideoUrl] = useState('')
 
   useEffect(() => {
     void (async () => {
@@ -159,6 +162,41 @@ export function PersonalitySettings() {
     } else {
       const trained = await trainTavusVoice({ audioUrl: uploaded.url, consent: true, name: profile.displayName })
       notify({ kind: 'info', message: `Voice training ${trained.status}` })
+    }
+  }
+
+  const recordVideo = async () => {
+    if (!profile.faceId) {
+      notify({ kind: 'error', message: 'Choose a face before recording a video.' })
+
+      return
+    }
+
+    const script =
+      profile.spokenPrompt.trim() || (profile.displayName.trim() ? `Hi, I'm ${profile.displayName.trim()}.` : '')
+
+    if (!script) {
+      notify({ kind: 'error', message: 'Add a name or how they talk before recording a video.' })
+
+      return
+    }
+
+    setBusy(true)
+
+    try {
+      const video = await createTavusVideo(script, profile.faceId)
+
+      const message = video.hostedUrl
+        ? `Video ${video.status}.`
+        : `Video ${video.status || 'started'}. It will be ready in a few minutes.`
+
+      setVideoUrl(video.hostedUrl || '')
+      setVideoMessage(message)
+      notify({ kind: 'success', message: video.hostedUrl ? `${message} Open the link below.` : message })
+    } catch (error) {
+      notifyError(error, 'Could not record a video')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -396,16 +434,14 @@ export function PersonalitySettings() {
             )
           })}
         </div>
-        <Button
-          onClick={() =>
-            void createTavusVideo(profile.spokenPrompt || profile.displayName).then(video =>
-              notify({ kind: 'info', message: video.status })
-            )
-          }
-          variant="outline"
-        >
+        <Button disabled={busy} onClick={() => void recordVideo()} variant="outline">
           Record a video message
         </Button>
+        {videoMessage ? (
+          <p className="text-xs">
+            {videoMessage} {videoUrl ? <ExternalLink href={videoUrl}>Open video</ExternalLink> : null}
+          </p>
+        ) : null}
         <Button
           onClick={() =>
             void deleteTavusProfile().then(() => {
@@ -439,7 +475,7 @@ function Choice(props: {
           <SelectValue />
         </SelectTrigger>
         <SelectContent className="w-(--radix-select-trigger-width)">
-          <SelectItem value={EMPTY_SELECT_VALUE}>Default</SelectItem>
+          <SelectItem value={EMPTY_SELECT_VALUE}>None</SelectItem>
           {props.options.map(option => (
             <SelectItem key={option.id} value={option.id}>
               {option.name}

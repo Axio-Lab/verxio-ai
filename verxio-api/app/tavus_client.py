@@ -65,7 +65,7 @@ def request(method: str, path: str, *, json_body: Any = None, timeout: float = 3
             raise HTTPException(status_code=502, detail="Tavus rejected the API key.")
         if response.status_code == 429 or "maximum concurrent" in lowered:
             raise HTTPException(status_code=429, detail="Calls are busy, try again in a minute.")
-        raise TavusError(response.status_code, message)
+        raise HTTPException(status_code=502, detail=message[:500] or "Tavus request failed.")
     return payload
 
 
