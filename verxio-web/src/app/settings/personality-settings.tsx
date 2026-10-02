@@ -234,7 +234,7 @@ export function PersonalitySettings() {
     <SettingsContent>
       <SectionHeading icon={Sparkles} title="Personality" />
       <p className="mb-3 text-xs text-(--ui-text-tertiary)">
-        This is how your agent sounds in chat and on a call. Hermes still does the work.
+        This is how your agent sounds in chat and on a call. Verxio still does the work.
       </p>
       <div className="flex max-w-xl flex-col gap-3">
         <Field
