@@ -59,6 +59,7 @@ declare global {
         agentPrompt?: string
         apiKey?: string
         apiUrl?: string
+        clearMcp?: boolean
         enabled?: boolean
         mcpUrl?: string
         prompt?: string

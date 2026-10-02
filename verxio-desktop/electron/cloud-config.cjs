@@ -112,7 +112,7 @@ function spliceComposioPrompt(current, block) {
   return `${existing.trimEnd()}\n\n${managed}`
 }
 
-function mergeComposioMcp(config, { enabled, mcpUrl, prompt }) {
+function mergeComposioMcp(config, { clearMcp, enabled, mcpUrl, prompt }) {
   const next = mergeObject(config, {})
   const active = enabled !== false && Boolean(mcpUrl)
 
@@ -127,8 +127,11 @@ function mergeComposioMcp(config, { enabled, mcpUrl, prompt }) {
         supports_parallel_tool_calls: false
       }
     })
-  } else if (next.mcp_servers && next.mcp_servers.composio) {
+  } else if (clearMcp && next.mcp_servers && next.mcp_servers.composio) {
     delete next.mcp_servers.composio
+    if (!Object.keys(next.mcp_servers).length) {
+      delete next.mcp_servers
+    }
   }
 
   if (prompt) {
@@ -262,7 +265,7 @@ if enabled:
         "supports_parallel_tool_calls": False,
     }
     config["mcp_servers"] = servers
-else:
+elif payload.get("clearMcp"):
     servers.pop("composio", None)
     if servers:
         config["mcp_servers"] = servers
@@ -316,6 +319,7 @@ function applyComposioBridge(hermesHome, payload, python) {
       agentPrompt: payload.agentPrompt || '',
       apiKey: payload.apiKey || '',
       apiUrl: payload.apiUrl || '',
+      clearMcp: Boolean(payload.clearMcp),
       enabled: Boolean(payload.enabled),
       mcpUrl: payload.mcpUrl || '',
       prompt: payload.prompt || '',

@@ -40,6 +40,19 @@ test('mergeComposioMcp splices the managed prompt and leaves the model alone', (
   assert.equal(again.agent.system_prompt.match(/VERXIO_COMPOSIO_CONTEXT_START/g).length, 1)
 })
 
+test('mergeComposioMcp keeps an existing server when the refresh has no URL', () => {
+  const current = {
+    mcp_servers: {
+      composio: { enabled: true, url: 'https://mcp.example/existing' }
+    }
+  }
+  const kept = mergeComposioMcp(current, { enabled: false, mcpUrl: '', clearMcp: false })
+  assert.equal(kept.mcp_servers.composio.url, 'https://mcp.example/existing')
+
+  const cleared = mergeComposioMcp(current, { enabled: false, mcpUrl: '', clearMcp: true })
+  assert.equal(cleared.mcp_servers, undefined)
+})
+
 test('applyComposioBridge writes the session without resetting the model', () => {
   const python = path.resolve(__dirname, '../../hermes-agent/.venv/bin/python')
 
@@ -96,6 +109,12 @@ test('applyComposioBridge writes the session without resetting the model', () =>
     const rewritten = fs.readFileSync(path.join(home, 'config.yaml'), 'utf8')
     assert.equal(rewritten.match(/VERXIO_COMPOSIO_CONTEXT_START/g).length, 1)
     assert.match(rewritten, /mcp\.example\/next/)
+    applyComposioBridge(home, { enabled: false, mcpUrl: '', clearMcp: false, prompt: block }, python)
+    const preserved = fs.readFileSync(path.join(home, 'config.yaml'), 'utf8')
+    assert.match(preserved, /mcp\.example\/next/)
+    applyComposioBridge(home, { enabled: false, mcpUrl: '', clearMcp: true, prompt: block }, python)
+    const removed = fs.readFileSync(path.join(home, 'config.yaml'), 'utf8')
+    assert.doesNotMatch(removed, /mcp_servers/)
   } finally {
     fs.rmSync(home, { recursive: true, force: true })
   }

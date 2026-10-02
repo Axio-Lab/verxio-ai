@@ -21,6 +21,7 @@ export async function syncDesktopComposio(): Promise<void> {
     agentPrompt: session.agentPrompt || '',
     apiKey: session.mcpApiKey || '',
     apiUrl: verxioApiBaseUrl(),
+    clearMcp: Boolean(session.configured) && !session.enabled && (session.connectedApps?.length ?? 0) === 0,
     enabled: session.enabled,
     mcpUrl: session.mcpUrl || '',
     prompt: session.prompt || '',
