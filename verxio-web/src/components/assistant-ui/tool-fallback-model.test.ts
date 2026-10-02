@@ -5,6 +5,9 @@ import { buildToolView, displayVerxioCommand, displayVerxioTerminalOutput } from
 describe('displayVerxioCommand', () => {
   it('shows the desktop CLI as Verxio', () => {
     expect(displayVerxioCommand('from hermes_tools import terminal')).toBe('from verxio_tools import terminal')
+    expect(displayVerxioCommand('/var/folders/T/hermes_sandbox_iqp78t4h/script.py')).toBe(
+      '/var/folders/T/verxio_sandbox_iqp78t4h/script.py'
+    )
     expect(displayVerxioCommand('hermes tools list')).toBe('verxio tools list')
     expect(displayVerxioCommand('hermes mcp list')).toBe('verxio mcp list')
     expect(displayVerxioCommand('hermes status --all')).toBe('verxio status --all')
@@ -23,6 +26,9 @@ describe('displayVerxioTerminalOutput', () => {
   it('renames the status banner and the echoed command', () => {
     expect(displayVerxioTerminalOutput('Hermes Agent Status')).toBe('Verxio Agent Status')
     expect(displayVerxioTerminalOutput("hermes chat -q 'health check'")).toBe("verxio chat -q 'health check'")
+    expect(displayVerxioTerminalOutput('File "/tmp/hermes_sandbox_iqp78t4h/script.py"')).toBe(
+      'File "/tmp/verxio_sandbox_iqp78t4h/script.py"'
+    )
   })
 })
 
