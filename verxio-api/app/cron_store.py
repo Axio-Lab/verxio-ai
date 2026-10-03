@@ -224,17 +224,26 @@ def upsert_cron_jobs(
 
 
 # ---------------------------------------------------------------------- fire
-def enqueue_due_cron_jobs(*, limit: int = 50) -> list[str]:
+def enqueue_due_cron_jobs(*, limit: int = 50, only_id: str | None = None) -> list[str]:
     now = datetime.now(timezone.utc)
-    rows = db.fetch_all(
-        """
-        SELECT * FROM tenant_cron_jobs
-        WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ?
-        ORDER BY next_run_at ASC
-        LIMIT ?
-        """,
-        (now.isoformat(), limit),
-    )
+    if only_id:
+        rows = db.fetch_all(
+            """
+            SELECT * FROM tenant_cron_jobs
+            WHERE id = ? AND enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ?
+            """,
+            (only_id, now.isoformat()),
+        )
+    else:
+        rows = db.fetch_all(
+            """
+            SELECT * FROM tenant_cron_jobs
+            WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ?
+            ORDER BY next_run_at ASC
+            LIMIT ?
+            """,
+            (now.isoformat(), limit),
+        )
     fired: list[str] = []
     for row in rows:
         try:
@@ -405,3 +414,206 @@ def list_cron_jobs(workspace_id: str, agent_id: str) -> list[dict[str, Any]]:
             pass
         out.append(item)
     return out
+
+
+class CronUiError(Exception):
+    def __init__(self, status: int, detail: str) -> None:
+        super().__init__(detail)
+        self.status = status
+        self.detail = detail
+
+
+def _metadata(row: dict[str, Any]) -> dict[str, Any]:
+    try:
+        meta = json.loads(str(row.get("metadata_json") or "{}"))
+    except json.JSONDecodeError:
+        return {}
+    return meta if isinstance(meta, dict) else {}
+
+
+def _schedule_display(schedule: dict[str, Any]) -> str:
+    kind = str(schedule.get("kind") or "")
+    if kind == "interval":
+        return f"every {schedule.get('minutes')}m"
+    if kind == "cron":
+        return str(schedule.get("expr") or "")
+    if kind == "once":
+        return str(schedule.get("run_at") or "")
+    return ""
+
+
+def public_cron_job(row: dict[str, Any]) -> dict[str, Any]:
+    """Shape the desktop Cron screen reads. The scheduler still owns firing."""
+    meta = _metadata(row)
+    try:
+        schedule = parse_schedule(row.get("schedule"))
+    except (ValueError, TypeError, json.JSONDecodeError):
+        schedule = {"kind": "cron", "expr": str(row.get("schedule") or "")}
+    display = str(meta.get("schedule_display") or "") or _schedule_display(schedule)
+    schedule = {**schedule, "display": display}
+    enabled = bool(row.get("enabled"))
+    state = str(meta.get("state") or "").strip()
+    if not enabled:
+        state = "paused"
+    elif not state or state == "paused":
+        state = "scheduled"
+    return {
+        "id": str(row.get("id") or ""),
+        "name": row.get("name"),
+        "prompt": row.get("prompt") or meta.get("prompt") or "",
+        "script": meta.get("script"),
+        "enabled": enabled,
+        "state": state,
+        "schedule": schedule,
+        "schedule_display": display,
+        "next_run_at": row.get("next_run_at"),
+        "last_run_at": row.get("last_run_at"),
+        "last_error": row.get("last_error"),
+        "deliver": meta.get("deliver"),
+    }
+
+
+def _job_row(workspace_id: str, agent_id: str, job_id: str) -> dict[str, Any] | None:
+    return db.fetch_one(
+        """
+        SELECT * FROM tenant_cron_jobs
+        WHERE workspace_id = ? AND agent_id = ? AND (id = ? OR name = ?)
+        """,
+        (workspace_id, agent_id, job_id, job_id),
+    )
+
+
+def _require_job(workspace_id: str, agent_id: str, job_id: str) -> dict[str, Any]:
+    row = _job_row(workspace_id, agent_id, job_id)
+    if not row:
+        raise CronUiError(404, "Job not found")
+    return row
+
+
+def _save_job_meta(row: dict[str, Any], meta: dict[str, Any], **columns: Any) -> dict[str, Any]:
+    assignments = ["metadata_json = ?", "updated_at = ?"]
+    values: list[Any] = [json.dumps(meta, separators=(",", ":"), default=str), now_iso()]
+    for key, value in columns.items():
+        assignments.append(f"{key} = ?")
+        values.append(value)
+    values.append(row["id"])
+    db.execute(
+        f"UPDATE tenant_cron_jobs SET {', '.join(assignments)} WHERE id = ?",
+        tuple(values),
+    )
+    saved = db.fetch_one("SELECT * FROM tenant_cron_jobs WHERE id = ?", (row["id"],))
+    return public_cron_job(saved or row)
+
+
+def dispatch_cron_dashboard(
+    *,
+    tenant_id: str,
+    workspace_id: str,
+    agent_id: str,
+    method: str,
+    path: str,
+    body: dict[str, Any] | None = None,
+) -> Any:
+    """Cron screen API. Reads and writes ``tenant_cron_jobs``, not a live dashboard."""
+    rest = path.strip("/")
+    prefix = "api/cron/jobs"
+    method_u = method.upper()
+    payload = body if isinstance(body, dict) else {}
+
+    if rest == prefix:
+        if method_u == "GET":
+            return [public_cron_job(row) for row in db.fetch_all(
+                """
+                SELECT * FROM tenant_cron_jobs
+                WHERE workspace_id = ? AND agent_id = ?
+                ORDER BY name ASC
+                """,
+                (workspace_id, agent_id),
+            )]
+        if method_u == "POST":
+            name = str(payload.get("name") or "").strip() or str(payload.get("prompt") or "cron")[:48].strip() or "cron"
+            job = {
+                "name": name,
+                "prompt": str(payload.get("prompt") or ""),
+                "schedule": payload.get("schedule"),
+                "deliver": payload.get("deliver") or "local",
+                "enabled": True,
+                "state": "scheduled",
+            }
+            try:
+                parse_schedule(job["schedule"])
+            except (ValueError, TypeError, json.JSONDecodeError) as exc:
+                raise CronUiError(400, str(exc)) from exc
+            upsert_cron_jobs(tenant_id=tenant_id, workspace_id=workspace_id, agent_id=agent_id, jobs=[job])
+            created = _require_job(workspace_id, agent_id, name)
+            return public_cron_job(created)
+        raise CronUiError(405, "Method not allowed")
+
+    if not rest.startswith(prefix + "/"):
+        raise CronUiError(404, "Not found")
+
+    tail = rest[len(prefix) + 1 :]
+    parts = [part for part in tail.split("/") if part]
+    if not parts:
+        raise CronUiError(404, "Not found")
+    job_id = parts[0]
+    action = parts[1] if len(parts) > 1 else ""
+    row = _require_job(workspace_id, agent_id, job_id)
+
+    if action == "runs" and method_u == "GET":
+        return {"runs": []}
+    if action == "pause" and method_u == "POST":
+        meta = _metadata(row)
+        meta["state"] = "paused"
+        meta["enabled"] = False
+        return _save_job_meta(row, meta, enabled=0)
+    if action == "resume" and method_u == "POST":
+        meta = _metadata(row)
+        meta["state"] = "scheduled"
+        meta["enabled"] = True
+        return _save_job_meta(row, meta, enabled=1)
+    if action == "trigger" and method_u == "POST":
+        past = (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat()
+        db.execute(
+            "UPDATE tenant_cron_jobs SET enabled = 1, next_run_at = ?, updated_at = ? WHERE id = ?",
+            (past, now_iso(), row["id"]),
+        )
+        enqueue_due_cron_jobs(only_id=str(row["id"]))
+        refreshed = _require_job(workspace_id, agent_id, str(row["id"]))
+        return public_cron_job(refreshed)
+    if action:
+        raise CronUiError(404, "Not found")
+
+    if method_u == "GET":
+        return public_cron_job(row)
+    if method_u == "DELETE":
+        db.execute("DELETE FROM tenant_cron_jobs WHERE id = ?", (row["id"],))
+        return {"ok": True}
+    if method_u in {"PUT", "PATCH"}:
+        updates = payload.get("updates") if isinstance(payload.get("updates"), dict) else payload
+        meta = _metadata(row)
+        columns: dict[str, Any] = {}
+        if "prompt" in updates:
+            columns["prompt"] = str(updates.get("prompt") or "")
+            meta["prompt"] = columns["prompt"]
+        if "name" in updates and str(updates.get("name") or "").strip():
+            columns["name"] = str(updates["name"]).strip()
+            meta["name"] = columns["name"]
+        if "deliver" in updates:
+            meta["deliver"] = updates.get("deliver")
+        if "schedule" in updates:
+            try:
+                schedule = parse_schedule(updates.get("schedule"))
+            except (ValueError, TypeError, json.JSONDecodeError) as exc:
+                raise CronUiError(400, str(exc)) from exc
+            columns["schedule"] = schedule_to_text(schedule)
+            columns["next_run_at"] = next_run_at(schedule)
+            meta["schedule"] = schedule
+            meta["schedule_display"] = _schedule_display(schedule)
+        if "enabled" in updates:
+            enabled = bool(updates.get("enabled"))
+            columns["enabled"] = 1 if enabled else 0
+            meta["enabled"] = enabled
+            meta["state"] = "scheduled" if enabled else "paused"
+        return _save_job_meta(row, meta, **columns)
+    raise CronUiError(405, "Method not allowed")

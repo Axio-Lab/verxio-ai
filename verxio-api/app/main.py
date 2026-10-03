@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import json
 import logging
 import mimetypes
 import os
@@ -17,7 +18,7 @@ from typing import Any
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -1544,6 +1545,35 @@ logger = logging.getLogger(__name__)
 )
 async def proxy_runtime_dashboard(path: str, request: Request) -> Response:
     user = await arequire_user(request)
+    # Cron is stored on the API and fired by the scheduler, including while the
+    # laptop and the hosted dashboard are off. Do not 503 the screen on a dead
+    # runtime URL.
+    if request.method != "OPTIONS" and path.strip("/").startswith("api/cron/jobs"):
+        from app.cron_store import CronUiError, dispatch_cron_dashboard
+
+        runtime = await aget_runtime_for_user(user)
+        payload = None
+        if request.method in {"POST", "PUT", "PATCH"}:
+            raw = await request.body()
+            if raw:
+                try:
+                    parsed = json.loads(raw)
+                except json.JSONDecodeError as exc:
+                    raise HTTPException(status_code=400, detail="Invalid JSON") from exc
+                payload = parsed if isinstance(parsed, dict) else {}
+        try:
+            result = dispatch_cron_dashboard(
+                tenant_id=runtime.tenant_id,
+                workspace_id=runtime.workspace_id,
+                agent_id=runtime.agent_id,
+                method=request.method,
+                path=path,
+                body=payload,
+            )
+        except CronUiError as exc:
+            raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+        return JSONResponse(content=result)
+
     lightweight = _dashboard_request_is_read(request.method) and _dashboard_path_is_lightweight(path)
     medium_read = _dashboard_request_is_read(request.method) and _dashboard_path_is_medium_read(path)
     model_options = medium_read  # alias used by older start-lock / sync branches
