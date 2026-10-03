@@ -1,4 +1,4 @@
-"""HTTP client for the Tavus API. The key never leaves this process."""
+"""HTTP client for the Tavus API. Each call uses the signed-in user's key."""
 
 from __future__ import annotations
 
@@ -19,7 +19,9 @@ class TavusError(Exception):
 
 
 def api_key() -> str:
-    return os.getenv("TAVUS_API_KEY", "").strip()
+    from app.tavus_keys import current_api_key
+
+    return current_api_key()
 
 
 def tool_secret() -> str:
@@ -35,9 +37,11 @@ def configured() -> bool:
 
 
 def request(method: str, path: str, *, json_body: Any = None, timeout: float = 30) -> Any:
+    from app.tavus_keys import KEY_REQUIRED
+
     key = api_key()
     if not key:
-        raise HTTPException(status_code=503, detail="Tavus is not configured.")
+        raise HTTPException(status_code=503, detail=KEY_REQUIRED)
     url = path if path.startswith("http") else f"{TAVUS_BASE}{path}"
     try:
         response = httpx.request(

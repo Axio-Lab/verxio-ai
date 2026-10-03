@@ -41,6 +41,15 @@ def _headers(client: TestClient) -> tuple[dict[str, str], str]:
     return {"Cookie": f"{SESSION_COOKIE}={token}"}, str(payload["user"]["id"])
 
 
+def _grant_key(client: TestClient, headers: dict[str, str], api_key: str = "user-tavus-key") -> None:
+    saved = client.put("/api/tavus/credential", headers=headers, json={"apiKey": api_key})
+    assert saved.status_code == 200, saved.text
+    assert api_key not in saved.text
+
+
+_PROFILE = {"displayName": "Ada", "faceId": "face_1", "voiceId": "voice_1"}
+
+
 def _fake_tavus(calls: list[tuple[str, str]]):
     def request(method: str, path: str, *, json_body=None, timeout: float = 30):
         calls.append((method, path))
@@ -84,10 +93,11 @@ def test_profile_creates_then_patches_the_same_pal(client, monkeypatch):
     calls: list[tuple[str, str]] = []
     monkeypatch.setattr("app.tavus_profile.request", _fake_tavus(calls))
     monkeypatch.setattr("app.tavus_knowledge.tavus_request", _fake_tavus(calls))
+    _grant_key(client, headers)
     first = client.put(
         "/api/tavus/profile",
         headers=headers,
-        json={"displayName": "Ada", "tone": "Brief and warm.", "neverDo": "Invent numbers."},
+        json={**_PROFILE, "tone": "Brief and warm.", "neverDo": "Invent numbers."},
     )
     assert first.status_code == 200, first.text
     body = first.json()
@@ -136,7 +146,8 @@ def test_profile_reuses_a_tool_that_already_exists(client, monkeypatch):
 
     monkeypatch.setattr("app.tavus_profile.request", request)
     monkeypatch.setattr("app.tavus_knowledge.tavus_request", request)
-    saved = client.put("/api/tavus/profile", headers=headers, json={"displayName": "Ada"})
+    _grant_key(client, headers)
+    saved = client.put("/api/tavus/profile", headers=headers, json=_PROFILE)
     assert saved.status_code == 200, saved.text
     assert saved.json()["taskToolReady"] is True
     assert ("GET", "/v2/tools") in calls
@@ -191,7 +202,12 @@ def test_call_stops_when_the_minute_budget_is_spent(client, monkeypatch):
     calls: list[tuple[str, str]] = []
     monkeypatch.setattr("app.tavus_profile.request", _fake_tavus(calls))
     monkeypatch.setattr("app.tavus_knowledge.tavus_request", _fake_tavus(calls))
-    saved = client.put("/api/tavus/profile", headers=headers, json={"displayName": "Ada", "monthlyMinuteBudget": 1})
+    _grant_key(client, headers)
+    saved = client.put(
+        "/api/tavus/profile",
+        headers=headers,
+        json={**_PROFILE, "monthlyMinuteBudget": 1},
+    )
     assert saved.status_code == 200, saved.text
     db.execute(
         "UPDATE tavus_profiles SET minutes_used = 1, minutes_period = ? WHERE user_id = ?",
@@ -240,3 +256,71 @@ def test_cleanup_deletes_every_tavus_resource(client, monkeypatch):
     assert "/v2/memory-stores/store_1" in deleted
     assert "/v2/pronunciation-dictionaries/dict_1" in deleted
     assert db.fetch_one("SELECT user_id FROM tavus_profiles WHERE user_id = ?", (user_id,)) is None
+
+
+def test_profile_save_requires_a_user_key_and_a_chosen_face(client, monkeypatch):
+    headers, _user_id = _headers(client)
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr("app.tavus_profile.request", _fake_tavus(calls))
+    missing = client.put("/api/tavus/profile", headers=headers, json=_PROFILE)
+    assert missing.status_code == 400
+    assert "Tools & Keys" in missing.text
+    assert calls == []
+    _grant_key(client, headers)
+    voices = client.get("/api/tavus/voices", headers=headers)
+    assert voices.status_code == 200
+    no_face = client.put("/api/tavus/profile", headers=headers, json={"displayName": "Ada"})
+    assert no_face.status_code == 400
+    assert "voice and a face" in no_face.text
+    cleared = client.delete("/api/tavus/credential", headers=headers)
+    assert cleared.status_code == 200
+    assert cleared.json()["configured"] is False
+    blocked = client.post("/api/tavus/conversations", headers=headers, json={})
+    assert blocked.status_code == 400
+    assert "Tools & Keys" in blocked.text
+
+
+def test_a_new_key_does_not_reuse_a_personality_from_another_account(client, monkeypatch):
+    headers, user_id = _headers(client)
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr("app.tavus_profile.request", _fake_tavus(calls))
+    monkeypatch.setattr("app.tavus_knowledge.tavus_request", _fake_tavus(calls))
+    now = "2026-10-05T10:00:00+00:00"
+    db.execute(
+        """
+        INSERT INTO tavus_profiles (user_id, pal_id, display_name, created_at, updated_at)
+        VALUES (?, 'pal_shared', 'Ada', ?, ?)
+        """,
+        (user_id, now, now),
+    )
+    _grant_key(client, headers)
+    saved = client.put("/api/tavus/profile", headers=headers, json=_PROFILE)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["palId"] == "pal_user"
+    assert not any(path == "/v2/pals/pal_shared" for _method, path in calls)
+
+
+def test_request_uses_the_stored_user_key(client, monkeypatch):
+    headers, user_id = _headers(client)
+    _grant_key(client, headers, "user-tavus-key")
+    monkeypatch.setenv("TAVUS_API_KEY", "server-should-not-be-used")
+    seen: dict[str, str] = {}
+
+    class Response:
+        status_code = 200
+        content = b'{"ok": true}'
+
+        def json(self):
+            return {"ok": True}
+
+    def fake_request(method, url, headers=None, json=None, timeout=None):
+        seen["key"] = (headers or {})["x-api-key"]
+        return Response()
+
+    monkeypatch.setattr("app.tavus_client.httpx.request", fake_request)
+    from app.tavus_client import request
+    from app.tavus_keys import using_user
+
+    with using_user(user_id):
+        request("GET", "/v2/voices")
+    assert seen["key"] == "user-tavus-key"

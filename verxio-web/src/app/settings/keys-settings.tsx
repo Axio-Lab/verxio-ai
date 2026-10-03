@@ -4,6 +4,7 @@ import { PaginationControl } from '@/components/ui/pagination'
 import { useI18n } from '@/i18n'
 import { MEDIA_PROVIDER_TOOL_ENV_KEYS } from '@/lib/tool-credentials'
 import { CLOUD_TRANSCRIPTION_ENV_KEYS } from '@/lib/transcription-providers'
+import { TAVUS_API_KEY } from '@/lib/verxio-api'
 import type { EnvVarInfo } from '@/types/hermes'
 
 import { DEFAULT_LIST_PAGE_SIZE, usePaginatedList } from '../hooks/use-paginated-list'
@@ -20,6 +21,31 @@ export type { KeysView } from './nav-views'
 export { KEYS_VIEWS } from './nav-views'
 
 const TOOLS_EXTRA_ENV_KEYS = new Set<string>(MEDIA_PROVIDER_TOOL_ENV_KEYS)
+
+const TAVUS_KEY_INFO: EnvVarInfo = {
+  advanced: false,
+  category: 'tool',
+  custom: false,
+  description: 'Your Tavus API key. Personality, face, and voice are created in your Tavus account.',
+  is_password: true,
+  is_set: false,
+  redacted_value: null,
+  tools: [],
+  url: 'https://tavus.io'
+}
+
+function withTavusKey(entries: [string, EnvVarInfo][], vars: Record<string, EnvVarInfo>): [string, EnvVarInfo][] {
+  const current = vars[TAVUS_API_KEY]
+  const info: EnvVarInfo = current
+    ? { ...current, ...TAVUS_KEY_INFO, is_set: current.is_set, redacted_value: current.redacted_value }
+    : TAVUS_KEY_INFO
+  const withoutTavus = entries.filter(([key]) => key !== TAVUS_API_KEY)
+
+  withoutTavus.push([TAVUS_API_KEY, info])
+  withoutTavus.sort(([a], [b]) => a.localeCompare(b))
+
+  return withoutTavus
+}
 
 // Providers live on their own page; messaging-platform credentials live on the
 // dedicated Messaging page (and are hidden here via `channel_managed`). Tools
@@ -74,7 +100,9 @@ export function KeysSettings({ view }: KeysSettingsProps) {
         })
         .sort(([a], [b]) => a.localeCompare(b))
 
-      return entries.length === 0 ? [] : [{ category: v, entries }]
+      const listed = v === 'tools' ? withTavusKey(entries, vars) : entries
+
+      return listed.length === 0 ? [] : [{ category: v, entries: listed }]
     })
   }, [vars])
 

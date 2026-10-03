@@ -47,6 +47,7 @@ const EMPTY: TavusProfile = {
   language: 'en',
   magicCanvas: false,
   meetingAllowlist: [],
+  keyReady: false,
   minutesUsed: 0,
   monthlyMinuteBudget: 60,
   neverDo: '',
@@ -236,6 +237,12 @@ export function PersonalitySettings() {
       <p className="mb-3 text-xs text-(--ui-text-tertiary)">
         This is how your agent sounds in chat and on a call. Verxio still does the work.
       </p>
+      {!profile.keyReady && (
+        <p className="mb-3 text-xs text-(--ui-text-tertiary)">
+          Add your Tavus API key in Tools & Keys, under Tools, before saving a personality or starting a call. Voice and
+          face stay on None until you choose them.
+        </p>
+      )}
       <div className="flex max-w-xl flex-col gap-3">
         <Field
           label="Name"
@@ -294,10 +301,10 @@ export function PersonalitySettings() {
           Used this month: {profile.minutesUsed} of {profile.monthlyMinuteBudget}
         </p>
         <div className="flex gap-2">
-          <Button disabled={busy} onClick={() => void save()}>
+          <Button disabled={busy || !profile.keyReady} onClick={() => void save()}>
             {busy ? 'Saving…' : 'Save'}
           </Button>
-          <Button disabled={!profile.configured} onClick={() => openTavusCall()} variant="outline">
+          <Button disabled={!profile.keyReady || !profile.configured} onClick={() => openTavusCall()} variant="outline">
             Start call
           </Button>
         </div>
@@ -305,6 +312,7 @@ export function PersonalitySettings() {
           <Field label="Word" onChange={setWord} value={word} />
           <Field label="Say it like" onChange={setPronunciation} value={pronunciation} />
           <Button
+            disabled={!profile.keyReady}
             onClick={() =>
               void saveTavusPronunciation([{ pronunciation, word }]).then(() =>
                 notify({ kind: 'success', message: 'Pronunciation saved' })
@@ -324,6 +332,7 @@ export function PersonalitySettings() {
           <input
             accept="image/*,video/*"
             className="mt-1 block text-xs"
+            disabled={!profile.keyReady}
             onChange={event => {
               const file = event.target.files?.[0]
 
@@ -339,6 +348,7 @@ export function PersonalitySettings() {
           <input
             accept="audio/*,video/*"
             className="mt-1 block text-xs"
+            disabled={!profile.keyReady}
             onChange={event => {
               const file = event.target.files?.[0]
 
@@ -352,6 +362,7 @@ export function PersonalitySettings() {
         <div className="flex gap-2">
           <Field label="Pinned memory" onChange={setFact} value={fact} />
           <Button
+            disabled={!profile.keyReady}
             onClick={() =>
               void addTavusMemory(fact).then(next => {
                 setFacts(next.facts)
@@ -379,6 +390,7 @@ export function PersonalitySettings() {
         <div className="flex gap-2">
           <Field label="Document or site URL" onChange={setDocUrl} value={docUrl} />
           <Button
+            disabled={!profile.keyReady}
             onClick={() =>
               void createTavusDocument({ name: docUrl, url: docUrl }).then(next => setDocuments(next.documents))
             }
@@ -395,6 +407,7 @@ export function PersonalitySettings() {
         <div className="flex gap-2">
           <Field label="Meeting name" onChange={setUsername} value={username} />
           <Button
+            disabled={!profile.keyReady}
             onClick={() =>
               void saveTavusMeeting({ username }).then(saved => notify({ kind: 'success', message: saved.email }))
             }
@@ -404,6 +417,7 @@ export function PersonalitySettings() {
           </Button>
         </div>
         <Button
+          disabled={!profile.keyReady}
           onClick={() =>
             void publishTavusShare({ requireAuth: true }).then(share =>
               notify({ kind: 'success', message: share.url || 'Link ready' })
@@ -434,7 +448,7 @@ export function PersonalitySettings() {
             )
           })}
         </div>
-        <Button disabled={busy} onClick={() => void recordVideo()} variant="outline">
+        <Button disabled={busy || !profile.keyReady} onClick={() => void recordVideo()} variant="outline">
           Record a video message
         </Button>
         {videoMessage ? (
@@ -443,6 +457,7 @@ export function PersonalitySettings() {
           </p>
         ) : null}
         <Button
+          disabled={!profile.keyReady}
           onClick={() =>
             void deleteTavusProfile().then(() => {
               setProfile(EMPTY)

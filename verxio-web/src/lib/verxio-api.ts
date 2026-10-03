@@ -777,7 +777,21 @@ export interface TavusProfile {
   monthlyMinuteBudget: number
   minutesUsed: number
   taskToolReady: boolean
+  keyReady: boolean
   personalityPrompt: string
+}
+
+export const TAVUS_API_KEY = 'TAVUS_API_KEY'
+
+export function saveTavusKey(apiKey: string): Promise<{ configured: boolean }> {
+  return verxioFetch<{ configured: boolean }>('/api/tavus/credential', {
+    body: JSON.stringify({ apiKey }),
+    method: 'PUT'
+  })
+}
+
+export function deleteTavusKey(): Promise<{ configured: boolean }> {
+  return verxioFetch<{ configured: boolean }>('/api/tavus/credential', { method: 'DELETE' })
 }
 
 export interface TavusVoice {

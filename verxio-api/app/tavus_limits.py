@@ -11,6 +11,7 @@ from app import db
 from app.control_plane import now_iso
 from app.device_tokens import arequire_user_or_device
 from app.tavus_client import request as tavus_request
+from app.tavus_keys import using_user
 from app.tavus_profile import profile_row
 
 router = APIRouter()
@@ -47,6 +48,11 @@ def add_minutes(user_id: str, minutes: int) -> None:
 
 
 def cleanup_user(user_id: str) -> None:
+    with using_user(user_id):
+        _cleanup_user(user_id)
+
+
+def _cleanup_user(user_id: str) -> None:
     profile = profile_row(user_id) or {}
     for key in ("pal_id", "share_pal_id"):
         pal_id = str(profile.get(key) or "")

@@ -13,6 +13,7 @@ from app import db
 from app.control_plane import now_iso
 from app.device_tokens import arequire_user_or_device
 from app.tavus_client import public_api_base, request as tavus_request
+from app.tavus_keys import KEY_REQUIRED, user_has_key
 from app.tavus_limits import remaining_seconds
 from app.tavus_profile import allow_test_mode, profile_row as _row
 
@@ -37,6 +38,8 @@ def open_task_titles(user_id: str) -> list[str]:
 
 def create_conversation(user: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     user_id = str(user["id"])
+    if not user_has_key(user_id):
+        raise HTTPException(status_code=400, detail=KEY_REQUIRED)
     profile = _row(user_id)
     if not profile or not profile.get("pal_id"):
         raise HTTPException(status_code=400, detail="Save a personality before starting a call.")

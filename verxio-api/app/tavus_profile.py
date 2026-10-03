@@ -1,4 +1,4 @@
-"""One Tavus PAL per Verxio user, plus the shared task tool and guardrails."""
+"""One Tavus PAL per Verxio user. The tool and guardrails live in that user's Tavus account."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from app import db
 from app.control_plane import now_iso
 from app.device_tokens import arequire_user_or_device
 from app.tavus_client import items, public_api_base, request, tool_secret
+from app.tavus_keys import KEY_REQUIRED, current_user_id, user_has_key
 
 router = APIRouter()
 
@@ -74,6 +75,7 @@ def public_profile(row: dict[str, Any] | None, user: dict[str, Any]) -> dict[str
             "monthlyMinuteBudget": DEFAULT_BUDGET,
             "minutesUsed": 0,
             "taskToolReady": False,
+            "keyReady": user_has_key(str(user.get("id") or "")),
             "personalityPrompt": "",
         }
     allow = _allowlist(row)
@@ -97,6 +99,7 @@ def public_profile(row: dict[str, Any] | None, user: dict[str, Any]) -> dict[str
         "monthlyMinuteBudget": int(row.get("monthly_minute_budget") or DEFAULT_BUDGET),
         "minutesUsed": int(row.get("minutes_used") or 0),
         "taskToolReady": bool(_account().get("tool_id")),
+        "keyReady": user_has_key(str(user.get("id") or "")),
         "personalityPrompt": f"{PERSONALITY_START}\n{prompt}\n{PERSONALITY_END}" if prompt else "",
     }
 
@@ -112,21 +115,27 @@ def _allowlist(row: dict[str, Any]) -> list[str]:
 
 
 def _account() -> dict[str, Any]:
-    row = db.fetch_one("SELECT * FROM tavus_account WHERE id = 'account'")
+    user_id = current_user_id()
+    if not user_id:
+        return {}
+    row = db.fetch_one("SELECT * FROM tavus_user_accounts WHERE user_id = ?", (user_id,))
     return row or {}
 
 
 def _remember_account(tool_id: str, guardrail_id: str) -> None:
+    user_id = current_user_id()
+    if not user_id:
+        return
     db.execute(
         """
-        INSERT INTO tavus_account (id, tool_id, guardrail_id, updated_at)
-        VALUES ('account', ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
+        INSERT INTO tavus_user_accounts (user_id, api_key_ciphertext, tool_id, guardrail_id, updated_at)
+        VALUES (?, '', ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
             tool_id = excluded.tool_id,
             guardrail_id = excluded.guardrail_id,
             updated_at = excluded.updated_at
         """,
-        (tool_id, guardrail_id, now_iso()),
+        (user_id, tool_id, guardrail_id, now_iso()),
     )
 
 
@@ -191,7 +200,7 @@ def _flat_guardrail_ids() -> str:
 
 
 def ensure_account_resources() -> dict[str, Any]:
-    """Create the shared task tool and guardrail once per Tavus account."""
+    """Create the task tool and guardrails once in this user's Tavus account."""
     current = _account()
     secret = tool_secret()
     base = public_api_base()
@@ -240,35 +249,13 @@ def ensure_account_resources() -> dict[str, Any]:
     return _account()
 
 
-def _default_face_id() -> str:
-    payload = request("GET", "/v2/faces?limit=20")
-    for face in items(payload, "faces", "data"):
-        if str(face.get("face_type") or face.get("replica_type") or "system") in {"system", "stock"}:
-            face_id = str(face.get("face_id") or face.get("replica_id") or "")
-            if face_id:
-                return face_id
-    faces = items(payload, "faces", "data")
-    if faces:
-        return str(faces[0].get("face_id") or faces[0].get("replica_id") or "")
-    return ""
-
-
-def _default_voice_id() -> str:
-    payload = request("GET", "/v2/voices?source=system&limit=20")
-    for row in items(payload, "voices", "data"):
-        voice_id = str(row.get("voice_id") or "")
-        if voice_id.startswith("v"):
-            return voice_id
-    return ""
-
-
 def _usable_voice_id(voice_id: str) -> str:
     """PAL speech needs a Tavus voice id. The old catalog only had face ids."""
     voice_id = (voice_id or "").strip()
+    if not voice_id:
+        return ""
     if voice_id.startswith("v"):
         return voice_id
-    if not voice_id:
-        return _default_voice_id()
     faces = items(request("GET", "/v2/faces?limit=100"), "faces", "data")
     for face in faces:
         if str(face.get("face_id") or "") != voice_id:
@@ -294,7 +281,7 @@ def _usable_voice_id(voice_id: str) -> str:
             found = str(row.get("voice_id") or "")
             if found.startswith("v"):
                 return found
-    return _default_voice_id()
+    return ""
 
 
 def pal_body(user_id: str, prompt: str, face_id: str, voice_id: str, *, with_tool: bool) -> dict[str, Any]:
@@ -329,15 +316,19 @@ def _attach_tool(pal_id: str) -> None:
 
 def upsert_profile(user: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
     user_id = str(user["id"])
-    ensure_account_resources()
+    if not user_has_key(user_id):
+        raise HTTPException(status_code=400, detail=KEY_REQUIRED)
     existing = _row(user_id)
     name = str(payload.get("displayName") if "displayName" in payload else (existing or {}).get("display_name") or user.get("name") or "Verxio")
     tone = str(payload.get("tone") if "tone" in payload else (existing or {}).get("tone") or "")
     never = str(payload.get("neverDo") if "neverDo" in payload else (existing or {}).get("never_do") or "")
     prompt = spoken_prompt(name, tone, never)
-    face_id = str(payload.get("faceId") or (existing or {}).get("face_id") or "") or _default_face_id()
+    face_id = str(payload.get("faceId") or (existing or {}).get("face_id") or "").strip()
     submitted_voice = str(payload.get("voiceId") or (existing or {}).get("voice_id") or "")
-    voice_id = _usable_voice_id(submitted_voice or _default_voice_id())
+    voice_id = _usable_voice_id(submitted_voice)
+    if not face_id or not voice_id:
+        raise HTTPException(status_code=400, detail="Choose a voice and a face.")
+    ensure_account_resources()
     language = str(payload.get("language") or (existing or {}).get("language") or "en")[:16]
     region = str(payload.get("region") if "region" in payload else (existing or {}).get("region") or "")[:8]
     internet = bool(payload.get("internetSearch")) if "internetSearch" in payload else bool((existing or {}).get("internet_search"))
@@ -444,6 +435,8 @@ def _sync_skills(pal_id: str, internet: bool, canvas: bool) -> None:
 
 
 def list_voices() -> dict[str, Any]:
+    if not user_has_key():
+        return {"voices": []}
     payload = request("GET", "/v2/voices?source=all&limit=100")
     voices = []
     for row in items(payload, "voices", "data"):
@@ -462,6 +455,8 @@ def list_voices() -> dict[str, Any]:
 
 
 def list_faces() -> dict[str, Any]:
+    if not user_has_key():
+        return {"faces": []}
     payload = request("GET", "/v2/faces?limit=50")
     faces = []
     for row in items(payload, "faces", "data"):

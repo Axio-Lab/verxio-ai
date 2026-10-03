@@ -11,6 +11,7 @@ from app.control_plane import now_iso
 from app.device_tokens import arequire_user_or_device
 from app.models import new_id
 from app.tavus_client import public_api_base, request as tavus_request
+from app.tavus_keys import using_user
 from app.tavus_profile import profile_row
 
 router = APIRouter()
@@ -90,6 +91,11 @@ def train_voice(user_id: str, payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def apply_ready_face(user_id: str, face_id: str) -> None:
+    with using_user(user_id):
+        _apply_ready_face(user_id, face_id)
+
+
+def _apply_ready_face(user_id: str, face_id: str) -> None:
     profile = profile_row(user_id)
     if not profile or not profile.get("pal_id"):
         return
@@ -109,6 +115,11 @@ def apply_ready_face(user_id: str, face_id: str) -> None:
 
 
 def apply_ready_voice(user_id: str, voice_id: str) -> None:
+    with using_user(user_id):
+        _apply_ready_voice(user_id, voice_id)
+
+
+def _apply_ready_voice(user_id: str, voice_id: str) -> None:
     profile = profile_row(user_id)
     if not profile or not profile.get("pal_id"):
         return

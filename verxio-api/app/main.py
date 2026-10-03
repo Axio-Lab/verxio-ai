@@ -347,6 +347,13 @@ async def metrics_middleware(request: Request, call_next):
             HTTP_REQUESTS.inc(method=request.method, route=route, status=status)
 
 @app.middleware("http")
+async def tavus_key_middleware(request: Request, call_next):
+    from app.tavus_keys import tavus_user_middleware
+
+    return await tavus_user_middleware(request, call_next)
+
+
+@app.middleware("http")
 async def sliding_session_middleware(request: Request, call_next):
     """Re-issue the auth cookie when this request extended the session (sliding expiry)."""
     response = await call_next(request)

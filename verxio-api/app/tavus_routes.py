@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.tavus_calls import router as calls_router
+from app.tavus_keys import router as keys_router
 from app.tavus_extras import router as extras_router
 from app.tavus_knowledge import router as knowledge_router
 from app.tavus_limits import router as limits_router
@@ -16,6 +17,7 @@ from app.tavus_tasks import router as tasks_router
 from app.tavus_webhooks import router as webhooks_router
 
 router = APIRouter()
+router.include_router(keys_router)
 router.include_router(profile_router)
 router.include_router(calls_router)
 router.include_router(tasks_router)
