@@ -290,7 +290,8 @@ export const zh: Translations = {
       mcp: 'MCP',
       archivedChats: '已归档对话',
       about: '关于',
-      notifications: '通知'
+      notifications: '通知',
+      personality: '人格'
     },
     runtime: {
       reloadDoneTitle: 'Credentials reloaded',

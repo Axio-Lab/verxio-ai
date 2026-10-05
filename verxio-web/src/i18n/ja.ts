@@ -192,7 +192,8 @@ export const ja = defineLocale({
       mcp: 'MCP',
       archivedChats: 'アーカイブ済みチャット',
       about: '情報',
-      notifications: 'Notifications'
+      notifications: 'Notifications',
+      personality: 'Personality'
     },
     runtime: {
       reloadDoneTitle: 'Credentials reloaded',

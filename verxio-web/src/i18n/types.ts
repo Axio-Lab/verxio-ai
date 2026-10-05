@@ -233,6 +233,7 @@ export interface Translations {
       archivedChats: string
       about: string
       notifications: string
+      personality: string
     }
     runtime: {
       reloadDoneTitle: string

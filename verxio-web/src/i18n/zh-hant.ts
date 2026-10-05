@@ -186,7 +186,8 @@ export const zhHant = defineLocale({
       mcp: 'MCP',
       archivedChats: '已封存聊天',
       about: '關於',
-      notifications: 'Notifications'
+      notifications: 'Notifications',
+      personality: 'Personality'
     },
     runtime: {
       reloadDoneTitle: 'Credentials reloaded',

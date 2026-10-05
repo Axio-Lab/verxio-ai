@@ -295,7 +295,8 @@ export const en: Translations = {
       mcp: 'MCP',
       archivedChats: 'Archived Chats',
       about: 'About',
-      notifications: 'Notifications'
+      notifications: 'Notifications',
+      personality: 'Personality'
     },
     runtime: {
       reloadDoneTitle: 'Credentials updated',

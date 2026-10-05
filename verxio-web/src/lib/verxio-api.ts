@@ -757,3 +757,179 @@ export function listVerxioTranscriptionCatalog(refresh = false): Promise<VerxioT
     }
   )
 }
+
+export interface TavusProfile {
+  configured: boolean
+  displayName: string
+  tone: string
+  neverDo: string
+  spokenPrompt: string
+  language: string
+  region: string
+  faceId: string
+  voiceId: string
+  palId: string
+  conferencingUsername: string
+  meetingAllowlist: string[]
+  shareUrl: string
+  internetSearch: boolean
+  magicCanvas: boolean
+  monthlyMinuteBudget: number
+  minutesUsed: number
+  taskToolReady: boolean
+  personalityPrompt: string
+}
+
+export interface TavusVoice {
+  id: string
+  name: string
+  type: string
+  status: string
+}
+
+export interface TavusFace {
+  id: string
+  name: string
+  status: string
+}
+
+export interface TavusConversationStart {
+  conversationId: string
+  conversationUrl: string
+  meetingToken: string
+  kind: string
+}
+
+export interface TavusTask {
+  id: string
+  conversationId: string
+  instruction: string
+  status: string
+  hermesSessionId: string
+  resultText: string
+}
+
+export function getTavusProfile(): Promise<TavusProfile> {
+  return verxioFetch<TavusProfile>('/api/tavus/profile')
+}
+
+export function saveTavusProfile(input: Partial<TavusProfile>): Promise<TavusProfile> {
+  return verxioFetch<TavusProfile>('/api/tavus/profile', { body: JSON.stringify(input), method: 'PUT' })
+}
+
+export function deleteTavusProfile(): Promise<{ ok: boolean }> {
+  return verxioFetch<{ ok: boolean }>('/api/tavus/profile', { method: 'DELETE' })
+}
+
+export function listTavusVoices(): Promise<{ voices: TavusVoice[] }> {
+  return verxioFetch<{ voices: TavusVoice[] }>('/api/tavus/voices')
+}
+
+export function listTavusFaces(): Promise<{ faces: TavusFace[] }> {
+  return verxioFetch<{ faces: TavusFace[] }>('/api/tavus/faces')
+}
+
+export function startTavusConversation(input: {
+  audioOnly?: boolean
+  kind?: string
+  meetingUrl?: string
+}): Promise<TavusConversationStart> {
+  return verxioFetch<TavusConversationStart>('/api/tavus/conversations', {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
+}
+
+export function endTavusConversation(conversationId: string): Promise<{ ok: string }> {
+  return verxioFetch<{ ok: string }>(`/api/tavus/conversations/${encodeURIComponent(conversationId)}/end`, {
+    method: 'POST'
+  })
+}
+
+export function nextTavusTask(wait = 25): Promise<{ task: TavusTask | null }> {
+  return verxioFetch<{ task: TavusTask | null }>(`/api/tavus/tasks/next?wait=${wait}`, { timeoutMs: (wait + 5) * 1000 })
+}
+
+export function updateTavusTask(
+  taskId: string,
+  input: { hermesSessionId?: string; resultText?: string; status: string }
+): Promise<TavusTask> {
+  return verxioFetch<TavusTask>(`/api/tavus/tasks/${encodeURIComponent(taskId)}`, {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
+}
+
+export function listTavusCalls(): Promise<{ calls: Array<Record<string, unknown>> }> {
+  return verxioFetch('/api/tavus/calls')
+}
+
+export function listTavusMemories(): Promise<{ facts: Array<{ id: string; text: string }>; learned: string }> {
+  return verxioFetch('/api/tavus/memories')
+}
+
+export function addTavusMemory(text: string): Promise<{ facts: Array<{ id: string; text: string }> }> {
+  return verxioFetch('/api/tavus/memories', { body: JSON.stringify({ text }), method: 'POST' })
+}
+
+export function deleteTavusMemory(factId: string): Promise<{ facts: Array<{ id: string; text: string }> }> {
+  return verxioFetch(`/api/tavus/memories/${encodeURIComponent(factId)}`, { method: 'DELETE' })
+}
+
+export function listTavusDocuments(): Promise<{
+  documents: Array<{ documentId: string; id: string; name: string; status: string }>
+}> {
+  return verxioFetch('/api/tavus/documents')
+}
+
+export function createTavusDocument(input: {
+  crawlDepth?: number
+  maxPages?: number
+  name: string
+  url: string
+}): Promise<{ documents: Array<{ id: string; name: string; status: string }> }> {
+  return verxioFetch('/api/tavus/documents', { body: JSON.stringify(input), method: 'POST' })
+}
+
+export function saveTavusMeeting(input: {
+  allowlist?: string[]
+  username: string
+}): Promise<{ email: string; username: string }> {
+  return verxioFetch('/api/tavus/meetings', { body: JSON.stringify(input), method: 'PUT' })
+}
+
+export function publishTavusShare(input: { password?: string; requireAuth?: boolean }): Promise<{ url: string }> {
+  return verxioFetch('/api/tavus/share', { body: JSON.stringify(input), method: 'POST' })
+}
+
+export function createTavusVideo(script: string): Promise<{ hostedUrl: string; status: string; videoId: string }> {
+  return verxioFetch('/api/tavus/videos', { body: JSON.stringify({ script }), method: 'POST' })
+}
+
+export function saveTavusPronunciation(
+  rules: Array<{ pronunciation: string; word: string }>
+): Promise<{ rules: unknown[] }> {
+  return verxioFetch('/api/tavus/pronunciation', { body: JSON.stringify({ rules }), method: 'PUT' })
+}
+
+export function uploadTavusFile(fileName: string, data: string, mime: string): Promise<{ url: string }> {
+  return verxioFetch('/api/tavus/uploads', { body: JSON.stringify({ data, fileName, mime }), method: 'POST' })
+}
+
+export function trainTavusFace(input: {
+  consent: boolean
+  imageUrl?: string
+  name?: string
+  videoUrl?: string
+  voiceId?: string
+}): Promise<{ faceId: string; status: string }> {
+  return verxioFetch('/api/tavus/faces', { body: JSON.stringify(input), method: 'POST' })
+}
+
+export function trainTavusVoice(input: {
+  audioUrl: string
+  consent: boolean
+  name?: string
+}): Promise<{ status: string; voiceId: string }> {
+  return verxioFetch('/api/tavus/voices', { body: JSON.stringify(input), method: 'POST' })
+}

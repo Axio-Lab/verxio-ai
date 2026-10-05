@@ -1,5 +1,5 @@
 import { isVerxioDesktop } from '@/lib/platform'
-import { createComposioMcpSession, createDeviceToken, verxioApiBaseUrl } from '@/lib/verxio-api'
+import { createComposioMcpSession, createDeviceToken, getTavusProfile, verxioApiBaseUrl } from '@/lib/verxio-api'
 
 /** Give the local desktop agent the same Composio Tool Router the browser runtime uses. */
 export async function syncDesktopComposio(): Promise<void> {
@@ -14,6 +14,14 @@ export async function syncDesktopComposio(): Promise<void> {
   }
 
   const session = await createComposioMcpSession()
+  let personalityPrompt = ''
+
+  try {
+    personalityPrompt = (await getTavusProfile()).personalityPrompt || ''
+  } catch {
+    personalityPrompt = ''
+  }
+
   const status = await desktop.agentBridgeStatus?.()
   const runtimeToken = status?.hasRuntimeToken ? '' : (await createDeviceToken()).token
 
@@ -27,7 +35,8 @@ export async function syncDesktopComposio(): Promise<void> {
     prompt: session.prompt || '',
     publicWebUrl: session.publicWebUrl || '',
     runtimeToken,
-    soulPrompt: session.soulPrompt || ''
+    soulPrompt: session.soulPrompt || '',
+    personalityPrompt
   })
 
   try {
