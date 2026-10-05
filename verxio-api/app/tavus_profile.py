@@ -214,7 +214,7 @@ def _default_voice_id() -> str:
     voices = items(payload, "voices", "data")
     if not voices:
         return ""
-    return str(voices[0].get("voice_id") or "")
+    return str(voices[0].get("voice_id") or voices[0].get("replica_id") or "")
 
 
 def pal_body(user_id: str, prompt: str, face_id: str, voice_id: str, *, with_tool: bool) -> dict[str, Any]:
@@ -368,7 +368,7 @@ def list_voices() -> dict[str, Any]:
     for row in items(payload, "voices", "data"):
         voices.append(
             {
-                "id": str(row.get("voice_id") or ""),
+                "id": str(row.get("voice_id") or row.get("replica_id") or ""),
                 "name": str(row.get("voice_name") or row.get("name") or "Voice"),
                 "type": str(row.get("voice_type") or "system"),
                 "status": str(row.get("status") or "completed"),

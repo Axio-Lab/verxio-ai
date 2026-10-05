@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router-dom'
 
 import { sessionRoute } from '@/app/routes'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { syncDesktopComposio } from '@/lib/desktop-composio'
 import { Sparkles } from '@/lib/icons'
+import { cn } from '@/lib/utils'
 import {
   addTavusMemory,
   createTavusDocument,
@@ -32,6 +34,7 @@ import { $gateway } from '@/store/gateway'
 import { notify, notifyError } from '@/store/notifications'
 import { openTavusCall } from '@/store/tavus-call'
 
+import { CONTROL_TEXT, EMPTY_SELECT_VALUE } from './constants'
 import { SectionHeading, SettingsContent } from './primitives'
 
 const EMPTY: TavusProfile = {
@@ -207,36 +210,18 @@ export function PersonalitySettings() {
           onChange={neverDo => setProfile({ ...profile, neverDo })}
           value={profile.neverDo}
         />
-        <label className="flex flex-col gap-1 text-xs">
-          Voice
-          <select
-            className="rounded border border-(--ui-stroke-tertiary) bg-transparent px-2 py-1"
-            onChange={event => setProfile({ ...profile, voiceId: event.target.value })}
-            value={profile.voiceId}
-          >
-            <option value="">Default</option>
-            {voices.map(voice => (
-              <option key={voice.id} value={voice.id}>
-                {voice.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-xs">
-          Face
-          <select
-            className="rounded border border-(--ui-stroke-tertiary) bg-transparent px-2 py-1"
-            onChange={event => setProfile({ ...profile, faceId: event.target.value })}
-            value={profile.faceId}
-          >
-            <option value="">Default</option>
-            {faces.map(face => (
-              <option key={face.id} value={face.id}>
-                {face.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <Choice
+          label="Voice"
+          onChange={voiceId => setProfile({ ...profile, voiceId })}
+          options={voices}
+          value={profile.voiceId}
+        />
+        <Choice
+          label="Face"
+          onChange={faceId => setProfile({ ...profile, faceId })}
+          options={faces}
+          value={profile.faceId}
+        />
         <Field label="Language" onChange={language => setProfile({ ...profile, language })} value={profile.language} />
         <label className="flex items-center gap-2 text-xs">
           <input
@@ -434,6 +419,35 @@ export function PersonalitySettings() {
         </Button>
       </div>
     </SettingsContent>
+  )
+}
+
+function Choice(props: {
+  label: string
+  onChange: (value: string) => void
+  options: Array<{ id: string; name: string }>
+  value: string
+}) {
+  return (
+    <div className="flex flex-col gap-1 text-xs">
+      <span>{props.label}</span>
+      <Select
+        onValueChange={next => props.onChange(next === EMPTY_SELECT_VALUE ? '' : next)}
+        value={props.value || EMPTY_SELECT_VALUE}
+      >
+        <SelectTrigger className={cn('w-full', CONTROL_TEXT)}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent className="w-(--radix-select-trigger-width)">
+          <SelectItem value={EMPTY_SELECT_VALUE}>Default</SelectItem>
+          {props.options.map(option => (
+            <SelectItem key={option.id} value={option.id}>
+              {option.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
   )
 }
 
