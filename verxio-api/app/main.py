@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app import db
+from app.tavus_routes import router as tavus_router
 from app.auth import (
     aget_current_user,
     arequire_user,
@@ -312,6 +313,8 @@ app = FastAPI(
     description="Verxio control plane for isolated Hermes Agent runtimes.",
     lifespan=lifespan,
 )
+
+app.include_router(tavus_router)
 
 cors_origins = [
     origin.strip()
