@@ -4,7 +4,7 @@ const path = require('node:path')
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
-const { applyComposioBridge, mergeComposioMcp, mergeProviderConfig } = require('./cloud-config.cjs')
+const { applyComposioBridge, mergeComposioMcp, mergeProviderConfig, splicePersonality } = require('./cloud-config.cjs')
 
 test('mergeProviderConfig writes the Verxio inference gateway', () => {
   const next = mergeProviderConfig({}, { cloudUrl: 'http://127.0.0.1:8787', deviceToken: 'vxd_test' })
@@ -118,4 +118,25 @@ test('applyComposioBridge writes the session without resetting the model', () =>
   } finally {
     fs.rmSync(home, { recursive: true, force: true })
   }
+})
+
+test('splicePersonality keeps product text and the Composio block', () => {
+  const current = [
+    'You are Verxio.',
+    '<!-- VERXIO_COMPOSIO_CONTEXT_START -->',
+    'Use Airtable',
+    '<!-- VERXIO_COMPOSIO_CONTEXT_END -->'
+  ].join('\n')
+  const once = splicePersonality(current, 'Speak briefly.')
+  assert.match(once, /You are Verxio/)
+  assert.match(once, /Use Airtable/)
+  assert.match(once, /Speak briefly/)
+  assert.equal(once.match(/VERXIO_PERSONALITY_START/g).length, 1)
+  const twice = splicePersonality(once, 'Speak warmly.')
+  assert.equal(twice.match(/VERXIO_PERSONALITY_START/g).length, 1)
+  assert.match(twice, /Speak warmly/)
+  assert.doesNotMatch(twice, /Speak briefly/)
+  const cleared = splicePersonality(twice, '')
+  assert.doesNotMatch(cleared, /VERXIO_PERSONALITY_START/)
+  assert.match(cleared, /Use Airtable/)
 })
