@@ -9,6 +9,7 @@ from app.tavus_knowledge import router as knowledge_router
 from app.tavus_media import router as media_router
 from app.tavus_profile import router as profile_router
 from app.tavus_tasks import router as tasks_router
+from app.tavus_webhooks import router as webhooks_router
 
 router = APIRouter()
 router.include_router(profile_router)
@@ -16,3 +17,4 @@ router.include_router(calls_router)
 router.include_router(tasks_router)
 router.include_router(knowledge_router)
 router.include_router(media_router)
+router.include_router(webhooks_router)
