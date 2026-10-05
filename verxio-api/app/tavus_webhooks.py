@@ -13,13 +13,10 @@ from app.control_plane import ensure_personal_workspace, now_iso
 from app.models import NotepadNoteCreateRequest
 from app.notepad import create_note
 from app.tavus_knowledge import mark_document_status
+from app.tavus_limits import add_minutes
 from app.tavus_media import apply_ready_face, apply_ready_voice, mark_asset_error
 
 router = APIRouter()
-
-
-def add_minutes(user_id: str, minutes: int) -> None:
-    return
 
 
 def _hash(token: str) -> str:

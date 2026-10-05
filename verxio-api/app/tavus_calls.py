@@ -13,14 +13,10 @@ from app import db
 from app.control_plane import now_iso
 from app.device_tokens import arequire_user_or_device
 from app.tavus_client import public_api_base, request as tavus_request
+from app.tavus_limits import remaining_seconds
 from app.tavus_profile import allow_test_mode, profile_row as _row
 
 router = APIRouter()
-
-def remaining_seconds(profile: dict[str, Any]) -> int:
-    budget = int(profile.get("monthly_minute_budget") or 60)
-    return max(budget, 1) * 60
-
 
 
 def _hash(token: str) -> str:

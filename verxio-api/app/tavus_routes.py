@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from app.tavus_calls import router as calls_router
 from app.tavus_extras import router as extras_router
 from app.tavus_knowledge import router as knowledge_router
+from app.tavus_limits import router as limits_router
 from app.tavus_media import router as media_router
 from app.tavus_meetings import router as meetings_router
 from app.tavus_profile import router as profile_router
@@ -24,3 +25,4 @@ router.include_router(webhooks_router)
 router.include_router(meetings_router)
 router.include_router(share_router)
 router.include_router(extras_router)
+router.include_router(limits_router)
