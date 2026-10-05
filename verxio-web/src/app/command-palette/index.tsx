@@ -27,6 +27,7 @@ import {
   RefreshCw,
   Settings,
   Settings2,
+  Sparkles,
   Sun,
   Users,
   Wrench,
@@ -40,6 +41,7 @@ import {
   runRuntimeEnvReload,
   runVerxioContainerRestart
 } from '@/store/system-actions'
+import { openTavusCall } from '@/store/tavus-call'
 import { type ThemeMode, useTheme } from '@/themes/context'
 
 import {
@@ -226,6 +228,23 @@ export function CommandPalette() {
             run: go(NEW_CHAT_ROUTE)
           },
           { icon: Settings, id: 'nav-settings', label: cc.nav.settings.title, run: go(SETTINGS_ROUTE) },
+          {
+            icon: Sparkles,
+            id: 'nav-personality',
+            keywords: ['tavus', 'voice', 'call', 'face'],
+            label: t.settings.nav.personality,
+            run: go(settingsTab('personality'))
+          },
+          {
+            icon: MessageCircle,
+            id: 'nav-call',
+            keywords: ['tavus', 'video', 'voice'],
+            label: 'Start a call',
+            run: () => {
+              openTavusCall()
+              closeCommandPalette()
+            }
+          },
           {
             icon: Wrench,
             id: 'nav-skills',

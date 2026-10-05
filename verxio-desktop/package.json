@@ -85,7 +85,8 @@
         "NSDesktopFolderUsageDescription": "Verxio reads folders you choose for local agent context.",
         "NSDocumentsFolderUsageDescription": "Verxio reads documents you choose for local agent context.",
         "NSDownloadsFolderUsageDescription": "Verxio saves exported artifacts and images to Downloads when requested.",
-        "NSMicrophoneUsageDescription": "Verxio uses the microphone for voice input and meeting transcription."
+        "NSMicrophoneUsageDescription": "Verxio uses the microphone for voice input and meeting transcription.",
+        "NSCameraUsageDescription": "Verxio uses the camera so your agent can see you on a call."
       },
       "gatekeeperAssess": false,
       "hardenedRuntime": false,

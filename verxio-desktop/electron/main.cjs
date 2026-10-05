@@ -22,6 +22,7 @@ const { pathToFileURL } = require('node:url')
 const { execFile, spawn } = require('node:child_process')
 const { createRuntime, resolveHermesSource, resolvePython } = require('./hermes-runtime.cjs')
 const { applyComposioBridge, hasRuntimeToken } = require('./cloud-config.cjs')
+const { callPermissionAllowed } = require('./call-permissions.cjs')
 const agentSync = require('./agent-sync.cjs')
 const { createUpdater } = require('./updates.cjs')
 
@@ -796,6 +797,15 @@ app.whenReady().then(() => {
   const workspace = ensureDesktopWorkspace()
   Menu.setApplicationMenu(null)
   configureDisplayMediaCapture()
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    if (permission !== 'media' && permission !== 'display-capture') {
+      callback(true)
+      return
+    }
+    const appOrigin = mainWindow && !mainWindow.isDestroyed() ? new URL(mainWindow.webContents.getURL()).origin : ''
+    const requestingUrl = details?.requestingUrl || webContents.getURL()
+    callback(callPermissionAllowed(requestingUrl, permission, appOrigin))
+  })
   createWindow()
   hermesRuntimeOptions.userData = USER_DATA_OVERRIDE || app.getPath('userData')
   hermesRuntimeOptions.hermesHome = path.join(hermesRuntimeOptions.userData, 'hermes-home')
@@ -909,6 +919,18 @@ ipcMain.handle('verxio:requestMicrophoneAccess', async () => {
 
   try {
     return await systemPreferences.askForMediaAccess('microphone')
+  } catch {
+    return false
+  }
+})
+
+ipcMain.handle('verxio:requestCameraAccess', async () => {
+  if (!IS_MAC) {
+    return true
+  }
+
+  try {
+    return await systemPreferences.askForMediaAccess('camera')
   } catch {
     return false
   }

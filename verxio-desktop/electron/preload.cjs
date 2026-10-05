@@ -599,6 +599,22 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
       return false
     }
   },
+  requestCameraAccess: async () => {
+    const nativeAllowed = await ipcRenderer.invoke('verxio:requestCameraAccess')
+
+    if (!nativeAllowed || !navigator.mediaDevices?.getUserMedia) {
+      return Boolean(nativeAllowed)
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true })
+      stream.getTracks().forEach(track => track.stop())
+
+      return true
+    } catch {
+      return false
+    }
+  },
   readFileDataUrl: filePath => ipcRenderer.invoke('verxio:readFileDataUrl', filePath),
   readFileText: filePath => ipcRenderer.invoke('verxio:readFileText', filePath),
   selectPaths: options => ipcRenderer.invoke('verxio:selectPaths', options),

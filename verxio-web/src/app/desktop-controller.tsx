@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 
+import { TavusHost } from '@/app/tavus/tavus-host'
 import { BootFailureOverlay } from '@/components/boot-failure-overlay'
 import { DesktopOnboardingOverlay } from '@/components/desktop-onboarding-overlay'
 import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overlay'
@@ -1076,6 +1077,7 @@ export function DesktopController() {
         {sidebar}
       </Pane>
       <PaneMain className="relative">
+        <TavusHost setTitlebarToolGroup={setTitlebarToolGroup} />
         {/*
           Keep chat mounted under modal overlays so /settings (etc.) never blanks
           the main pane while the overlay card is open.
