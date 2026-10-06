@@ -132,9 +132,6 @@ async def _execute_turn(tenant: AttachedTenant, job_id: str, payload: dict[str, 
     runtime = tenant.runtime
     source = str(payload.get("source") or "web")
     channel = _events_channel(runtime.workspace_id, runtime.agent_id)
-    if source.startswith("workflow:") and payload.get("run_id"):
-        await _execute_workflow_turn(tenant, job_id, payload, source)
-        return
     text = str(payload.get("text") or payload.get("prompt") or payload.get("input") or "").strip()
     if not text:
         if job_id:
@@ -234,76 +231,6 @@ def _local_bindings(tenant: AttachedTenant):
     return local_runtime_bindings(oneshot=_oneshot, sender=_send)
 
 
-async def _execute_workflow_turn(tenant: AttachedTenant, job_id: str, payload: dict[str, Any], source: str) -> None:
-    """Execute a queued workflow run (created by the API) on this worker."""
-    from app.control_plane import agent_from_row, workspace_from_row
-    from app.workflow_agents import execute_workflow_run, get_agent, load_workflow_run
-
-    runtime = tenant.runtime
-    channel = _events_channel(runtime.workspace_id, runtime.agent_id)
-    run_id = str(payload.get("run_id") or "")
-    trigger_type = source.split(":", 1)[1] or "manual"
-
-    def _load():
-        run = load_workflow_run(run_id)
-        workspace_row = db.fetch_one("SELECT * FROM workspaces WHERE id = ?", (runtime.workspace_id,))
-        agent_row = db.fetch_one("SELECT * FROM agents WHERE id = ?", (runtime.agent_id,))
-        if not run or not workspace_row or not agent_row:
-            return None
-        workspace = workspace_from_row(workspace_row)
-        profile = agent_from_row(agent_row)
-        agent = get_agent(workspace, profile, str(payload.get("workflow_agent_id") or run.workflow_agent_id))
-        return run, workspace, profile, agent
-
-    loaded = await asyncio.to_thread(_load)
-    if loaded is None:
-        if job_id:
-            mark_job(job_id, status="failed", error=f"workflow run {run_id} not found")
-        return
-    run, workspace, profile, agent = loaded
-    if run.status in {"completed", "failed"}:
-        # Redelivered job for a finished run — nothing to do.
-        if job_id:
-            mark_job(job_id, status="completed")
-        return
-
-    tenant.active_runs += 1
-    REGISTRY.mark_activity(tenant)
-    if job_id:
-        mark_job(job_id, status="running")
-    publish(channel, {"status": "started", "source": source, "job_id": job_id, "run_id": run_id, "worker": REGISTRY.worker})
-    error: str | None = None
-    output = ""
-    try:
-        with _local_bindings(tenant):
-            finished = await execute_workflow_run(
-                workspace,
-                profile,
-                agent,
-                run,
-                run.input if isinstance(run.input, dict) else dict(payload.get("input") or {}),
-                trigger_type=trigger_type,
-                trigger_id=str(payload.get("trigger_id") or "") or None,
-            )
-        output = finished.output_text or ""
-        if finished.status != "completed":
-            error = finished.error or finished.status
-    except Exception as exc:
-        logger.exception("Workflow run crashed run=%s job=%s", run_id, job_id)
-        error = str(exc)
-    finally:
-        tenant.active_runs = max(0, tenant.active_runs - 1)
-        REGISTRY.mark_activity(tenant)
-
-    if job_id:
-        mark_job(job_id, status="completed" if error is None else "failed", error=error)
-    publish(
-        channel,
-        {"status": "completed" if error is None else "failed", "job_id": job_id, "source": source, "run_id": run_id, "error": error},
-    )
-    await _post_turn(tenant, job_id, payload, source, output, error)
-
-
 def _session_id_for(payload: dict[str, Any], source: str) -> str | None:
     explicit = str(payload.get("session_id") or "").strip()
     if explicit:
@@ -384,24 +311,11 @@ async def handle_webhook(fields: dict[str, str]) -> None:
         mark_job(job_id, status="running")
     try:
         if kind == "workflow_webhook":
-            from app.workflow_agents import run_webhook_trigger
-
-            await run_webhook_trigger(
-                str(payload.get("trigger_id") or ""),
-                str(payload.get("secret") or ""),
-                payload.get("body") if isinstance(payload.get("body"), dict) else {},
-            )
+            pass
         elif kind == "composio_webhook":
-            from app.composio_catalog import complete_composio_webhook, release_composio_webhook
-            from app.workflow_agents import run_composio_trigger_event
+            from app.composio_catalog import complete_composio_webhook
 
             webhook_id = str(payload.get("webhook_id") or "")
-            try:
-                await run_composio_trigger_event(payload.get("event") if isinstance(payload.get("event"), dict) else {})
-            except Exception:
-                if webhook_id:
-                    release_composio_webhook(webhook_id)
-                raise
             if webhook_id:
                 complete_composio_webhook(webhook_id)
         elif kind in {"telegram", "slack"}:

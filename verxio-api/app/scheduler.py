@@ -1,4 +1,4 @@
-"""Leader-elected scheduler: workflow ticks, reconcile, cron enqueue.
+"""Leader-elected scheduler: reconcile, cron enqueue, idle reaper.
 
 Run as ``python -m app.scheduler`` in production. The API process no longer
 owns these loops when ``VERXIO_INLINE_SCHEDULER`` is off.
@@ -32,24 +32,6 @@ async def _hold_leadership(token: str, stop: asyncio.Event) -> None:
             return
         try:
             await asyncio.wait_for(stop.wait(), timeout=10)
-        except asyncio.TimeoutError:
-            continue
-
-
-async def _workflow_loop(stop: asyncio.Event) -> None:
-    from app.workflow_agents import tick_due_schedule_triggers
-
-    try:
-        interval = max(5.0, float(os.getenv("VERXIO_WORKFLOW_SCHEDULER_INTERVAL_SECONDS", "15")))
-    except ValueError:
-        interval = 15.0
-    while not stop.is_set():
-        try:
-            await tick_due_schedule_triggers()
-        except Exception:
-            logger.exception("Workflow schedule tick failed")
-        try:
-            await asyncio.wait_for(stop.wait(), timeout=interval)
         except asyncio.TimeoutError:
             continue
 
@@ -164,7 +146,6 @@ async def run_scheduler() -> None:
         lost = asyncio.Event()
         tasks = [
             asyncio.create_task(_hold_leadership(token, lost), name="leader-heartbeat"),
-            asyncio.create_task(_workflow_loop(lost), name="workflow-ticks"),
             asyncio.create_task(_cron_loop(lost), name="cron-ticks"),
             asyncio.create_task(_outputs_ttl_loop(lost), name="outputs-ttl"),
         ]
