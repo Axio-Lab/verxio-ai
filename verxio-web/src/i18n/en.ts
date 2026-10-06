@@ -1442,7 +1442,7 @@ export const en: Translations = {
     nav: {
       'new-session': 'New session',
       agents: 'Agents',
-      beta: 'Beta',
+      comingSoon: 'Coming soon',
       skills: 'Skills & Tools',
       messaging: 'Messaging',
       artifacts: 'Artifacts',

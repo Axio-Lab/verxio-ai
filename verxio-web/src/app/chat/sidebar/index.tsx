@@ -79,7 +79,7 @@ import {
   sessionPinId
 } from '@/store/session'
 
-import { AGENTS_ROUTE, type AppView, MESSAGING_ROUTE, NOTEPAD_ROUTE, SKILLS_ROUTE } from '../../routes'
+import { type AppView, MESSAGING_ROUTE, NOTEPAD_ROUTE, SKILLS_ROUTE } from '../../routes'
 import { SidebarPanelLabel } from '../../shell/sidebar-label'
 import type { SidebarNavItem } from '../../types'
 
@@ -100,7 +100,7 @@ const SIDEBAR_NAV: SidebarNavItem[] = [
     icon: props => <Codicon name="robot" {...props} />,
     action: 'new-session'
   },
-  { id: 'agents', label: '', icon: props => <Codicon name="account" {...props} />, route: AGENTS_ROUTE },
+  { id: 'agents', label: '', icon: props => <Codicon name="account" {...props} /> },
   {
     id: 'skills',
     label: '',
@@ -588,11 +588,11 @@ export function ChatSidebar({
           <SidebarGroupContent>
             <SidebarMenu className="gap-px">
               {SIDEBAR_NAV.map(item => {
-                const isInteractive = Boolean(item.action) || Boolean(item.route)
+                const comingSoon = item.id === 'agents'
+                const isInteractive = !comingSoon && (Boolean(item.action) || Boolean(item.route))
 
                 const active =
                   (item.id === 'skills' && currentView === 'skills') ||
-                  (item.id === 'agents' && currentView === 'agents') ||
                   (item.id === 'messaging' && currentView === 'messaging') ||
                   (item.id === 'notepad' && currentView === 'notepad')
 
@@ -608,9 +608,14 @@ export function ChatSidebar({
                         active &&
                           'border-(--ui-stroke-tertiary) bg-(--ui-control-active-background) text-foreground shadow-none hover:border-(--ui-stroke-tertiary)!',
                         !isInteractive &&
-                          'cursor-default hover:border-transparent hover:bg-transparent hover:text-inherit'
+                          'cursor-default hover:border-transparent hover:bg-transparent hover:text-inherit',
+                        comingSoon && 'text-(--ui-text-tertiary) opacity-60 hover:text-(--ui-text-tertiary)'
                       )}
                       onClick={() => {
+                        if (comingSoon) {
+                          return
+                        }
+
                         // A plain new session lands in whatever profile the live
                         // gateway is on (= the active switcher context). null →
                         // no swap. The switcher header is the single place to
@@ -621,16 +626,19 @@ export function ChatSidebar({
 
                         onNavigate(item)
                       }}
-                      tooltip={navLabel}
+                      tooltip={comingSoon ? (s.nav.comingSoon ?? 'Coming soon') : navLabel}
                       type="button"
                     >
                       <item.icon className="size-4 shrink-0 text-[color-mix(in_srgb,currentColor_72%,transparent)]" />
                       {sidebarOpen && (
                         <span className="flex min-w-0 flex-1 items-center gap-1.5">
                           <span className="truncate">{navLabel}</span>
-                          {item.id === 'agents' && (
-                            <Badge className="px-1 py-px text-[0.625rem]" variant="outline">
-                              {s.nav.beta ?? 'Beta'}
+                          {comingSoon && (
+                            <Badge
+                              className="border-transparent bg-transparent px-1 py-px text-[0.625rem] font-medium text-[#FF6B4A]"
+                              variant="outline"
+                            >
+                              {s.nav.comingSoon ?? 'Coming soon'}
                             </Badge>
                           )}
                         </span>

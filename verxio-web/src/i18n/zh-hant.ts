@@ -1306,7 +1306,7 @@ export const zhHant = defineLocale({
     nav: {
       'new-session': '新工作階段',
       agents: '代理',
-      beta: 'Beta',
+      comingSoon: '即將推出',
       skills: '技能與工具',
       messaging: '訊息平台',
       artifacts: '成品',

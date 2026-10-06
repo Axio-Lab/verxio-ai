@@ -1513,7 +1513,7 @@ export const zh: Translations = {
     nav: {
       'new-session': '新建会话',
       agents: '代理',
-      beta: 'Beta',
+      comingSoon: '即将推出',
       skills: '技能与工具',
       messaging: '消息平台',
       artifacts: '产物',

@@ -16,7 +16,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
-  Cpu,
   type IconComponent,
   Info,
   KeyRound,
@@ -44,7 +43,6 @@ import {
 import { type ThemeMode, useTheme } from '@/themes/context'
 
 import {
-  AGENTS_ROUTE,
   COMMAND_CENTER_ROUTE,
   CRON_ROUTE,
   MESSAGING_ROUTE,
@@ -243,8 +241,7 @@ export function CommandPalette() {
             label: t.shell.statusbar.cron,
             run: go(CRON_ROUTE)
           },
-          { icon: Users, id: 'nav-profiles', label: t.profiles.title, run: go(PROFILES_ROUTE) },
-          { icon: Cpu, id: 'nav-agents', label: t.agents.title, run: go(AGENTS_ROUTE) }
+          { icon: Users, id: 'nav-profiles', label: t.profiles.title, run: go(PROFILES_ROUTE) }
         ]
       },
       {

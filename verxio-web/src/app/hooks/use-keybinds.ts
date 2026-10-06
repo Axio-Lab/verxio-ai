@@ -25,15 +25,7 @@ import { closeSwitcher, slotSessionId } from '@/store/session-switcher'
 import { useTheme } from '@/themes/context'
 
 import { requestComposerFocus } from '../chat/composer/focus'
-import {
-  AGENTS_ROUTE,
-  CRON_ROUTE,
-  MESSAGING_ROUTE,
-  PROFILES_ROUTE,
-  sessionRoute,
-  SETTINGS_ROUTE,
-  SKILLS_ROUTE
-} from '../routes'
+import { CRON_ROUTE, MESSAGING_ROUTE, PROFILES_ROUTE, sessionRoute, SETTINGS_ROUTE, SKILLS_ROUTE } from '../routes'
 
 export interface KeybindRuntimeDeps {
   /** Open/close the command center overlay (sessions / system / usage). */
@@ -112,7 +104,7 @@ export function useKeybinds(deps: KeybindRuntimeDeps): void {
     'nav.skills': () => navigate(SKILLS_ROUTE),
     'nav.messaging': () => navigate(MESSAGING_ROUTE),
     'nav.cron': () => navigate(CRON_ROUTE),
-    'nav.agents': () => navigate(AGENTS_ROUTE),
+    'nav.agents': () => undefined,
 
     'session.new': () => {
       deps.startFreshSession()
