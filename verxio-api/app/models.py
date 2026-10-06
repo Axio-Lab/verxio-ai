@@ -154,8 +154,8 @@ class InferenceCatalogResponse(BaseModel):
     defaultModelId: str
 
 class InferenceSettings(BaseModel):
-    mode: InferenceMode = "hosted"
-    defaultModelId: str = "verxio-qwen"
+    mode: InferenceMode = "byok"
+    defaultModelId: str = ""
     monthlyCreditUsd: float = 0
     overageEnabled: bool = False
     spendingLimitUsd: float | None = None
@@ -263,8 +263,8 @@ class InferenceRuntimeBridgeStatus(BaseModel):
     configured: bool
     enabled: bool
     changed: bool = False
-    mode: InferenceMode = "hosted"
-    defaultModelId: str = "verxio-qwen"
+    mode: InferenceMode = "byok"
+    defaultModelId: str = ""
     providerSlug: str = "alibaba"
     upstreamModelId: str = ""
     missingEnvVars: list[str] = Field(default_factory=list)

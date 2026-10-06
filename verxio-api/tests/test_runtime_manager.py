@@ -126,8 +126,8 @@ def test_runtime_container_env_injects_hosted_keys_without_extra_env(monkeypatch
 
     env = runtime_manager._runtime_container_env(runtime)
 
-    assert env["GEMINI_API_KEY"] == "hosted-gemini"
-    assert env["GOOGLE_API_KEY"] == "hosted-gemini"
+    assert "GEMINI_API_KEY" not in env
+    assert "GOOGLE_API_KEY" not in env
 
 
 def test_runtime_container_env_lets_extra_env_override_hosted_keys(monkeypatch, tmp_path):
