@@ -5,104 +5,20 @@ import {
   getInferenceSettings,
   verxioApiEnabled,
   type VerxioInferenceCatalogResponse,
-  type VerxioInferenceModel,
   type VerxioInferenceSettings
 } from '@/lib/verxio-api'
-import type { ModelCapabilities, ModelOptionProvider, ModelOptionsResponse, ModelPricing } from '@/types/hermes'
+import type { ModelOptionProvider, ModelOptionsResponse } from '@/types/hermes'
 
 type RuntimeModelOptionsLoader = () => Promise<ModelOptionsResponse>
-
-function formatUsdPerMillion(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) {
-    return 'free'
-  }
-
-  return `$${value.toFixed(2)}`
-}
-
-function pricingFor(model: VerxioInferenceModel): ModelPricing {
-  const input = formatUsdPerMillion(model.pricing.inputPerMillion)
-  const output = formatUsdPerMillion(model.pricing.outputPerMillion)
-
-  return {
-    cache: null,
-    free: input === 'free' && output === 'free',
-    input,
-    output
-  }
-}
-
-function capabilitiesFor(model: VerxioInferenceModel): ModelCapabilities {
-  const keys = new Set(model.capabilities.map(capability => capability.key))
-
-  return {
-    fast: keys.has('fast'),
-    reasoning: true
-  }
-}
-
-function selectedHostedModelIds(model: VerxioInferenceModel): string[] {
-  const seen = new Set<string>()
-  const ordered: string[] = []
-
-  for (const modelId of [model.upstreamModelId, ...(model.availableModelIds ?? [])]) {
-    if (modelId && !seen.has(modelId)) {
-      seen.add(modelId)
-      ordered.push(modelId)
-    }
-  }
-
-  return ordered
-}
-
-function selectedHostedModel(
-  settings: Pick<VerxioInferenceSettings, 'defaultModelId'>,
-  catalog: Pick<VerxioInferenceCatalogResponse, 'defaultModelId' | 'models'>
-): VerxioInferenceModel | undefined {
-  return (
-    catalog.models.find(model => model.id === settings.defaultModelId) ??
-    catalog.models.find(model => model.id === catalog.defaultModelId) ??
-    catalog.models.find(model => model.default) ??
-    catalog.models[0]
-  )
-}
 
 export function hostedModelOptionsFromInference(
   settings: VerxioInferenceSettings,
   catalog: VerxioInferenceCatalogResponse
 ): ModelOptionsResponse | null {
-  const selected = selectedHostedModel(settings, catalog)
+  void settings
+  void catalog
 
-  const hostedProviders = (catalog.models ?? [])
-    .filter(model => model.hostedAvailable && model.upstreamModelId)
-    .map(model => {
-      const hostedModelIds = selectedHostedModelIds(model)
-      const isCurrent = Boolean(selected && model.id === selected.id)
-
-      return {
-        authenticated: true,
-        capabilities: Object.fromEntries(hostedModelIds.map(id => [id, capabilitiesFor(model)])),
-        is_current: isCurrent,
-        is_verxio_hosted: true,
-        models: hostedModelIds,
-        name: model.displayName,
-        pricing: Object.fromEntries(hostedModelIds.map(id => [id, pricingFor(model)])),
-        slug: model.providerSlug,
-        total_models: hostedModelIds.length,
-        warning: model.hostedAvailable ? undefined : `${model.displayName} is not configured for hosted inference.`
-      } satisfies ModelOptionProvider
-    })
-    .filter(provider => (provider.models ?? []).length > 0)
-
-  if (hostedProviders.length === 0) {
-    return { providers: [] }
-  }
-
-  return {
-    model: selected?.upstreamModelId,
-    provider: selected?.providerSlug,
-    providers: hostedProviders
-  }
+  return { providers: [] }
 }
 
 function configuredRuntimeProviders(options: ModelOptionsResponse): ModelOptionProvider[] {

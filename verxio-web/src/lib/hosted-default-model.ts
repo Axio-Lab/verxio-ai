@@ -107,42 +107,15 @@ export function shouldClearStaleStatusbarModel(
   return !isKnownPickerModel(model, provider, options)
 }
 
-/** True when model/provider matches a Verxio Hosted catalog entry (Qwen/Gemini). */
+/** Verxio no longer ships a hosted default, so a user's own model is never one. */
 export function isVerxioHostedDefaultSelection(
   model: string,
   provider: string,
   catalog?: Pick<VerxioInferenceCatalogResponse, 'models'> | null
 ): boolean {
-  const targetModel = model.trim()
-  const targetProvider = provider.trim().toLowerCase()
-
-  if (!targetModel && !targetProvider) {
-    return false
-  }
-
-  for (const entry of catalog?.models ?? []) {
-    if (!entry.hostedAvailable) {
-      continue
-    }
-
-    const hostedProvider = String(entry.providerSlug || '')
-      .trim()
-      .toLowerCase()
-
-    const hostedIds = new Set(
-      [entry.upstreamModelId, ...(entry.availableModelIds ?? [])].filter((id): id is string => Boolean(id?.trim()))
-    )
-
-    if (targetProvider && hostedProvider && targetProvider === hostedProvider) {
-      if (!targetModel || hostedIds.has(targetModel)) {
-        return true
-      }
-    }
-
-    if (targetModel && hostedIds.has(targetModel) && (!targetProvider || targetProvider === hostedProvider)) {
-      return true
-    }
-  }
+  void model
+  void provider
+  void catalog
 
   return false
 }
@@ -179,76 +152,19 @@ export function shouldShowByokStatusbarModel(
   return isSelectableModel(targetModel, provider, options)
 }
 
-function selectedHostedCatalogModel(
-  settings: Pick<VerxioInferenceSettings, 'defaultModelId' | 'mode'>,
-  catalog: Pick<VerxioInferenceCatalogResponse, 'defaultModelId' | 'models'>
-) {
-  return (
-    catalog.models.find(model => model.id === settings.defaultModelId && model.hostedAvailable) ??
-    catalog.models.find(model => model.id === catalog.defaultModelId && model.hostedAvailable) ??
-    catalog.models.find(model => model.default && model.hostedAvailable) ??
-    catalog.models.find(model => model.hostedAvailable)
-  )
-}
-
-/** Upstream model ids offered by the user's selected Verxio Hosted family. */
-export function selectedHostedFamilyModelIds(
-  settings: Pick<VerxioInferenceSettings, 'defaultModelId' | 'mode'>,
-  catalog: Pick<VerxioInferenceCatalogResponse, 'defaultModelId' | 'models'>
-): Set<string> {
-  const selected = selectedHostedCatalogModel(settings, catalog)
-  const ids = new Set<string>()
-
-  if (!selected) {
-    return ids
-  }
-
-  for (const modelId of [selected.upstreamModelId, ...(selected.availableModelIds ?? [])]) {
-    if (modelId?.trim()) {
-      ids.add(modelId.trim())
-    }
-  }
-
-  return ids
-}
-
-/**
- * True when model/provider belongs to the selected Verxio Hosted family
- * (e.g. Verxio Gemini while Settings → default is verxio-gemini).
- *
- * Used to stop a leftover Qwen statusbar pin surviving after the user switched
- * the hosted default to Gemini — the picker then only lists Gemini, but the
- * store still held `qwen3.6-plus` because live-session refresh skipped updates.
- */
+/** Verxio does not pick a hosted model. The user connects their own provider. */
 export function isSelectedHostedFamilyModel(
   model: string,
   provider: string,
   settings: Pick<VerxioInferenceSettings, 'defaultModelId' | 'mode'>,
   catalog: Pick<VerxioInferenceCatalogResponse, 'defaultModelId' | 'models'>
 ): boolean {
-  const targetModel = model.trim()
+  void model
+  void provider
+  void settings
+  void catalog
 
-  if (!targetModel) {
-    return false
-  }
-
-  const selected = selectedHostedCatalogModel(settings, catalog)
-
-  if (!selected) {
-    return false
-  }
-
-  if (!selectedHostedFamilyModelIds(settings, catalog).has(targetModel)) {
-    return false
-  }
-
-  const targetProvider = provider.trim().toLowerCase()
-
-  const hostedProvider = String(selected.providerSlug || '')
-    .trim()
-    .toLowerCase()
-
-  return !targetProvider || !hostedProvider || targetProvider === hostedProvider
+  return false
 }
 
 /** Pick the upstream model/provider for the user's hosted Verxio default. */
@@ -256,67 +172,23 @@ export function resolveHostedDefaultModel(
   settings: Pick<VerxioInferenceSettings, 'defaultModelId' | 'mode'>,
   catalog: Pick<VerxioInferenceCatalogResponse, 'defaultModelId' | 'models'>
 ): HostedDefaultModelSelection | null {
-  const selected = selectedHostedCatalogModel(settings, catalog)
+  void settings
+  void catalog
 
-  if (!selected?.upstreamModelId) {
-    return null
-  }
-
-  return {
-    model: selected.upstreamModelId,
-    provider: selected.providerSlug || ''
-  }
+  return null
 }
 
-/**
- * Local Hermes has no DashScope or Gemini key. A hosted picker row must be
- * sent as the Verxio gateway model id on the custom endpoint in config.yaml.
- */
+/** A user's model selection is sent to Hermes as they picked it. */
 export function hermesGatewayModelForHostedSelection(
   model: string,
   provider: string,
   catalog: Pick<VerxioInferenceCatalogResponse, 'models'> | null | undefined
 ): HostedDefaultModelSelection | null {
-  const targetModel = model.trim()
+  void model
+  void provider
+  void catalog
 
-  if (!targetModel || !catalog?.models?.length) {
-    return null
-  }
-
-  const targetProvider = provider.trim().toLowerCase()
-  const hosted = catalog.models.filter(entry => entry.hostedAvailable && entry.id?.trim())
-
-  const match =
-    hosted.find(entry => {
-      const ids = [entry.id, entry.upstreamModelId, ...(entry.availableModelIds ?? [])]
-        .map(id => id?.trim())
-        .filter((id): id is string => Boolean(id))
-
-      if (!ids.includes(targetModel)) {
-        return false
-      }
-
-      const slug = String(entry.providerSlug || '')
-        .trim()
-        .toLowerCase()
-
-      return !targetProvider || targetProvider === 'custom' || !slug || slug === targetProvider
-    }) ??
-    // A leftover provider (Qwen/alibaba) can sit next to a Gemini model id.
-    // Hosted mode still has to use the catalog row the model id belongs to.
-    hosted.find(entry => {
-      const ids = [entry.id, entry.upstreamModelId, ...(entry.availableModelIds ?? [])]
-        .map(id => id?.trim())
-        .filter((id): id is string => Boolean(id))
-
-      return ids.includes(targetModel)
-    })
-
-  if (!match?.id) {
-    return null
-  }
-
-  return { model: match.id, provider: 'custom' }
+  return null
 }
 
 /**
@@ -334,25 +206,21 @@ export function resolveHostedStatusbarCorrection(
   hostedDefault: HostedDefaultModelSelection | null
 ): HostedDefaultModelSelection | null {
   void settings
+  void catalog
+  void hostedDefault
 
-  // Don't overwrite a connected BYOK pin with the hosted default.
-  if (store.model.trim() && !isVerxioHostedDefaultSelection(store.model, store.provider, catalog)) {
-    return null
-  }
-
-  // Keep any hosted catalog pick (e.g. Gemini Flash while Settings default is Qwen).
-  if (isVerxioHostedDefaultSelection(store.model, store.provider, catalog)) {
+  if (store.model.trim()) {
     return null
   }
 
   const hermesModel = typeof hermes.model === 'string' ? hermes.model.trim() : ''
   const hermesProvider = typeof hermes.provider === 'string' ? hermes.provider.trim() : ''
 
-  if (hermesModel && isVerxioHostedDefaultSelection(hermesModel, hermesProvider, catalog)) {
-    return { model: hermesModel, provider: hermesProvider || hostedDefault?.provider || '' }
+  if (hermesModel) {
+    return { model: hermesModel, provider: hermesProvider }
   }
 
-  return hostedDefault
+  return null
 }
 
 /** Decide what the statusbar should show after a runtime /api/model/info read. */
@@ -372,5 +240,7 @@ export function resolveStatusbarModel(
     return null
   }
 
-  return hostedDefault
+  void hostedDefault
+
+  return null
 }

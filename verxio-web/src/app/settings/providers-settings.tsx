@@ -313,10 +313,7 @@ export function ProvidersSettings({ onInferenceApplied, onViewChange, requestGat
           />
         ) : (
           <>
-            <InferenceProviderSettings
-              onInferenceApplied={onInferenceApplied}
-              onOpenProviderKeys={() => onViewChange('keys')}
-            />
+            <InferenceProviderSettings onOpenProviderKeys={() => onViewChange('keys')} />
             {oauthError ? (
               <div className="mb-4 grid gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-3 text-(length:--conversation-caption-font-size)">
                 <p className="text-destructive">Could not load account providers. {oauthError}</p>
