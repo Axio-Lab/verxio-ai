@@ -192,7 +192,8 @@ export const ja = defineLocale({
       mcp: 'MCP',
       archivedChats: 'アーカイブ済みチャット',
       about: '情報',
-      notifications: 'Notifications'
+      notifications: 'Notifications',
+      personality: 'Personality'
     },
     runtime: {
       reloadDoneTitle: 'Credentials reloaded',
@@ -1350,7 +1351,7 @@ export const ja = defineLocale({
     nav: {
       'new-session': '新しいセッション',
       agents: 'エージェント',
-      beta: 'Beta',
+      comingSoon: '近日公開',
       skills: 'スキルとツール',
       messaging: 'メッセージング',
       artifacts: 'アーティファクト',

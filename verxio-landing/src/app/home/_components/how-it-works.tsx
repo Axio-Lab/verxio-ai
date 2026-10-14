@@ -2,23 +2,16 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
-  Target,
-  ClipboardCheck,
-  Headset,
-  Workflow,
-  MessageSquare,
-  CheckCircle2,
+  AppWindow,
   ArrowRight,
-  Users,
-  Camera,
-  FileText,
-  BarChart3,
   Bot,
-  Zap,
-  Send,
-  Gift,
-  Star,
+  CheckCircle2,
+  FolderOpen,
   Link2,
+  MessageSquare,
+  Monitor,
+  Send,
+  Terminal,
 } from "lucide-react";
 
 import { appPath } from "@/lib/site";
@@ -40,144 +33,90 @@ const TAB_DURATION = 6000;
 
 const TABS: TabContent[] = [
   {
-    id: "goals",
-    label: "AI Goals",
-    icon: Target,
-    headline: "Set objectives. AI does the rest.",
+    id: "workspace",
+    label: "Workspace",
+    icon: MessageSquare,
+    headline: "Ask in the workspace.",
     description:
-      "Define a high-level goal and let AI decompose it into sub-tasks, assign sub-agents, track progress, and self-correct through reflection cycles.",
+      "The desktop app is the place you talk to the agent. Chats stay in projects, and the work shows up beside the conversation.",
     steps: [
-      { text: "Define your objective in plain language", icon: Target },
-      { text: "AI decomposes into sub-tasks and assigns agents", icon: Bot },
-      { text: "Sub-agents execute, reflect, and self-correct", icon: Zap },
-      { text: "Progress reports delivered to your chosen channel", icon: Send },
-    ],
-    visual: {
-      type: "flow",
-      items: [
-        { label: "Q3 Product Launch", sublabel: "Goal created", status: "done" },
-        { label: "Market Research", sublabel: "Sub-agent assigned", status: "done" },
-        { label: "Design Review", sublabel: "In progress", status: "active" },
-        { label: "GTM Execution", sublabel: "Queued", status: "pending" },
-      ],
-    },
-  },
-  {
-    id: "connections",
-    label: "Connections",
-    icon: Link2,
-    headline: "Connect channels. Keep agents in sync.",
-    description:
-      "Connect WhatsApp, Telegram, Slack, and Discord so your support agents and workflows can operate in the channels your team already uses.",
-    steps: [
-      { text: "Choose the messaging platforms you want to enable", icon: Link2 },
-      { text: "Authenticate bots and channel credentials", icon: Users },
-      { text: "Route conversations to support agents and workflows", icon: Camera },
-      { text: "Monitor activity across every connected channel", icon: BarChart3 },
-    ],
-    visual: {
-      type: "timeline",
-      items: [
-        { label: "WhatsApp", sublabel: "Channel connected", status: "done" },
-        { label: "Telegram", sublabel: "Webhook configured", status: "done" },
-        { label: "Slack", sublabel: "Bot active", status: "done" },
-        { label: "Discord", sublabel: "Monitoring live", status: "active" },
-      ],
-    },
-  },
-  {
-    id: "workflows",
-    label: "Workflows",
-    icon: Workflow,
-    headline: "Build automations visually.",
-    description:
-      "Connect triggers, actions, conditions, and AI models on a drag-and-drop canvas. Run workflows on schedules, events, or manually.",
-    steps: [
-      { text: "Drag nodes onto the canvas", icon: Workflow },
-      { text: "Connect triggers to actions and conditions", icon: Zap },
-      { text: "Add AI models for intelligent processing", icon: Bot },
-      { text: "Deploy and run on schedule or events", icon: Send },
-    ],
-    visual: {
-      type: "flow",
-      items: [
-        { label: "GitHub PR Event", sublabel: "Trigger", status: "done" },
-        { label: "AI Code Review", sublabel: "Claude Analysis", status: "done" },
-        { label: "Quality Gate", sublabel: "Condition check", status: "active" },
-        { label: "Post to Slack", sublabel: "Notification", status: "pending" },
-      ],
-    },
-  },
-  {
-    id: "support",
-    label: "Support Agents",
-    icon: Headset,
-    headline: "AI support across every channel.",
-    description:
-      "Deploy support agents that respond instantly using your knowledge base. Connect to any messaging platform and handle customer queries 24/7.",
-    steps: [
-      { text: "Create an agent and upload your knowledge base", icon: FileText },
-      { text: "Connect WhatsApp, Telegram, Slack, or Discord", icon: MessageSquare },
-      { text: "Agent auto-responds with contextual answers", icon: Bot },
-      { text: "Escalate complex issues to human agents", icon: Users },
+      { text: "Open Verxio on your machine", icon: Monitor },
+      { text: "Ask in plain language", icon: MessageSquare },
+      { text: "File the chat into a project", icon: FolderOpen },
+      { text: "Come back to the same thread later", icon: Send },
     ],
     visual: {
       type: "chat",
       items: [
-        { label: "Customer", sublabel: "How do I reset my password?", status: "done" },
-        {
-          label: "AI Agent",
-          sublabel: "Go to Settings > Security > Reset Password. I can walk you through it.",
-          status: "done",
-        },
-        { label: "Customer", sublabel: "That worked, thanks!", status: "done" },
-        { label: "AI Agent", sublabel: "Glad I could help! Anything else?", status: "active" },
+        { label: "You", sublabel: "Draft the reply from the notes in Tech Team.", status: "done" },
+        { label: "Verxio", sublabel: "Read three notes. Draft is in the workspace.", status: "active" },
       ],
     },
   },
   {
-    id: "integrations",
-    label: "Chat & Apps",
-    icon: MessageSquare,
-    headline: "Connect everything your team uses.",
+    id: "computer",
+    label: "Computer",
+    icon: Monitor,
+    headline: "It uses your computer.",
     description:
-      "Link messaging platforms for worker communication and app integrations for report delivery. Composio powers 800+ app connections out of the box.",
+      "Computer use lets the agent see the screen and use the mouse and keyboard in other apps, after you allow it.",
     steps: [
-      { text: "Connect messaging channels for workers", icon: MessageSquare },
-      { text: "Link Composio apps for report delivery", icon: Zap },
-      { text: "Choose where reports land (Docs, Sheets, Notion)", icon: FileText },
-      { text: "Everything syncs across your entire stack", icon: Send },
+      { text: "Allow screen and accessibility access", icon: Monitor },
+      { text: "The agent looks at the app you have open", icon: AppWindow },
+      { text: "It moves, types, and clicks", icon: Bot },
+      { text: "You see the finished action", icon: CheckCircle2 },
     ],
     visual: {
-      type: "cards",
+      type: "flow",
       items: [
-        { label: "WhatsApp", sublabel: "Worker reminders", status: "done" },
-        { label: "Google Docs", sublabel: "Report delivery", status: "done" },
-        { label: "Slack", sublabel: "Notifications", status: "active" },
-        { label: "Notion", sublabel: "Documentation", status: "pending" },
+        { label: "Calendar open", sublabel: "On your screen", status: "done" },
+        { label: "Invite filled", sublabel: "Cursor and keyboard", status: "done" },
+        { label: "Send clicked", sublabel: "In the calendar app", status: "active" },
       ],
     },
   },
   {
-    id: "loyalty",
-    label: "Loyalty",
-    icon: Gift,
-    headline: "Launch loyalty programs. AI handles everything.",
+    id: "files",
+    label: "Files",
+    icon: FolderOpen,
+    headline: "It uses your files and terminal.",
     description:
-      "Launch whitelabel loyalty programs with tier-based digital passes. AI agents issue passes, gift points, and manage reward campaigns automatically — no technical setup needed.",
+      "The agent reads the workspace on your machine, previews files, and runs commands in the terminal next to the chat.",
     steps: [
-      { text: "Create a loyalty program with custom tiers and rules", icon: Star },
-      { text: "AI agent issues digital passes to members via invite links", icon: Link2 },
-      { text: "Points are gifted or adjusted automatically by AI agents", icon: Gift },
-      { text: "Vouchers and deals distributed through workflow nodes", icon: Zap },
+      { text: "Work starts in Documents/Verxio", icon: FolderOpen },
+      { text: "The agent reads and writes local files", icon: AppWindow },
+      { text: "Commands run in the built-in terminal", icon: Terminal },
+      { text: "Notepad recordings transcribe on device", icon: Bot },
     ],
     visual: {
       type: "timeline",
       items: [
-        { label: "Bronze → Silver", sublabel: "1,200 pts threshold crossed", status: "done" },
-        { label: "Pass issued", sublabel: "Loyalty pass sent to member", status: "done" },
-        { label: "+250 pts gifted", sublabel: "AI agent triggered by purchase", status: "active" },
-        { label: "Gold campaign", sublabel: "Bulk invite links generated", status: "pending" },
+        { label: "Documents/Verxio", sublabel: "Workspace folder", status: "done" },
+        { label: "notes.md", sublabel: "Read in the sidebar", status: "done" },
+        { label: "verxio status", sublabel: "Terminal", status: "active" },
+      ],
+    },
+  },
+  {
+    id: "channels",
+    label: "Apps",
+    icon: Link2,
+    headline: "It reaches your apps and channels.",
+    description:
+      "Connect Gmail, GitHub, Calendar, and the rest of your tools. The same agent can reply on Telegram, WhatsApp, Slack, and Discord.",
+    steps: [
+      { text: "Connect the apps you already use", icon: Link2 },
+      { text: "Turn on Telegram, WhatsApp, Slack, or Discord", icon: MessageSquare },
+      { text: "Ask once in the workspace", icon: Bot },
+      { text: "The agent acts in the app or channel", icon: Send },
+    ],
+    visual: {
+      type: "cards",
+      items: [
+        { label: "Gmail", sublabel: "Unread threads", status: "done" },
+        { label: "GitHub", sublabel: "Pull request", status: "done" },
+        { label: "Telegram", sublabel: "Reply sent", status: "active" },
+        { label: "Slack", sublabel: "Connected", status: "pending" },
       ],
     },
   },
@@ -455,10 +394,10 @@ export function HowItWorks() {
             How It Works
           </div>
           <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 tracking-tight">
-            One platform, <span className="text-primary">five operational pillars</span>
+            Ask once. <span className="text-primary">The agent does the work.</span>
           </h2>
           <p className="mt-4 text-lg text-gray-500">
-            See how each capability works together to automate your operations end to end.
+            From the workspace on your machine to the apps and channels you already use.
           </p>
         </div>
 
@@ -555,7 +494,7 @@ export function HowItWorks() {
                   href={appPath("/download")}
                   className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:text-primary/80 transition-colors group"
                 >
-                  Get started with {tab.label}
+                  Download Verxio
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </a>
               </div>

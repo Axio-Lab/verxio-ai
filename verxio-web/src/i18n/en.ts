@@ -295,7 +295,8 @@ export const en: Translations = {
       mcp: 'MCP',
       archivedChats: 'Archived Chats',
       about: 'About',
-      notifications: 'Notifications'
+      notifications: 'Notifications',
+      personality: 'Personality'
     },
     runtime: {
       reloadDoneTitle: 'Credentials updated',
@@ -1442,7 +1443,7 @@ export const en: Translations = {
     nav: {
       'new-session': 'New session',
       agents: 'Agents',
-      beta: 'Beta',
+      comingSoon: 'Coming soon',
       skills: 'Skills & Tools',
       messaging: 'Messaging',
       artifacts: 'Artifacts',

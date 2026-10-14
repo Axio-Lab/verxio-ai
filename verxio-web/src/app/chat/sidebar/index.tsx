@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/sidebar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tip } from '@/components/ui/tooltip'
-import { searchSessions, type SessionInfo, type SessionSearchResult } from '@/hermes'
+import { listSessions, searchSessions, type SessionInfo, type SessionSearchResult } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { profileColor } from '@/lib/profile-color'
 import { sessionMatchesSearch } from '@/lib/session-search'
@@ -79,7 +79,7 @@ import {
   sessionPinId
 } from '@/store/session'
 
-import { AGENTS_ROUTE, type AppView, MESSAGING_ROUTE, NOTEPAD_ROUTE, SKILLS_ROUTE } from '../../routes'
+import { type AppView, MESSAGING_ROUTE, NOTEPAD_ROUTE, SKILLS_ROUTE } from '../../routes'
 import { SidebarPanelLabel } from '../../shell/sidebar-label'
 import type { SidebarNavItem } from '../../types'
 
@@ -100,7 +100,7 @@ const SIDEBAR_NAV: SidebarNavItem[] = [
     icon: props => <Codicon name="robot" {...props} />,
     action: 'new-session'
   },
-  { id: 'agents', label: '', icon: props => <Codicon name="account" {...props} />, route: AGENTS_ROUTE },
+  { id: 'agents', label: '', icon: props => <Codicon name="account" {...props} /> },
   {
     id: 'skills',
     label: '',
@@ -140,13 +140,15 @@ function orderByIds<T>(items: T[], getId: (item: T) => string, orderIds: string[
     }
   }
 
+  const fresh: T[] = []
+
   for (const item of items) {
     if (!seen.has(getId(item))) {
-      out.push(item)
+      fresh.push(item)
     }
   }
 
-  return out
+  return [...fresh, ...out]
 }
 
 function searchResultToSession(result: SessionSearchResult): SessionInfo {
@@ -192,6 +194,7 @@ interface ChatSidebarProps extends React.ComponentProps<typeof Sidebar> {
   onResumeSession: (sessionId: string) => void
   onDeleteSession: (sessionId: string) => void
   onArchiveSession: (sessionId: string) => void
+  onNewSessionInProject: (projectId: string) => void
   onNewSessionInWorkspace: (path: null | string) => void
   onManageCronJob: (jobId: string) => void
   onTriggerCronJob: (jobId: string) => void
@@ -205,6 +208,7 @@ export function ChatSidebar({
   onResumeSession,
   onDeleteSession,
   onArchiveSession,
+  onNewSessionInProject,
   onNewSessionInWorkspace,
   onManageCronJob,
   onTriggerCronJob
@@ -363,14 +367,81 @@ export function ChatSidebar({
   }, [trimmedQuery, sortedSessions, serverMatches, sessionByAnyId])
 
   const projectSessionIds = useMemo(() => projectSessionIdSet(sidebarProjects), [sidebarProjects])
+  const [folderSessions, setFolderSessions] = useState<SessionInfo[]>([])
+  const missingFolderIds = useMemo(() => {
+    const missing: string[] = []
+
+    for (const id of projectSessionIds) {
+      if (!sessionByAnyId.has(id)) {
+        missing.push(id)
+      }
+    }
+
+    missing.sort()
+
+    return missing
+  }, [projectSessionIds, sessionByAnyId])
+  const missingFolderKey = missingFolderIds.join('\n')
+
+  useEffect(() => {
+    if (!missingFolderKey) {
+      setFolderSessions([])
+
+      return
+    }
+
+    let cancelled = false
+    const wanted = new Set(missingFolderKey.split('\n'))
+
+    void listSessions(500, 1, 'exclude', 'recent')
+      .then(result => {
+        if (cancelled) {
+          return
+        }
+
+        setFolderSessions(
+          result.sessions.filter(
+            session =>
+              wanted.has(session.id) || (session._lineage_root_id != null && wanted.has(session._lineage_root_id))
+          )
+        )
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFolderSessions([])
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [missingFolderKey])
+
+  const projectSessionById = useMemo(() => {
+    if (folderSessions.length === 0) {
+      return sessionByAnyId
+    }
+
+    const map = new Map(sessionByAnyId)
+
+    for (const session of folderSessions) {
+      map.set(session.id, session)
+
+      if (session._lineage_root_id) {
+        map.set(session._lineage_root_id, session)
+      }
+    }
+
+    return map
+  }, [sessionByAnyId, folderSessions])
 
   const forgetProjectSession = useCallback(
     (sessionId: string) => {
-      const session = sessionByAnyId.get(sessionId)
+      const session = projectSessionById.get(sessionId)
 
       removeSessionsFromSidebarProjects(session ? [session.id, sessionPinId(session)] : [sessionId])
     },
-    [sessionByAnyId]
+    [projectSessionById]
   )
 
   const deleteSidebarSession = useCallback(
@@ -584,11 +655,11 @@ export function ChatSidebar({
           <SidebarGroupContent>
             <SidebarMenu className="gap-px">
               {SIDEBAR_NAV.map(item => {
-                const isInteractive = Boolean(item.action) || Boolean(item.route)
+                const comingSoon = item.id === 'agents'
+                const isInteractive = !comingSoon && (Boolean(item.action) || Boolean(item.route))
 
                 const active =
                   (item.id === 'skills' && currentView === 'skills') ||
-                  (item.id === 'agents' && currentView === 'agents') ||
                   (item.id === 'messaging' && currentView === 'messaging') ||
                   (item.id === 'notepad' && currentView === 'notepad')
 
@@ -604,9 +675,14 @@ export function ChatSidebar({
                         active &&
                           'border-(--ui-stroke-tertiary) bg-(--ui-control-active-background) text-foreground shadow-none hover:border-(--ui-stroke-tertiary)!',
                         !isInteractive &&
-                          'cursor-default hover:border-transparent hover:bg-transparent hover:text-inherit'
+                          'cursor-default hover:border-transparent hover:bg-transparent hover:text-inherit',
+                        comingSoon && 'text-(--ui-text-tertiary) opacity-60 hover:text-(--ui-text-tertiary)'
                       )}
                       onClick={() => {
+                        if (comingSoon) {
+                          return
+                        }
+
                         // A plain new session lands in whatever profile the live
                         // gateway is on (= the active switcher context). null →
                         // no swap. The switcher header is the single place to
@@ -617,16 +693,19 @@ export function ChatSidebar({
 
                         onNavigate(item)
                       }}
-                      tooltip={navLabel}
+                      tooltip={comingSoon ? (s.nav.comingSoon ?? 'Coming soon') : navLabel}
                       type="button"
                     >
                       <item.icon className="size-4 shrink-0 text-[color-mix(in_srgb,currentColor_72%,transparent)]" />
                       {sidebarOpen && (
                         <span className="flex min-w-0 flex-1 items-center gap-1.5">
                           <span className="truncate">{navLabel}</span>
-                          {item.id === 'agents' && (
-                            <Badge className="px-1 py-px text-[0.625rem]" variant="outline">
-                              {s.nav.beta ?? 'Beta'}
+                          {comingSoon && (
+                            <Badge
+                              className="border-transparent bg-transparent px-1 py-px text-[0.625rem] font-medium text-[#FF6B4A]"
+                              variant="outline"
+                            >
+                              {s.nav.comingSoon ?? 'Coming soon'}
                             </Badge>
                           )}
                         </span>
@@ -702,10 +781,11 @@ export function ChatSidebar({
             activeSessionId={activeSidebarSessionId}
             onArchiveSession={archiveSidebarSession}
             onDeleteSession={deleteSidebarSession}
+            onNewSessionInProject={onNewSessionInProject}
             onResumeSession={onResumeSession}
             onTogglePin={toggleProjectPin}
             pinnedSessionIds={pinnedSessionIds}
-            sessionById={sessionByAnyId}
+            sessionById={projectSessionById}
             workingSessionIdSet={workingSessionIdSet}
           />
         )}
@@ -784,7 +864,7 @@ export function ChatSidebar({
             onTogglePin={pinSession}
             open={agentsOpen}
             pinned={false}
-            rootClassName="min-h-0 flex-1 p-0"
+            rootClassName="min-h-0 flex-1 overflow-hidden p-0"
             sessions={agentSessions}
             sortable={!showAllProfiles && agentSessions.length > 1}
             workingSessionIdSet={workingSessionIdSet}

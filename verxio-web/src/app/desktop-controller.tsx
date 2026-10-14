@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef } from 'react'
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 
+import { TavusHost } from '@/app/tavus/tavus-host'
 import { BootFailureOverlay } from '@/components/boot-failure-overlay'
 import { DesktopOnboardingOverlay } from '@/components/desktop-onboarding-overlay'
 import { GatewayConnectingOverlay } from '@/components/gateway-connecting-overlay'
@@ -31,11 +32,13 @@ import {
   $panesFlipped,
   $pinnedSessionIds,
   $sessionsLimit,
+  armNewSessionInProject,
   bumpSessionsLimit,
   FILE_BROWSER_DEFAULT_WIDTH,
   FILE_BROWSER_MAX_WIDTH,
   FILE_BROWSER_MIN_WIDTH,
   pinSession,
+  setSidebarProjectsOpen,
   SIDEBAR_DEFAULT_WIDTH,
   SIDEBAR_MAX_WIDTH,
   SIDEBAR_SESSIONS_PAGE_SIZE,
@@ -54,6 +57,7 @@ import {
   $currentCwd,
   $freshDraftReady,
   $gatewayState,
+  $messages,
   $selectedStoredSessionId,
   $sessions,
   $workingSessionIds,
@@ -122,7 +126,6 @@ import type { TitlebarTool } from './shell/titlebar-controls'
 import { useGroupRegistry } from './shell/use-group-registry'
 import { UpdatesOverlay } from './updates-overlay'
 
-const AgentsView = lazy(async () => ({ default: (await import('./agents')).AgentsView }))
 const ActivityView = lazy(async () => ({ default: (await import('./activity')).ActivityView }))
 const CommandCenterView = lazy(async () => ({ default: (await import('./command-center')).CommandCenterView }))
 const CronView = lazy(async () => ({ default: (await import('./cron')).CronView }))
@@ -679,6 +682,15 @@ export function DesktopController() {
     [branchCurrentSession, refreshSessions]
   )
 
+  const startSessionInProject = useCallback(
+    (projectId: string) => {
+      startFreshSessionDraft()
+      setSidebarProjectsOpen(true)
+      armNewSessionInProject(projectId)
+    },
+    [startFreshSessionDraft]
+  )
+
   const startSessionInWorkspace = useCallback(
     (path: null | string) => {
       startFreshSessionDraft()
@@ -869,8 +881,17 @@ export function DesktopController() {
         navigate(CRON_ROUTE)
       }}
       onNavigate={selectSidebarItem}
+      onNewSessionInProject={startSessionInProject}
       onNewSessionInWorkspace={startSessionInWorkspace}
-      onResumeSession={sessionId => navigate(sessionRoute(sessionId))}
+      onResumeSession={sessionId => {
+        navigate(sessionRoute(sessionId))
+
+        // Already on this chat and the thread is blank. Navigation will not
+        // fire again, so reload the saved transcript directly.
+        if (sessionId === selectedStoredSessionId && $messages.get().length === 0) {
+          void resumeSession(sessionId, true)
+        }
+      }}
       onTriggerCronJob={jobId => {
         void triggerCronJob(jobId)
           .then(() => refreshCronJobs())
@@ -1056,6 +1077,7 @@ export function DesktopController() {
         {sidebar}
       </Pane>
       <PaneMain className="relative">
+        <TavusHost setTitlebarToolGroup={setTitlebarToolGroup} />
         {/*
           Keep chat mounted under modal overlays so /settings (etc.) never blanks
           the main pane while the overlay card is open.
@@ -1090,14 +1112,8 @@ export function DesktopController() {
             }
             path="messaging"
           />
-          <Route
-            element={
-              <Suspense fallback={null}>
-                <AgentsView />
-              </Suspense>
-            }
-            path="agents/*"
-          />
+          <Route element={<Navigate replace to={NEW_CHAT_ROUTE} />} path="agents" />
+          <Route element={<Navigate replace to={NEW_CHAT_ROUTE} />} path="agents/*" />
           <Route
             element={
               <Suspense fallback={null}>

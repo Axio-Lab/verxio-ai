@@ -75,7 +75,7 @@ beforeEach(() => {
 })
 
 describe('hostedModelOptionsFromInference', () => {
-  it('returns every available Verxio hosted family', () => {
+  it('does not offer Verxio-hosted families', () => {
     const settings: VerxioInferenceSettings = {
       defaultModelId: 'verxio-qwen',
       mode: 'hosted',
@@ -84,54 +84,19 @@ describe('hostedModelOptionsFromInference', () => {
       spendingLimitUsd: null
     }
 
-    const result = hostedModelOptionsFromInference(settings, catalog)
-
-    expect(result?.provider).toBe('alibaba')
-    expect(result?.model).toBe('qwen3.6-plus')
-    expect(result?.providers?.map(provider => provider.slug)).toEqual(['alibaba', 'gemini'])
-    expect(result?.providers?.every(provider => provider.is_verxio_hosted)).toBe(true)
-    expect(result?.providers?.find(provider => provider.slug === 'alibaba')?.models).toEqual([
-      'qwen3.6-plus',
-      'qwen3.6-coder'
-    ])
-  })
-
-  it('marks the selected Verxio hosted family as current', () => {
-    const result = hostedModelOptionsFromInference(
-      {
-        defaultModelId: 'verxio-gemini',
-        mode: 'hosted',
-        monthlyCreditUsd: 0,
-        overageEnabled: false,
-        spendingLimitUsd: null
-      },
-      catalog
-    )
-
-    expect(result?.provider).toBe('gemini')
-    expect(result?.model).toBe('gemini-flash-lite-latest')
-    expect(result?.providers?.map(provider => provider.slug)).toEqual(['alibaba', 'gemini'])
-    expect(result?.providers?.find(provider => provider.slug === 'gemini')?.is_current).toBe(true)
-    expect(result?.providers?.find(provider => provider.slug === 'gemini')?.models).toEqual([
-      'gemini-flash-lite-latest',
-      'gemini-3.1-flash-lite',
-      'gemini-2.5-pro'
-    ])
-  })
-
-  it('still lists hosted families when settings.mode is legacy byok', () => {
-    const result = hostedModelOptionsFromInference(
-      {
-        defaultModelId: 'verxio-qwen',
-        mode: 'byok',
-        monthlyCreditUsd: 0,
-        overageEnabled: false,
-        spendingLimitUsd: null
-      },
-      catalog
-    )
-
-    expect(result?.providers?.map(provider => provider.slug)).toEqual(['alibaba', 'gemini'])
+    expect(hostedModelOptionsFromInference(settings, catalog)).toEqual({ providers: [] })
+    expect(
+      hostedModelOptionsFromInference(
+        {
+          defaultModelId: 'verxio-gemini',
+          mode: 'byok',
+          monthlyCreditUsd: 0,
+          overageEnabled: false,
+          spendingLimitUsd: null
+        },
+        catalog
+      )
+    ).toEqual({ providers: [] })
   })
 })
 
@@ -170,18 +135,12 @@ describe('mergeHostedAndRuntimeModelOptions', () => {
 
     expect(result.provider).toBe('openai')
     expect(result.model).toBe('gpt-5-mini')
-    expect(result.providers?.map(provider => provider.slug)).toEqual(['alibaba', 'gemini', 'openai'])
-    expect(result.providers?.flatMap(provider => provider.models ?? [])).toEqual([
-      'qwen3.6-plus',
-      'qwen3.6-coder',
-      'gemini-flash-lite-latest',
-      'gemini-3.1-flash-lite',
-      'gemini-2.5-pro',
-      'gpt-5-mini'
-    ])
+    expect(result.providers?.map(provider => provider.slug)).toEqual(['openai'])
+    expect(result.providers?.flatMap(provider => provider.models ?? [])).toEqual(['gpt-5-mini'])
+    expect(result.providers?.some(provider => provider.is_verxio_hosted)).toBe(false)
   })
 
-  it('falls back to the hosted default when runtime has no selection', () => {
+  it('does not fall back to a Verxio-hosted model when runtime has no selection', () => {
     const settings: VerxioInferenceSettings = {
       defaultModelId: 'verxio-qwen',
       mode: 'hosted',
@@ -203,11 +162,12 @@ describe('mergeHostedAndRuntimeModelOptions', () => {
       ]
     })
 
-    expect(result.provider).toBe('alibaba')
-    expect(result.model).toBe('qwen3.6-plus')
+    expect(result.provider).toBeUndefined()
+    expect(result.model).toBeUndefined()
+    expect(result.providers?.map(provider => provider.slug)).toEqual(['openai'])
   })
 
-  it('dedupes runtime models that already exist in the hosted catalog', () => {
+  it('keeps the user provider models when they overlap a former hosted catalog', () => {
     const settings: VerxioInferenceSettings = {
       defaultModelId: 'verxio-qwen',
       mode: 'hosted',
@@ -233,9 +193,10 @@ describe('mergeHostedAndRuntimeModelOptions', () => {
       'qwen3.6-plus',
       'qwen3.6-coder'
     ])
+    expect(result.providers?.find(provider => provider.slug === 'alibaba')?.is_verxio_hosted).toBeUndefined()
   })
 
-  it('expands the selected hosted provider and keeps connected providers underneath', () => {
+  it('keeps connected providers and does not label them as Verxio hosted', () => {
     const hosted = hostedModelOptionsFromInference(
       {
         defaultModelId: 'verxio-gemini',
@@ -264,19 +225,12 @@ describe('mergeHostedAndRuntimeModelOptions', () => {
       ]
     })
 
-    expect(result.providers?.map(provider => provider.slug)).toEqual(['alibaba', 'gemini', 'groq'])
+    expect(result.providers?.map(provider => provider.slug)).toEqual(['gemini', 'groq'])
     expect(result.providers?.find(provider => provider.slug === 'gemini')).toMatchObject({
-      is_current: true,
-      is_verxio_hosted: true,
-      models: [
-        'gemini-flash-lite-latest',
-        'gemini-3.1-flash-lite',
-        'gemini-2.5-pro',
-        'gemini-3.1-pro-preview',
-        'gemini-3-pro-preview'
-      ],
-      name: 'Verxio Gemini'
+      models: ['gemini-flash-lite-latest', 'gemini-3.1-pro-preview', 'gemini-3-pro-preview'],
+      name: 'Google AI Studio'
     })
+    expect(result.providers?.find(provider => provider.slug === 'gemini')?.is_verxio_hosted).toBeUndefined()
     expect(result.providers?.find(provider => provider.slug === 'groq')).toMatchObject({
       models: ['llama-3.3-70b-versatile'],
       name: 'Groq'
@@ -353,44 +307,50 @@ describe('prioritizeLinkedProviders', () => {
 })
 
 describe('getScopedModelOptions', () => {
-  it('returns hosted Gemini/Qwen options without waiting forever on a hung runtime catalog', async () => {
+  it('returns the user runtime catalog and no Verxio-hosted rows', async () => {
     const { getInferenceCatalog, getInferenceSettings } = await import('./verxio-api')
     vi.mocked(getInferenceSettings).mockResolvedValue({
-      defaultModelId: 'verxio-gemini',
-      mode: 'hosted',
+      defaultModelId: '',
+      mode: 'byok',
       monthlyCreditUsd: 0,
       overageEnabled: false,
       spendingLimitUsd: null
     })
-    vi.mocked(getInferenceCatalog).mockResolvedValue(catalog)
+    vi.mocked(getInferenceCatalog).mockResolvedValue({ defaultModelId: '', models: [] })
 
-    const never = new Promise<ModelOptionsResponse>(() => undefined)
-    const result = await getScopedModelOptions(() => never)
+    const result = await getScopedModelOptions(async () => ({
+      model: 'gpt-5-mini',
+      provider: 'openai',
+      providers: [
+        {
+          authenticated: true,
+          models: ['gpt-5-mini'],
+          name: 'OpenAI',
+          slug: 'openai'
+        }
+      ]
+    }))
 
-    expect(result.model).toBe('gemini-flash-lite-latest')
-    expect(result.provider).toBe('gemini')
-    expect(result.providers?.find(provider => provider.slug === 'gemini')).toMatchObject({
-      is_verxio_hosted: true,
-      name: 'Verxio Gemini',
-      slug: 'gemini'
-    })
+    expect(result.model).toBe('gpt-5-mini')
+    expect(result.provider).toBe('openai')
+    expect(result.providers?.some(provider => provider.is_verxio_hosted)).toBe(false)
+    expect(result.providers?.map(provider => provider.slug)).toEqual(['openai'])
   })
 
-  it('still returns hosted models when the runtime catalog rejects', async () => {
+  it('does not invent hosted models when the runtime catalog rejects', async () => {
     const { getInferenceCatalog, getInferenceSettings } = await import('./verxio-api')
     vi.mocked(getInferenceSettings).mockResolvedValue({
-      defaultModelId: 'verxio-qwen',
-      mode: 'hosted',
+      defaultModelId: '',
+      mode: 'byok',
       monthlyCreditUsd: 0,
       overageEnabled: false,
       spendingLimitUsd: null
     })
     vi.mocked(getInferenceCatalog).mockResolvedValue(catalog)
 
-    const result = await getScopedModelOptions(() => Promise.reject(new Error('backend timed out')))
-
-    expect(result.partial).toBe(true)
-    expect(result.providers?.some(provider => provider.is_verxio_hosted)).toBe(true)
+    await expect(getScopedModelOptions(() => Promise.reject(new Error('backend timed out')))).rejects.toThrow(
+      'backend timed out'
+    )
   })
 })
 

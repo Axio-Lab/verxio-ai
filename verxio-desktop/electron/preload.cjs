@@ -1,5 +1,6 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron')
 const crypto = require('node:crypto')
+const { localGatewayPath, resolveHermesApiTarget } = require('./gateway-route.cjs')
 
 const CONNECTION_CONFIG_KEY = 'verxio.desktop.connection.config'
 const ACTIVE_PROFILE_KEY = 'verxio.desktop.active.profile'
@@ -245,10 +246,6 @@ async function waitForDashboardReady() {
 
 function cloudDashboardUrl() {
   return `${verxioApiBaseUrl()}/api/runtime/dashboard`
-}
-
-function isCloudDashboardPath(path) {
-  return path.startsWith('/api/cron') || path.startsWith('/api/messaging') || path.startsWith('/api/pairing')
 }
 
 async function getLocalHermesConnection() {
@@ -538,11 +535,15 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
     }
   },
   api: async request => {
-    const scope = request.scope === 'cloud' || isCloudDashboardPath(request.path) ? 'cloud' : 'local'
-    const local = scope === 'local' ? await getLocalHermesConnection() : null
+    const local = await getLocalHermesConnection()
+    const target = resolveHermesApiTarget({
+      path: request.path,
+      scope: request.scope,
+      hasLocalHermes: Boolean(local?.baseUrl && local?.token)
+    })
 
-    if (local?.baseUrl && local?.token) {
-      return fetchJson(`${local.baseUrl.replace(/\/$/, '')}${request.path}`, {
+    if (target === 'local' && local?.baseUrl && local?.token) {
+      return fetchJson(`${local.baseUrl.replace(/\/$/, '')}${localGatewayPath(request.path)}`, {
         method: request.method ?? 'GET',
         body: request.body !== undefined ? JSON.stringify(request.body) : undefined,
         timeoutMs: request.timeoutMs,
@@ -553,7 +554,8 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
       })
     }
 
-    const url = scope === 'cloud' ? `${(await getCloudConnection()).baseUrl}${request.path}` : buildApiUrl(request.path)
+    const url =
+      target === 'cloud' ? `${(await getCloudConnection()).baseUrl}${request.path}` : buildApiUrl(request.path)
 
     return fetchJson(url, {
       method: request.method ?? 'GET',
@@ -590,6 +592,22 @@ contextBridge.exposeInMainWorld('hermesDesktop', {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      stream.getTracks().forEach(track => track.stop())
+
+      return true
+    } catch {
+      return false
+    }
+  },
+  requestCameraAccess: async () => {
+    const nativeAllowed = await ipcRenderer.invoke('verxio:requestCameraAccess')
+
+    if (!nativeAllowed || !navigator.mediaDevices?.getUserMedia) {
+      return Boolean(nativeAllowed)
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true })
       stream.getTracks().forEach(track => track.stop())
 
       return true

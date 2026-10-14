@@ -56,9 +56,7 @@ def test_device_token_issue_list_revoke_and_bearer_auth(client):
 
     models = client.get("/api/inference/v1/models", headers={"Authorization": f"Bearer {token}"})
     assert models.status_code == 200
-    ids = {row["id"] for row in models.json()["data"]}
-    assert "verxio-qwen" in ids
-    assert "verxio-gemini" in ids
+    assert models.json()["data"] == []
 
     revoked = client.delete(f"/api/auth/device/{token_id}", headers=headers)
     assert revoked.status_code == 200
@@ -96,12 +94,10 @@ def test_inference_gateway_meters_usage(client):
             json={"model": "verxio-qwen", "messages": [{"role": "user", "content": "hi"}]},
         )
 
-    assert response.status_code == 200
-    assert response.json()["choices"][0]["message"]["content"] == "hello"
+    assert response.status_code == 503
     usage = client.get("/api/inference/usage", headers=headers)
     assert usage.status_code == 200
-    assert usage.json()["usage"]["events"] == 1
-    assert usage.json()["usage"]["usedUsd"] > 0
+    assert usage.json()["usage"]["events"] == 0
 
 
 def test_inference_gateway_rejects_when_credit_exhausted(client, monkeypatch):
@@ -258,6 +254,17 @@ def test_default_cloud_plane_is_pool(monkeypatch):
     from app.plane import default_plane
 
     assert default_plane() == "pool"
+
+
+def test_local_api_reads_composio_key_from_desktop_hermes_env(monkeypatch, tmp_path):
+    from app import composio_catalog
+
+    monkeypatch.delenv("COMPOSIO_API_KEY", raising=False)
+    monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+    monkeypatch.setenv("VERXIO_DATABASE_MODE", "sqlite")
+    (tmp_path / ".env").write_text('COMPOSIO_API_KEY="desktop-test-key"\n', encoding="utf-8")
+    monkeypatch.setattr("app.control_plane.desktop_hermes_home", lambda: tmp_path)
+    assert composio_catalog._api_key() == "desktop-test-key"
 
 
 def test_composio_mcp_session_without_config(client, monkeypatch):

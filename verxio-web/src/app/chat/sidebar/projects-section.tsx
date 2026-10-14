@@ -68,6 +68,7 @@ interface SidebarProjectsSectionProps {
   workingSessionIdSet: Set<string>
   onArchiveSession: (sessionId: string) => void
   onDeleteSession: (sessionId: string) => void
+  onNewSessionInProject: (projectId: string) => void
   onResumeSession: (sessionId: string) => void
   onTogglePin: (sessionId: string) => void
 }
@@ -126,6 +127,7 @@ export function SidebarProjectsSection({
   workingSessionIdSet,
   onArchiveSession,
   onDeleteSession,
+  onNewSessionInProject,
   onResumeSession,
   onTogglePin
 }: SidebarProjectsSectionProps) {
@@ -203,7 +205,7 @@ export function SidebarProjectsSection({
   }
 
   return (
-    <div className="shrink-0 pb-1">
+    <div className={cn('flex min-h-0 flex-col overflow-hidden pb-1', open ? 'flex-1' : 'shrink-0')}>
       <div className="group/section flex shrink-0 items-center justify-between pb-1 pt-1.5">
         <button
           className="group/section-label flex w-fit items-center gap-1 bg-transparent text-left leading-none"
@@ -262,7 +264,7 @@ export function SidebarProjectsSection({
         <DndContext collisionDetection={closestCenter} onDragEnd={onDragEnd} sensors={sensors}>
           <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
             <div
-              className="grid max-h-[calc(8*1.75rem+0.25rem)] gap-px overflow-y-auto overscroll-contain pb-1"
+              className="grid min-h-0 flex-1 content-start gap-px overflow-y-auto overscroll-contain pb-1"
               data-project-list=""
             >
               {creating && (
@@ -296,6 +298,7 @@ export function SidebarProjectsSection({
                   manual={manual}
                   onArchiveSession={onArchiveSession}
                   onDeleteSession={onDeleteSession}
+                  onNewSessionInProject={onNewSessionInProject}
                   onResumeSession={onResumeSession}
                   onTogglePin={onTogglePin}
                   pinnedSessionIds={pinnedSessionIds}
@@ -324,6 +327,7 @@ function ProjectFolder({
   workingSessionIdSet,
   onArchiveSession,
   onDeleteSession,
+  onNewSessionInProject,
   onResumeSession,
   onTogglePin
 }: {
@@ -337,12 +341,13 @@ function ProjectFolder({
   workingSessionIdSet: Set<string>
   onArchiveSession: (sessionId: string) => void
   onDeleteSession: (sessionId: string) => void
+  onNewSessionInProject: (projectId: string) => void
   onResumeSession: (sessionId: string) => void
   onTogglePin: (sessionId: string) => void
 }) {
   const { t } = useI18n()
   const s = t.sidebar
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(true)
   const [renaming, setRenaming] = useState(false)
   const [draft, setDraft] = useState(project.name)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -462,7 +467,18 @@ function ProjectFolder({
                   <Codicon name="ellipsis" size="0.75rem" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuItem
+                  onSelect={() => {
+                    setExpanded(true)
+                    triggerHaptic('selection')
+                    onNewSessionInProject(project.id)
+                  }}
+                >
+                  <Codicon name="add" size="0.875rem" />
+                  <span className="truncate">{s.newSessionIn(project.name)}</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuLabel>{s.projectPriority}</DropdownMenuLabel>
                 <DropdownMenuRadioGroup
                   onValueChange={value => {
@@ -498,28 +514,7 @@ function ProjectFolder({
         <p className="px-7 pb-1 text-[0.6875rem] text-(--ui-text-quaternary)">{s.projectEmpty}</p>
       )}
       {expanded && sessions.length > 0 && (
-        <div
-          className="max-h-[calc(4*1.625rem)] overflow-y-auto overscroll-contain"
-          onWheel={event => {
-            const list = event.currentTarget
-            const projects = list.closest('[data-project-list]')
-
-            if (!(projects instanceof HTMLElement)) {
-              return
-            }
-
-            const fits = list.scrollHeight <= list.clientHeight + 1
-            const atStart = list.scrollTop <= 0
-            const atEnd = list.scrollTop + list.clientHeight >= list.scrollHeight - 1
-            const leaveList = fits || (event.deltaY > 0 && atEnd) || (event.deltaY < 0 && atStart)
-
-            if (!leaveList) {
-              return
-            }
-
-            projects.scrollTop += event.deltaY
-          }}
-        >
+        <div>
           {sessions.map(session => (
             <ProjectSessionRow
               activeSessionId={activeSessionId}

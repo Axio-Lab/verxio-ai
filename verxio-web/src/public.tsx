@@ -4,7 +4,6 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 
-import { PublicAgentShareView } from './app/agents'
 import { PublicNotepadShareView } from './app/notepad'
 import { ErrorBoundary } from './components/error-boundary'
 import { installStaleChunkReload } from './lib/stale-chunk'
@@ -45,7 +44,7 @@ createRoot(document.getElementById('root')!).render(
       <BrowserRouter>
         <Routes>
           <Route element={<PublicNotepadShareView />} path="/share/notepad/*" />
-          <Route element={<PublicAgentShareView />} path="/agent/*" />
+          <Route element={<Navigate replace to="/download" />} path="/agent/*" />
           <Route element={<DownloadPage />} path="/download" />
           <Route element={<Navigate replace to="/download" />} path="*" />
         </Routes>

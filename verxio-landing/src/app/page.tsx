@@ -3,7 +3,6 @@ import { Hero } from "./home/_components/hero";
 import { Features } from "./home/_components/features";
 import { IntegrationsOrbit } from "./home/_components/integrations-orbit";
 import { HowItWorks } from "./home/_components/how-it-works";
-import { Pricing } from "./home/_components/pricing";
 import { CTA } from "./home/_components/cta";
 import { Footer } from "./home/_components/footer";
 import type { Metadata } from "next";
@@ -11,16 +10,16 @@ import type { Metadata } from "next";
 const siteUrl = "https://www.verxio.xyz";
 
 export const metadata: Metadata = {
-  title: "Verxio — Agentic Operations Platform",
+  title: "Verxio — AI work OS",
   description:
-    "Deploy AI agents that orchestrate goals, automate workflows, and run support across WhatsApp, Telegram, Slack, and Discord. 10,000+ actions. 800+ apps. One platform.",
+    "Verxio is an AI work OS for your machine. The agent uses your screen, files, terminal, Notepad, connected apps, and messaging channels.",
   alternates: {
     canonical: siteUrl,
   },
   openGraph: {
-    title: "Verxio — Agentic Operations Platform",
+    title: "Verxio — AI work OS",
     description:
-      "Deploy AI agents that orchestrate goals, automate workflows, and run support across WhatsApp, Telegram, Slack, and Discord. 10,000+ actions. 800+ apps.",
+      "A workspace on your machine where the agent does the work. Computer use, files, terminal, Notepad, and your apps.",
     url: siteUrl,
     siteName: "Verxio",
     locale: "en_US",
@@ -30,15 +29,15 @@ export const metadata: Metadata = {
         url: `${siteUrl}/logo/verxioLogoMain.svg`,
         width: 1200,
         height: 630,
-        alt: "Verxio — Agentic Operations Platform",
+        alt: "Verxio — AI work OS",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Verxio — Agentic Operations Platform",
+    title: "Verxio — AI work OS",
     description:
-      "Deploy AI agents that orchestrate goals, automate workflows, and run support across WhatsApp, Telegram, Slack, and Discord.",
+      "A workspace on your machine where the agent does the work.",
     images: [`${siteUrl}/logo/verxioLogoMain.svg`],
   },
 };
@@ -53,7 +52,7 @@ export default function Home() {
       name: "Verxio",
       url: siteUrl,
       description:
-        "Agentic operations platform that deploys AI agents to orchestrate goals, automate workflows, and run support across WhatsApp, Telegram, Slack, and Discord.",
+        "AI work OS. A desktop workspace where your agent uses the screen, files, terminal, Notepad, connected apps, and messaging channels.",
       potentialAction: {
         "@type": "SearchAction",
         target: `${siteUrl}/search?q={search_term_string}`,
@@ -73,19 +72,12 @@ export default function Home() {
       "@type": "SoftwareApplication",
       name: "Verxio",
       applicationCategory: "BusinessApplication",
-      operatingSystem: "Web",
-      offers: {
-        "@type": "AggregateOffer",
-        lowPrice: "9",
-        highPrice: "500",
-        priceCurrency: "USD",
-        offerCount: "4",
-      },
+      operatingSystem: "macOS, Windows, Linux",
       description:
-        "Agentic operations platform that orchestrates AI goals, automates workflows, and runs support agents across WhatsApp, Telegram, Slack, and Discord. 10,000+ actions across 800+ apps.",
+        "Desktop AI work OS. The agent uses your screen, files, terminal, Notepad, connected apps, and messaging channels.",
       url: siteUrl,
       featureList:
-        "AI Goal Orchestration, AI Support Agents, Visual Workflow Builder, Slack Integration, Discord Integration, Telegram Integration, WhatsApp Integration, 10000+ Actions, 800+ App Integrations, Custom Skills, Agent Memory",
+        "Computer Use, Workspace, Local Files, Terminal, Notepad, On-device Whisper, Projects, App Connections, Telegram, WhatsApp, Slack, Discord",
     },
     {
       "@context": "https://schema.org",
@@ -93,7 +85,7 @@ export default function Home() {
       name: "Verxio Blog",
       url: "https://blog.verxio.xyz",
       description:
-        "Articles, guides, and insights on AI automation, agentic operations, workflow building, and business growth from the Verxio team.",
+        "Articles and guides from the Verxio team.",
       isPartOf: {
         "@type": "WebSite",
         name: "Verxio",
@@ -114,7 +106,6 @@ export default function Home() {
         <Features />
         <IntegrationsOrbit />
         <HowItWorks />
-        <Pricing />
         <CTA />
         <Footer />
       </div>

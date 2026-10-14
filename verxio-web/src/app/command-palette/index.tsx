@@ -16,7 +16,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
-  Cpu,
   type IconComponent,
   Info,
   KeyRound,
@@ -28,6 +27,7 @@ import {
   RefreshCw,
   Settings,
   Settings2,
+  Sparkles,
   Sun,
   Users,
   Wrench,
@@ -41,10 +41,10 @@ import {
   runRuntimeEnvReload,
   runVerxioContainerRestart
 } from '@/store/system-actions'
+import { openTavusCall } from '@/store/tavus-call'
 import { type ThemeMode, useTheme } from '@/themes/context'
 
 import {
-  AGENTS_ROUTE,
   COMMAND_CENTER_ROUTE,
   CRON_ROUTE,
   MESSAGING_ROUTE,
@@ -229,6 +229,23 @@ export function CommandPalette() {
           },
           { icon: Settings, id: 'nav-settings', label: cc.nav.settings.title, run: go(SETTINGS_ROUTE) },
           {
+            icon: Sparkles,
+            id: 'nav-personality',
+            keywords: ['tavus', 'voice', 'call', 'face'],
+            label: t.settings.nav.personality,
+            run: go(settingsTab('personality'))
+          },
+          {
+            icon: MessageCircle,
+            id: 'nav-call',
+            keywords: ['tavus', 'video', 'voice'],
+            label: 'Start a call',
+            run: () => {
+              openTavusCall()
+              closeCommandPalette()
+            }
+          },
+          {
             icon: Wrench,
             id: 'nav-skills',
             keywords: ['tools', 'toolsets'],
@@ -243,8 +260,7 @@ export function CommandPalette() {
             label: t.shell.statusbar.cron,
             run: go(CRON_ROUTE)
           },
-          { icon: Users, id: 'nav-profiles', label: t.profiles.title, run: go(PROFILES_ROUTE) },
-          { icon: Cpu, id: 'nav-agents', label: t.agents.title, run: go(AGENTS_ROUTE) }
+          { icon: Users, id: 'nav-profiles', label: t.profiles.title, run: go(PROFILES_ROUTE) }
         ]
       },
       {

@@ -12,14 +12,17 @@ export interface SidebarProject {
 export interface SidebarProjectsState {
   sort: ProjectSort
   projects: SidebarProject[]
+  /** Saves from before recency was the default have no version and used manual order. */
+  orderVersion: number
 }
 
 const PRIORITY_RANK: Record<ProjectPriority, number> = { high: 0, normal: 1, low: 2 }
 const SORTS = new Set<ProjectSort>(['priority', 'updated', 'manual'])
 const PRIORITIES = new Set<ProjectPriority>(['high', 'normal', 'low'])
+const PROJECT_ORDER_VERSION = 1
 
 export function emptyProjectsState(): SidebarProjectsState {
-  return { sort: 'manual', projects: [] }
+  return { sort: 'updated', projects: [], orderVersion: PROJECT_ORDER_VERSION }
 }
 
 export function projectSessionIdSet(state: SidebarProjectsState): Set<string> {
@@ -75,13 +78,21 @@ export function parseProjectsState(value: unknown): SidebarProjectsState {
   }
 
   const record = value as Record<string, unknown>
-  const sort = SORTS.has(record.sort as ProjectSort) ? (record.sort as ProjectSort) : 'manual'
+  const savedVersion =
+    typeof record.orderVersion === 'number' && Number.isFinite(record.orderVersion) ? record.orderVersion : 0
+  let sort = SORTS.has(record.sort as ProjectSort) ? (record.sort as ProjectSort) : 'updated'
+
+  // Manual used to be the untouched default, so an old save is not a choice to
+  // keep append order. A later explicit Manual choice is stored with a version.
+  if (savedVersion < PROJECT_ORDER_VERSION && sort === 'manual') {
+    sort = 'updated'
+  }
 
   const projects = Array.isArray(record.projects)
     ? record.projects.map(parseProject).filter((project): project is SidebarProject => project !== null)
     : []
 
-  return { sort, projects }
+  return { sort, projects, orderVersion: PROJECT_ORDER_VERSION }
 }
 
 export function createProject(
@@ -98,7 +109,7 @@ export function createProject(
 
   return {
     ...state,
-    projects: [...state.projects, { id, name: cleaned, sessionIds: [], priority: 'normal', updatedAt: now }]
+    projects: [{ id, name: cleaned, sessionIds: [], priority: 'normal', updatedAt: now }, ...state.projects]
   }
 }
 
@@ -175,7 +186,7 @@ export function addSessionToProject(
 
   const projects = state.projects.map(project => {
     const without = project.sessionIds.filter(id => id !== sessionId)
-    const nextIds = project.id === projectId ? [...without, sessionId] : without
+    const nextIds = project.id === projectId ? [sessionId, ...without] : without
 
     if (
       nextIds.length === project.sessionIds.length &&

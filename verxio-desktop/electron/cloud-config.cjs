@@ -2,6 +2,8 @@ const { spawnSync } = require('node:child_process')
 const fs = require('node:fs')
 const path = require('node:path')
 
+const PERSONALITY_START = '<!-- VERXIO_PERSONALITY_START -->'
+const PERSONALITY_END = '<!-- VERXIO_PERSONALITY_END -->'
 const COMPOSIO_PROMPT_START = '<!-- VERXIO_COMPOSIO_CONTEXT_START -->'
 const COMPOSIO_PROMPT_END = '<!-- VERXIO_COMPOSIO_CONTEXT_END -->'
 
@@ -112,7 +114,7 @@ function spliceComposioPrompt(current, block) {
   return `${existing.trimEnd()}\n\n${managed}`
 }
 
-function mergeComposioMcp(config, { enabled, mcpUrl, prompt }) {
+function mergeComposioMcp(config, { clearMcp, enabled, mcpUrl, prompt }) {
   const next = mergeObject(config, {})
   const active = enabled !== false && Boolean(mcpUrl)
 
@@ -127,8 +129,11 @@ function mergeComposioMcp(config, { enabled, mcpUrl, prompt }) {
         supports_parallel_tool_calls: false
       }
     })
-  } else if (next.mcp_servers && next.mcp_servers.composio) {
+  } else if (clearMcp && next.mcp_servers && next.mcp_servers.composio) {
     delete next.mcp_servers.composio
+    if (!Object.keys(next.mcp_servers).length) {
+      delete next.mcp_servers
+    }
   }
 
   if (prompt) {
@@ -262,7 +267,7 @@ if enabled:
         "supports_parallel_tool_calls": False,
     }
     config["mcp_servers"] = servers
-else:
+elif payload.get("clearMcp"):
     servers.pop("composio", None)
     if servers:
         config["mcp_servers"] = servers
@@ -316,6 +321,7 @@ function applyComposioBridge(hermesHome, payload, python) {
       agentPrompt: payload.agentPrompt || '',
       apiKey: payload.apiKey || '',
       apiUrl: payload.apiUrl || '',
+      clearMcp: Boolean(payload.clearMcp),
       enabled: Boolean(payload.enabled),
       mcpUrl: payload.mcpUrl || '',
       prompt: payload.prompt || '',
@@ -331,7 +337,40 @@ function applyComposioBridge(hermesHome, payload, python) {
     throw new Error(detail.split('\n')[0])
   }
 
+  if (payload.personalityPrompt !== undefined) {
+    writePersonality(hermesHome, payload.personalityPrompt)
+  }
+
   return JSON.parse(result.stdout || '{"ok":true,"enabled":false}')
+}
+
+function splicePersonality(current, prompt) {
+  const source = String(current || '')
+  const start = source.indexOf(PERSONALITY_START)
+  const end = source.indexOf(PERSONALITY_END)
+  let without = source
+  if (start !== -1 && end > start) {
+    without = `${source.slice(0, start)}${source.slice(end + PERSONALITY_END.length)}`
+  }
+  without = without.replace(/\n{3,}/g, '\n\n').trim()
+  const text = String(prompt || '').trim()
+  if (!text) {
+    return without ? `${without}\n` : ''
+  }
+  const block = `${PERSONALITY_START}\n${text}\n${PERSONALITY_END}`
+  const composio = without.indexOf(COMPOSIO_PROMPT_START)
+  if (composio !== -1) {
+    const before = without.slice(0, composio).trim()
+    const after = without.slice(composio).trim()
+    return `${[before, block, after].filter(Boolean).join('\n\n')}\n`
+  }
+  return `${[without, block].filter(Boolean).join('\n\n')}\n`
+}
+
+function writePersonality(hermesHome, prompt) {
+  const soulPath = path.join(hermesHome, 'SOUL.md')
+  const current = fs.existsSync(soulPath) ? fs.readFileSync(soulPath, 'utf8') : ''
+  fs.writeFileSync(soulPath, splicePersonality(current, prompt))
 }
 
 module.exports = {
@@ -343,5 +382,6 @@ module.exports = {
   mergeProviderConfig,
   parseSimpleYaml,
   readConfig,
+  splicePersonality,
   writeConfig
 }

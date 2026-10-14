@@ -30,6 +30,10 @@ const NotificationsSettings = lazy(async () => ({
   default: (await import('./notifications-settings')).NotificationsSettings
 }))
 
+const PersonalitySettings = lazy(async () => ({
+  default: (await import('./personality-settings')).PersonalitySettings
+}))
+
 const ProvidersSettings = lazy(async () => ({ default: (await import('./providers-settings')).ProvidersSettings }))
 const SessionsSettings = lazy(async () => ({ default: (await import('./sessions-settings')).SessionsSettings }))
 
@@ -38,6 +42,7 @@ const SETTINGS_VIEWS: readonly SettingsViewId[] = [
   'providers',
   'keys',
   'mcp',
+  'personality',
   'notifications',
   'sessions',
   'about'
@@ -204,6 +209,12 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
             </div>
           )}
           <OverlayNavItem
+            active={activeView === 'personality'}
+            icon={Sparkles}
+            label={t.settings.nav.personality}
+            onClick={() => openSettingsView('personality')}
+          />
+          <OverlayNavItem
             active={activeView === 'mcp'}
             icon={Wrench}
             label={t.settings.nav.mcp}
@@ -281,6 +292,8 @@ export function SettingsView({ gateway, onClose, onConfigSaved, requestGateway }
               />
             ) : activeView === 'keys' ? (
               <KeysSettings view={keysView} />
+            ) : activeView === 'personality' ? (
+              <PersonalitySettings />
             ) : activeView === 'mcp' ? (
               <McpSettings gateway={gateway} onConfigSaved={onConfigSaved} />
             ) : activeView === 'notifications' ? (

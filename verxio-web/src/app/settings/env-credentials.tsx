@@ -9,6 +9,7 @@ import { isSelectableModel } from '@/lib/hosted-default-model'
 import { type IconComponent } from '@/lib/icons'
 import { clearCachedModelOptions, refreshModelOptionsQueries } from '@/lib/model-options-cache'
 import { looksLikeToolCredentialEnv, shouldReloadToolCredential } from '@/lib/tool-credentials'
+import { deleteTavusKey, saveTavusKey, TAVUS_API_KEY } from '@/lib/verxio-api'
 import { getScopedModelOptions } from '@/lib/verxio-model-options'
 import { notify, notifyError } from '@/store/notifications'
 import { setCurrentModel, setCurrentProvider } from '@/store/session'
@@ -185,6 +186,10 @@ export function useEnvCredentials(): UseEnvCredentials {
     setSaving(key)
 
     try {
+      if (key === TAVUS_API_KEY) {
+        await saveTavusKey(value.trim())
+      }
+
       await setEnvVar(key, value)
       invalidateEnvVarsCache()
       patchVar(key, { is_set: true, redacted_value: redactedValue(value) })
@@ -211,6 +216,10 @@ export function useEnvCredentials(): UseEnvCredentials {
     setSaving(key)
 
     try {
+      if (key === TAVUS_API_KEY) {
+        await saveTavusKey(trimmed)
+      }
+
       await setEnvVar(key, trimmed)
       invalidateEnvVarsCache()
       setVars(c => {
@@ -258,6 +267,10 @@ export function useEnvCredentials(): UseEnvCredentials {
     setSaving(key)
 
     try {
+      if (key === TAVUS_API_KEY) {
+        await deleteTavusKey()
+      }
+
       await deleteEnvVar(key)
       invalidateEnvVarsCache()
 

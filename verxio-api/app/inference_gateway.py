@@ -1,8 +1,7 @@
-"""OpenAI-compatible inference gateway for Verxio Desktop and pool workers.
+"""OpenAI-compatible inference gateway.
 
-Desktop Hermes and cloud workers call ``/api/inference/v1`` with a device or
-session credential. Hosted DashScope / Gemini keys stay on the control plane;
-the gateway forwards the request and meters tokens into ``usage_events``.
+Verxio does not supply model keys. A request for a Verxio-hosted model is refused
+until a user connects their own provider.
 """
 
 from __future__ import annotations
@@ -18,7 +17,6 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from app.inference import (
     DEFAULT_MODEL_ID,
-    MODEL_CATALOG,
     _available_model_ids,
     _hosted_secret,
     _upstream_model_id,
@@ -26,7 +24,7 @@ from app.inference import (
     record_inference_usage,
     resolve_hosted_model,
 )
-from app.models import GatewayModel, GatewayModelList
+from app.models import GatewayModelList
 
 logger = logging.getLogger(__name__)
 
@@ -41,18 +39,7 @@ def _provider_base_url(provider_slug: str) -> str:
 
 
 def list_gateway_models() -> GatewayModelList:
-    return GatewayModelList(
-        data=[
-            GatewayModel(
-                id=model.id,
-                owned_by=model.provider_slug,
-                verxioModelId=model.id,
-                providerSlug=model.provider_slug,
-                hostedAvailable=bool(_hosted_secret(model)[1]),
-            )
-            for model in MODEL_CATALOG
-        ]
-    )
+    return GatewayModelList(data=[])
 
 
 def _usage_tokens(usage: Any) -> tuple[int, int]:

@@ -4,7 +4,7 @@ const path = require('node:path')
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
-const { applyComposioBridge, mergeComposioMcp, mergeProviderConfig } = require('./cloud-config.cjs')
+const { applyComposioBridge, mergeComposioMcp, mergeProviderConfig, splicePersonality } = require('./cloud-config.cjs')
 
 test('mergeProviderConfig writes the Verxio inference gateway', () => {
   const next = mergeProviderConfig({}, { cloudUrl: 'http://127.0.0.1:8787', deviceToken: 'vxd_test' })
@@ -38,6 +38,19 @@ test('mergeComposioMcp splices the managed prompt and leaves the model alone', (
   assert.match(next.agent.system_prompt, /Use Gmail/)
   const again = mergeComposioMcp(next, { mcpUrl: 'https://mcp.example/session', prompt: block })
   assert.equal(again.agent.system_prompt.match(/VERXIO_COMPOSIO_CONTEXT_START/g).length, 1)
+})
+
+test('mergeComposioMcp keeps an existing server when the refresh has no URL', () => {
+  const current = {
+    mcp_servers: {
+      composio: { enabled: true, url: 'https://mcp.example/existing' }
+    }
+  }
+  const kept = mergeComposioMcp(current, { enabled: false, mcpUrl: '', clearMcp: false })
+  assert.equal(kept.mcp_servers.composio.url, 'https://mcp.example/existing')
+
+  const cleared = mergeComposioMcp(current, { enabled: false, mcpUrl: '', clearMcp: true })
+  assert.equal(cleared.mcp_servers, undefined)
 })
 
 test('applyComposioBridge writes the session without resetting the model', () => {
@@ -96,7 +109,34 @@ test('applyComposioBridge writes the session without resetting the model', () =>
     const rewritten = fs.readFileSync(path.join(home, 'config.yaml'), 'utf8')
     assert.equal(rewritten.match(/VERXIO_COMPOSIO_CONTEXT_START/g).length, 1)
     assert.match(rewritten, /mcp\.example\/next/)
+    applyComposioBridge(home, { enabled: false, mcpUrl: '', clearMcp: false, prompt: block }, python)
+    const preserved = fs.readFileSync(path.join(home, 'config.yaml'), 'utf8')
+    assert.match(preserved, /mcp\.example\/next/)
+    applyComposioBridge(home, { enabled: false, mcpUrl: '', clearMcp: true, prompt: block }, python)
+    const removed = fs.readFileSync(path.join(home, 'config.yaml'), 'utf8')
+    assert.doesNotMatch(removed, /mcp_servers/)
   } finally {
     fs.rmSync(home, { recursive: true, force: true })
   }
+})
+
+test('splicePersonality keeps product text and the Composio block', () => {
+  const current = [
+    'You are Verxio.',
+    '<!-- VERXIO_COMPOSIO_CONTEXT_START -->',
+    'Use Airtable',
+    '<!-- VERXIO_COMPOSIO_CONTEXT_END -->'
+  ].join('\n')
+  const once = splicePersonality(current, 'Speak briefly.')
+  assert.match(once, /You are Verxio/)
+  assert.match(once, /Use Airtable/)
+  assert.match(once, /Speak briefly/)
+  assert.equal(once.match(/VERXIO_PERSONALITY_START/g).length, 1)
+  const twice = splicePersonality(once, 'Speak warmly.')
+  assert.equal(twice.match(/VERXIO_PERSONALITY_START/g).length, 1)
+  assert.match(twice, /Speak warmly/)
+  assert.doesNotMatch(twice, /Speak briefly/)
+  const cleared = splicePersonality(twice, '')
+  assert.doesNotMatch(cleared, /VERXIO_PERSONALITY_START/)
+  assert.match(cleared, /Use Airtable/)
 })

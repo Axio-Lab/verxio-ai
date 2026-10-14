@@ -40,6 +40,7 @@ declare global {
         prepareCaptureSource?: (sourceId: string) => Promise<{ ok: boolean }>
       }
       requestMicrophoneAccess: () => Promise<boolean>
+      requestCameraAccess: () => Promise<boolean>
       readFileDataUrl: (filePath: string) => Promise<string>
       readFileText: (filePath: string) => Promise<HermesReadFileTextResult>
       selectPaths: (options?: HermesSelectPathsOptions) => Promise<string[]>
@@ -59,12 +60,14 @@ declare global {
         agentPrompt?: string
         apiKey?: string
         apiUrl?: string
+        clearMcp?: boolean
         enabled?: boolean
         mcpUrl?: string
         prompt?: string
         publicWebUrl?: string
         runtimeToken?: string
         soulPrompt?: string
+        personalityPrompt?: string
       }) => Promise<{ enabled?: boolean; ok?: boolean }>
       openComposioOAuth?: (authUrl: string, callbackUrl: string) => Promise<{ error?: string; ok: boolean }>
       onComposioOAuthComplete?: (callback: (href: string) => void) => () => void

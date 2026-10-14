@@ -652,7 +652,10 @@ export function useMessageStream({
       broadcastSessionsChanged()
 
       if (compactedTurnRef.current.delete(sessionId)) {
-        shouldHydrate = false
+        // Compression just forked this chat. The bubbles on screen belong to
+        // the window that was summarized, and they are often blank. Reload the
+        // saved transcript so the continuation is never an empty session.
+        shouldHydrate = true
       }
 
       if (shouldHydrate) {

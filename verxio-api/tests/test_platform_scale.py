@@ -183,6 +183,23 @@ def test_cron_store_schedules_delivery_and_postback(monkeypatch, tmp_path):
     mirrored = _json.loads((home / "cron" / "jobs.json").read_text())["jobs"][0]
     assert mirrored["last_status"] == "ok" and mirrored["stats"]["completed"] == 1 and mirrored["last_run_at"]
 
+    listed = cron_store.dispatch_cron_dashboard(
+        tenant_id="t",
+        workspace_id="ws",
+        agent_id="ag",
+        method="GET",
+        path="api/cron/jobs",
+    )
+    assert listed and listed[0]["name"] == "report" and listed[0]["enabled"] is True
+    paused = cron_store.dispatch_cron_dashboard(
+        tenant_id="t",
+        workspace_id="ws",
+        agent_id="ag",
+        method="POST",
+        path=f"api/cron/jobs/{row['id']}/pause",
+    )
+    assert paused["state"] == "paused" and paused["enabled"] is False
+
 
 def test_legacy_plane_switch_blocks_docker_and_reports_usage(monkeypatch, tmp_path):
     monkeypatch.setenv("VERXIO_DATABASE_MODE", "sqlite")

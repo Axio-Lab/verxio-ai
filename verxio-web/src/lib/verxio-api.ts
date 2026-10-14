@@ -121,410 +121,6 @@ export interface VerxioNotepadNoteInput {
   source?: string
 }
 
-export type WorkflowTriggerType = 'api' | 'app_event' | 'chat' | 'manual' | 'schedule' | 'webhook'
-export type WorkflowRunStatus = 'completed' | 'failed' | 'queued' | 'running'
-export type WorkflowDeliveryType =
-  | 'approval_first'
-  | 'composio_action'
-  | 'reply_to_source'
-  | 'save_only'
-  | 'send_message'
-  | 'webhook_callback'
-
-export interface WorkflowAgent {
-  id: string
-  tenant_id: string
-  workspace_id: string
-  runtime_agent_id: string
-  name: string
-  role: string
-  description: string
-  instructions: string
-  model_id: string
-  enabled: boolean
-  skills: string[]
-  knowledge: string[]
-  tools: string[]
-  integrations: string[]
-  approval_policy: string
-  tags?: string[]
-  origin?: 'system' | 'user' | string
-  funnel_rules?: SdrFunnelRules
-  fallback_email?: string
-  campaign_context?: string
-  created_at: string
-  updated_at: string
-}
-
-export interface SdrFunnelBranch {
-  matchKeywords: string[]
-  summary?: string
-  assetUrl?: string
-  assetLabel?: string
-}
-
-export interface SdrFunnelFollowUp {
-  message: string
-  useCustomMessage?: boolean
-  delayMinutes?: number
-  sendAt?: string
-  ctaUrl?: string
-}
-
-export interface SdrFunnelRule {
-  id?: string
-  triggers: string[]
-  questionsEnabled?: boolean
-  questions?: string[]
-  summary: string
-  assetUrl?: string
-  assetLabel?: string
-  maxAgentReplies?: number
-  branches?: SdrFunnelBranch[]
-  followUpEnabled?: boolean
-  followUps?: SdrFunnelFollowUp[]
-}
-
-export interface SdrFunnelRules {
-  rules: SdrFunnelRule[]
-}
-
-export interface SdrContact {
-  id: string
-  channel: string
-  sender_id: string
-  sender_name: string
-  conversation_id: string
-  connection_id: string
-  metadata?: Record<string, unknown>
-  created_at: string
-  updated_at: string
-}
-
-export interface WorkflowAgentInput {
-  approval_policy?: string
-  description?: string
-  enabled?: boolean
-  instructions?: string
-  model_id?: string
-  integrations?: string[]
-  knowledge?: string[]
-  name?: string
-  role?: string
-  skills?: string[]
-  tools?: string[]
-  fallback_email?: string
-  campaign_context?: string
-  funnel_rules?: SdrFunnelRules
-}
-
-export type WorkflowSetupActor = 'gateway' | 'session' | 'web'
-export type WorkflowSetupApprovalRisk =
-  | 'broad_messaging_trigger'
-  | 'destructive_change'
-  | 'external_delivery'
-  | 'paid_or_key_backed_tool'
-  | 'public_link'
-  | 'webhook_callback'
-
-export interface WorkflowSetupTriggerDraft {
-  config: Record<string, unknown>
-  enabled: boolean
-  event_name: string
-  name: string
-  trigger_type: WorkflowTriggerType
-}
-
-export interface WorkflowSetupDeliveryDraft {
-  channel: string
-  config: Record<string, unknown>
-  delivery_type: string
-  destination: string
-  enabled: boolean
-  name?: string
-  require_approval: boolean
-  template: string
-}
-
-export interface WorkflowAgentSetupDraftData {
-  agent: WorkflowAgentInput & { name: string }
-  deliveries: WorkflowSetupDeliveryDraft[]
-  missing?: string[]
-  missing_setup?: string[]
-  notes: string[]
-  triggers: WorkflowSetupTriggerDraft[]
-}
-
-export interface WorkflowAgentSetupApproval {
-  action?: string
-  action_label?: string
-  approved_at?: string | null
-  id: string
-  metadata?: Record<string, unknown>
-  risk?: WorkflowSetupApprovalRisk
-  risk_type?: WorkflowSetupApprovalRisk
-  runtime_agent_id?: string
-  setup_draft_id?: string | null
-  status: 'approved' | 'pending' | 'rejected'
-  tenant_id: string
-  created_at: string
-  workflow_agent_id: string | null
-  workspace_id: string
-  updated_at: string
-}
-
-export interface WorkflowAgentSetupDraft {
-  approvals_required: WorkflowSetupApprovalRisk[]
-  id: string
-  runtime_agent_id: string
-  tenant_id: string
-  workspace_id: string
-  workflow_agent_id: string | null
-  source: WorkflowSetupActor
-  prompt: string
-  status: string
-  draft: WorkflowAgentSetupDraftData
-  created_at: string
-  updated_at: string
-}
-
-export interface WorkflowAgentSetupDraftResponse {
-  approvals: WorkflowAgentSetupApproval[]
-  draft: WorkflowAgentSetupDraft
-}
-
-export interface WorkflowSkillCapability {
-  category: string
-  description: string
-  enabled: boolean
-  name: string
-}
-
-export interface WorkflowSkillCapabilitiesResponse {
-  errors: string[]
-  skills: WorkflowSkillCapability[]
-}
-
-export interface WorkflowToolCapability {
-  api_key_env: string
-  auth_type: string
-  category: string
-  configured: boolean
-  description: string
-  display_name: string
-  enabled: boolean
-  id: string | null
-  method: string
-  name: string
-  source: string
-  tools: string[]
-  url: string
-}
-
-export interface WorkflowToolCapabilitiesResponse {
-  errors: string[]
-  tools: WorkflowToolCapability[]
-}
-
-export interface WorkflowIntegrationCapability {
-  authMode: string | null
-  categories: string[]
-  connected: boolean
-  description: string
-  name: string
-  slug: string
-}
-
-export interface WorkflowIntegrationCapabilitiesResponse {
-  configured: boolean
-  errors: string[]
-  integrations: WorkflowIntegrationCapability[]
-}
-
-export interface WorkflowCustomTool {
-  api_key_env: string
-  auth_type: string
-  created_at: string
-  description: string
-  enabled: boolean
-  headers: Record<string, string>
-  id: string
-  method: string
-  name: string
-  request_schema: Record<string, unknown>
-  response_hint: string
-  tenant_id: string
-  updated_at: string
-  url: string
-  workspace_id: string
-}
-
-export interface WorkflowCustomToolInput {
-  api_key_env?: string
-  auth_type?: string
-  description?: string
-  enabled?: boolean
-  headers?: Record<string, string>
-  method?: string
-  name: string
-  request_schema?: Record<string, unknown>
-  response_hint?: string
-  url: string
-}
-
-export interface KnowledgeBase {
-  id: string
-  tenant_id: string
-  workspace_id: string
-  name: string
-  description: string
-  document_count: number
-  created_at: string
-  updated_at: string
-}
-
-export interface KnowledgeDocument {
-  id: string
-  tenant_id: string
-  workspace_id: string
-  knowledge_base_id: string
-  title: string
-  source: string
-  content: string
-  created_at: string
-  updated_at: string
-}
-
-export interface WorkflowTrigger {
-  id: string
-  tenant_id: string
-  workspace_id: string
-  workflow_agent_id: string
-  trigger_type: WorkflowTriggerType
-  event_name: string
-  name: string
-  enabled: boolean
-  secret: string
-  config: Record<string, unknown>
-  webhook_url: string | null
-  created_at: string
-  updated_at: string
-}
-
-export interface WorkflowTriggerInput {
-  config?: Record<string, unknown>
-  enabled?: boolean
-  event_name?: string
-  name?: string
-  rotate_secret?: boolean
-  trigger_type?: WorkflowTriggerType
-}
-
-export interface WorkflowDelivery {
-  id: string
-  tenant_id: string
-  workspace_id: string
-  workflow_agent_id: string
-  delivery_type: WorkflowDeliveryType
-  name: string
-  channel: string
-  destination: string
-  template: string
-  enabled: boolean
-  require_approval: boolean
-  config: Record<string, unknown>
-  created_at: string
-  updated_at: string
-}
-
-export interface WorkflowDeliveryInput {
-  channel?: string
-  config?: Record<string, unknown>
-  delivery_type?: WorkflowDeliveryType
-  destination?: string
-  enabled?: boolean
-  name?: string
-  require_approval?: boolean
-  template?: string
-}
-
-export interface WorkflowAgentEmbedConfig {
-  id: string
-  tenant_id: string
-  workspace_id: string
-  runtime_agent_id: string
-  workflow_agent_id: string
-  public_token: string
-  enabled: boolean
-  display_name: string
-  welcome_message: string
-  primary_color: string
-  logo_url: string
-  asset_url: string
-  allowed_origins: string[]
-  share_url: string
-  embed_script: string
-  created_at: string
-  updated_at: string
-}
-
-export interface WorkflowAgentEmbedConfigInput {
-  allowed_origins?: string[]
-  asset_url?: string
-  display_name?: string
-  enabled?: boolean
-  logo_url?: string
-  primary_color?: string
-  welcome_message?: string
-}
-
-export interface WorkflowAgentEmbedAssetInput {
-  data_url: string
-  file_name: string
-}
-
-export interface WorkflowAgentPublicInfo {
-  public_token: string
-  name: string
-  description: string
-  display_name: string
-  welcome_message: string
-  primary_color: string
-  logo_url: string
-  asset_url: string
-  powered_by: string
-}
-
-export interface WorkflowRun {
-  id: string
-  tenant_id: string
-  workspace_id: string
-  runtime_agent_id: string
-  workflow_agent_id: string
-  trigger_id: string | null
-  trigger_type: WorkflowTriggerType
-  status: WorkflowRunStatus
-  input: Record<string, unknown>
-  output_text: string
-  error: string | null
-  started_at: string | null
-  completed_at: string | null
-  created_at: string
-  updated_at: string
-}
-
-export interface WorkflowRunEvent {
-  id: string
-  tenant_id: string
-  workspace_id: string
-  workflow_agent_id: string
-  workflow_run_id: string
-  event_type: string
-  message: string
-  metadata: Record<string, unknown>
-  created_at: string
-}
-
 export interface ComposioConnectedAccount {
   id: string
   appSlug: string
@@ -1057,472 +653,6 @@ export function revokeNotepadShare(noteId: string): Promise<{ ok: boolean }> {
   })
 }
 
-export function listWorkflowAgents(): Promise<{ agents: WorkflowAgent[]; setup_drafts?: WorkflowAgentSetupDraft[] }> {
-  return verxioFetch<{ agents: WorkflowAgent[]; setup_drafts?: WorkflowAgentSetupDraft[] }>('/api/workflow-agents')
-}
-
-export function listWorkflowSkillCapabilities(): Promise<WorkflowSkillCapabilitiesResponse> {
-  return verxioFetch<WorkflowSkillCapabilitiesResponse>('/api/workflow-agents/capabilities/skills')
-}
-
-export function listWorkflowToolCapabilities(): Promise<WorkflowToolCapabilitiesResponse> {
-  return verxioFetch<WorkflowToolCapabilitiesResponse>('/api/workflow-agents/capabilities/tools')
-}
-
-export function createWorkflowCustomTool(input: WorkflowCustomToolInput): Promise<WorkflowCustomTool> {
-  return verxioFetch<WorkflowCustomTool>('/api/workflow-agents/custom-tools', {
-    body: JSON.stringify(input),
-    method: 'POST'
-  })
-}
-
-export function listWorkflowIntegrationCapabilities(): Promise<WorkflowIntegrationCapabilitiesResponse> {
-  return verxioFetch<WorkflowIntegrationCapabilitiesResponse>('/api/workflow-agents/capabilities/integrations')
-}
-
-export function listKnowledgeBases(): Promise<{ knowledge_bases: KnowledgeBase[] }> {
-  return verxioFetch<{ knowledge_bases: KnowledgeBase[] }>('/api/knowledge-bases')
-}
-
-export function createKnowledgeBase(input: { description?: string; name: string }): Promise<KnowledgeBase> {
-  return verxioFetch<KnowledgeBase>('/api/knowledge-bases', {
-    body: JSON.stringify(input),
-    method: 'POST'
-  })
-}
-
-export function deleteKnowledgeBase(knowledgeBaseId: string): Promise<{ ok: boolean }> {
-  return verxioFetch<{ ok: boolean }>(`/api/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}`, {
-    method: 'DELETE'
-  })
-}
-
-export function listKnowledgeDocuments(knowledgeBaseId: string): Promise<{ documents: KnowledgeDocument[] }> {
-  return verxioFetch<{ documents: KnowledgeDocument[] }>(
-    `/api/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/documents`
-  )
-}
-
-export function createKnowledgeDocument(
-  knowledgeBaseId: string,
-  input: { content: string; source?: string; title: string }
-): Promise<KnowledgeDocument> {
-  return verxioFetch<KnowledgeDocument>(`/api/knowledge-bases/${encodeURIComponent(knowledgeBaseId)}/documents`, {
-    body: JSON.stringify(input),
-    method: 'POST'
-  })
-}
-
-export function createWorkflowAgent(input: WorkflowAgentInput & { name: string }): Promise<WorkflowAgent> {
-  return verxioFetch<WorkflowAgent>('/api/workflow-agents', {
-    body: JSON.stringify(input),
-    method: 'POST'
-  })
-}
-
-export type WorkflowAgentTemplateId = 'customer-support' | 'sdr' | 'micromgr'
-
-export function createWorkflowAgentFromTemplate(input: {
-  name?: string
-  template: WorkflowAgentTemplateId
-}): Promise<WorkflowAgent> {
-  return verxioFetch<WorkflowAgent>('/api/workflow-agents/from-template', {
-    body: JSON.stringify(input),
-    method: 'POST'
-  })
-}
-
-export function draftWorkflowAgentSetup(input: {
-  prompt: string
-  source?: WorkflowSetupActor
-  source_ref?: string
-}): Promise<WorkflowAgentSetupDraftResponse> {
-  return verxioFetch<WorkflowAgentSetupDraftResponse>('/api/workflow-agents/draft', {
-    body: JSON.stringify(input),
-    method: 'POST'
-  })
-}
-
-export function draftWorkflowAgentSetupUpdate(
-  agentId: string,
-  input: {
-    prompt: string
-    source?: WorkflowSetupActor
-    source_ref?: string
-  }
-): Promise<WorkflowAgentSetupDraftResponse> {
-  return verxioFetch<WorkflowAgentSetupDraftResponse>(
-    `/api/workflow-agents/${encodeURIComponent(agentId)}/draft-update`,
-    {
-      body: JSON.stringify(input),
-      method: 'POST'
-    }
-  )
-}
-
-export function updateWorkflowAgent(agentId: string, input: WorkflowAgentInput): Promise<WorkflowAgent> {
-  return verxioFetch<WorkflowAgent>(`/api/workflow-agents/${encodeURIComponent(agentId)}`, {
-    body: JSON.stringify(input),
-    method: 'PUT'
-  })
-}
-
-export function deleteWorkflowAgent(agentId: string): Promise<{ ok: boolean }> {
-  return verxioFetch<{ ok: boolean }>(`/api/workflow-agents/${encodeURIComponent(agentId)}`, {
-    method: 'DELETE'
-  })
-}
-
-export function listSdrContacts(agentId: string, channel = ''): Promise<{ contacts: SdrContact[]; total: number }> {
-  const query = channel ? `?channel=${encodeURIComponent(channel)}` : ''
-
-  return verxioFetch<{ contacts: SdrContact[]; total: number }>(
-    `/api/workflow-agents/${encodeURIComponent(agentId)}/sdr-contacts${query}`
-  )
-}
-
-export function exportSdrContacts(agentId: string, channel = ''): Promise<{ filename: string; vcf: string }> {
-  const query = channel ? `?channel=${encodeURIComponent(channel)}` : ''
-
-  return verxioFetch<{ filename: string; vcf: string }>(
-    `/api/workflow-agents/${encodeURIComponent(agentId)}/sdr-contacts/export${query}`
-  )
-}
-
-export type MicromgrPlatform = 'telegram' | 'whatsapp' | 'slack' | 'discord' | 'email'
-export type MicromgrWorkerRole = 'worker' | 'supervisor' | 'admin'
-
-export interface MicromgrTask {
-  acceptance_rules: string[]
-  created_at: string
-  delivery_config: Record<string, unknown>
-  description: string
-  escalation_timeout_min: number
-  evidence_type: string
-  grace_minutes: number
-  id: string
-  name: string
-  passing_score: number
-  recurrence_type: string
-  report_day_of_month: number | null
-  report_day_of_week: number | null
-  report_frequency: string
-  report_time: string
-  required_items: Array<{ evidenceType?: string; evidence_type?: string; label: string }>
-  resubmission_allowed: boolean
-  sample_evidence_url: string
-  scheduled_times: string[]
-  scoring_enabled: boolean
-  shift_enabled: boolean
-  status: string
-  timezone: string
-  updated_at: string
-  workflow_agent_id: string
-  workspace_id: string
-}
-
-export interface MicromgrWorker {
-  active_flag_count: number
-  connection_id: string
-  created_at: string
-  external_id: string
-  id: string
-  last_flag_reason: string | null
-  last_flagged_at: string | null
-  name: string
-  onboarded_at: string | null
-  platform: string
-  risk_level: string
-  role: string
-  shift_end: string | null
-  shift_start: string | null
-  status: string
-  task_id: string
-  total_flag_count: number
-  updated_at: string
-  workflow_agent_id: string
-  workspace_id: string
-}
-
-export interface MicromgrSubmission {
-  ai_feedback: string
-  ai_findings: string[]
-  ai_score: number | null
-  created_at: string
-  due_at: string
-  id: string
-  image_url: string
-  items: Array<{ id: string; image_url: string; label: string; received_at: string | null }>
-  platform: string
-  raw_message: string
-  status: string
-  submitted_at: string | null
-  task_id: string
-  task_name: string
-  updated_at: string
-  vet_attempts: number
-  worker_id: string
-  worker_name: string
-}
-
-export interface MicromgrFlag {
-  created_at: string
-  details: string
-  id: string
-  reason_label: string
-  reason_type: string
-  resolution_note: string
-  resolved_at: string | null
-  severity: string
-  status: string
-  submission_id: string | null
-  task_id: string
-  worker_id: string
-}
-
-export interface MicromgrReport {
-  avg_score: number | null
-  created_at: string
-  cycle_key: string
-  delivered_at: string | null
-  delivered_to: Record<string, unknown>
-  id: string
-  missed_count: number
-  pass_rate: number | null
-  period_end: string
-  period_start: string
-  summary_markdown: string
-  task_id: string
-  total_submissions: number
-}
-
-function micromgrPath(agentId: string, suffix: string): string {
-  return `/api/workflow-agents/${encodeURIComponent(agentId)}/micromgr/${suffix}`
-}
-
-export function listMicromgrTasks(agentId: string): Promise<{ tasks: MicromgrTask[]; total: number }> {
-  return verxioFetch<{ tasks: MicromgrTask[]; total: number }>(micromgrPath(agentId, 'tasks'))
-}
-
-export function createMicromgrTask(agentId: string, input: Record<string, unknown>): Promise<MicromgrTask> {
-  return verxioFetch<MicromgrTask>(micromgrPath(agentId, 'tasks'), { body: JSON.stringify(input), method: 'POST' })
-}
-
-export function updateMicromgrTask(
-  agentId: string,
-  taskId: string,
-  input: Record<string, unknown>
-): Promise<MicromgrTask> {
-  return verxioFetch<MicromgrTask>(`${micromgrPath(agentId, 'tasks')}/${encodeURIComponent(taskId)}`, {
-    body: JSON.stringify(input),
-    method: 'PUT'
-  })
-}
-
-export function deleteMicromgrTask(agentId: string, taskId: string): Promise<{ ok: boolean }> {
-  return verxioFetch<{ ok: boolean }>(`${micromgrPath(agentId, 'tasks')}/${encodeURIComponent(taskId)}`, {
-    method: 'DELETE'
-  })
-}
-
-export function listMicromgrWorkers(
-  agentId: string,
-  taskId = ''
-): Promise<{ workers: MicromgrWorker[]; total: number }> {
-  const query = taskId ? `?task_id=${encodeURIComponent(taskId)}` : ''
-
-  return verxioFetch<{ workers: MicromgrWorker[]; total: number }>(`${micromgrPath(agentId, 'workers')}${query}`)
-}
-
-export function addMicromgrWorker(
-  agentId: string,
-  input: {
-    connection_id?: string
-    external_id: string
-    name: string
-    platform: MicromgrPlatform
-    role?: MicromgrWorkerRole
-    shift_end?: string
-    shift_start?: string
-    task_id: string
-  }
-): Promise<MicromgrWorker> {
-  return verxioFetch<MicromgrWorker>(micromgrPath(agentId, 'workers'), { body: JSON.stringify(input), method: 'POST' })
-}
-
-export function deleteMicromgrWorker(agentId: string, workerId: string): Promise<{ ok: boolean }> {
-  return verxioFetch<{ ok: boolean }>(`${micromgrPath(agentId, 'workers')}/${encodeURIComponent(workerId)}`, {
-    method: 'DELETE'
-  })
-}
-
-export function listMicromgrLiveboard(
-  agentId: string,
-  taskId = ''
-): Promise<{ counts: Record<string, number>; submissions: MicromgrSubmission[]; total: number }> {
-  const query = taskId ? `?task_id=${encodeURIComponent(taskId)}` : ''
-
-  return verxioFetch<{ counts: Record<string, number>; submissions: MicromgrSubmission[]; total: number }>(
-    `${micromgrPath(agentId, 'liveboard')}${query}`
-  )
-}
-
-export function listMicromgrFlags(agentId: string, status = ''): Promise<{ flags: MicromgrFlag[]; total: number }> {
-  const query = status ? `?status=${encodeURIComponent(status)}` : ''
-
-  return verxioFetch<{ flags: MicromgrFlag[]; total: number }>(`${micromgrPath(agentId, 'flags')}${query}`)
-}
-
-export function updateMicromgrFlag(
-  agentId: string,
-  flagId: string,
-  input: { note?: string; status: 'open' | 'resolved' | 'dismissed' }
-): Promise<MicromgrFlag> {
-  return verxioFetch<MicromgrFlag>(`${micromgrPath(agentId, 'flags')}/${encodeURIComponent(flagId)}`, {
-    body: JSON.stringify(input),
-    method: 'PUT'
-  })
-}
-
-export function listMicromgrReports(
-  agentId: string,
-  taskId = ''
-): Promise<{ reports: MicromgrReport[]; total: number }> {
-  const query = taskId ? `?task_id=${encodeURIComponent(taskId)}` : ''
-
-  return verxioFetch<{ reports: MicromgrReport[]; total: number }>(`${micromgrPath(agentId, 'reports')}${query}`)
-}
-
-export function triggerMicromgrReport(agentId: string, taskId: string): Promise<MicromgrReport> {
-  return verxioFetch<MicromgrReport>(`${micromgrPath(agentId, 'tasks')}/${encodeURIComponent(taskId)}/report`, {
-    method: 'POST'
-  })
-}
-
-export function deleteWorkflowAgentSetupDraft(draftId: string): Promise<{ ok: boolean }> {
-  return verxioFetch<{ ok: boolean }>(`/api/workflow-agents/setup-drafts/${encodeURIComponent(draftId)}`, {
-    method: 'DELETE'
-  })
-}
-
-export function listWorkflowTriggers(agentId: string): Promise<{ triggers: WorkflowTrigger[] }> {
-  return verxioFetch<{ triggers: WorkflowTrigger[] }>(`/api/workflow-agents/${encodeURIComponent(agentId)}/triggers`)
-}
-
-export function createWorkflowTrigger(
-  agentId: string,
-  input: WorkflowTriggerInput & { trigger_type: WorkflowTriggerType }
-): Promise<WorkflowTrigger> {
-  return verxioFetch<WorkflowTrigger>(`/api/workflow-agents/${encodeURIComponent(agentId)}/triggers`, {
-    body: JSON.stringify(input),
-    method: 'POST'
-  })
-}
-
-export function updateWorkflowTrigger(
-  agentId: string,
-  triggerId: string,
-  input: WorkflowTriggerInput
-): Promise<WorkflowTrigger> {
-  return verxioFetch<WorkflowTrigger>(
-    `/api/workflow-agents/${encodeURIComponent(agentId)}/triggers/${encodeURIComponent(triggerId)}`,
-    {
-      body: JSON.stringify(input),
-      method: 'PUT'
-    }
-  )
-}
-
-export function deleteWorkflowTrigger(agentId: string, triggerId: string): Promise<{ ok: boolean }> {
-  return verxioFetch<{ ok: boolean }>(
-    `/api/workflow-agents/${encodeURIComponent(agentId)}/triggers/${encodeURIComponent(triggerId)}`,
-    {
-      method: 'DELETE'
-    }
-  )
-}
-
-export function listWorkflowDeliveries(agentId: string): Promise<{ deliveries: WorkflowDelivery[] }> {
-  return verxioFetch<{ deliveries: WorkflowDelivery[] }>(
-    `/api/workflow-agents/${encodeURIComponent(agentId)}/deliveries`
-  )
-}
-
-export function createWorkflowDelivery(
-  agentId: string,
-  input: WorkflowDeliveryInput & { delivery_type: WorkflowDeliveryType }
-): Promise<WorkflowDelivery> {
-  return verxioFetch<WorkflowDelivery>(`/api/workflow-agents/${encodeURIComponent(agentId)}/deliveries`, {
-    body: JSON.stringify(input),
-    method: 'POST'
-  })
-}
-
-export function updateWorkflowDelivery(
-  agentId: string,
-  deliveryId: string,
-  input: WorkflowDeliveryInput
-): Promise<WorkflowDelivery> {
-  return verxioFetch<WorkflowDelivery>(
-    `/api/workflow-agents/${encodeURIComponent(agentId)}/deliveries/${encodeURIComponent(deliveryId)}`,
-    {
-      body: JSON.stringify(input),
-      method: 'PUT'
-    }
-  )
-}
-
-export function deleteWorkflowDelivery(agentId: string, deliveryId: string): Promise<{ ok: boolean }> {
-  return verxioFetch<{ ok: boolean }>(
-    `/api/workflow-agents/${encodeURIComponent(agentId)}/deliveries/${encodeURIComponent(deliveryId)}`,
-    {
-      method: 'DELETE'
-    }
-  )
-}
-
-export function getWorkflowAgentEmbedConfig(agentId: string): Promise<WorkflowAgentEmbedConfig> {
-  return verxioFetch<WorkflowAgentEmbedConfig>(`/api/workflow-agents/${encodeURIComponent(agentId)}/embed`)
-}
-
-export function updateWorkflowAgentEmbedConfig(
-  agentId: string,
-  input: WorkflowAgentEmbedConfigInput
-): Promise<WorkflowAgentEmbedConfig> {
-  return verxioFetch<WorkflowAgentEmbedConfig>(`/api/workflow-agents/${encodeURIComponent(agentId)}/embed`, {
-    body: JSON.stringify(input),
-    method: 'PUT'
-  })
-}
-
-export function uploadWorkflowAgentEmbedAsset(
-  agentId: string,
-  input: WorkflowAgentEmbedAssetInput
-): Promise<WorkflowAgentEmbedConfig> {
-  return verxioFetch<WorkflowAgentEmbedConfig>(`/api/workflow-agents/${encodeURIComponent(agentId)}/embed/asset`, {
-    body: JSON.stringify(input),
-    method: 'POST'
-  })
-}
-
-export function listWorkflowRuns(agentId: string): Promise<{ runs: WorkflowRun[] }> {
-  return verxioFetch<{ runs: WorkflowRun[] }>(`/api/workflow-agents/${encodeURIComponent(agentId)}/runs`)
-}
-
-export function runWorkflowAgent(agentId: string, input: Record<string, unknown>): Promise<WorkflowRun> {
-  return verxioFetch<WorkflowRun>(`/api/workflow-agents/${encodeURIComponent(agentId)}/runs`, {
-    body: JSON.stringify({ input }),
-    method: 'POST',
-    timeoutMs: 240_000
-  })
-}
-
-export function listWorkflowRunEvents(agentId: string, runId: string): Promise<{ events: WorkflowRunEvent[] }> {
-  return verxioFetch<{ events: WorkflowRunEvent[] }>(
-    `/api/workflow-agents/${encodeURIComponent(agentId)}/runs/${encodeURIComponent(runId)}/events`
-  )
-}
-
 export async function getPublicNotepadShare(token: string): Promise<VerxioPublicNotepadShareResponse> {
   const response = await fetch(verxioApiUrl(`/api/public/notepad/${encodeURIComponent(token)}`), {
     credentials: 'omit'
@@ -1533,52 +663,6 @@ export async function getPublicNotepadShare(token: string): Promise<VerxioPublic
   }
 
   return (await response.json()) as VerxioPublicNotepadShareResponse
-}
-
-export async function getPublicWorkflowAgent(token: string): Promise<WorkflowAgentPublicInfo> {
-  const response = await fetch(verxioApiUrl(`/api/public/workflow-agents/${encodeURIComponent(token)}`), {
-    credentials: 'omit'
-  })
-
-  if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { detail?: string }
-
-    throw new Error(body.detail || `${response.status} ${response.statusText}`)
-  }
-
-  return (await response.json()) as WorkflowAgentPublicInfo
-}
-
-export async function runPublicWorkflowAgent(token: string, message: string): Promise<{ run: WorkflowRun }> {
-  let visitorId = ''
-
-  if (typeof window !== 'undefined') {
-    visitorId = window.localStorage.getItem('verxio.public.visitor_id') || ''
-
-    if (!visitorId) {
-      visitorId = crypto.randomUUID()
-      window.localStorage.setItem('verxio.public.visitor_id', visitorId)
-    }
-  }
-
-  const response = await fetch(verxioApiUrl(`/api/public/workflow-agents/${encodeURIComponent(token)}/runs`), {
-    body: JSON.stringify({
-      message,
-      page_url: typeof window === 'undefined' ? '' : window.location.href,
-      visitor_id: visitorId
-    }),
-    credentials: 'omit',
-    headers: { 'content-type': 'application/json' },
-    method: 'POST'
-  })
-
-  if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { detail?: string }
-
-    throw new Error(body.detail || `${response.status} ${response.statusText}`)
-  }
-
-  return (await response.json()) as { run: WorkflowRun }
 }
 
 export function listComposioConnections(): Promise<ComposioConnectionsResponse> {
@@ -1672,4 +756,197 @@ export function listVerxioTranscriptionCatalog(refresh = false): Promise<VerxioT
       timeoutMs: 12_000
     }
   )
+}
+
+export interface TavusProfile {
+  configured: boolean
+  displayName: string
+  tone: string
+  neverDo: string
+  spokenPrompt: string
+  language: string
+  region: string
+  faceId: string
+  voiceId: string
+  palId: string
+  conferencingUsername: string
+  meetingAllowlist: string[]
+  shareUrl: string
+  internetSearch: boolean
+  magicCanvas: boolean
+  monthlyMinuteBudget: number
+  minutesUsed: number
+  taskToolReady: boolean
+  keyReady: boolean
+  personalityPrompt: string
+}
+
+export const TAVUS_API_KEY = 'TAVUS_API_KEY'
+
+export function saveTavusKey(apiKey: string): Promise<{ configured: boolean }> {
+  return verxioFetch<{ configured: boolean }>('/api/tavus/credential', {
+    body: JSON.stringify({ apiKey }),
+    method: 'PUT'
+  })
+}
+
+export function deleteTavusKey(): Promise<{ configured: boolean }> {
+  return verxioFetch<{ configured: boolean }>('/api/tavus/credential', { method: 'DELETE' })
+}
+
+export interface TavusVoice {
+  id: string
+  name: string
+  type: string
+  status: string
+}
+
+export interface TavusFace {
+  id: string
+  name: string
+  status: string
+}
+
+export interface TavusConversationStart {
+  conversationId: string
+  conversationUrl: string
+  meetingToken: string
+  kind: string
+}
+
+export interface TavusTask {
+  id: string
+  conversationId: string
+  instruction: string
+  status: string
+  hermesSessionId: string
+  resultText: string
+}
+
+export function getTavusProfile(): Promise<TavusProfile> {
+  return verxioFetch<TavusProfile>('/api/tavus/profile')
+}
+
+export function saveTavusProfile(input: Partial<TavusProfile>): Promise<TavusProfile> {
+  return verxioFetch<TavusProfile>('/api/tavus/profile', { body: JSON.stringify(input), method: 'PUT' })
+}
+
+export function deleteTavusProfile(): Promise<{ ok: boolean }> {
+  return verxioFetch<{ ok: boolean }>('/api/tavus/profile', { method: 'DELETE' })
+}
+
+export function listTavusVoices(): Promise<{ voices: TavusVoice[] }> {
+  return verxioFetch<{ voices: TavusVoice[] }>('/api/tavus/voices')
+}
+
+export function listTavusFaces(): Promise<{ faces: TavusFace[] }> {
+  return verxioFetch<{ faces: TavusFace[] }>('/api/tavus/faces')
+}
+
+export function startTavusConversation(input: {
+  audioOnly?: boolean
+  kind?: string
+  meetingUrl?: string
+}): Promise<TavusConversationStart> {
+  return verxioFetch<TavusConversationStart>('/api/tavus/conversations', {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
+}
+
+export function endTavusConversation(conversationId: string): Promise<{ ok: string }> {
+  return verxioFetch<{ ok: string }>(`/api/tavus/conversations/${encodeURIComponent(conversationId)}/end`, {
+    method: 'POST'
+  })
+}
+
+export function nextTavusTask(wait = 25): Promise<{ task: TavusTask | null }> {
+  return verxioFetch<{ task: TavusTask | null }>(`/api/tavus/tasks/next?wait=${wait}`, { timeoutMs: (wait + 5) * 1000 })
+}
+
+export function updateTavusTask(
+  taskId: string,
+  input: { hermesSessionId?: string; resultText?: string; status: string }
+): Promise<TavusTask> {
+  return verxioFetch<TavusTask>(`/api/tavus/tasks/${encodeURIComponent(taskId)}`, {
+    body: JSON.stringify(input),
+    method: 'POST'
+  })
+}
+
+export function listTavusCalls(): Promise<{ calls: Array<Record<string, unknown>> }> {
+  return verxioFetch('/api/tavus/calls')
+}
+
+export function listTavusMemories(): Promise<{ facts: Array<{ id: string; text: string }>; learned: string }> {
+  return verxioFetch('/api/tavus/memories')
+}
+
+export function addTavusMemory(text: string): Promise<{ facts: Array<{ id: string; text: string }> }> {
+  return verxioFetch('/api/tavus/memories', { body: JSON.stringify({ text }), method: 'POST' })
+}
+
+export function deleteTavusMemory(factId: string): Promise<{ facts: Array<{ id: string; text: string }> }> {
+  return verxioFetch(`/api/tavus/memories/${encodeURIComponent(factId)}`, { method: 'DELETE' })
+}
+
+export function listTavusDocuments(): Promise<{
+  documents: Array<{ documentId: string; id: string; name: string; status: string }>
+}> {
+  return verxioFetch('/api/tavus/documents')
+}
+
+export function createTavusDocument(input: {
+  crawlDepth?: number
+  maxPages?: number
+  name: string
+  url: string
+}): Promise<{ documents: Array<{ id: string; name: string; status: string }> }> {
+  return verxioFetch('/api/tavus/documents', { body: JSON.stringify(input), method: 'POST' })
+}
+
+export function saveTavusMeeting(input: {
+  allowlist?: string[]
+  username: string
+}): Promise<{ email: string; username: string }> {
+  return verxioFetch('/api/tavus/meetings', { body: JSON.stringify(input), method: 'PUT' })
+}
+
+export function publishTavusShare(input: { password?: string; requireAuth?: boolean }): Promise<{ url: string }> {
+  return verxioFetch('/api/tavus/share', { body: JSON.stringify(input), method: 'POST' })
+}
+
+export function createTavusVideo(
+  script: string,
+  faceId: string
+): Promise<{ hostedUrl: string; status: string; videoId: string }> {
+  return verxioFetch('/api/tavus/videos', { body: JSON.stringify({ faceId, script }), method: 'POST' })
+}
+
+export function saveTavusPronunciation(
+  rules: Array<{ pronunciation: string; word: string }>
+): Promise<{ rules: unknown[] }> {
+  return verxioFetch('/api/tavus/pronunciation', { body: JSON.stringify({ rules }), method: 'PUT' })
+}
+
+export function uploadTavusFile(fileName: string, data: string, mime: string): Promise<{ url: string }> {
+  return verxioFetch('/api/tavus/uploads', { body: JSON.stringify({ data, fileName, mime }), method: 'POST' })
+}
+
+export function trainTavusFace(input: {
+  consent: boolean
+  imageUrl?: string
+  name?: string
+  videoUrl?: string
+  voiceId?: string
+}): Promise<{ faceId: string; status: string }> {
+  return verxioFetch('/api/tavus/faces', { body: JSON.stringify(input), method: 'POST' })
+}
+
+export function trainTavusVoice(input: {
+  audioUrl: string
+  consent: boolean
+  name?: string
+}): Promise<{ status: string; voiceId: string }> {
+  return verxioFetch('/api/tavus/voices', { body: JSON.stringify(input), method: 'POST' })
 }

@@ -18,7 +18,6 @@ export const NOT_FOUND_ROUTE = '/404'
 
 export type AppView =
   | 'activity'
-  | 'agents'
   | 'chat'
   | 'command-center'
   | 'cron'
@@ -30,7 +29,6 @@ export type AppView =
 
 export type AppRouteId =
   | 'activity'
-  | 'agents'
   | 'command-center'
   | 'cron'
   | 'messaging'
@@ -55,14 +53,14 @@ export const APP_ROUTES = [
   { id: 'notepad', path: NOTEPAD_ROUTE, view: 'notepad' },
   { id: 'cron', path: CRON_ROUTE, view: 'cron' },
   { id: 'profiles', path: PROFILES_ROUTE, view: 'profiles' },
-  { id: 'activity', path: ACTIVITY_ROUTE, view: 'activity' },
-  { id: 'agents', path: AGENTS_ROUTE, view: 'agents' }
+  { id: 'activity', path: ACTIVITY_ROUTE, view: 'activity' }
 ] as const satisfies readonly AppRoute[]
 
 const APP_VIEW_BY_PATH = new Map<string, AppView>(APP_ROUTES.map(route => [route.path, route.view]))
 
 const RESERVED_PATHS: ReadonlySet<string> = new Set([
   ...APP_ROUTES.map(route => route.path),
+  AGENTS_ROUTE,
   LOGIN_ROUTE,
   SIGNUP_ROUTE,
   SIGNOUT_ROUTE,
@@ -107,10 +105,6 @@ export function sessionRoute(sessionId: string): string {
 export function appViewForPath(pathname: string): AppView {
   if (isNewChatRoute(pathname) || routeSessionId(pathname)) {
     return 'chat'
-  }
-
-  if (pathname.startsWith(`${AGENTS_ROUTE}/`)) {
-    return 'agents'
   }
 
   return APP_VIEW_BY_PATH.get(pathname) ?? 'chat'

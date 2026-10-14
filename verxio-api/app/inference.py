@@ -230,10 +230,8 @@ def _model_by_id(model_id: str | None) -> HostedModelDefinition:
 
 
 def _hosted_secret(model: HostedModelDefinition) -> tuple[str | None, str | None]:
-    for env_name in model.hosted_secret_env:
-        value = os.getenv(env_name, "").strip()
-        if value:
-            return env_name, value
+    """Verxio does not supply model keys. Users connect their own provider."""
+    del model
     return None, None
 
 
@@ -260,10 +258,7 @@ def _catalog_item(model: HostedModelDefinition) -> InferenceModelCatalogItem:
 
 
 def list_inference_catalog() -> InferenceCatalogResponse:
-    return InferenceCatalogResponse(
-        models=[_catalog_item(model) for model in MODEL_CATALOG],
-        defaultModelId=DEFAULT_MODEL_ID,
-    )
+    return InferenceCatalogResponse(models=[], defaultModelId="")
 
 
 def ensure_inference_settings(user_id: str) -> InferenceSettings:
@@ -277,9 +272,9 @@ def ensure_inference_settings(user_id: str) -> InferenceSettings:
                 user_id, mode, default_model_id, monthly_credit_usd,
                 overage_enabled, spending_limit_usd, created_at, updated_at
             )
-            VALUES (?, 'hosted', ?, ?, 0, NULL, ?, ?)
+            VALUES (?, 'byok', '', ?, 0, NULL, ?, ?)
             """,
-            (user_id, DEFAULT_MODEL_ID, monthly_credit, now, now),
+            (user_id, monthly_credit, now, now),
         )
         row = db.fetch_one("SELECT * FROM user_inference_settings WHERE user_id = ?", (user_id,))
 
@@ -287,14 +282,10 @@ def ensure_inference_settings(user_id: str) -> InferenceSettings:
 
 
 def _settings_from_row(row: dict[str, Any]) -> InferenceSettings:
-    model = _model_by_id(str(row.get("default_model_id") or DEFAULT_MODEL_ID))
-    mode = str(row.get("mode") or "hosted")
-    if mode not in {"hosted", "byok"}:
-        mode = "hosted"
     spending_limit = row.get("spending_limit_usd")
     return InferenceSettings(
-        mode=mode,  # type: ignore[arg-type]
-        defaultModelId=model.id,
+        mode="byok",
+        defaultModelId="",
         monthlyCreditUsd=float(row.get("monthly_credit_usd") or 0),
         overageEnabled=bool(row.get("overage_enabled") or 0),
         spendingLimitUsd=float(spending_limit) if spending_limit is not None else None,
@@ -303,18 +294,16 @@ def _settings_from_row(row: dict[str, Any]) -> InferenceSettings:
 
 def update_inference_settings(user_id: str, payload: InferenceSettingsUpdate) -> InferenceSettings:
     current = ensure_inference_settings(user_id)
-    next_mode = payload.mode or current.mode
-    next_model = _model_by_id(payload.defaultModelId or current.defaultModelId)
     next_overage = current.overageEnabled if payload.overageEnabled is None else payload.overageEnabled
     next_spending_limit = current.spendingLimitUsd if payload.spendingLimitUsd is None else payload.spendingLimitUsd
     now = now_iso()
     db.execute(
         """
         UPDATE user_inference_settings
-        SET mode = ?, default_model_id = ?, overage_enabled = ?, spending_limit_usd = ?, updated_at = ?
+        SET mode = 'byok', default_model_id = '', overage_enabled = ?, spending_limit_usd = ?, updated_at = ?
         WHERE user_id = ?
         """,
-        (next_mode, next_model.id, 1 if next_overage else 0, next_spending_limit, now, user_id),
+        (1 if next_overage else 0, next_spending_limit, now, user_id),
     )
     return ensure_inference_settings(user_id)
 
@@ -420,32 +409,14 @@ def record_inference_usage(
 
 
 def hosted_provider_env() -> dict[str, str]:
-    """Control-plane hosted secrets for every runtime container.
-
-    These keys are never written to the runtime ``.env`` (hostPath would leak
-    them). Image rolls and reconcile must still inject them as container env,
-    even when the caller forgets ``extra_env``.
-    """
-    env: dict[str, str] = {}
-    for model in MODEL_CATALOG:
-        _secret_name, secret_value = _hosted_secret(model)
-        if not secret_value:
-            continue
-        env[model.runtime_env_var] = secret_value
-        # Gemini tooling often reads GOOGLE_API_KEY as an alias.
-        if model.runtime_env_var == "GEMINI_API_KEY":
-            env.setdefault("GOOGLE_API_KEY", secret_value)
-    return env
+    """Verxio does not inject its own model keys into a runtime."""
+    return {}
 
 
 def runtime_env_for_user(user_id: str) -> dict[str, str]:
-    """Inject every available Verxio-hosted secret into the runtime.
-
-    Hybrid mode keeps hosted Qwen/Gemini usable alongside BYOK providers, so
-    we no longer gate on ``settings.mode`` or a single default family.
-    """
-    ensure_inference_settings(user_id)
-    return hosted_provider_env()
+    """Users bring their own provider keys. Nothing hosted is added here."""
+    del user_id
+    return {}
 
 
 def _state_path(runtime: RuntimeInstance) -> Path:
@@ -794,122 +765,20 @@ def _is_byok_model_selection(config: dict[str, Any]) -> bool:
 
 
 def sync_inference_runtime_bridge(runtime: RuntimeInstance, user_id: str) -> InferenceRuntimeBridgeStatus:
+    """Leave the runtime model config to the user's own provider connection.
+
+    Verxio no longer pins Qwen or Gemini, and it does not rewrite ``config.yaml``,
+    ``auth.json``, or ``.env`` on sync.
+    """
     ensure_runtime_directories(runtime)
-    settings = ensure_inference_settings(user_id)
-    model = _model_by_id(settings.defaultModelId)
-    secret_name, secret_value = _hosted_secret(model)
-    missing = [] if secret_value else list(model.hosted_secret_env)
-
-    upstream_model_id = _upstream_model_id(model)
-    legacy_credentials_cleaned = cleanup_legacy_hosted_credentials(runtime)
-    config = _read_runtime_config(runtime)
-
-    # Hybrid: never wipe a connected-provider selection. Hosted secrets stay
-    # available via runtime_env_for_user so the picker can switch back anytime.
-    if _is_byok_model_selection(config):
-        return InferenceRuntimeBridgeStatus(
-            configured=True,
-            enabled=True,
-            changed=legacy_credentials_cleaned,
-            mode=settings.mode,
-            defaultModelId=settings.defaultModelId,
-            providerSlug=model.provider_slug,
-            upstreamModelId=upstream_model_id,
-            message="Hybrid mode keeps the connected provider selection.",
-        )
-
-    if not secret_value:
-        # Only clear a stale hosted pin for *this* family when its secret is gone.
-        model_assignment_cleaned = _strip_hosted_model_assignment(runtime, model)
-        any_hosted_secret = any(_hosted_secret(item)[1] for item in MODEL_CATALOG)
-        return InferenceRuntimeBridgeStatus(
-            configured=any_hosted_secret,
-            enabled=any_hosted_secret,
-            changed=legacy_credentials_cleaned or model_assignment_cleaned,
-            mode=settings.mode,
-            defaultModelId=model.id,
-            providerSlug=model.provider_slug,
-            upstreamModelId=upstream_model_id,
-            missingEnvVars=missing,
-            message=(
-                f"{model.display_name} needs a hosted provider key."
-                if not any_hosted_secret
-                else "Hosted default family unavailable; other hosted or BYOK models remain usable."
-            ),
-        )
-
-    raw_model = config.get("model")
-    current_default = str(raw_model.get("default") or "").strip() if isinstance(raw_model, dict) else ""
-    current_provider = str(raw_model.get("provider") or "").strip().lower() if isinstance(raw_model, dict) else ""
-    available_ids = set(_available_model_ids(model))
-    # Keep an in-family selection (e.g. Gemini 3.1 Pro) — only rewrite when the
-    # provider/family is wrong or the default is empty/unknown.
-    model_invalid = (
-        not isinstance(raw_model, dict)
-        or not current_default
-        or current_provider != model.provider_slug
-        or (current_default not in available_ids and current_default != upstream_model_id)
-    )
-    model_config = raw_model if isinstance(raw_model, dict) else {}
-    model_config["provider"] = model.provider_slug
-    if model_invalid:
-        model_config["default"] = upstream_model_id
-    else:
-        model_config["default"] = current_default
-    config["model"] = model_config
-
-    auth_active_cleared = _clear_conflicting_auth_active_provider(
-        _runtime_auth_path(runtime), model.provider_slug
-    )
-
-    signature_payload = {
-        "catalog_version": CATALOG_VERSION,
-        "mode": settings.mode,
-        "default_model_id": model.id,
-        "provider_slug": model.provider_slug,
-        "upstream_model_id": upstream_model_id,
-        "runtime_env_var": model.runtime_env_var,
-        "hosted_secret_env": secret_name,
-        "hosted_secret_hash": _hashed_secret(secret_value),
-    }
-    signature = _signature(signature_payload)
-    state_path = _state_path(runtime)
-    previous_signature = ""
-    if state_path.exists():
-        try:
-            previous_signature = json.loads(state_path.read_text(encoding="utf-8")).get("signature", "")
-        except Exception:
-            previous_signature = ""
-
-    config_changed = previous_signature != signature
-    changed = (
-        config_changed
-        or legacy_credentials_cleaned
-        or model_invalid
-        or auth_active_cleared
-    )
-    if config_changed or model_invalid:
-        _write_runtime_config(runtime, config)
-        state_path.parent.mkdir(parents=True, exist_ok=True)
-        state_path.write_text(
-            json.dumps(
-                {
-                    "signature": signature,
-                    "payload": {**signature_payload, "hosted_secret_hash": "<redacted>"},
-                    "updated_at": now_iso(),
-                },
-                indent=2,
-                sort_keys=True,
-            ),
-            encoding="utf-8",
-        )
-
+    ensure_inference_settings(user_id)
     return InferenceRuntimeBridgeStatus(
-        configured=True,
-        enabled=True,
-        changed=changed,
-        mode=settings.mode,
-        defaultModelId=model.id,
-        providerSlug=model.provider_slug,
-        upstreamModelId=upstream_model_id,
+        configured=False,
+        enabled=False,
+        changed=False,
+        mode="byok",
+        defaultModelId="",
+        providerSlug="",
+        upstreamModelId="",
+        message="Connect your own model provider.",
     )

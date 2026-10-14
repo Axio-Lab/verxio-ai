@@ -78,11 +78,11 @@ export function IntegrationsOrbit() {
         {/* Heading */}
         <div className="mx-auto max-w-2xl text-center mb-12 sm:mb-16">
           <h2 className="text-3xl font-bold tracking-tight sm:text-4xl text-black">
-            10,000+ Actions. 800+ Apps. One Platform.
+            The apps your agent can use.
           </h2>
           <p className="mt-4 text-lg text-muted-foreground">
-            Powered by Composio, your agents connect to every tool your team uses. Deliver reports,
-            trigger actions, and orchestrate operations across your entire stack.
+            Gmail, GitHub, Calendar, Slack, and the rest of the catalog. One agent, the tools you
+            already work in.
           </p>
         </div>
 
