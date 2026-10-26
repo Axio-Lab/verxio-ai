@@ -87,7 +87,7 @@ def send_auth_code_email(*, to_email: str, purpose: AuthCodePurpose, code: str, 
     except RuntimeError:
         loop = None
     if loop is not None and loop.is_running():
-        loop.create_task(
+        task = loop.create_task(
             asyncio.to_thread(
                 _deliver_smtp,
                 to_email=to_email,
@@ -95,9 +95,18 @@ def send_auth_code_email(*, to_email: str, purpose: AuthCodePurpose, code: str, 
                 body=body,
             )
         )
+        task.add_done_callback(_log_send_failure)
         return
 
     _deliver_smtp(to_email=to_email, subject=subject, body=body)
+
+
+def _log_send_failure(task) -> None:
+    if task.cancelled():
+        return
+    error = task.exception()
+    if error is not None:
+        print(f"[verxio-auth] email delivery failed: {error}")
 
 
 def _deliver_smtp(*, to_email: str, subject: str, body: str) -> None:
@@ -110,9 +119,12 @@ def _deliver_smtp(*, to_email: str, subject: str, body: str) -> None:
     host = os.getenv("VERXIO_SMTP_HOST", "").strip()
     username = os.getenv("VERXIO_SMTP_USERNAME", "").strip()
     password = os.getenv("VERXIO_SMTP_PASSWORD", "")
+    port = _smtp_port()
+    # 465 is implicit TLS. 587 stays on STARTTLS. Some networks block 587.
+    client = smtplib.SMTP_SSL if port == 465 else smtplib.SMTP
 
-    with smtplib.SMTP(host, _smtp_port(), timeout=15) as smtp:
-        if _smtp_tls():
+    with client(host, port, timeout=15) as smtp:
+        if port != 465 and _smtp_tls():
             smtp.starttls()
         if username:
             smtp.login(username, password)
