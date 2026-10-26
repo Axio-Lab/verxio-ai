@@ -380,7 +380,7 @@ npm run dist:linux --prefix verxio-desktop
 
 Verxio Desktop runs Hermes on the user's machine for chat, project files, the
 terminal, and local Whisper. The cloud keeps one always-on agent per account
-for cron, messaging, and workflow agents, plus sign-in, hosted model keys, and
+for cron and messaging, plus sign-in, hosted model keys, and
 Composio. Shared notepad links stay on `app.verxio.xyz/share/notepad/…`.
 
 ```bash

@@ -95,7 +95,7 @@ http://127.0.0.1:8787/docs
 
 ## Cloud agent
 
-Interactive chat runs in the desktop app. The API's pool workers run cron, messaging, and workflow agents. `VERXIO_HERMES_IMAGE` is that worker image (`Dockerfile.verxio-hosted`).
+Interactive chat runs in the desktop app. The API's pool workers run cron and messaging. `VERXIO_HERMES_IMAGE` is that worker image (`Dockerfile.verxio-hosted`).
 
 ## Tests
 
