@@ -65,6 +65,6 @@ Chart topology:
 
 ## Cloud agent
 
-The only plane is pool. `app.plane set` rejects docker and Kubernetes. Cron,
-messaging, and workflow agents run on the pool workers; interactive chat runs
+The only plane is pool. `app.plane set` rejects docker and Kubernetes. Cron
+and messaging run on the pool workers; interactive chat runs
 in the desktop app.

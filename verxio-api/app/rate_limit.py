@@ -16,7 +16,7 @@ _WINDOWS: dict[str, deque[float]] = defaultdict(deque)
 
 AUTH_PATHS = ("/api/auth/",)
 PUBLIC_PATHS = ("/api/public/",)
-HOOK_PATHS = ("/api/hooks/", "/api/workflow-webhooks/", "/api/composio/webhooks")
+HOOK_PATHS = ("/api/hooks/", "/api/composio/webhooks")
 
 
 def _limit_for(path: str) -> tuple[int, float] | None:

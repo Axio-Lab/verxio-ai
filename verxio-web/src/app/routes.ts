@@ -12,7 +12,6 @@ export const MESSAGING_ROUTE = '/messaging'
 export const NOTEPAD_ROUTE = '/notepad'
 export const CRON_ROUTE = '/cron'
 export const PROFILES_ROUTE = '/profiles'
-export const AGENTS_ROUTE = '/agents'
 export const ACTIVITY_ROUTE = '/activity'
 export const NOT_FOUND_ROUTE = '/404'
 
@@ -60,7 +59,6 @@ const APP_VIEW_BY_PATH = new Map<string, AppView>(APP_ROUTES.map(route => [route
 
 const RESERVED_PATHS: ReadonlySet<string> = new Set([
   ...APP_ROUTES.map(route => route.path),
-  AGENTS_ROUTE,
   LOGIN_ROUTE,
   SIGNUP_ROUTE,
   SIGNOUT_ROUTE,

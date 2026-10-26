@@ -6,8 +6,8 @@ Consumes:
   from web, channels, cron and webhooks. A turn for a tenant leased by another
   live worker is handed off to that worker's stream.
 * ``verxio:attach`` — warm-attach requests from the API's pool manager.
-* ``verxio:webhooks`` — control-plane webhook ingress (workflow, Composio,
-  Telegram/Slack updates, messaging hooks) that becomes turns or workflow runs.
+* ``verxio:webhooks`` — control-plane webhook ingress (Composio,
+  Telegram/Slack updates, messaging hooks) that becomes turns.
 
 Every turn is executed for real through ``POST /v1/runs`` with the tenant
 profile, streamed over SSE, published on ``verxio:turns:{ws}:{agent}`` for
@@ -206,7 +206,7 @@ def _local_bindings(tenant: AttachedTenant):
         result = await hermes_client.run_turn(
             tenant=tenant.name,
             text=text,
-            session_id=None,  # one-shot: fresh context per workflow step
+            session_id=None,  # one-shot: fresh context per run
             instructions=str(instructions) if instructions else None,
         )
         if result.status != "completed":
@@ -310,9 +310,7 @@ async def handle_webhook(fields: dict[str, str]) -> None:
     if job_id:
         mark_job(job_id, status="running")
     try:
-        if kind == "workflow_webhook":
-            pass
-        elif kind == "composio_webhook":
+        if kind == "composio_webhook":
             from app.composio_catalog import complete_composio_webhook
 
             webhook_id = str(payload.get("webhook_id") or "")

@@ -1350,8 +1350,6 @@ export const ja = defineLocale({
   sidebar: {
     nav: {
       'new-session': '新しいセッション',
-      agents: 'エージェント',
-      comingSoon: '近日公開',
       skills: 'スキルとツール',
       messaging: 'メッセージング',
       artifacts: 'アーティファクト',

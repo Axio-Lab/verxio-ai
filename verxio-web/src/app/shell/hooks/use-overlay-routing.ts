@@ -19,7 +19,7 @@ export function useOverlayRouting() {
   const chatOpen = currentView === 'chat'
   const overlayOpen = isOverlayView(currentView)
 
-  // Overlay routes (settings/command-center/agents) stash the underlying path
+  // Overlay routes (settings/command-center) stash the underlying path
   // so closing them returns there instead of bouncing to /.
   const returnPathRef = useRef(NEW_CHAT_ROUTE)
 

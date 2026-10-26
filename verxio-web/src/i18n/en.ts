@@ -206,7 +206,6 @@ export const en: Translations = {
       'nav.messaging': 'Open messaging',
       'nav.artifacts': 'Open artifacts',
       'nav.cron': 'Open scheduled jobs',
-      'nav.agents': 'Open agents',
       'session.new': 'New session',
       'session.next': 'Next session',
       'session.prev': 'Previous session',
@@ -1442,8 +1441,6 @@ export const en: Translations = {
   sidebar: {
     nav: {
       'new-session': 'New session',
-      agents: 'Agents',
-      comingSoon: 'Coming soon',
       skills: 'Skills & Tools',
       messaging: 'Messaging',
       artifacts: 'Artifacts',

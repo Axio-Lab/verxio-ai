@@ -161,7 +161,7 @@ async def list_skills_via_dashboard(workspace: Workspace, profile: AgentProfile)
 OneshotRunner = Callable[[Workspace, AgentProfile, str, str | None, list[str] | None], Awaitable[str]]
 MessageSender = Callable[[Workspace, AgentProfile, str, str, str, str], Awaitable[dict[str, object]]]
 
-# Pool workers run workflow/SDR/micromgr turns against their local Hermes
+# Pool workers run cron and messaging turns against their local Hermes
 # sidecar instead of proxying to a dashboard URL. They install these via
 # ``local_runtime_bindings`` for the duration of a job; every caller of
 # ``run_agent_via_dashboard`` / ``send_message_via_dashboard`` then routes

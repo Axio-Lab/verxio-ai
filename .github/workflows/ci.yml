@@ -64,7 +64,7 @@ jobs:
         run: uv sync --extra dev
 
       - name: Runtime orchestration tests
-        run: uv run pytest tests/runtime_orch tests/test_micromgr_agent.py -v
+        run: uv run pytest tests/runtime_orch -v
         env:
           VERXIO_DATABASE_MODE: sqlite
           VERXIO_DATABASE_PATH: /tmp/verxio-orch-ci.sqlite3
