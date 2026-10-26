@@ -1112,8 +1112,6 @@ export function DesktopController() {
             }
             path="messaging"
           />
-          <Route element={<Navigate replace to={NEW_CHAT_ROUTE} />} path="agents" />
-          <Route element={<Navigate replace to={NEW_CHAT_ROUTE} />} path="agents/*" />
           <Route
             element={
               <Suspense fallback={null}>

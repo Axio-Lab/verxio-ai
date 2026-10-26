@@ -104,7 +104,6 @@ export function useKeybinds(deps: KeybindRuntimeDeps): void {
     'nav.skills': () => navigate(SKILLS_ROUTE),
     'nav.messaging': () => navigate(MESSAGING_ROUTE),
     'nav.cron': () => navigate(CRON_ROUTE),
-    'nav.agents': () => undefined,
 
     'session.new': () => {
       deps.startFreshSession()
