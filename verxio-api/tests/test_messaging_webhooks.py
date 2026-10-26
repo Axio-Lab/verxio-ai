@@ -17,7 +17,6 @@ def client(monkeypatch, tmp_path):
     monkeypatch.setenv("VERXIO_DATABASE_MODE", "sqlite")
     monkeypatch.setenv("VERXIO_DATABASE_PATH", str(tmp_path / "verxio-control.sqlite3"))
     monkeypatch.setenv("VERXIO_RUNTIME_MODE", "demo")
-    monkeypatch.setenv("VERXIO_WORKFLOW_SCHEDULER_ENABLED", "0")
     monkeypatch.setenv("VERXIO_AUTH_CODE_SECRET", "test-auth-code-secret")
     monkeypatch.setenv("VERXIO_SIGNUP_INVITE_CODE", "97685")
     monkeypatch.delenv("VERXIO_SMTP_HOST", raising=False)
