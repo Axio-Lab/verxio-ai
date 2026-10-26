@@ -201,7 +201,6 @@ export const zh: Translations = {
       'nav.messaging': '打开消息',
       'nav.artifacts': '打开制品',
       'nav.cron': '打开定时任务',
-      'nav.agents': '打开智能体',
       'session.new': '新建会话',
       'session.next': '下一个会话',
       'session.prev': '上一个会话',
@@ -1513,8 +1512,6 @@ export const zh: Translations = {
   sidebar: {
     nav: {
       'new-session': '新建会话',
-      agents: '代理',
-      comingSoon: '即将推出',
       skills: '技能与工具',
       messaging: '消息平台',
       artifacts: '产物',
