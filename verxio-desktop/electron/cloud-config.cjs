@@ -344,26 +344,75 @@ function applyComposioBridge(hermesHome, payload, python) {
   return JSON.parse(result.stdout || '{"ok":true,"enabled":false}')
 }
 
-function splicePersonality(current, prompt) {
-  const source = String(current || '')
-  const start = source.indexOf(PERSONALITY_START)
-  const end = source.indexOf(PERSONALITY_END)
-  let without = source
-  if (start !== -1 && end > start) {
-    without = `${source.slice(0, start)}${source.slice(end + PERSONALITY_END.length)}`
+function stripPersonality(source) {
+  let text = String(source || '')
+  const block = new RegExp(`${PERSONALITY_START}[\\s\\S]*?${PERSONALITY_END}`, 'g')
+  let previous = ''
+
+  while (text !== previous) {
+    previous = text
+    text = text.replace(block, '')
   }
-  without = without.replace(/\n{3,}/g, '\n\n').trim()
-  const text = String(prompt || '').trim()
+
+  return text
+    .split(PERSONALITY_START)
+    .join('')
+    .split(PERSONALITY_END)
+    .join('')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function unwrapPersonality(prompt) {
+  let text = String(prompt || '').trim()
+  const wrapped = new RegExp(`^${PERSONALITY_START}\\s*([\\s\\S]*?)\\s*${PERSONALITY_END}$`)
+  let previous = ''
+
+  while (text !== previous) {
+    previous = text
+    const match = text.match(wrapped)
+    text = match ? match[1].trim() : text
+  }
+
+  return text.split(PERSONALITY_START).join('').split(PERSONALITY_END).join('').replace(/\s+/g, ' ').trim()
+}
+
+function personalityForChat(prompt) {
+  const text = unwrapPersonality(prompt)
+
+  if (!text) {
+    return ''
+  }
+
+  if (!/verxio_start_task|speaking out loud|do not try to do that work yourself/i.test(text)) {
+    return text
+  }
+
+  return [
+    'You are already in the Verxio workspace.',
+    'Do the requested work in this chat with the tools you have.',
+    'Do not hand the work off, and do not ask the user to open another chat.'
+  ].join(' ')
+}
+
+function splicePersonality(current, prompt) {
+  const without = stripPersonality(current)
+  const text = personalityForChat(prompt)
+
   if (!text) {
     return without ? `${without}\n` : ''
   }
+
   const block = `${PERSONALITY_START}\n${text}\n${PERSONALITY_END}`
   const composio = without.indexOf(COMPOSIO_PROMPT_START)
+
   if (composio !== -1) {
     const before = without.slice(0, composio).trim()
     const after = without.slice(composio).trim()
     return `${[before, block, after].filter(Boolean).join('\n\n')}\n`
   }
+
   return `${[without, block].filter(Boolean).join('\n\n')}\n`
 }
 
