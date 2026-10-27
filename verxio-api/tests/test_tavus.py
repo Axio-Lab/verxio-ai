@@ -323,3 +323,16 @@ def test_request_uses_the_stored_user_key(client, monkeypatch):
     with using_user(user_id):
         request("GET", "/v2/voices")
     assert seen["key"] == "user-tavus-key"
+
+
+def test_chat_personality_does_not_hand_work_to_the_video_call():
+    from app.tavus_profile import chat_personality, spoken_prompt
+
+    spoken = spoken_prompt("Donatus", "professional and friendly", "never be rude")
+    chat = chat_personality("Donatus", "professional and friendly", "never be rude")
+
+    assert "verxio_start_task" in spoken
+    assert spoken.count("verxio_start_task") == 1
+    assert "verxio_start_task" not in chat
+    assert "this chat" in chat
+    assert "never be rude" in chat
