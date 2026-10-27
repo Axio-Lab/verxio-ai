@@ -120,6 +120,25 @@ test('applyComposioBridge writes the session without resetting the model', () =>
   }
 })
 
+test('splicePersonality replaces a duplicated video-call script with one chat block', () => {
+  const callScript = [
+    '<!-- VERXIO_PERSONALITY_END -->',
+    '<!-- VERXIO_PERSONALITY_START -->',
+    '<!-- VERXIO_PERSONALITY_START -->',
+    'Call verxio_start_task. Do not try to do that work yourself.',
+    '<!-- VERXIO_PERSONALITY_END -->',
+    '<!-- VERXIO_PERSONALITY_END -->'
+  ].join('\n')
+  const current = `You are Verxio.\n${callScript}\n${callScript}`
+  const once = splicePersonality(current, callScript)
+  assert.match(once, /You are Verxio/)
+  assert.equal(once.match(/VERXIO_PERSONALITY_START/g).length, 1)
+  assert.match(once, /Do the requested work in this chat/)
+  assert.doesNotMatch(once, /verxio_start_task/)
+  const twice = splicePersonality(once, callScript)
+  assert.equal(twice.match(/VERXIO_PERSONALITY_START/g).length, 1)
+})
+
 test('splicePersonality keeps product text and the Composio block', () => {
   const current = [
     'You are Verxio.',
