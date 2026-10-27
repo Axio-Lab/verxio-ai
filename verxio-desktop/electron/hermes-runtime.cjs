@@ -2,6 +2,7 @@ const { spawn } = require('node:child_process')
 const crypto = require('node:crypto')
 const fs = require('node:fs')
 const path = require('node:path')
+const { ensureReaDefault } = require('./rea-default.cjs')
 
 const READY_RE = /^HERMES_DASHBOARD_READY port=(\d+)/m
 const DEFAULT_PORT_ANNOUNCE_TIMEOUT_MS = 90_000
@@ -174,6 +175,14 @@ function createRuntime(options = {}) {
 
     const hermesHome = options.hermesHome || path.join(options.userData || process.cwd(), 'hermes-home')
     fs.mkdirSync(hermesHome, { recursive: true })
+    try {
+      const rea = ensureReaDefault({ hermesHome })
+      if (rea.configChanged || rea.skill === 'installed' || rea.skill === 'updated') {
+        log(`REA default ready (${rea.package}, config ${rea.config}, skill ${rea.skill})`)
+      }
+    } catch (error) {
+      log(`REA default setup skipped: ${error.message}`)
+    }
     const token = crypto.randomBytes(24).toString('hex')
     const python = resolvePython(root)
     const workspaceCwd = options.workspaceCwd && directoryExists(options.workspaceCwd) ? options.workspaceCwd : root
