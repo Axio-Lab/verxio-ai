@@ -1,5 +1,5 @@
 import { listVerxioArtifacts, verxioApiEnabled, verxioApiUrl, type VerxioArtifact } from '@/lib/verxio-api'
-import { workspaceArtifactRelativePath } from '@/lib/verxio-artifact-paths'
+import { desktopArtifactCandidates, workspaceArtifactRelativePath } from '@/lib/verxio-artifact-paths'
 import type { PreviewTarget } from '@/store/preview'
 
 function basename(value: string) {
@@ -49,6 +49,37 @@ export function recordMatchesArtifactPath(record: VerxioArtifact, path: string):
     artifactPath.endsWith(`/${fileName}`) ||
     runtimeHomePath.endsWith(`/${fileName}`)
   )
+}
+
+/** A file written under the desktop project folder, which the API artifact index does not see. */
+export async function findDesktopArtifactFile(
+  path: string,
+  workspaceRoot?: string | null,
+  cwd?: string | null
+): Promise<string | null> {
+  const readDir = window.hermesDesktop?.readDir
+
+  if (!readDir) {
+    return null
+  }
+
+  for (const candidate of desktopArtifactCandidates(path, workspaceRoot, cwd)) {
+    const slash = candidate.lastIndexOf('/')
+    const dir = candidate.slice(0, slash)
+    const name = candidate.slice(slash + 1)
+
+    try {
+      const listing = await readDir(dir)
+
+      if (listing.entries.some(entry => entry.name === name && !entry.isDirectory)) {
+        return listing.entries.find(entry => entry.name === name)?.path || candidate
+      }
+    } catch {
+      // Another candidate may be the real file.
+    }
+  }
+
+  return null
 }
 
 /** Resolve a workspace artifact path to a same-origin Verxio preview URL for hosted web. */

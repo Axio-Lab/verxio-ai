@@ -1,6 +1,6 @@
 import { rewriteRuntimePathsInText } from '@/lib/desktop-workspace'
 import { isLikelyProseFence, sanitizeLanguageTag } from '@/lib/markdown-code'
-import { autoLinkFilePaths } from '@/lib/markdown-paths'
+import { anchorBareFileLinks, autoLinkFilePaths } from '@/lib/markdown-paths'
 import { stripPreviewTargets } from '@/lib/preview-targets'
 
 const REASONING_BLOCK_RE = /<(think|thinking|reasoning|scratchpad|analysis)>[\s\S]*?<\/\1>\s*/gi
@@ -139,10 +139,14 @@ function normalizeVisibleProse(text: string): string {
     .map(part =>
       part.startsWith('`')
         ? part
-        : autoLinkFilePaths(
-            autoLinkRawUrls(
-              rewriteRuntimePathsInText(
-                part.replace(/`{3,}/g, '').replace(LOCAL_PREVIEW_URL_RE, '$1').replace(CITATION_MARKER_RE, '')
+        : rewriteRuntimePathsInText(
+            anchorBareFileLinks(
+              autoLinkFilePaths(
+                autoLinkRawUrls(
+                  rewriteRuntimePathsInText(
+                    part.replace(/`{3,}/g, '').replace(LOCAL_PREVIEW_URL_RE, '$1').replace(CITATION_MARKER_RE, '')
+                  )
+                )
               )
             )
           )

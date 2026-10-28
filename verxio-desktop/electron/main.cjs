@@ -1106,6 +1106,20 @@ ipcMain.handle('verxio:openExternal', async (_event, url) => {
   await shell.openExternal(String(url || ''))
 })
 
+ipcMain.handle('verxio:revealPath', (_event, filePath) => {
+  const resolved = assertPathAllowed(String(filePath || ''))
+
+  if (!fs.existsSync(resolved)) {
+    const error = new Error(`File not found: ${resolved}`)
+    error.code = 'ENOENT'
+    throw error
+  }
+
+  shell.showItemInFolder(resolved)
+
+  return resolved
+})
+
 function parseComposioOAuthResult(targetUrl) {
   try {
     const url = new URL(String(targetUrl || ''))

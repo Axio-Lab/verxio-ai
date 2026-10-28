@@ -414,6 +414,63 @@ function SourceView({ filePath, language, text }: { filePath: string; language: 
   )
 }
 
+export function LocalHtmlPreview({ reloadKey, target }: { reloadKey: number; target: PreviewTarget }) {
+  const { t } = useI18n()
+  const filePath = filePathForTarget(target)
+  const [html, setHtml] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let active = true
+
+    setHtml(null)
+    setError(null)
+
+    void (async () => {
+      try {
+        const result = await readTextPreview(filePath)
+
+        if (!active) {
+          return
+        }
+
+        if (result.binary || !result.text) {
+          setError(t.preview.binaryBody(target.label))
+
+          return
+        }
+
+        setHtml(result.text)
+      } catch (loadError) {
+        if (active) {
+          setError(loadError instanceof Error ? loadError.message : String(loadError))
+        }
+      }
+    })()
+
+    return () => {
+      active = false
+    }
+  }, [filePath, reloadKey, t.preview, target.label, target.mimeType])
+
+  if (error) {
+    return <PreviewEmptyState body={error} title={t.preview.unavailable} />
+  }
+
+  if (html == null) {
+    return <PageLoader label={t.preview.loading} />
+  }
+
+  return (
+    <iframe
+      className="absolute inset-0 h-full w-full border-0 bg-white"
+      sandbox=""
+      srcDoc={html}
+      title={target.label}
+    />
+  )
+}
+
 export function LocalFilePreview({ reloadKey, target }: { reloadKey: number; target: PreviewTarget }) {
   const { t } = useI18n()
   const [state, setState] = useState<LocalPreviewState>({ loading: true })

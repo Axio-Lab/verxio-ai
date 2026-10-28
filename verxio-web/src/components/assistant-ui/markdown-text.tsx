@@ -24,11 +24,11 @@ import { ExpandableBlock } from '@/components/chat/expandable-block'
 import { PreviewAttachment } from '@/components/chat/preview-attachment'
 import { chunkByLines, SyntaxHighlighter } from '@/components/chat/shiki-highlighter'
 import { ZoomableImage } from '@/components/chat/zoomable-image'
-import { resolvePathForDesktopPreview } from '@/lib/desktop-workspace'
+import { $desktopWorkspaceRoot, resolvePathForDesktopPreview } from '@/lib/desktop-workspace'
 import { ExternalLink, normalizeExternalUrl, openExternalLink, PrettyLink } from '@/lib/external-link'
 import { Download, Eye, FileImage, FileText } from '@/lib/icons'
 import { createMemoizedMathPlugin } from '@/lib/katex-memo'
-import { normalizeOrLocalPreviewTarget } from '@/lib/local-preview'
+import { localPreviewTarget, normalizeOrLocalPreviewTarget } from '@/lib/local-preview'
 import { looksLikeFilePath } from '@/lib/markdown-paths'
 import { preprocessMarkdown } from '@/lib/markdown-preprocess'
 import { mediaKind, mediaName, mediaPathFromMarkdownHref } from '@/lib/media'
@@ -42,6 +42,7 @@ import { listVerxioArtifacts, verxioApiEnabled, verxioApiUrl, type VerxioArtifac
 import { extractWorkspaceArtifactPaths } from '@/lib/verxio-artifact-paths'
 import {
   artifactTargetForRecord,
+  findDesktopArtifactFile,
   recordMatchesArtifactPath,
   verxioArtifactPreviewTarget
 } from '@/lib/verxio-artifact-preview'
@@ -280,6 +281,52 @@ function resolvedArtifactFromRecord(path: string, record: VerxioArtifact): Resol
   }
 }
 
+const ARCHIVE_PATH_RE = /\.(?:7z|gz|tar|tgz|zip)(?:\?.*)?$/i
+
+function resolvedDesktopArtifact(path: string, absolutePath: string): ResolvedArtifact {
+  const target = localPreviewTarget(absolutePath)
+  const name = basename(absolutePath)
+
+  return {
+    downloadUrl: target?.url ?? absolutePath,
+    path,
+    previewUrl: target?.url ?? absolutePath,
+    record: {
+      agent_id: '',
+      content_type: target?.previewKind === 'html' ? 'text/html' : 'application/octet-stream',
+      created_at: '',
+      file_name: name,
+      id: `local:${absolutePath}`,
+      relative_path: path,
+      sha256: null,
+      size_bytes: 0,
+      source: 'desktop-workspace',
+      updated_at: '',
+      workspace_id: ''
+    },
+    target
+  }
+}
+
+async function withDesktopArtifactFiles(
+  paths: string[],
+  resolved: ResolvedArtifact[],
+  workspaceRoot?: string | null,
+  cwd?: string | null
+): Promise<ResolvedArtifact[]> {
+  return Promise.all(
+    resolved.map(async (item, index) => {
+      if (item.record) {
+        return item
+      }
+
+      const absolutePath = await findDesktopArtifactFile(paths[index] || item.path, workspaceRoot, cwd)
+
+      return absolutePath ? resolvedDesktopArtifact(paths[index] || item.path, absolutePath) : item
+    })
+  )
+}
+
 async function resolveArtifactsFromList(paths: string[], refresh = false): Promise<ResolvedArtifact[]> {
   const response = await listVerxioArtifacts(refresh ? { refresh: true } : undefined)
 
@@ -294,6 +341,8 @@ const ARTIFACT_RESOLVE_RETRY_DELAYS_MS = [0, 500, 1_500, 4_000] as const
 
 function useResolvedArtifacts(text: string): ResolvedArtifact[] {
   const paths = useMemo(() => extractWorkspaceArtifactPaths(text), [text])
+  const cwd = useStore($currentCwd)
+  const workspaceRoot = useStore($desktopWorkspaceRoot)
   const [items, setItems] = useState<ResolvedArtifact[]>([])
 
   useEffect(() => {
@@ -303,16 +352,30 @@ function useResolvedArtifacts(text: string): ResolvedArtifact[] {
       return
     }
 
-    if (!verxioApiEnabled()) {
-      setItems(paths.map(unresolvedArtifact))
-
-      return
-    }
-
     let cancelled = false
 
     void (async () => {
+      const unresolved = paths.map(unresolvedArtifact)
+
       try {
+        const local = await withDesktopArtifactFiles(paths, unresolved, workspaceRoot, cwd)
+
+        if (cancelled) {
+          return
+        }
+
+        if (local.some(item => item.record)) {
+          setItems(local)
+        }
+
+        if (local.every(item => item.record) || !verxioApiEnabled()) {
+          if (!local.some(item => item.record)) {
+            setItems(local)
+          }
+
+          return
+        }
+
         for (let attempt = 0; attempt < ARTIFACT_RESOLVE_RETRY_DELAYS_MS.length; attempt++) {
           const delay = ARTIFACT_RESOLVE_RETRY_DELAYS_MS[attempt]
 
@@ -334,6 +397,8 @@ function useResolvedArtifacts(text: string): ResolvedArtifact[] {
             resolved = await resolveArtifactsFromList(paths, true)
           }
 
+          resolved = await withDesktopArtifactFiles(paths, resolved, workspaceRoot, cwd)
+
           if (cancelled) {
             return
           }
@@ -346,7 +411,11 @@ function useResolvedArtifacts(text: string): ResolvedArtifact[] {
         }
       } catch {
         if (!cancelled) {
-          setItems(paths.map(unresolvedArtifact))
+          const local = await withDesktopArtifactFiles(paths, unresolved, workspaceRoot, cwd)
+
+          if (!cancelled) {
+            setItems(local)
+          }
         }
       }
     })()
@@ -354,7 +423,7 @@ function useResolvedArtifacts(text: string): ResolvedArtifact[] {
     return () => {
       cancelled = true
     }
-  }, [paths])
+  }, [cwd, paths, workspaceRoot])
 
   return items
 }
@@ -396,6 +465,19 @@ function GeneratedArtifactCard({ artifact }: { artifact: ResolvedArtifact }) {
   const [lightboxOpen, setLightboxOpen] = useState(false)
 
   const openPreview = () => {
+    if (
+      artifact.record?.source === 'desktop-workspace' &&
+      ARCHIVE_PATH_RE.test(artifact.path) &&
+      artifact.target?.path &&
+      window.hermesDesktop?.revealPath
+    ) {
+      void window.hermesDesktop
+        .revealPath(artifact.target.path)
+        .catch(error => notifyError(error, 'Could not show file'))
+
+      return
+    }
+
     if (!artifact.target || !artifact.previewUrl) {
       return
     }
@@ -460,6 +542,18 @@ function GeneratedArtifactCard({ artifact }: { artifact: ResolvedArtifact }) {
             aria-label={`Download ${fileName}`}
             className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
             onClick={() => {
+              if (
+                artifact.record?.source === 'desktop-workspace' &&
+                artifact.target?.path &&
+                window.hermesDesktop?.revealPath
+              ) {
+                void window.hermesDesktop
+                  .revealPath(artifact.target.path)
+                  .catch(error => notifyError(error, 'Could not show file'))
+
+                return
+              }
+
               void downloadMediaFromCandidates([artifact.downloadUrl!, artifact.path, artifact.previewUrl || ''])
                 .then(name => notify({ kind: 'success', title: 'Download started', message: name }))
                 .catch(error => notifyError(error, 'Download failed'))
@@ -494,6 +588,27 @@ function MarkdownPathLink({ children, className, href, ...props }: ComponentProp
 
         void (async () => {
           try {
+            if (ARCHIVE_PATH_RE.test(path) && window.hermesDesktop?.revealPath) {
+              const resolvedPath = resolvePathForDesktopPreview(path, cwd || undefined)
+
+              await window.hermesDesktop.revealPath(resolvedPath)
+
+              return
+            }
+
+            // Desktop files live in the project folder. Open that copy before
+            // the artifacts API, which does not index cwd-relative writes.
+            if (isVerxioDesktop()) {
+              const resolvedPath = resolvePathForDesktopPreview(path, cwd || undefined)
+              const localPreview = await normalizeOrLocalPreviewTarget(resolvedPath, cwd || undefined)
+
+              if (localPreview) {
+                setCurrentSessionPreviewTarget(localPreview, 'explicit-link', path)
+
+                return
+              }
+            }
+
             const verxioArtifactPreview = await verxioArtifactPreviewTarget(path)
 
             if (verxioArtifactPreview) {

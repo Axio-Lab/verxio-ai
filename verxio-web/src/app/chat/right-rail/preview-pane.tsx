@@ -21,7 +21,7 @@ import {
   PreviewConsoleTitlebarIcon
 } from './preview-console'
 import { type ConsoleEntry, createPreviewConsoleState } from './preview-console-state'
-import { LocalFilePreview, PreviewEmptyState } from './preview-file'
+import { LocalFilePreview, LocalHtmlPreview, PreviewEmptyState } from './preview-file'
 
 const PublicNotepadShareView = lazy(async () => ({
   default: (await import('@/app/notepad')).PublicNotepadShareView
@@ -161,9 +161,17 @@ export function PreviewPane({
 
   const shareToken = notepadShareToken(target.url)
 
+  // A sandboxed webview does not load file:// reports, so the pane stayed blank
+  // while "Open in browser" showed the same document. Render that HTML here.
+  const isLocalHtmlFile =
+    target.previewKind === 'html' &&
+    target.renderMode !== 'source' &&
+    (target.kind === 'file' || /^file:/i.test(target.url))
+
   const isWebPreview =
     !shareToken &&
     !isInAppFilePreview &&
+    !isLocalHtmlFile &&
     (target.kind === 'url' || (target.previewKind === 'html' && target.renderMode !== 'source'))
 
   const currentLabel = compactUrl(currentUrl)
@@ -664,6 +672,8 @@ export function PreviewPane({
                 <PublicNotepadShareView embedded token={shareToken} />
               </Suspense>
             </div>
+          ) : isLocalHtmlFile ? (
+            <LocalHtmlPreview reloadKey={localReloadKey} target={target} />
           ) : (
             !isWebPreview && <LocalFilePreview reloadKey={localReloadKey} target={target} />
           )}

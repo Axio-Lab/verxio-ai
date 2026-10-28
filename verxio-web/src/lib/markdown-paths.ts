@@ -34,3 +34,42 @@ export function autoLinkFilePaths(text: string): string {
     return `${lead}[${path}](${previewMarkdownHref(path)})`
   })
 }
+
+const MARKDOWN_LINK_RE = /\[([^\]\n]+)\]\(([^)\s]+)\)/g
+
+function bareWorkspaceHref(href: string): string | null {
+  if (!href || /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(href)) {
+    return null
+  }
+
+  if (href.startsWith('/') || href.startsWith('~/') || href.startsWith('../')) {
+    return null
+  }
+
+  const relative = href.replace(/^\.\//, '')
+
+  if (!relative || relative.startsWith('../') || relative.split('/')[0]?.includes('.')) {
+    return null
+  }
+
+  if (!FILE_PATH_EXT_RE.test(relative)) {
+    return null
+  }
+
+  return `/workspace/${relative}`
+}
+
+// Streamdown's link hardener drops destinations like `artifacts/report.html`
+// (no scheme, and not `/`, `./`, or `../`) and renders them as `[blocked]`.
+// `/workspace/...` is a path this app already opens.
+export function anchorBareFileLinks(text: string): string {
+  return text.replace(MARKDOWN_LINK_RE, (match, label: string, href: string) => {
+    const workspaceHref = bareWorkspaceHref(href)
+
+    if (!workspaceHref) {
+      return match
+    }
+
+    return `[${label}](${workspaceHref})`
+  })
+}

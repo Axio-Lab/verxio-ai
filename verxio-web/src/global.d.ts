@@ -55,6 +55,7 @@ declare global {
       setTitleBarTheme?: (payload: HermesTitleBarTheme) => void
       setPreviewShortcutActive?: (active: boolean) => void
       openExternal: (url: string) => Promise<void>
+      revealPath?: (filePath: string) => Promise<string>
       agentBridgeStatus?: () => Promise<{ hasRuntimeToken?: boolean }>
       applyCloudConfig?: (payload: {
         agentPrompt?: string
