@@ -27,6 +27,22 @@ VERXIO_GUARDRAILS = (
 )
 
 
+def chat_personality(name: str, tone: str, never_do: str) -> str:
+    """Identity for the workspace agent. The video call keeps the handoff script."""
+    who = (name or "Verxio").strip()
+    style = (tone or "Warm, direct, and concrete.").strip()
+    lines = [
+        f"The user's name for you is {who}.",
+        f"Tone: {style}.",
+        "You are already in the Verxio workspace. Do the requested work in this chat.",
+        "Do not hand work off, and do not ask the user to open another chat.",
+    ]
+    banned = (never_do or "").strip()
+    if banned:
+        lines.append(f"Never do this: {banned}")
+    return " ".join(lines)[:4800]
+
+
 def spoken_prompt(name: str, tone: str, never_do: str) -> str:
     who = (name or "Verxio").strip()
     style = (tone or "Warm, direct, and concrete.").strip()
@@ -100,7 +116,11 @@ def public_profile(row: dict[str, Any] | None, user: dict[str, Any]) -> dict[str
         "minutesUsed": int(row.get("minutes_used") or 0),
         "taskToolReady": bool(_account().get("tool_id")),
         "keyReady": user_has_key(str(user.get("id") or "")),
-        "personalityPrompt": f"{PERSONALITY_START}\n{prompt}\n{PERSONALITY_END}" if prompt else "",
+        "personalityPrompt": (
+            f"{PERSONALITY_START}\n"
+            f"{chat_personality(str(row.get('display_name') or ''), str(row.get('tone') or ''), str(row.get('never_do') or ''))}\n"
+            f"{PERSONALITY_END}"
+        ),
     }
 
 
