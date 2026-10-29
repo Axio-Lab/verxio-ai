@@ -16,6 +16,41 @@ As the business works, the context gets sharper and execution gets more efficien
 
 Verxio Web is the browser workspace. Verxio Desktop is the native app: local files, a terminal, and the same agent. Messaging channels can reach that same workspace.
 
+## NVIDIA Nemotron on Nebius Token Factory
+
+Workspace turns run on **NVIDIA Nemotron 3 Ultra**:
+
+`nvidia/nemotron-3-ultra-550b-a55b`
+
+Ultra is the model for operational work. It reads the shared context, calls tools, and writes the result back. Smaller NVIDIA open models stay available in the model menu for shorter turns.
+
+**Nebius Token Factory** serves that model. Token Factory is an OpenAI-compatible inference API. Each agent turn in the workspace is a chat completion against Token Factory, so the desktop app does not host a GPU. That is where Token Factory accelerates the workflow: research, tool calls, and the write-back are Nemotron completions served by Token Factory.
+
+The desktop agent talks to Token Factory through the Hermes NVIDIA provider. On macOS the env file is:
+
+`~/Library/Application Support/Verxio/hermes-home/.env`
+
+```bash
+NVIDIA_API_KEY=<Nebius Token Factory API key>
+NVIDIA_BASE_URL=https://api.tokenfactory.us-central1.nebius.com/v1
+```
+
+`NVIDIA_BASE_URL` is required. Without it, the NVIDIA provider calls NVIDIA's own API at `https://integrate.api.nvidia.com/v1`, which is a different host and does not meet the Token Factory requirement.
+
+In `~/Library/Application Support/Verxio/hermes-home/config.yaml`:
+
+```yaml
+model:
+  provider: nvidia
+  default: nvidia/nemotron-3-ultra-550b-a55b
+```
+
+Create the Token Factory key in the [Nebius Token Factory console](https://tokenfactory.nebius.com/). Restart the desktop app after saving the env file. Hermes reads it at startup.
+
+**Other Nebius services.** This project uses Token Factory for inference. It does not deploy on Nebius Serverless Jobs, Serverless Endpoints, or DevPods.
+
+**Tavily.** When a task needs a public source that is not already in the workspace, the agent searches with Tavily. Put `TAVILY_API_KEY` in the same env file. Tavily is not a Nebius service.
+
 ## Setup
 
 Requirements: Node.js 22 or newer, Python 3.11, and [uv](https://docs.astral.sh/uv/).
@@ -35,7 +70,7 @@ npm run desktop:dev
 
 The UI is at `http://127.0.0.1:5180`. The API is at `http://127.0.0.1:8787`.
 
-In the model menu, select **Nemotron 3 Ultra**.
+Set the Token Factory env vars above, then restart `npm run desktop:dev` so the agent picks them up. In the model menu, select **Nemotron 3 Ultra**.
 
 A local web build check:
 
@@ -54,7 +89,7 @@ verxio-desktop/   Electron app. Reuses verxio-web
 hermes-agent/     Agent runtime: memory, skills, tools, scheduling
 ```
 
-Desktop Hermes state lives in the Electron user-data folder `hermes-home`.
+Desktop Hermes state, including the model provider and the Token Factory env file, lives in the Electron user-data folder `hermes-home`.
 
 Connected apps are reached through Composio. The agent calls those tools during a task and writes results back into the operational context.
 
