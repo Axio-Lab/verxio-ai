@@ -1,435 +1,98 @@
-# Verxio AI
+# Verxio
 
-Verxio is an AI employee for businesses, not another chatbot.
+Verxio is an AI-native workspace for agents. Slack is a workspace for teams. Verxio is a workspace for agents, and it is built for doing work.
 
-Most AI products stop at conversation. Verxio is built for follow-through: it
-remembers the business context, connects to the tools a team already uses, runs
-workflows, creates reports, replies to customers, schedules recurring work, and
-gets better over time.
+A company plugs its agents into one place. Those agents share one operational context: the state of the work, the rules the company already decided, the tools that hold the record, and the history of what the last run changed. A task starts from that context. The result is written back into it. The next person on the team, and the next agent they plug in, starts from the updated record.
 
-Verxio can live where work already happens: WhatsApp, Slack, Telegram, Discord,
-the web app, and the desktop app. A business can talk to the same agent from a
-team channel, a customer messaging inbox, or the Verxio workspace without
-starting over each time.
+As the business works, the context gets sharper and execution gets more efficient. That is the self-improving core. The following step is to fine-tune on those operational traces so the model learns this company's work, not only a general checkpoint.
 
-Every customer gets a private Verxio workspace with isolated memory,
-credentials, skills, files, artifacts, and runtime state. The product goal is
-simple: give non-technical businesses access to powerful AI agents without
-making them manage developer tools, API keys, scripts, or infrastructure.
+## What the workspace does
 
-## Why Verxio Exists
+- **One context for every agent.** Jobs, files, decisions, follow-ups, and connected tools live in the workspace. Agents do not each start from a blank chat.
+- **Work, not a transcript.** The agent reads the operation, uses the connected tools, and writes the outcome back to the system of record.
+- **A team can plug in.** Anyone on the team uses the same operational context. The record compounds across people and agents.
+- **The model is swappable.** The workspace stays. The model is a setting. This project runs NVIDIA Nemotron 3 Ultra. Other NVIDIA open models can be selected in the same menu.
+- **Tools the business already uses.** Airtable and the rest of the connected apps go through Composio. Live web research uses Tavily.
 
-Businesses do not need another chat window that answers questions and forgets
-what happened yesterday. They need an AI teammate that can:
+Verxio Web is the browser workspace. Verxio Desktop is the native app: local files, a terminal, and the same agent. Messaging channels can reach that same workspace.
 
-- Understand their workflows and remember what works.
-- Take action across business systems instead of only suggesting next steps.
-- Operate inside the messaging channels their team and customers already use.
-- Improve from repeated work by building reusable skills and memory.
-- Stay isolated, auditable, and safe when handling credentials and customer
-  data.
+## NVIDIA Nemotron on Nebius Token Factory
 
-Verxio turns advanced agent infrastructure into a product a business can sign up
-for and use immediately.
+Workspace turns run on **NVIDIA Nemotron 3 Ultra**:
 
-## What Verxio Does
+`nvidia/nemotron-3-ultra-550b-a55b`
 
-Verxio gives every business a self-improving AI agent that can work across
-communication channels, internal tools, and scheduled workflows.
+Ultra is the model for operational work. It reads the shared context, calls tools, and writes the result back. Smaller NVIDIA open models stay available in the model menu for shorter turns.
 
-- **Lives in business channels** - use the same agent from WhatsApp, Slack,
-  Telegram, Discord, Verxio Web, or Verxio Desktop.
-- **Takes real action** - use browser automation, file tools, code execution,
-  scheduled jobs, artifacts, and connected business apps.
-- **Connects to business software** - connect Gmail, Google Sheets, Google
-  Drive, Notion, GitHub, HubSpot, Jira, Xero, Slack, and 1,000+ apps through
-  Composio, with access to 20,000+ possible actions.
-- **Learns continuously** - remember prior work, reuse successful workflows,
-  create skills, and become more useful every day.
-- **Automates customer messaging** - build visual workflows for
-  Instagram, Messenger, and WhatsApp that qualify leads, tag conversations,
-  respond to customers, and route follow-up.
-- **Captures meetings with Notepad** - record meetings, generate transcripts,
-  create AI summaries, organize notes, and share public read-only links.
-- **Runs scheduled work** - execute recurring reporting, research, follow-up,
-  and operational tasks automatically.
-- **Keeps customers isolated** - each workspace has dedicated runtime state,
-  credentials, memory, skills, and files.
+**Nebius Token Factory** serves that model. Token Factory is an OpenAI-compatible inference API. Each agent turn in the workspace is a chat completion against Token Factory, so the desktop app does not host a GPU. That is where Token Factory accelerates the workflow: research, tool calls, and the write-back are Nemotron completions served by Token Factory.
 
-Think of Verxio as an AI employee that can sit in your messaging channels,
-understand your business systems, and do the work instead of only discussing it.
+The desktop agent talks to Token Factory through the Hermes NVIDIA provider. On macOS the env file is:
 
-## Business Use Cases
+`~/Library/Application Support/Verxio/hermes-home/.env`
 
-Verxio is designed for practical business operations:
-
-- **Sales and support** - respond to inbound WhatsApp or Instagram messages,
-  qualify leads, tag conversations, and escalate hot opportunities.
-- **Operations** - update spreadsheets, reconcile records, create weekly
-  reports, and keep dashboards fresh.
-- **Finance and admin** - gather invoice context, check transactions, summarize
-  account activity, and prepare follow-up tasks.
-- **Team knowledge** - search Slack history, summarize decisions, retrieve
-  files, and answer questions using previous work.
-- **Product and engineering** - connect GitHub, Jira, Slack, and docs to
-  summarize issues, draft updates, and automate routine project work.
-- **Meetings** - record calls, transcribe conversations, summarize outcomes,
-  and turn action items into follow-up work.
-
-The same agent can handle a quick Slack question, a WhatsApp customer request,
-a scheduled Monday report, and a desktop meeting summary while sharing the same
-workspace context.
-
-## Product Surfaces
-
-Verxio has several product surfaces that all point at the same private agent:
-
-- **Verxio Web** - the main browser workspace for chat, settings, skills,
-  connections, automations, artifacts, and Notepad.
-- **Verxio Desktop** - the native app for local file access, terminal access,
-  system-aware workflows, and desktop meeting capture.
-- **Messaging gateways** - Slack, WhatsApp, Telegram, Discord, and other
-  supported platforms let the agent work where teams already communicate.
-- **Notepad** - the meeting workspace for transcripts, AI summaries, folders,
-  and shareable notes.
-- **Skills and Connections** - the place where businesses connect apps, manage
-  capabilities, and teach the agent reusable workflows.
-
-## Product Architecture
-
-Verxio is the product layer: users, workspaces, billing-ready control plane,
-runtime orchestration, web/desktop interfaces, artifacts, Notepad, and
-messaging setup.
-
-Hermes is the internal self-improving agent runtime that powers memory, tools,
-skills, scheduling, delegation, and gateway execution. Users interact with
-Verxio; the runtime remains an implementation detail behind the product.
-
-The diagram below keeps Slack visible because Slack can be both a messaging
-channel and a connected business app, but the same model applies to WhatsApp,
-Telegram, Discord, Web, and Desktop.
-
-```mermaid
-flowchart TB
-  subgraph Setup["1. Setup in Verxio Web/Desktop"]
-    U["Business user"]
-    WEB["Verxio workspace<br/>signup / settings / private agent"]
-    CHANNELS["Messaging setup<br/>Slack / WhatsApp / Telegram / Discord"]
-    CONNECT["Skills > Connections<br/>connect business apps via Composio"]
-  end
-
-  subgraph Chat["2. Agent lives where work happens"]
-    SLACK["Slack<br/>DMs / mentions / threads"]
-    WHATSAPP["WhatsApp<br/>customer conversations"]
-    TELEGRAM["Telegram<br/>groups / DMs"]
-    DISCORD["Discord<br/>servers / DMs"]
-    APPCHAT["Verxio Web/Desktop<br/>operator workspace"]
-  end
-
-  subgraph Control["3. Verxio control plane"]
-    API["verxio-api<br/>auth / workspace / runtime bridge"]
-    BRIDGE["Composio tool-router session<br/>writes mcp_servers.composio<br/>into runtime config"]
-  end
-
-  subgraph Runtime["4. Private self-improving agent runtime"]
-    R["Hermes runtime<br/>memory / skills / tools / schedules"]
-    MCP["Composio MCP server<br/>mcp_composio_* tools"]
-    SEARCH["Composio Real-Time Search<br/>discover and route tool calls"]
-    Q["Hosted model layer<br/>Qwen on DashScope"]
-  end
-
-  subgraph Execute["5. Work happens in apps"]
-    CHANNEL_TOOLS["Channel tools<br/>search / send / reply / route"]
-    APPS["1,000+ connected apps<br/>Gmail / Sheets / Notion / GitHub / HubSpot / Xero"]
-    ACTIONS["20,000+ actions<br/>create / update / summarize / report / automate"]
-    OUT["Business outcome<br/>reply / report / dashboard / task / artifact"]
-  end
-
-  U --> WEB
-  WEB --> CHANNELS
-  WEB --> CONNECT
-  CHANNELS --> API
-  CONNECT --> API
-  SLACK <-->|chat / events| API
-  WHATSAPP <-->|chat / events| API
-  TELEGRAM <-->|chat / events| API
-  DISCORD <-->|chat / events| API
-  APPCHAT <-->|chat / WebSocket| API
-  API --> R
-  API --> BRIDGE
-  BRIDGE --> MCP
-  R --> Q
-  R --> MCP
-  MCP --> SEARCH
-  SEARCH --> CHANNEL_TOOLS
-  SEARCH --> APPS
-  APPS --> ACTIONS
-  CHANNEL_TOOLS --> ACTIONS
-  ACTIONS --> OUT
-  OUT -.->|results back to the channel| SLACK
-  OUT -.->|customer reply| WHATSAPP
-  OUT -.->|team update| TELEGRAM
-  OUT -.->|community update| DISCORD
-  OUT -.->|artifact / dashboard| APPCHAT
+```bash
+NVIDIA_API_KEY=<Nebius Token Factory API key>
+NVIDIA_BASE_URL=https://api.tokenfactory.us-central1.nebius.com/v1
 ```
 
-There are two paths through messaging platforms:
+`NVIDIA_BASE_URL` is required. Without it, the NVIDIA provider calls NVIDIA's own API at `https://integrate.api.nvidia.com/v1`, which is a different host and does not meet the Token Factory requirement.
 
-1. **Messaging** - the agent can receive and respond to messages in Slack,
-   WhatsApp, Telegram, Discord, Web, and Desktop.
-2. **Tools** - the same platform can also be a connected app. For example,
-   Slack can be where the agent receives a request and also a tool the agent
-   searches or posts into through Composio.
+In `~/Library/Application Support/Verxio/hermes-home/config.yaml`:
 
-Flow: **configure in Verxio -> talk in your channel -> private runtime reasons
-and plans -> Composio discovers the right action -> work happens in business
-apps -> results return to the channel or workspace.**
-
-## Infrastructure Architecture
-
-Production runs on **Alibaba Cloud ECS**.
-
-```mermaid
-flowchart LR
-  subgraph Clients
-    U["Users<br/>Browser / mobile<br/>app.verxio.xyz"]
-  end
-
-  subgraph Edge
-    C["Caddy TLS"]
-    W["Frontend<br/>verxio-web<br/>Nginx + React"]
-  end
-
-  subgraph ECS["Alibaba Cloud ECS"]
-    API["Backend API<br/>verxio-api<br/>FastAPI / uvicorn"]
-    DB[("Turso / LibSQL<br/>users / workspaces<br/>runtimes / usage")]
-    R["Hermes runtime<br/>Docker per agent<br/>gateway :9119"]
-  end
-
-  subgraph QwenCloud["Alibaba Cloud / Qwen"]
-    DS["DashScope<br/>qwen3.6-plus<br/>dashscope-intl.aliyuncs.com"]
-  end
-
-  U -->|HTTPS| C --> W
-  W -->|"/api + WebSocket"| API
-  API <-->|SQL| DB
-  API -->|"HTTP/WS proxy<br/>injects DASHSCOPE_API_KEY"| R
-  R -->|model inference| DS
+```yaml
+model:
+  provider: nvidia
+  default: nvidia/nemotron-3-ultra-550b-a55b
 ```
 
-### DashScope media tools (image / video / TTS)
+Create the Token Factory key in the [Nebius Token Factory console](https://tokenfactory.nebius.com/). Restart the desktop app after saving the env file. Hermes reads it at startup.
 
-Qwen Cloud / DashScope media models are **not** chat-model-picker entries.
-They use Hermes’ existing tools with a `dashscope` provider:
+**Other Nebius services.** This project uses Token Factory for inference. It does not deploy on Nebius Serverless Jobs, Serverless Endpoints, or DevPods.
 
-| Tool             | Config                                                       | Example models                                                            |
-| ---------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------- |
-| `image_generate` | `image_gen.provider: dashscope`                              | `qwen-image-2.0-pro` (text-to-image), `qwen-image-edit-plus` (image edit) |
-| `video_generate` | `video_gen.provider: dashscope` + enable `video_gen` toolset | `happyhorse-1.1` / `wan2.7` families (text-to-video / image-to-video)     |
-| `text_to_speech` | `tts.provider: dashscope`                                    | `qwen3-tts-flash`, CosyVoice when available                               |
+**Tavily.** When a task needs a public source that is not already in the workspace, the agent searches with Tavily. Put `TAVILY_API_KEY` in the same env file. Tavily is not a Nebius service.
 
-Auth reuses `DASHSCOPE_API_KEY` (hosted Verxio Qwen or BYOK Qwen Cloud).
-Configure via Settings → Voice / Advanced, or `hermes tools`.
+## Setup
 
-## How It Is Built
+Requirements: Node.js 22 or newer, Python 3.11, and [uv](https://docs.astral.sh/uv/).
 
-Verxio is a hosted AI agent product built on top of Hermes Agent, Nous
-Research's open-source self-improving agent framework, and developed with
-OpenAI Codex and GPT models.
+Start the API:
 
-Hermes provides the underlying agent framework. OpenAI's GPT models power key
-intelligence and reasoning capabilities inside the Verxio experience, while
-Codex played a central role in the development workflow: helping build,
-iterate, debug, and ship the product across the API, web, desktop, and runtime
-codebases.
-
-Verxio brings these components together into a complete product experience. The
-split is intentional:
-
-- **Verxio owns the product experience** - authentication, workspaces, runtime
-  lifecycle, web and desktop apps, app connections, Notepad, artifacts,
-  usage metering, and messaging setup.
-- **The runtime owns agent behavior** - memory, skills, tools, scheduled work,
-  messaging execution, delegation, and self-improvement.
-- **Users can bring their own model access** - Verxio is designed so users can
-  connect provider accounts, including ChatGPT/Codex-style subscriptions or API
-  keys, and use those credentials as model providers instead of being locked to
-  a single hosted default.
-
-### Where Codex Accelerated the Build
-
-Codex was used as an active engineering partner throughout the project, not
-only as a code completion tool. GPT-5.6 and Codex helped turn the idea into a
-working product by accelerating:
-
-- **Architecture decisions** - separating the Verxio control plane from the
-  Hermes runtime, isolating each customer workspace in its own runtime
-  container, and keeping product metadata separate from agent memory, skills,
-  credentials, sessions, and artifacts.
-- **Cross-stack implementation** - building and iterating across `verxio-api`,
-  `verxio-web`, `verxio-desktop`, and `hermes-agent` while preserving the
-  boundaries between hosted product code and runtime agent behavior.
-- **Model-provider design** - wiring hosted providers, user-provided keys, and
-  subscription-backed provider access so Verxio can support both managed
-  defaults and user-owned model access.
-- **Debugging and quality loops** - tracing runtime/session failures, fixing
-  environment reload issues, artifact preview bugs, model selector behavior,
-  read-aloud support, and agent resume edge cases with targeted tests and
-  Docker verification.
-- **Product iteration** - shaping Notepad, artifacts, messaging,
-  settings, skills, runtime orchestration, and desktop capabilities into a
-  unified experience instead of separate technical demos.
-
-Key decisions were made with Codex in the loop: which logic belonged in the
-hosted Verxio API versus the Hermes runtime, how to preserve runtime isolation,
-how to support provider choice without exposing users to infrastructure
-complexity, and how to verify fixes with focused tests plus local Docker
-runtime rebuilds.
-
-Core directories:
-
-- `verxio-api/` - FastAPI control plane with auth, workspaces, runtime
-  orchestration, Composio bridge, Notepad, artifact
-  management, usage metering, and proxying.
-- `verxio-web/` - React web app for chat, settings, skills, messaging,
-  connections, Notepad, and artifacts.
-- `verxio-desktop/` - Electron shell that reuses `verxio-web` and enables
-  native file access, terminal support, system audio recording, and desktop
-  bridge APIs.
-- `hermes-agent/` - underlying agent runtime powering memory, skills,
-  messaging, scheduling, delegation, and tool execution.
-- `.verxio/` - local runtime state, runtime homes, workspaces, and artifacts.
-
-Verxio-specific product changes live in `verxio-api`, `verxio-web`, and
-`verxio-desktop`. Runtime changes are kept inside `hermes-agent`. Hermes
-provides the agent foundation, OpenAI's GPT models provide intelligence, Codex
-accelerated how the system was built and shipped, and Verxio turns it into an
-accessible, integrated product.
-
-## Runtime Isolation
-
-Each workspace agent gets one isolated runtime container:
-
-```text
-.verxio/runtimes/{workspace_id}/{agent_id}/hermes-home
-.verxio/runtimes/{workspace_id}/{agent_id}/workspace
-.verxio/runtimes/{workspace_id}/{agent_id}/workspace/artifacts
+```bash
+cd verxio-api
+VERXIO_DATABASE_MODE=sqlite uv run uvicorn app.main:app --reload --port 8787
 ```
 
-Turso stores Verxio control-plane metadata only: users, sessions, workspaces,
-agents, runtime instances, artifacts, usage, and audit events. Agent memory,
-sessions, skills, cron jobs, MCP config, gateway connections, and `SOUL.md`
-remain inside that agent's private runtime home.
-
-This separation lets Verxio provide a polished hosted product while preserving
-per-customer isolation for credentials, memory, learned skills, files, and
-generated artifacts.
-
-## Notepad
-
-Notepad is the meeting workspace inside Verxio. Users can create notes, edit
-transcripts and summaries, organize notes into folders, delete records, and
-create public share URLs that can be viewed without signing in.
-
-On web, Notepad provides notes, folders, editing, AI summaries, and public
-sharing. In the desktop app it additionally supports bot-free recording:
-Verxio requests device audio where Electron exposes it and falls back to
-microphone recording when system audio is unavailable.
-
-Transcription uses the runtime audio transcription route, and AI summaries use
-the same private agent runtime backing the workspace.
-
-## Verxio Desktop
-
-The desktop shell uses the same Verxio Web renderer, but provides a native
-`window.hermesDesktop` bridge so desktop-only UI, including the right sidebar
-file browser and terminal, is available on macOS, Windows, and Linux.
-
-Desktop keeps local bridge state on the user's machine, including local
-identity, remembered folder grants, terminal access, and file preview
-permissions.
-
-Start `verxio-api` first, then run the desktop app locally:
+Start the desktop app from the repo root:
 
 ```bash
 npm run desktop:dev
 ```
 
-This starts `verxio-web` on `http://127.0.0.1:5180` and launches Electron
-against it. The local build smoke check is:
+The UI is at `http://127.0.0.1:5180`. The API is at `http://127.0.0.1:8787`.
+
+Set the Token Factory env vars above, then restart `npm run desktop:dev` so the agent picks them up. In the model menu, select **Nemotron 3 Ultra**.
+
+A local web build check:
 
 ```bash
 npm run desktop:build
 ```
 
-To create an unpacked installable app directory for the current platform, run:
+## How it is put together
 
-```bash
-npm run desktop:pack
+Verxio is the product: accounts, the workspace, the desktop and web apps, and connections to business tools. Hermes is the agent runtime behind that workspace. Users see Verxio.
+
+```text
+verxio-api/       FastAPI control plane, auth, inference gateway, Composio
+verxio-web/       Web workspace
+verxio-desktop/   Electron app. Reuses verxio-web
+hermes-agent/     Agent runtime: memory, skills, tools, scheduling
 ```
 
-Platform-specific unsigned installers are available from `verxio-desktop`:
+Desktop Hermes state, including the model provider and the Token Factory env file, lives in the Electron user-data folder `hermes-home`.
 
-```bash
-npm run dist:mac --prefix verxio-desktop
-npm run dist:win --prefix verxio-desktop
-npm run dist:linux --prefix verxio-desktop
-```
-
-## Desktop + slim cloud
-
-Verxio Desktop runs Hermes on the user's machine for chat, project files, the
-terminal, and local Whisper. The cloud keeps one always-on agent per account
-for cron and messaging, plus sign-in, hosted model keys, and
-Composio. Shared notepad links stay on `app.verxio.xyz/share/notepad/…`.
-
-```bash
-npm run desktop:dev
-# API (accounts, inference gateway, sync):
-cd verxio-api && VERXIO_DATABASE_MODE=sqlite uv run uvicorn app.main:app --reload --port 8787
-```
-
-Public web (share pages + download) builds with `VITE_PUBLIC_ENTRY=1`.
-The pool plane is the default cloud runtime (`VERXIO_RUNTIME_MANAGER=pool`).
-
-## Challenges Solved
-
-Verxio turns an advanced agent runtime into a business product by solving the
-parts businesses need before they can trust AI in production:
-
-- **Isolated runtimes** - every customer gets dedicated memory, credentials,
-  skills, and files.
-- **Multi-channel messaging** - the same agent can operate across WhatsApp,
-  Slack, Telegram, Discord, Web, and Desktop while preserving context.
-- **Tool access without developer setup** - Composio connects business apps and
-  routes tool execution without users managing raw MCP details.
-- **Product/runtime state separation** - Verxio stores product data while the
-  runtime stores memory and learning.
-- **Desktop support** - native bridge APIs unlock file, terminal, and recording
-  capabilities without fragmenting the web product.
-- **Business-grade workflows** - Notepad, scheduled work, artifacts, and
-  app connections make the agent useful beyond chat.
-
-## What We Learned
-
-AI agents are only valuable when they are accessible, trusted, and embedded in
-real work.
-
-Powerful runtimes are not enough. Businesses need authentication, secure
-infrastructure, isolated workspaces, polished interfaces, reliable integrations,
-and clear product flows before they can use AI in production.
-
-Users also do not want another app to manage. They want AI inside the messaging
-platforms they already use every day.
-
-Most importantly, learning changes the product. A chatbot starts every
-conversation from scratch. A self-improving agent builds knowledge, remembers
-successful workflows, creates reusable skills, and becomes more valuable with
-continued use.
+Connected apps are reached through Composio. The agent calls those tools during a task and writes results back into the operational context.
 
 ## License
 
-Verxio AI is public and open source under the [MIT License](./LICENSE).
-
-The license file is included at the repository root so GitHub can detect it and
-show it in the About section on the repository page.
+Verxio is open source under the [MIT License](./LICENSE), an OSI-approved license. The license file is at the repository root.
