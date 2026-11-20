@@ -14,7 +14,12 @@ import {
   sessionTitle,
   SLASH_COMMAND_RE
 } from '@/lib/chat-runtime'
-import { fileDataUrlFromFile, imageBytesFromFile, isReadableAttachmentPath } from '@/lib/composer-attach'
+import {
+  absoluteAttachmentPath,
+  fileDataUrlFromFile,
+  imageBytesFromFile,
+  isReadableAttachmentPath
+} from '@/lib/composer-attach'
 import {
   type CommandsCatalogLike,
   desktopSlashUnavailableMessage,
@@ -356,44 +361,106 @@ export function usePromptActions({
 
       return Promise.all(
         attachments.map(async attachment => {
+          if (attachment.kind === 'folder') {
+            const folderPath = absoluteAttachmentPath(attachment)
+
+            if (!folderPath) {
+              return attachment
+            }
+
+            const granted = await requestGateway<{ granted?: boolean; message?: string; path?: string }>(
+              'context.grant',
+              {
+                path: folderPath,
+                session_id: sessionId
+              }
+            )
+
+            if (!granted.granted) {
+              throw new Error(granted.message || `Could not attach folder ${attachment.label || folderPath}`)
+            }
+
+            return attachment
+          }
+
           if (attachment.kind !== 'file') {
             return attachment
           }
 
+          const label = attachment.label || attachment.path || 'file'
+          const absolutePath = absoluteAttachmentPath(attachment)
           const uploadFile = attachment.uploadFile
 
+          const finish = (result: FileAttachResponse, fallbackLabel: string) => {
+            if (!result.attached || !result.ref_text) {
+              throw new Error(result.message || `Could not attach ${fallbackLabel}`)
+            }
+
+            const synced: ComposerAttachment = {
+              ...attachment,
+              attachedSessionId: sessionId,
+              label: result.name || fallbackLabel,
+              path: result.path || attachment.path,
+              refText: result.ref_text,
+              uploadFile: undefined
+            }
+
+            if (updateComposerAttachments) {
+              addComposerAttachment(synced)
+            }
+
+            return synced
+          }
+
+          // Picker and in-app paths outside the project are absolute. Copy them
+          // into the session workspace so @file: is allowed to expand.
+          if (absolutePath) {
+            try {
+              const staged = await requestGateway<FileAttachResponse>('file.attach', {
+                name: pathLabel(absolutePath),
+                path: absolutePath,
+                session_id: sessionId
+              })
+
+              if (staged.attached && staged.ref_text) {
+                return finish(staged, pathLabel(absolutePath))
+              }
+            } catch {
+              // The gateway cannot see this path (remote web). Fall through to bytes.
+            }
+
+            if (!uploadFile && window.hermesDesktop?.readFileDataUrl) {
+              const dataUrl = await window.hermesDesktop.readFileDataUrl(absolutePath)
+
+              const staged = await requestGateway<FileAttachResponse>('file.attach', {
+                data_url: dataUrl,
+                name: pathLabel(absolutePath),
+                session_id: sessionId
+              })
+
+              return finish(staged, pathLabel(absolutePath))
+            }
+
+            if (!uploadFile) {
+              throw new Error(`Could not attach ${pathLabel(absolutePath)}`)
+            }
+          }
+
           if (!uploadFile) {
-            // Path-only desktop/project text refs stay as @file: text — no upload.
+            // Relative project refs (@file:src/main.ts) are already in the workspace.
             return attachment
           }
 
-          const label = attachment.label || uploadFile.name || 'file'
           const payload = await fileDataUrlFromFile(uploadFile)
 
-          const result = await requestGateway<FileAttachResponse>('file.attach', {
-            data_url: payload.dataUrl,
-            name: payload.filename,
-            session_id: sessionId
-          })
-
-          if (!result.attached || !result.ref_text) {
-            throw new Error(result.message || `Could not attach ${label}`)
-          }
-
-          const synced: ComposerAttachment = {
-            ...attachment,
-            attachedSessionId: sessionId,
-            label: result.name || label,
-            path: result.path || attachment.path,
-            refText: result.ref_text,
-            uploadFile: undefined
-          }
-
-          if (updateComposerAttachments) {
-            addComposerAttachment(synced)
-          }
-
-          return synced
+          return finish(
+            await requestGateway<FileAttachResponse>('file.attach', {
+              data_url: payload.dataUrl,
+              name: payload.filename,
+              session_id: sessionId
+            }),
+            payload.filename || label
+          )
         })
       )
     },

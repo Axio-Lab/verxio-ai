@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  absoluteAttachmentPath,
   base64FromDataUrl,
   fileDataUrlFromFile,
   imageBytesFromFile,
@@ -33,6 +34,17 @@ describe('composer-attach helpers', () => {
 
     expect(payload.filename).toBe('IMG_9225.jpg')
     expect(payload.contentBase64.length).toBeGreaterThan(0)
+  })
+
+  it('stages absolute chat uploads and leaves project refs alone', () => {
+    expect(absoluteAttachmentPath({ path: '/Users/me/Desktop/Resume.pdf' })).toBe('/Users/me/Desktop/Resume.pdf')
+    expect(
+      absoluteAttachmentPath({
+        refText: '@file:`/Users/me/Desktop/My Resume.pdf`'
+      })
+    ).toBe('/Users/me/Desktop/My Resume.pdf')
+    expect(absoluteAttachmentPath({ path: 'src/main.ts', refText: '@file:src/main.ts' })).toBeNull()
+    expect(absoluteAttachmentPath({ refText: '@folder:/Users/me/Desktop/notes' })).toBe('/Users/me/Desktop/notes')
   })
 
   it('reads a file data URL for file.attach uploads', async () => {

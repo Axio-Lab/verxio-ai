@@ -11,6 +11,45 @@ export function isAbsoluteFilesystemPath(path: string | undefined | null): boole
   return value.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value)
 }
 
+/** Strip the quotes ``formatRefValue`` adds around paths with spaces. */
+export function unquoteRefValue(value: string): string {
+  const trimmed = value.trim()
+
+  if (trimmed.length >= 2) {
+    const quote = trimmed[0]
+    const closing = trimmed[trimmed.length - 1]
+
+    if ((quote === '`' || quote === '"' || quote === "'") && closing === quote) {
+      return trimmed.slice(1, -1)
+    }
+  }
+
+  return trimmed
+}
+
+/**
+ * Absolute path for a composer chip that still points outside the workspace.
+ * Relative project refs (`src/main.ts`) stay null so they are not re-uploaded.
+ */
+export function absoluteAttachmentPath(attachment: { path?: string; refText?: string }): string | null {
+  const fromPath = String(attachment.path || '').trim()
+
+  if (isAbsoluteFilesystemPath(fromPath)) {
+    return fromPath
+  }
+
+  const ref = String(attachment.refText || '').trim()
+  const match = ref.match(/^@(?:file|folder):([\s\S]+)$/)
+
+  if (!match) {
+    return null
+  }
+
+  const target = unquoteRefValue(match[1])
+
+  return isAbsoluteFilesystemPath(target) ? target : null
+}
+
 /** Paths the desktop bridge can read for image preview and byte upload. */
 export function isReadableAttachmentPath(path: string | undefined | null): boolean {
   const value = String(path || '').trim()
