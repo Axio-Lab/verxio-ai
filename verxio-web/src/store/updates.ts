@@ -66,6 +66,12 @@ function isUpdateToastSnoozed(): boolean {
   return Number.isFinite(until) && Date.now() < until
 }
 
+export function postponeUpdate(): void {
+  snoozeUpdateToast()
+  dismissNotification(UPDATE_TOAST_ID)
+  setUpdateOverlayOpen(false)
+}
+
 // Must match tui_gateway's DESKTOP_BACKEND_CONTRACT that this build was written
 // against. The backend reports its own value in session runtime info; a lower
 // value (or none — a pre-GUI checkout) means GUI<->backend skew.
@@ -119,6 +125,8 @@ export function maybeNotifyUpdateAvailable(status: DesktopUpdateStatus | null) {
   }
 
   const behind = status.behind ?? 0
+
+  setUpdateOverlayOpen(true)
 
   notify({
     action: {
@@ -249,6 +257,14 @@ export async function applyUpdates(opts: DesktopUpdateApplyOptions = {}): Promis
 
 function ingestProgress(payload: DesktopUpdateProgress): void {
   const current = $updateApply.get()
+
+  // A check emits the same progress events as an install. Ignore them until
+  // the user starts an update, or the dialog switches to the progress view
+  // and the Update button never appears.
+  if (!current.applying) {
+    return
+  }
+
   const log = [...current.log, { stage: payload.stage, message: payload.message, at: payload.at }].slice(-50)
   const terminal = payload.stage === 'error' || payload.stage === 'restart' || payload.stage === 'manual'
 

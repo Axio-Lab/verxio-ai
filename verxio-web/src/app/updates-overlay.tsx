@@ -19,6 +19,7 @@ import {
   $updateStatus,
   applyUpdates,
   checkUpdates,
+  postponeUpdate,
   resetUpdateApplyState,
   setUpdateOverlayOpen,
   type UpdateApplyState
@@ -89,7 +90,7 @@ export function UpdatesOverlay() {
             checking={checking}
             commits={status?.commits ?? []}
             onInstall={handleInstall}
-            onLater={() => handleClose(false)}
+            onLater={() => postponeUpdate()}
             onRetryCheck={() => void checkUpdates()}
             status={status}
           />
