@@ -66,6 +66,57 @@ const DEV_SERVER = process.env.VERXIO_DESKTOP_DEV_SERVER
 const IS_MAC = process.platform === 'darwin'
 const IS_WINDOWS = process.platform === 'win32'
 const APP_ROOT = app.getAppPath()
+
+function packagedPackageJson() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(app.getAppPath(), 'package.json'), 'utf8'))
+  } catch {
+    return null
+  }
+}
+
+function smokeMarkerPath() {
+  const bundle = path.resolve(process.execPath, '..', '..', '..')
+
+  return path.join(path.dirname(bundle), 'verxio-update-smoke.json')
+}
+
+// A smoke build reads a sidecar next to the .app so ShipIt's relaunch, which
+// drops the original environment, still uses the local feed and user-data dir.
+function readSmokeHarness() {
+  const packaged = packagedPackageJson()
+
+  if (!packaged || (packaged.verxioUpdateSmoke !== true && packaged.verxioUpdateSmoke !== 'true')) {
+    return null
+  }
+
+  const harness = { smoke: true, feed: '', userData: '' }
+
+  try {
+    const marker = JSON.parse(fs.readFileSync(smokeMarkerPath(), 'utf8'))
+
+    if (marker && marker.purpose === 'verxio-update-smoke') {
+      harness.feed = typeof marker.feed === 'string' ? marker.feed.trim() : ''
+      harness.userData = typeof marker.userData === 'string' ? marker.userData.trim() : ''
+    }
+  } catch {
+    // The smoke build can launch before the sidecar is written.
+  }
+
+  if (harness.feed && !String(process.env.VERXIO_UPDATE_FEED || '').trim()) {
+    process.env.VERXIO_UPDATE_FEED = harness.feed
+  }
+
+  if (harness.userData && !String(process.env.VERXIO_DESKTOP_USER_DATA_DIR || '').trim()) {
+    process.env.VERXIO_DESKTOP_USER_DATA_DIR = path.resolve(harness.userData)
+  }
+
+  console.log(`[verxio] update smoke marker ${smokeMarkerPath()} feed=${process.env.VERXIO_UPDATE_FEED || ''}`)
+
+  return harness
+}
+
+const SMOKE_HARNESS = readSmokeHarness()
 const USER_DATA_OVERRIDE = process.env.VERXIO_DESKTOP_USER_DATA_DIR
 
 const GPU_OVERRIDE_ON = new Set(['1', 'true', 'yes', 'on'])
@@ -111,6 +162,30 @@ if (USER_DATA_OVERRIDE) {
   const resolvedUserData = path.resolve(USER_DATA_OVERRIDE)
   fs.mkdirSync(resolvedUserData, { recursive: true })
   app.setPath('userData', resolvedUserData)
+
+  if (SMOKE_HARNESS) {
+    const logs = path.join(resolvedUserData, 'logs')
+    fs.mkdirSync(logs, { recursive: true })
+    app.setPath('logs', logs)
+  }
+}
+
+function noteSmokeVersion() {
+  if (!SMOKE_HARNESS) {
+    return
+  }
+
+  try {
+    const dir = app.getPath('userData')
+    fs.mkdirSync(dir, { recursive: true })
+    const target = path.join(dir, 'running-version.txt')
+    const temporary = `${target}.tmp`
+    fs.writeFileSync(temporary, app.getVersion())
+    fs.renameSync(temporary, target)
+    console.log(`[verxio] update smoke running ${app.getVersion()}`)
+  } catch (error) {
+    console.error('[verxio] update smoke version write failed', error)
+  }
 }
 
 function translucencyConfigPath() {
@@ -794,6 +869,7 @@ function disposeTerminalSession(id) {
 }
 
 app.whenReady().then(() => {
+  noteSmokeVersion()
   const workspace = ensureDesktopWorkspace()
   Menu.setApplicationMenu(null)
   configureDisplayMediaCapture()
